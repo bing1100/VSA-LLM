@@ -1,0 +1,15 @@
+experiment: query_and_readout
+depends_on: [00-capacity-and-algebra, 01-ontology-factorization, 02-zero-gradient-insertion]
+host_model: Qwen/Qwen2.5-0.5B
+trainable: [alignment_projector, query_adapter, lora]
+lora_rank: 8
+tasks: [unbind_filler, compose_frame, cycle, shared_factor, multihop]
+train_depths: [1, 2]
+test_depths: [1, 2, 3, 4, 6]
+splits: [entity, composition, component, relation]
+controls: [random_binding, concatenation, graph_vector, standard_qa, exact_graph]
+seeds: [11, 22, 33]
+primary_metric: unseen_composition_filler_accuracy
+constraints:
+  max_locality_drop: 0.01
+artifacts: [query_adapter, cleanup_head, task_bundle, evaluation_bundle]

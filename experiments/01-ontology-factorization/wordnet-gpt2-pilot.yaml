@@ -1,0 +1,22 @@
+experiment: wordnet_gpt2_matrix_pilot
+host:
+  model: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+data:
+  max_concepts: 1200
+  holdout_count: 240
+  ancestor_depth: 4
+  selection_seed: 20260717
+methods: [typed_hrr, typed_map, additive, shuffled_structure, nearest_recipe, train_mean]
+seeds: [11, 22, 33]
+factorization:
+  vsa_dimension: 128
+  steps: 300
+  learning_rate: 0.02
+  cosine_weight: 1.0
+evaluation:
+  knn_k: 10
+acceptance:
+  min_knn_gain: 0.02
+  min_row_cosine_gain: 0.01
+device: cuda

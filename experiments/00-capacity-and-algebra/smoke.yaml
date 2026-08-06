@@ -1,0 +1,13 @@
+experiment: capacity_and_algebra_smoke
+seeds: [11, 22]
+algebras: [real_hrr, unitary_hrr, map]
+dimensions: [128, 512]
+bundle_sizes: [4, 16, 64]
+noise_std: [0.0, 0.1]
+dtypes: [float32]
+candidate_count: 512
+query_count: 32
+primary_metric: mrr
+constraints:
+  target_one_hop_accuracy: 0.95
+artifacts: [metrics_csv, manifest, report]

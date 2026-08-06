@@ -1,0 +1,15 @@
+experiment: amortized_meta_learner
+depends_on: [01-ontology-factorization, 02-zero-gradient-insertion, 03-query-and-readout]
+preferred_dependency: 05-text-to-vsa-compiler
+ontology_families: [lexical, biomedical, scientific, synthetic]
+episode_holdouts: [node, component, relation, ontology_family]
+relation_renaming: true
+inputs: [definition, examples, neighbor_frames, host_anchors]
+outputs: [atomics, relation_roles, gates, residual, uncertainty, allocate_atomic]
+baselines: [per_domain_ocvf, definition_encoder, concept_generator, maml, nearest_anchor, graph_encoder]
+seeds: [11, 22, 33]
+primary_metric: heldout_ontology_behavior_per_adaptation_compute
+constraints:
+  target_fraction_of_ocvf_quality: 0.95
+  minimum_compute_reduction: 10.0
+artifacts: [meta_generator, episode_registry, calibration_model, evaluation_bundle]

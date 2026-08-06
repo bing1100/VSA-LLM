@@ -1,0 +1,16 @@
+experiment: relational_vsa_jepa
+depends_on: [00-capacity-and-algebra, 01-ontology-factorization, 03-query-and-readout, 05-text-to-vsa-compiler]
+optional_dependency: 07-amortized-meta-learner
+contexts: [partial_graph, text_plus_graph, event_history]
+targets: [masked_node, masked_edges, relation_filler, future_event]
+target_encoder: ema
+target_spaces: [vsa_structured, unconstrained_matched]
+anti_collapse: [variance, covariance, negative_edges]
+splits: [node, component, relation, temporal]
+baselines: [causal_lm, masked_lm, graph_autoencoder, link_prediction, contrastive, non_vsa_jepa]
+seeds: [11, 22, 33]
+primary_metric: disjoint_transfer_behavior
+constraints:
+  require_gain_on_transfer_axes: 2
+  matched_compute: true
+artifacts: [jepa_objective, predictor, target_encoder, collapse_report, evaluation_bundle]

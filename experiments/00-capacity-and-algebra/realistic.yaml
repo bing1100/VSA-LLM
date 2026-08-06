@@ -1,0 +1,16 @@
+experiment: realistic_capacity_and_calibration
+algebras: [real_hrr, unitary_hrr, map]
+dimensions: [256, 512]
+correlations: [0.0, 0.3]
+degree_profiles: [fixed16, poisson16, heavy_tail]
+degree_profile_definitions:
+  fixed16: {kind: fixed, value: 16, min: 2, max: 64}
+  poisson16: {kind: poisson, mean: 16, min: 2, max: 64}
+  heavy_tail: {kind: power_law, alpha: 2.2, min: 4, max: 64}
+noise_std: [0.0]
+calibration_seeds: [101, 102, 103]
+evaluation_seeds: [201, 202, 203]
+candidate_count: 512
+memories_per_seed: 12
+target_accepted_accuracy: 0.95
+max_ece: 0.05

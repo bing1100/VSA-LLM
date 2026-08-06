@@ -1,0 +1,46 @@
+experiment: 01b-stage-b-smoke
+host:
+  model: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  batch_size: 16
+  max_length: 64
+data:
+  relation_types:
+  - hypernym
+  - instance_hypernym
+  - member_meronym
+  - substance_meronym
+  - part_meronym
+  - antonym
+  - attribute
+  max_edges_per_relation: 24
+  min_edges_per_relation: 20
+  selection_seed: 20260717
+  test_fraction: 0.25
+tracks:
+- static_centered
+- contextual_centered
+split_modes:
+- edge_disjoint
+- node_disjoint
+methods:
+- additive
+- relation_mean
+- offset
+- hrr
+- diagonal
+- family: low_rank
+  rank: 8
+- shuffled_hrr
+seeds:
+- 11
+fit:
+  rank: 8
+  steps: 100
+  learning_rate: 0.02
+  cosine_weight: 1.0
+acceptance:
+  primary_split: node_disjoint
+  primary_track: contextual_centered
+  min_mrr_gain: 0.01
+device: cuda

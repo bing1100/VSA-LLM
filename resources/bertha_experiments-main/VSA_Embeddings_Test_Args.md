@@ -1,0 +1,37 @@
+## Arguments to include in ArgParser
+- lr
+    - float
+    - default: 5e-4
+- epochs
+    - int
+    - default: 10 
+- position_embedding_type
+    - str: "rotary" or "absolute"
+    - default: "absolute"
+- layer_norm_position
+    - str: "pre" or "post"
+    - default: "post"
+- gradient_accumulation_steps
+    - int
+    - default: 1
+- snomed_group
+    - str: "ignore", "group_zero", "group_vectors"
+    - default: "ignore"
+- dp_type
+    - str: "words", "words_rv", "atomic"
+    - default: "atomic"
+- dp_composition
+    - str: "icd_name", "snomed_name", "snomed_all"
+    - default: "snomed_all"
+- path_to_model_checkpoint
+    - str
+    - default: None
+- num_trials
+    - int
+    - default: 3
+- normalization
+    - mutually exclusive group: "--do_normalization" or "--no_normalization" this sets the value of normalization to true and false respectively
+    - default: "--do_normalization"
+- use_pretrained_embeddings
+    - mutually exclusive group: "--pretrained_embeddings" or "--no_pretrained_embeddings" this sets the value of use_pretrained_embeddings to true and false respectively
+    - default: "--pretrained_embeddings"

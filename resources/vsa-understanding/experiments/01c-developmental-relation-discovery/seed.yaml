@@ -1,0 +1,152 @@
+experiment:
+  name: reconstruction-rescue-and-developmental-relation-discovery
+  stage: 01c
+  status: design_seed
+  prerequisite: 01b-stage-b
+  blocks:
+    - 01d-developmental-relation-discovery
+    - 02-zero-gradient-insertion
+
+host:
+  model_id: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  frozen: true
+  target_layers: [-1]
+  pooling: [final_token]
+
+data:
+  source: wordnet
+  relations:
+    - hypernym
+    - instance_hypernym
+    - member_meronym
+    - substance_meronym
+    - part_meronym
+    - antonym
+    - attribute
+  split_modes:
+    - node_disjoint
+    - component_disjoint
+  development_seeds: [11, 22, 33]
+  confirmation_seeds: [44, 55]
+  nested_edges_per_relation: [20, 40, 80, 160, 320]
+
+targets:
+  tracks:
+    - contextual_full
+    - source_predictor_residual
+    - train_whitened_residual
+  prompt_templates:
+    - "Definition: {gloss} Term: {lemma}"
+  paraphrase_audit: true
+  preprocessing_fit: train_only
+
+reconstruction_rescue:
+  models:
+    - identity
+    - relation_mean
+    - relation_offset
+    - pure_hrr
+    - residual_hrr
+    - gated_residual_hrr
+    - offset_residual_hrr
+    - shared_basis_offset_residual_hrr
+    - equal_parameter_low_rank
+  identity_preserving_initialization: true
+  initial_offset: 0.0
+  initial_hrr_gate: 0.0
+  basis_families:
+    - identity
+    - pca_whitening
+    - diagonal_whitening
+    - householder
+    - low_rank_residual
+  losses:
+    cosine: true
+    mse: true
+    contrastive_ranking: true
+    relation_classification: true
+    identity_retention: true
+    algebra: optional_by_relation_family
+  controls:
+    shuffled_labels: true
+    shuffled_endpoints: true
+    equal_parameters: true
+    equal_steps: true
+    equal_flops: true
+
+gate_01c:
+  cosine_gain_over_relation_offset: 0.02
+  residual_r2_minimum: 0.0
+  mrr_gain_preferred: 0.01
+  require_capacity_matched_control_win: true
+  require_multiple_relation_families: true
+  require_second_ontology: true
+  require_paraphrase_stability: true
+  require_behavioral_locality: true
+
+developmental_discovery:
+  enabled_only_after_01c_pass: true
+  initial_experts: 20
+  hierarchy_tracks:
+    - known_relation
+    - known_family_with_subexperts
+    - unlabeled_global_stem_cells
+  initialization_tracks:
+    - carte_blanche
+    - weakly_seeded
+    - anchored_refinement
+  router:
+    family: entmax
+    inference_features_only: true
+    temperature_annealing: true
+    top_k_budget: 4
+  graph:
+    all_to_all: false
+    candidate_sources:
+      - semantic_neighbors
+      - type_compatible
+      - known_ontology
+      - lexical_cooccurrence
+      - extracted_propositions
+      - random_negatives
+    edge_gate: hard_concrete
+    preserve_truth_salience_confidence_provenance: true
+  phases:
+    - warmup
+    - differentiation
+    - commitment
+    - consolidation
+    - adaptation
+  regularization:
+    early_load_balance: true
+    functional_diversity: true
+    sparse_assignments: true
+    minimum_description_length: true
+    concept_residual_delayed: true
+  consolidation:
+    functional_distance: true
+    heldout_merge_test: true
+    split_multimodal_experts: true
+    align_experts_across_seeds: true
+
+gate_01d:
+  require_masked_ontology_recovery: true
+  require_sparse_description_advantage: true
+  require_cross_seed_functional_stability: true
+  require_concept_residual_reduction: true
+  require_relation_cards: true
+  require_behavioral_locality: true
+  require_second_ontology: true
+
+artifacts:
+  save_resolved_config: true
+  save_split_membership: true
+  save_target_preprocessing: true
+  save_checkpoints: true
+  save_expert_trajectories: true
+  save_routing_utilization: true
+  save_graph_snapshots: true
+  save_split_merge_log: true
+  save_relation_cards: true
+  save_pareto_front: true

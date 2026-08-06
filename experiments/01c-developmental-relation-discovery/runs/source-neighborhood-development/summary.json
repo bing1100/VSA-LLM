@@ -1,0 +1,84 @@
+{
+  "experiment_stage": "01c.5-source-neighborhoods",
+  "mean_metrics": {
+    "offset": {
+      "query_mrr": 0.32823095719019574,
+      "set_recall_at_10": 0.4009009003639221,
+      "set_hit_at_10": 0.6756756901741028,
+      "set_mass_nll": 3.024890899658203,
+      "target_centroid_cosine": 0.1718058387438456,
+      "mean_targets_per_query": 2.0
+    },
+    "low_rank": {
+      "query_mrr": 0.43856046597162884,
+      "set_recall_at_10": 0.46396395564079285,
+      "set_hit_at_10": 0.7027027010917664,
+      "set_mass_nll": 3.4547937711079917,
+      "target_centroid_cosine": 0.2589987516403198,
+      "mean_targets_per_query": 2.0
+    },
+    "basis_offset_residual_hrr": {
+      "query_mrr": 0.3410661419232686,
+      "set_recall_at_10": 0.4099099040031433,
+      "set_hit_at_10": 0.684684693813324,
+      "set_mass_nll": 3.081575632095337,
+      "target_centroid_cosine": 0.194440225760142,
+      "mean_targets_per_query": 2.0
+    },
+    "basis_offset_diagonal_control": {
+      "query_mrr": 0.37218571702639264,
+      "set_recall_at_10": 0.4234234193960826,
+      "set_hit_at_10": 0.6936936974525452,
+      "set_mass_nll": 2.9450079600016275,
+      "target_centroid_cosine": 0.21055682003498077,
+      "mean_targets_per_query": 2.0
+    },
+    "shuffled_basis_offset_residual_hrr": {
+      "query_mrr": 0.24126838644345602,
+      "set_recall_at_10": 0.31081080436706543,
+      "set_hit_at_10": 0.5315315326054891,
+      "set_mass_nll": 3.921401580174764,
+      "target_centroid_cosine": 0.09744571646054585,
+      "mean_targets_per_query": 2.0
+    },
+    "shuffled_basis_offset_diagonal_control": {
+      "query_mrr": 0.29571083188056946,
+      "set_recall_at_10": 0.3153153161207835,
+      "set_hit_at_10": 0.5225225190321604,
+      "set_mass_nll": 3.755859851837158,
+      "target_centroid_cosine": 0.11447835216919582,
+      "mean_targets_per_query": 2.0
+    }
+  },
+  "candidate": "basis_offset_residual_hrr",
+  "non_hrr_control": "basis_offset_diagonal_control",
+  "shuffled_control": "shuffled_basis_offset_residual_hrr",
+  "mrr_gain_over_non_hrr": -0.03111957510312402,
+  "set_recall_gain_over_non_hrr": -0.013513515392939268,
+  "mrr_gain_over_shuffled": 0.0997977554798126,
+  "paired_results": [
+    {
+      "seed": 19,
+      "mrr_gain_over_non_hrr": -0.04602479934692383,
+      "mrr_gain_over_shuffled": 0.0680217295885086,
+      "set_recall_gain_over_non_hrr": 0.0
+    },
+    {
+      "seed": 41,
+      "mrr_gain_over_non_hrr": -0.0009589195251464844,
+      "mrr_gain_over_shuffled": 0.10074493288993835,
+      "set_recall_gain_over_non_hrr": -0.013513505458831787
+    },
+    {
+      "seed": 61,
+      "mrr_gain_over_non_hrr": -0.046375006437301636,
+      "mrr_gain_over_shuffled": 0.1306266039609909,
+      "set_recall_gain_over_non_hrr": -0.027027040719985962
+    }
+  ],
+  "paired_non_hrr_wins": 0,
+  "paired_shuffled_wins": 3,
+  "development_criteria_passed": false,
+  "promotion_eligible": false,
+  "gate_passed": false
+}

@@ -1,0 +1,15 @@
+experiment: multilingual_pivot
+depends_on: [01-ontology-factorization, 02-zero-gradient-insertion]
+preferred_dependency: 03-query-and-readout
+host_models: [multilingual-small-model, monolingual-small-model]
+ontology: multilingual-wordnet-or-wikidata
+languages: [en, es, de, sw]
+heldout_language: sw
+representation: shared_concept_vsa_plus_language_residual
+adapter_sizes: [linear, bottleneck_64, bottleneck_256]
+baselines: [surface_mean, wechsel_focus, definition_encoder, zero_shot_alignment, shared_concept_no_relations]
+seeds: [11, 22, 33]
+primary_metric: heldout_language_concept_behavior
+constraints:
+  max_high_resource_drop: 0.01
+artifacts: [multilingual_registry, language_adapters, evaluation_bundle]

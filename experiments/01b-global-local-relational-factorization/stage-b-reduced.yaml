@@ -1,0 +1,28 @@
+experiment: 01b-stage-b-reduced
+host:
+  model: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  batch_size: 24
+  max_length: 64
+data:
+  relation_types: [hypernym, instance_hypernym, member_meronym, substance_meronym, part_meronym, antonym, attribute]
+  max_edges_per_relation: 80
+  min_edges_per_relation: 75
+  selection_seed: 20260717
+  test_fraction: 0.2
+tracks: [static_raw, static_centered, contextual_raw, contextual_centered]
+split_modes: [edge_disjoint, node_disjoint]
+methods: [additive, relation_mean, offset, hrr, diagonal, {family: low_rank, rank: 8}, shuffled_hrr, shuffled_diagonal, {family: shuffled_low_rank, rank: 8}]
+seeds: [11, 22, 33]
+fit:
+  rank: 8
+  steps: 250
+  learning_rate: 0.01
+  cosine_weight: 1.0
+acceptance:
+  primary_split: node_disjoint
+  primary_track: contextual_centered
+  min_mrr_gain: 0.01
+  min_paired_wins: 3
+  min_cosine_gain: 0.0
+device: cuda

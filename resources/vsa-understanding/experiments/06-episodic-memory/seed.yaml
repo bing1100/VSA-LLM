@@ -1,0 +1,16 @@
+experiment: episodic_memory
+depends_on: [00-capacity-and-algebra, 05-text-to-vsa-compiler]
+preferred_dependency: 03-query-and-readout
+scales: [1000, 10000, 100000, 1000000]
+frame_roles: [entity, relation, value, source, time, confidence, polarity, frame_id]
+sharding: [by_type, by_community, by_time, adaptive]
+verification: exact_graph_required
+workloads: [temporal_qa, conflicting_sources, multihop, correction, deletion, multi_tenant]
+baselines: [exact_graph, dense_vector, bm25, vector_rag, graph_rag, flat_vsa, oracle]
+seeds: [11, 22, 33]
+primary_metric: pareto_quality_latency_bytes
+constraints:
+  min_verified_precision: 0.99
+  min_rollback_success: 0.99
+  tenant_leakage_tolerance: 0.0
+artifacts: [memory_snapshot, capacity_trace, provenance_log, evaluation_bundle]

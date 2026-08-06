@@ -1,0 +1,28 @@
+experiment: 01b-stage-a-reduced-matrix
+seeds: [11, 22, 33]
+teachers:
+  - {family: hrr}
+  - {family: diagonal}
+  - {family: low_rank, rank: 8}
+learners:
+  - {family: additive}
+  - {family: hrr}
+  - {family: diagonal}
+  - {family: low_rank, rank: 8}
+data_budgets: [32, 128, 512]
+residual_dimensions: [0, 8]
+synthetic:
+  relation_count: 6
+  dimension: 32
+  rank: 8
+  test_per_relation: 128
+  edge_feature_dimension: 4
+  concept_feature_dimension: 8
+  noise_std: 0.01
+fit:
+  steps: 300
+  learning_rate: 0.02
+  weight_supervision: 0.1
+  threshold: 0.01
+acceptance:
+  min_aligned_wins: 2

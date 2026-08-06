@@ -1,0 +1,113 @@
+{
+  "experiment_stage": "01c",
+  "conditions": 576,
+  "primary_split": "node_disjoint",
+  "primary_track": "contextual_centered",
+  "mean_metrics": {
+    "additive": {
+      "cosine": 0.2929291824499766,
+      "mse": 0.0018413302022963762,
+      "target_mrr": 0.2270898868640264,
+      "target_recall_at_10": 0.3446877598762512
+    },
+    "offset": {
+      "cosine": 0.34882137179374695,
+      "mse": 0.0016957777552306652,
+      "target_mrr": 0.20126321415106455,
+      "target_recall_at_10": 0.3586949110031128
+    },
+    "hrr": {
+      "cosine": 0.25924521187941235,
+      "mse": 0.0019290488756572206,
+      "target_mrr": 0.24372969071070352,
+      "target_recall_at_10": 0.3778048058350881
+    },
+    "residual_hrr": {
+      "cosine": 0.29599348704020184,
+      "mse": 0.0018333503588413198,
+      "target_mrr": 0.23203197121620178,
+      "target_recall_at_10": 0.35661664605140686
+    },
+    "offset_residual_hrr": {
+      "cosine": 0.3515375753243764,
+      "mse": 0.0016887043214713533,
+      "target_mrr": 0.21891996761163077,
+      "target_recall_at_10": 0.37086036801338196
+    },
+    "gated_offset_residual_hrr": {
+      "cosine": 0.3512986401716868,
+      "mse": 0.0016893264837563038,
+      "target_mrr": 0.22133966783682504,
+      "target_recall_at_10": 0.3685455520947774
+    },
+    "basis_offset_residual_hrr": {
+      "cosine": 0.3502252399921417,
+      "mse": 0.0016921217708537977,
+      "target_mrr": 0.2584585299094518,
+      "target_recall_at_10": 0.4087253312269847
+    },
+    "low_rank": {
+      "cosine": 0.31295379996299744,
+      "mse": 0.001789182812596361,
+      "target_mrr": 0.20181377232074738,
+      "target_recall_at_10": 0.38730063041051227
+    },
+    "shuffled_residual_hrr": {
+      "cosine": 0.29144590099652606,
+      "mse": 0.0018451930567001302,
+      "target_mrr": 0.2290684382120768,
+      "target_recall_at_10": 0.3471208413441976
+    },
+    "shuffled_offset_residual_hrr": {
+      "cosine": 0.2598164876302083,
+      "mse": 0.0019275612042595942,
+      "target_mrr": 0.19163294633229574,
+      "target_recall_at_10": 0.32997094591458637
+    },
+    "shuffled_gated_offset_residual_hrr": {
+      "cosine": 0.26162759959697723,
+      "mse": 0.0019228448703264196,
+      "target_mrr": 0.1845074544350306,
+      "target_recall_at_10": 0.3348371187845866
+    },
+    "shuffled_basis_offset_residual_hrr": {
+      "cosine": 0.2589556773503621,
+      "mse": 0.0019298029753069084,
+      "target_mrr": 0.1940479725599289,
+      "target_recall_at_10": 0.32694647709528607
+    }
+  },
+  "best_candidate": "offset_residual_hrr",
+  "reconstruction_baseline": "offset",
+  "retrieval_baseline": "hrr",
+  "matched_shuffled_control": "shuffled_offset_residual_hrr",
+  "cosine_gain_over_reconstruction_baseline": 0.0027162035306294574,
+  "mrr_delta_from_retrieval_baseline": -0.024809723099072756,
+  "cosine_gain_over_matched_shuffled": 0.09172108769416809,
+  "paired_results": [
+    {
+      "seed": 11,
+      "cosine_gain_over_reconstruction_baseline": 0.0034861862659454346,
+      "mrr_delta_from_retrieval_baseline": -0.03788134455680847,
+      "cosine_gain_over_matched_shuffled": 0.10129278898239136
+    },
+    {
+      "seed": 29,
+      "cosine_gain_over_reconstruction_baseline": -0.00276753306388855,
+      "mrr_delta_from_retrieval_baseline": -0.037447914481163025,
+      "cosine_gain_over_matched_shuffled": 0.09030047059059143
+    },
+    {
+      "seed": 47,
+      "cosine_gain_over_reconstruction_baseline": 0.007429957389831543,
+      "mrr_delta_from_retrieval_baseline": 0.0009000897407531738,
+      "cosine_gain_over_matched_shuffled": 0.08357000350952148
+    }
+  ],
+  "paired_reconstruction_wins": 2,
+  "paired_retrieval_noninferior": 1,
+  "paired_shuffled_wins": 3,
+  "exploratory_criteria_passed": false,
+  "promotion_eligible": false,
+  "gate_passed": false
+}

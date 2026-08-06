@@ -1,0 +1,14 @@
+experiment: text_to_vsa_compiler
+depends_on: [00-capacity-and-algebra]
+preferred_dependency: 03-query-and-readout
+domains: [synthetic_world, bounded_science]
+episodes: [new_entity, new_relation, alias, contradiction, correction, temporal_update]
+frame_fields: [subject, relation, object, polarity, modality, valid_time, confidence, source, evidence]
+approval_modes: [oracle, schema_plus_confidence, human_review_simulation]
+baselines: [direct_answer, vector_rag, exact_graph_extraction, graph_rag, direct_text_vector, unvalidated_vsa]
+seeds: [11, 22, 33]
+primary_metric: persistent_qa_with_provenance
+constraints:
+  min_rollback_success: 0.99
+  require_evidence_for_acceptance: true
+artifacts: [canonical_graph, frame_log, vsa_snapshot, compiler_predictions, evaluation_bundle]

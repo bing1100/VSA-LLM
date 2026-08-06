@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vsa-embed"
+version = "0.1.0.dev0"
+description = "Composable vector-symbolic embedding tools for PyTorch"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.1", "PyYAML>=6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+research = ["nltk>=3.8", "transformers>=4.40", "safetensors>=0.4"]
+
+[project.scripts]
+vsa-capacity = "vsa_embed.experiments.capacity:main"
+vsa-realistic-capacity = "vsa_embed.experiments.realistic_capacity:main"
+vsa-factorize = "vsa_embed.experiments.ontology_factorization:main"
+vsa-wordnet-matrix = "vsa_embed.experiments.wordnet_matrix:main"
+vsa-global-local = "vsa_embed.experiments.global_local_relations:main"
+vsa-wordnet-relations = "vsa_embed.experiments.wordnet_relations:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

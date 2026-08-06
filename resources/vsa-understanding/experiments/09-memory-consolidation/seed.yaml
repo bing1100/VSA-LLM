@@ -1,0 +1,19 @@
+experiment: memory_consolidation
+depends_on: [02-zero-gradient-insertion, 03-query-and-readout, 05-text-to-vsa-compiler, 06-episodic-memory]
+eligibility:
+  min_sources: 2
+  min_confidence: 0.95
+  min_age_days: 7
+  min_query_count: 20
+adapter: lora
+lora_ranks: [4, 8, 16]
+training_losses: [teacher_distillation, relation_query, locality_replay]
+workloads: [new_facts, corrections, contradictions, consequences, deletion, domain_shift]
+baselines: [retrieval_only, graph_rag, sequential_lora, periodic_lora, serac, rome_memit]
+seeds: [11, 22, 33]
+primary_metric: quality_adjusted_frequent_query_latency
+constraints:
+  exact_adapter_rollback: true
+  require_source_provenance: true
+  max_locality_kl: predeclare
+artifacts: [consolidation_policy, peft_adapters, adapter_registry, rollback_report, evaluation_bundle]

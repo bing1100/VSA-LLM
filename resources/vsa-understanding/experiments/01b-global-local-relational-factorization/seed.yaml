@@ -1,0 +1,168 @@
+experiment: 01b-global-local-relational-factorization
+status: design_seed
+depends_on:
+  - 00-capacity-and-algebra
+  - 01a-ontology-factorization
+blocks:
+  - 02-zero-gradient-insertion
+
+primary_question: >-
+  Which globally shared relation representation gives the best
+  bias-capacity-data tradeoff while reducing local residual learning?
+
+stages:
+  - synthetic_teacher_learner
+  - fixed_wordnet_relations
+  - residual_adaptation_frontier
+  - bounded_graph_refinement
+  - frozen_host_behavior
+
+seeds: [11, 22, 33]
+
+synthetic:
+  concepts: 4096
+  relations: 12
+  mean_degree: [2, 4, 8]
+  edge_weight_distribution: [uniform, beta_sparse]
+  noise_std: [0.0, 0.05]
+  teacher_families:
+    - hrr_vector
+    - map_vector
+    - diagonal_operator
+    - orthogonal_operator
+    - low_rank_operator
+    - global_plus_domain_low_rank
+  teacher_ranks: [4, 16]
+  residual_dimensions: [0, 8, 32]
+  edges_per_relation_budgets: [16, 32, 64, 128, 256, 512, 1024]
+
+real_graph:
+  source: wordnet
+  version: "3.0"
+  relation_types:
+    - hypernym
+    - instance_hypernym
+    - member_meronym
+    - substance_meronym
+    - part_meronym
+    - antonym
+    - attribute
+  preserve_inverse_edges_with_source_split: true
+  candidate_edges: fixed_first
+  learned_overlay:
+    enabled_after_fixed_edge_gate: true
+    max_added_edges_per_node: 2
+    sparsity_penalty: tune_train_only
+
+host:
+  model: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  frozen: true
+  target_tracks:
+    - raw_input_row
+    - mean_centered_row
+    - top_pc_removed_row
+    - contextual_sense_anchor
+    - hidden_state_or_logit_behavior
+
+relation_learners:
+  - family: additive
+    level: R0
+  - family: fixed_binding_vector
+    level: R1
+    variants: [real_hrr, unitary_hrr, map, random_orthogonal]
+  - family: shared_interpreter
+    level: R2
+    variants: [film, bilinear_core]
+  - family: constrained_operator
+    level: R3
+    variants: [diagonal, circulant, orthogonal, block_diagonal, low_rank]
+    ranks: [4, 8, 16, 32]
+  - family: global_domain_modulated
+    level: R4
+    variants: [penalized_low_rank_delta]
+  - family: edge_specific_upper_bound
+    level: R5
+    promotion_eligible: false
+
+edge_weights:
+  variants: [uniform, learned_scalar, sparse_attention]
+  truth_confidence_is_separate: true
+  vector_gate_deferred: true
+
+residuals:
+  dimensions: [0, 4, 8, 16, 32, 64, full]
+  adaptation_examples: [0, 1, 2, 4, 8, 16]
+  variants:
+    - none
+    - definition_derived
+    - sparse_shared_basis
+    - learned_low_rank
+
+splits:
+  - edge_group
+  - node_alias
+  - component
+  - relation_instance
+  - relation_family
+  - ontology_family
+  - composition
+  - atomic
+
+comparisons:
+  equal_parameter: true
+  equal_steps: true
+  equal_flops_where_feasible: true
+  report_capacity_frontier: true
+  report_data_to_threshold: true
+  report_compute_to_threshold: true
+
+baselines:
+  - weighted_additive
+  - nearest_relational_recipe
+  - transe
+  - complex
+  - rotate
+  - hole
+  - rgcn
+  - equal_budget_low_rank_factorization
+  - definition_encoder
+  - shuffled_relation_labels
+  - shuffled_endpoints
+  - host_mean_low_rank
+
+metrics:
+  synthetic_primary: area_under_heldout_quality_vs_data_curve
+  real_primary: residual_or_examples_to_behavior_threshold
+  secondary:
+    - heldout_row_cosine_after_nuisance_removal
+    - knn_overlap
+    - pairwise_rank_correlation
+    - relation_query_accuracy
+    - edge_auc
+    - edge_weight_rank_correlation
+    - residual_energy
+    - steps_and_flops_to_threshold
+    - train_test_gap
+    - locality_kl
+    - calibration
+
+acceptance:
+  must_beat:
+    - weighted_additive
+    - strongest_equal_budget_graph_or_unstructured_baseline
+  require_left_shift_in_adaptation_curve: true
+  require_global_relation_transfer: true
+  require_second_relation_or_ontology_family: true
+  require_behavioral_confirmation: true
+  max_locality_degradation: predeclare_before_run
+
+artifacts:
+  - relation_transform_checkpoint
+  - weighted_composition_graph_overlay
+  - residual_basis_checkpoint
+  - split_and_leakage_manifest
+  - teacher_learner_matrix
+  - residual_budget_curve
+  - convergence_to_threshold_report
+  - behavioral_evaluation_bundle

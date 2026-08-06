@@ -1,0 +1,47 @@
+experiment: 01c5-source-neighborhood-development
+host:
+  model: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  batch_size: 16
+  max_length: 64
+data:
+  relation_types:
+  - hypernym
+  - instance_hypernym
+  max_sources_per_relation: 120
+  min_sources_per_relation: 20
+  min_targets_per_source: 2
+  selection_seed: 20260717
+  test_fraction: 0.25
+methods:
+- offset
+- low_rank
+- basis_offset_residual_hrr
+- basis_offset_diagonal_control
+- shuffled_basis_offset_residual_hrr
+- shuffled_basis_offset_diagonal_control
+seeds:
+- 19
+- 41
+- 61
+fit:
+  rank: 4
+  steps: 300
+  learning_rate: 0.01
+  cosine_weight: 0.25
+  rank_weight: 1.0
+  rank_temperature: 0.07
+  max_residual_scale: 0.15
+  max_log_basis_scale: 0.2
+  correction_weight: 0.05
+  offset_weight: 0.01
+  basis_weight: 0.05
+acceptance:
+  candidate: basis_offset_residual_hrr
+  non_hrr_control: basis_offset_diagonal_control
+  shuffled_control: shuffled_basis_offset_residual_hrr
+  min_mrr_gain_over_non_hrr: 0.01
+  min_recall_gain_over_non_hrr: 0.01
+  min_paired_wins: 2
+  promotion_eligible: false
+device: cuda

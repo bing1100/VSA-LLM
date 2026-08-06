@@ -1,0 +1,83 @@
+{
+  "experiment_stage": "01c",
+  "conditions": 72,
+  "primary_split": "node_disjoint",
+  "primary_track": "contextual_centered",
+  "mean_metrics": {
+    "additive": {
+      "cosine": 0.2955884337425232,
+      "mse": 0.0018344051204621792,
+      "target_mrr": 0.34190499782562256,
+      "target_recall_at_10": 0.5853658318519592
+    },
+    "offset": {
+      "cosine": 0.343984454870224,
+      "mse": 0.0017083738930523396,
+      "target_mrr": 0.36496439576148987,
+      "target_recall_at_10": 0.6829268336296082
+    },
+    "hrr": {
+      "cosine": 0.27156731486320496,
+      "mse": 0.0018969601951539516,
+      "target_mrr": 0.3752542734146118,
+      "target_recall_at_10": 0.5853658318519592
+    },
+    "residual_hrr": {
+      "cosine": 0.26657935976982117,
+      "mse": 0.0019099499331787229,
+      "target_mrr": 0.3874894678592682,
+      "target_recall_at_10": 0.5609756112098694
+    },
+    "offset_residual_hrr": {
+      "cosine": 0.2735583782196045,
+      "mse": 0.0018917751731351018,
+      "target_mrr": 0.38197964429855347,
+      "target_recall_at_10": 0.6829268336296082
+    },
+    "gated_offset_residual_hrr": {
+      "cosine": 0.23564130067825317,
+      "mse": 0.001990517368540168,
+      "target_mrr": 0.3467836081981659,
+      "target_recall_at_10": 0.6341463327407837
+    },
+    "basis_offset_residual_hrr": {
+      "cosine": 0.26575198769569397,
+      "mse": 0.0019121043151244521,
+      "target_mrr": 0.3048407733440399,
+      "target_recall_at_10": 0.6097561120986938
+    },
+    "low_rank": {
+      "cosine": 0.35092878341674805,
+      "mse": 0.0016902897041290998,
+      "target_mrr": 0.38439828157424927,
+      "target_recall_at_10": 0.6341463327407837
+    },
+    "shuffled_offset_residual_hrr": {
+      "cosine": 0.09643883258104324,
+      "mse": 0.0023530239704996347,
+      "target_mrr": 0.23497673869132996,
+      "target_recall_at_10": 0.4390243887901306
+    }
+  },
+  "best_candidate": "offset_residual_hrr",
+  "reconstruction_baseline": "offset",
+  "retrieval_baseline": "hrr",
+  "matched_shuffled_control": "shuffled_offset_residual_hrr",
+  "cosine_gain_over_reconstruction_baseline": -0.0704260766506195,
+  "mrr_delta_from_retrieval_baseline": 0.00672537088394165,
+  "cosine_gain_over_matched_shuffled": 0.17711954563856125,
+  "paired_results": [
+    {
+      "seed": 11,
+      "cosine_gain_over_reconstruction_baseline": -0.0704260766506195,
+      "mrr_delta_from_retrieval_baseline": 0.00672537088394165,
+      "cosine_gain_over_matched_shuffled": 0.17711954563856125
+    }
+  ],
+  "paired_reconstruction_wins": 0,
+  "paired_retrieval_noninferior": 1,
+  "paired_shuffled_wins": 1,
+  "exploratory_criteria_passed": false,
+  "promotion_eligible": false,
+  "gate_passed": false
+}

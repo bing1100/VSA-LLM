@@ -1,0 +1,17 @@
+experiment: zero_gradient_insertion
+depends_on: [01-ontology-factorization]
+host_model: Qwen/Qwen2.5-0.5B
+freeze_host: true
+insertion_mode: reserved_token_overlay
+num_reserved_tokens: 1000
+tie_policy: preserve_host
+tracks: [graph_only, graph_plus_definition, synthetic_alias]
+splits: [node, component, composition, temporal]
+tasks: [property_qa, relation_qa, cloze_rank, generation, paraphrase, locality]
+baselines: [random_norm, surface_mean, definition_mean, definition_encoder, nearest_anchor, wechsel_focus, concept_generator, hole, rotate, rgcn]
+seeds: [11, 22, 33]
+primary_metric: combined_input_output_behavior
+constraints:
+  max_perplexity_relative_change: 0.005
+  require_output_improvement: true
+artifacts: [embedding_overlay, token_registry, predictions, evaluation_bundle]

@@ -1,0 +1,29 @@
+experiment: ontology_factorization_synthetic_smoke
+seeds:
+- 11
+- 22
+- 33
+methods:
+- typed_vsa
+- bag_of_factors
+- shuffled_structure
+- nearest_recipe
+- train_mean
+knn_k: 5
+synthetic:
+  node_count: 240
+  holdout_count: 60
+  role_count: 4
+  values_per_role: 8
+  teacher_vsa_dimension: 48
+  host_dimension: 32
+  teacher_algebra: real_hrr
+  target_noise_std: 0.01
+factorization:
+  algebra: real_hrr
+  vsa_dimension: 48
+  steps: 350
+  learning_rate: 0.03
+  cosine_weight: 1.0
+acceptance:
+  min_knn_gain: 0.05

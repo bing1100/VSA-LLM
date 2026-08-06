@@ -1,0 +1,28 @@
+experiment: ontology_factorization
+depends_on: [00-capacity-and-algebra]
+host_model: Qwen/Qwen2.5-0.5B
+host_revision: pin-before-run
+freeze_host: true
+ontology:
+  name: wordnet
+  max_concepts: 50000
+  edges: [hypernym, hyponym, meronym, holonym]
+splits: [node, component, composition]
+anchor_modes: [single_token, contextual_template]
+factorization:
+  algebra: unitary_hrr
+  dimension: 1024
+  alignment: [orthogonal, linear, mlp]
+  residual: [none, low_rank, gated]
+loss_weights:
+  row_cosine: 1.0
+  neighborhood: 1.0
+  behavior_kl: 0.2
+  relation: 0.5
+  residual_penalty: 0.01
+baselines: [low_rank_unstructured, hole, rotate, definition_encoder, nearest_anchor]
+seeds: [11, 22, 33]
+primary_metric: heldout_knn_recall
+constraints:
+  max_perplexity_relative_change: 0.01
+artifacts: [atomic_store, alignment_map, residual_store, evaluation_bundle]
