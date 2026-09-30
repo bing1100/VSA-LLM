@@ -130,3 +130,12 @@ def test_gpt2_offsets_align_and_cardinality_matches_brute_force() -> None:
     report = {row["min_subtokens"]: row for row in cardinality_report(t, tokenizer, texts, thresholds=(1, 2))}
     assert report[1]["span_occurrences"] == 4 and report[1]["linked_entries"] == 3
     assert report[2]["linked_entries"] == 2  # "cat" is one GPT-2 token
+
+
+def test_training_view_keeps_entry_ids_and_drops_heldout_aliases() -> None:
+    full = AliasTable.from_pairs([("bank", 0), ("bank", 1), ("river", 2), ("aspirin", 3)], holdout=[3],
+                                 include_holdout=True)
+    train = full.without_holdout()
+    assert "aspirin" not in train.alias_to_entry and "aspirin" in full.alias_to_entry
+    assert train.alias_to_entry["bank"] == full.alias_to_entry["bank"]
+    assert full.heldout_entries() == {full.alias_to_entry["aspirin"]}

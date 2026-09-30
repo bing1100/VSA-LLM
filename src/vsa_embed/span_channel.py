@@ -78,6 +78,16 @@ class AliasTable:
             entry_concepts[index] = concepts
         return cls(alias_to_entry, entry_concepts, held)
 
+    def without_holdout(self) -> "AliasTable":
+        """Training view: drop every alias whose entry contains a held-out concept, keeping the
+        entry numbering, so training and evaluation spans share entry ids."""
+        kept = {alias: entry for alias, entry in self.alias_to_entry.items()
+                if not set(self.entry_concepts[entry]) & self.holdout}
+        return AliasTable(kept, self.entry_concepts, self.holdout)
+
+    def heldout_entries(self) -> set[int]:
+        return {i for i, concepts in enumerate(self.entry_concepts) if set(concepts) & self.holdout}
+
     def digest(self) -> str:
         payload = json.dumps({"aliases": sorted(self.alias_to_entry.items()),
                               "entries": self.entry_concepts, "holdout": sorted(self.holdout),
@@ -270,6 +280,8 @@ class SpanChannel(nn.Module):
         elif mode == "free":
             self.table = nn.Embedding(entry_count, model_dimension)
             nn.init.normal_(self.table.weight, std=model_dimension**-0.5)
+            # Entries never trained (held-out concepts) fall back to the mean of trained rows (C2).
+            self.register_buffer("unseen", torch.zeros(entry_count, dtype=torch.bool))
         elif mode == "random":
             self.register_buffer("table_fixed", torch.randn(entry_count, model_dimension) / model_dimension**0.5)
             self.scale = nn.Parameter(torch.ones(()))
@@ -288,7 +300,11 @@ class SpanChannel(nn.Module):
         if self.mode == "compose":
             return self.projector(self.composer.compose(entries, context))
         if self.mode == "free":
-            return self.table(entries)
+            rows = self.table(entries)
+            if bool(self.unseen.any()):
+                fallback = self.table.weight[~self.unseen].mean(0)
+                rows = torch.where(self.unseen[entries][:, None], fallback.expand_as(rows), rows)
+            return rows
         if self.mode == "random":
             return self.scale * self.table_fixed[entries]
         if input_ids is None:
@@ -297,6 +313,14 @@ class SpanChannel(nn.Module):
         for b, s, e in zip(spans["batch"].tolist(), spans["start"].tolist(), spans["end"].tolist()):
             keys.append(hash(tuple(input_ids[b, s:e + 1].tolist())) % self.hashed_buckets)
         return self.table(torch.tensor(keys, device=entries.device))
+
+    def set_unseen(self, entries: Tensor | Iterable[int]) -> None:
+        """Mark entries that received no training signal (free-table control only)."""
+        if self.mode == "free":
+            self.unseen.zero_()
+            index = torch.as_tensor(list(entries) if not isinstance(entries, Tensor) else entries, dtype=torch.long)
+            if index.numel():
+                self.unseen[index.to(self.unseen.device)] = True
 
     def forward(self, embeddings: Tensor, spans: dict[str, Tensor], *, input_ids: Tensor | None = None,
                 context: Tensor | None = None) -> Tensor:
