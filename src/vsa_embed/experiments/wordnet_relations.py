@@ -198,7 +198,7 @@ def _shuffled_relations(relation_ids: torch.Tensor, seed: int, mode: str) -> tor
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     config = resolve_config(config)
     v2 = config["protocol"] >= 2
-    prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir)
     require_clean_tree_for_promotion(bool(config["acceptance"]["promotion_eligible"]))
     apply_thread_setting(config)
     host_config, data_config, fit_config = config["host"], config["data"], config["fit"]
@@ -344,7 +344,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     hashes = {track: hashlib.sha256(value.numpy().tobytes()).hexdigest() for track, value in anchors_by_track.items()}
     summary = summarize(rows, config)
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    write_run_metadata(output_dir, config, device=device, wordnet=wn.get_version(), host=host_config,
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device=device, wordnet=wn.get_version(), host=host_config,
                        anchor_sha256=hashes, relation_counts=dict(counts),
                        dropped_same_token_edges=dropped_same_token)
     (output_dir / "report.md").write_text(render_report(summary, len(nodes), len(edges), counts))

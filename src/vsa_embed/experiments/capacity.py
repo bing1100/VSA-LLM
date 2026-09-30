@@ -102,7 +102,7 @@ def run_trial(trial: Trial, *, candidate_count: int, query_count: int, device: s
 
 
 def run(config: dict[str, Any], output_dir: Path, *, device: str = "cpu") -> list[dict[str, Any]]:
-    prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir)
     trials = _trial_grid(config)
     candidate_count = int(config.get("candidate_count", 2048))
     query_count = int(config.get("query_count", 32))
@@ -111,7 +111,7 @@ def run(config: dict[str, Any], output_dir: Path, *, device: str = "cpu") -> lis
     with (output_dir / "metrics.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader(); writer.writerows(results)
-    write_run_metadata(output_dir, config, device=device, trials=len(results))
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device=device, trials=len(results))
     _write_report(results, output_dir / "report.md")
     return results
 

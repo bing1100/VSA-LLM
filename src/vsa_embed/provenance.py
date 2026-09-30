@@ -49,13 +49,18 @@ def config_hash(config: dict[str, Any]) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def prepare_output_dir(output_dir: Path) -> None:
-    """Create a fresh run directory; refuse to write into one that already has files."""
+def prepare_output_dir(output_dir: Path) -> dict[str, Any]:
+    """Create a fresh run directory; refuse to write into one that already has files.
+
+    Returns the git state at this moment (run start), which the manifest records: a long run's
+    tree may change after launch without changing the code the process imported.
+    """
     if output_dir.exists() and any(output_dir.iterdir()):
         raise FileExistsError(
             f"run directory {output_dir} already contains files; choose a new run ID"
         )
     output_dir.mkdir(parents=True, exist_ok=True)
+    return git_state()
 
 
 def apply_thread_setting(config: dict[str, Any]) -> None:
@@ -72,12 +77,13 @@ def require_clean_tree_for_promotion(promotion_eligible: bool) -> None:
 
 def build_manifest(
     config: dict[str, Any], *, device: torch.device | str | None = None,
-    argv: list[str] | None = None, **extra: Any,
+    argv: list[str] | None = None, git_at_start: dict[str, Any] | None = None, **extra: Any,
 ) -> dict[str, Any]:
     return {
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "created_at": datetime.now(timezone.utc).isoformat(),
-        **git_state(),
+        **(git_at_start if git_at_start is not None else git_state()),
+        "git_state_recorded_at": "run start" if git_at_start is not None else "run end",
         "python": platform.python_version(),
         "platform": platform.platform(),
         "packages": package_versions(),

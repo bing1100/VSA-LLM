@@ -31,7 +31,7 @@ def _parameter_count(model: torch.nn.Module) -> int:
 
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     """Run nested learning curves and write reproducible Stage-A artifacts."""
-    prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir)
     synthetic = config["synthetic"]
     fit_config = config["fit"]
     budgets = sorted(int(x) for x in config["data_budgets"])
@@ -94,8 +94,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         for row in rows:
             handle.write(json.dumps(row) + "\n")
     torch.save({"schema_version": 1, "models": checkpoints}, output_dir / "relation_transforms.pt")
-    write_run_metadata(
-        output_dir, config, device="cpu", split="nested_relation_balanced_prefix_with_fixed_test",
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", split="nested_relation_balanced_prefix_with_fixed_test",
         edge_specific_parameters=0, concept_specific_parameters=0,
     )
     summary = summarize(rows, config)

@@ -157,7 +157,8 @@ def render_report(summary: dict[str, Any], nodes: int, edges: int, queries: int)
               f"Gain over shuffled HRR: **{summary['mrr_gain_over_shuffled']:+.4f}** "
               f"(95% CI {ci(summary['mrr_gain_over_shuffled_ci'])}).",
               f"Development criteria (proxy): **{'PASS' if summary['development_criteria_passed'] else 'FAIL'}**.", "",
-              "An empty unseen column means every held-out parent was also a training endpoint.", ""]
+              "`nan` in the seen column means no held-out parent was a training endpoint (target-disjoint "
+              "split); `nan` in the unseen column means every held-out parent was.", ""]
     return "\n".join(lines)
 
 
@@ -175,7 +176,7 @@ def _split(edges: list[RelationEdge], data: dict[str, Any], seed: int, v2: bool)
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     config = resolve_config(config)
     v2 = config["protocol"] >= 2
-    prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir)
     require_clean_tree_for_promotion(bool(config["acceptance"]["promotion_eligible"]))
     apply_thread_setting(config)
     host_config, data_config, fit_config = config["host"], config["data"], config["fit"]
@@ -264,7 +265,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     _write_csv(output_dir / "edges.csv", [{"index": i, **edge.__dict__} for i, edge in enumerate(edges)])
     torch.save({"schema_version": 1, "models": checkpoints}, output_dir / "relation_models.pt")
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    write_run_metadata(output_dir, config, device=device, wordnet=wn.get_version(), host=host_config,
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device=device, wordnet=wn.get_version(), host=host_config,
                        anchor_sha256=hashlib.sha256(anchors.numpy().tobytes()).hexdigest(),
                        relation_queries=dict(relation_queries),
                        target_count_distribution=dict(Counter(group_counts.values())))

@@ -114,7 +114,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     evaluation_seeds = list(config["evaluation_seeds"])
     if set(calibration_seeds) & set(evaluation_seeds):
         raise ValueError("calibration and evaluation seeds must be disjoint")
-    prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir)
     config = {"threshold_method": "point", **config}
     profiles = config["degree_profile_definitions"]
     all_rows: list[dict[str, Any]] = []
@@ -163,7 +163,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "python": platform.python_version(), "torch": torch.__version__, "models": models,
     }
     (output_dir / "capacity_model.json").write_text(json.dumps(artifact, indent=2) + "\n")
-    write_run_metadata(output_dir, config, device="cpu")
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu")
     _write_report(summaries, output_dir / "report.md", config)
     return {"conditions": len(summaries), "observations": len(all_rows)}
 

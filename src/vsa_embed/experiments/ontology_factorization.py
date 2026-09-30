@@ -93,7 +93,7 @@ def _fit_method(
 
 
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
-    prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir)
     rows: list[dict[str, Any]] = []
     saved_model: OntologyFactorizer | None = None
     for seed in config["seeds"]:
@@ -124,7 +124,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "state_dict": saved_model.state_dict() if saved_model is not None else {},
     }
     torch.save(artifact, output_dir / "factorizer.pt")
-    write_run_metadata(output_dir, config, device="cpu")
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu")
     report = [
         "# Experiment 01 synthetic factorization sandbox", "",
         "| Method | Mean held-out kNN overlap |", "|---|---:|",

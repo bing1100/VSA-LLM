@@ -147,7 +147,7 @@ def _trained_prediction(
 
 
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
-    prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir)
     model_id = config["host"]["model"]
     revision = config["host"]["revision"]
     tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision, local_files_only=True)
@@ -212,7 +212,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "state_dict": saved.state_dict() if saved is not None else {},
     }
     torch.save(artifact, output_dir / "factorizer.pt")
-    write_run_metadata(output_dir, config, device="cpu", wordnet=wn.get_version(), host_rows_sha256=host_hash)
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", wordnet=wn.get_version(), host_rows_sha256=host_hash)
     lines = ["# Experiment 01 — GPT-2 / WordNet matrix-only pilot", "", f"Concepts: **{len(concepts)}**; host revision: `{revision}`; WordNet: **{wn.get_version()}**.", "", "| Method | Held-out row cosine | Held-out kNN overlap |", "|---|---:|---:|", *[f"| {method} | {means[method]['row_cosine']:.3f} | {means[method]['knn_overlap']:.3f} |" for method in methods], "", f"Typed-HRR kNN gain over **{knn_control}**: **{knn_gain:+.3f}**.", f"Typed-HRR row-cosine gain over **{cosine_control}**: **{cosine_gain:+.3f}**.", f"Pilot gate: **{'PASS' if gate else 'FAIL'}**.", "", "This is a real frozen embedding-matrix result, but still only a node-disjoint, monosemous single-token pilot. It is not a behavioral insertion result."]
     (output_dir / "report.md").write_text("\n".join(lines) + "\n")
     return {"gate_passed": gate, "knn_gain": knn_gain, "cosine_gain": cosine_gain, "concepts": len(concepts)}
