@@ -31,7 +31,8 @@ SCRATCH_SIZES = {
 def build_host(name: str) -> torch.nn.Module:
     if name in SCRATCH_SIZES:
         config = GPT2Config(vocab_size=50257, n_positions=1024, **SCRATCH_SIZES[name])
-        return GPT2LMHeadModel(config, attn_implementation="sdpa")
+        config._attn_implementation = "sdpa"
+        return GPT2LMHeadModel(config)
     return AutoModelForCausalLM.from_pretrained(name, local_files_only=True, torch_dtype=torch.float32,
                                                 attn_implementation="sdpa")
 

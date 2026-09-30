@@ -25,7 +25,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 17 | D0.2 split detection (CPU) | D | B4, B9 | running |
 | 18 | G1 mechanisms recover planted structure | gate | D0 | todo |
 | 19 | B5 `span_channel.py` (linker, cardinality report, injection) | B | B1 | done |
-| 20 | B6 `integrations/transformers.py` (+ SmolLM2-360M download) | B | B5 | todo |
+| 20 | B6 `integrations/transformers.py` (+ SmolLM2-360M download) | B | B5 | done |
 | 21 | B7 from-scratch LM training harness | B | B5 | todo |
 | 22 | B14 `convergence.py` | B | B7 | todo |
 | 23 | B11 local GPU job queue | B | B7 | todo |
@@ -33,7 +33,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 25 | B10 CI and benchmarks | B | B1–B5 | todo |
 | 26 | C3 general corpus, linking, holdout, cardinality tables | C | B5 | todo |
 | 27 | C2 clinical data (SNOMED CT, UMLS, MIMIC, PubMed) | C | B5 | todo |
-| 28 | C4 throughput benchmark on the 3090 | C | B6, B7 | todo |
+| 28 | C4 throughput benchmark on the 3090 | C | B6, B7 | done |
 | 29 | B12 `authoring.py` (M5) | B | B4, B5, B6 | todo |
 | 30 | B13 `judging.py` (Claude Code judge) | B | — | todo |
 | 31 | C5 LLM-judge protocol and calibration set | C | B13 | todo |

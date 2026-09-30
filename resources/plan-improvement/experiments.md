@@ -155,6 +155,8 @@ C8 is reported whatever it shows; if `random_fixed ≈ hrr`, the claim becomes "
 
 Planning throughput: `6·N·D` FLOPs (from scratch; `≈ 4·N·D` with a frozen host) at ≈ 35% MFU of the 3090's 71 TFLOP/s bf16 peak ≈ **2.5e13 FLOP/s**, replaced by the measured tokens/s from the C4 benchmark before G2.
 
+**Measured (C4, 2026-09-30, `experiments/b6-host-memory/runs/3090-v1/`; sequence 1024, bf16 autocast, fused AdamW, attentive channel attached):** from scratch 50M ≈ 70k tokens/s (micro-batch 32, 18.8 GiB), 125M ≈ 36k (micro-batch 16, 18.0 GiB; 28.8k with activation checkpointing at 9.9 GiB), 350M ≈ 11k (checkpointing, micro-batch 16, 10.1 GiB); frozen hosts SmolLM2-135M ≈ 36k (LoRA r=16: 26k), SmolLM2-360M ≈ 18.5k (micro-batch 8), Qwen2.5-0.5B ≈ 16k (micro-batch 4, 11.4 GiB). Committed run times follow: 50M × 300M tokens ≈ 1.2 h, 125M × 500M ≈ 3.9 h, SmolLM2-135M / 360M / Qwen2.5-0.5B × 100M ≈ 0.8 / 1.5 / 1.7 h — within the planning figures, plus evaluation overhead. The 350M × 2.5B-token tier (X2) is ≈ 63 h per run.
+
 **Committed (≈ 400 GPU-hours, ≈ 3 weeks of the GPU):**
 
 | Block | Runs | Per run | GPU-hours |
