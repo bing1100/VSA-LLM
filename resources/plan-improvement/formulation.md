@@ -170,6 +170,8 @@ and accepts the split only if `G*` exceeds the 99th percentile of a permutation 
 
 A second-order alternative (splitting along the minimum eigenvector of a Hessian-like splitting matrix) is a comparison baseline in E0.2, not the default, because it needs Hessian-vector products per candidate.
 
+**Credit.** Offsetting two copies along a direction is the Linde–Buzo–Gray codebook split and the neuron split of Splitting Steepest Descent (Liu et al.); deciding a split by a test along a principal direction is G-means (Hamerly & Elkan 2003). What M3 adds is the usage-level first-order statistic read from optimizer state, the partition of *usages* (not data points) by sign, and the permutation null; see [related-work.md](related-work.md) §4. An Anderson–Darling variant of the test is an E0.2 comparison.
+
 ### 3.4 Usages without gradient signal
 
 Rare, held-out and new concepts have no `m^{(u)}` and are not assigned by sign. They route over the siblings with the frame query of §1: `p(θ_s | i) = softmax_s ⟨ū_i, k_{θ_s}⟩`, soft during a commitment window, then hard. This keeps zero-shot composition working after splits and reuses the 01d routing idea with a bounded sibling set instead of a global expert pool.

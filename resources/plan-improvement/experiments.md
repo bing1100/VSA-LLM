@@ -39,7 +39,7 @@ Extends the teacher/holdout machinery in [ontology_factorization.py](../../src/v
 ### E0.2 Split detection
 
 - **Teacher.** Dictionary with `K` atomics of which `K_p` are polysemous (two hidden sense vectors used by disjoint concept subsets); similarly `R_p` relations with two hidden sub-operators under one label. The student starts collapsed (one vector per label).
-- **Policies.** None; random splits (matched count); coherence-only screening (idea.md, elementwise, no confirmation); coherence + eigen confirmation (M3 default); second-order splitting (Hessian-vector, small scale only); oracle.
+- **Policies.** None; random splits (matched count); coherence-only screening (idea.md, elementwise, no confirmation); coherence + eigen confirmation with the permutation null (M3 default); the same with a G-means-style Anderson–Darling test on the projections instead of the null; second-order splitting (Hessian-vector, small scale only); oracle.
 - **Metrics.** Precision/recall of split decisions against the planted set; adjusted Rand index (ARI) between the recovered usage partition and true senses; final loss vs parameters added; **false-split rate on non-polysemous atomics after convergence** (this is the converged-vs-conflicted test of M3 §3.2).
 - **Gate.** M3 default reaches ≥0.9 precision and recall at `d = 64`, ARI ≥ 0.8, false-split rate ≤ 5% under the permutation null. Coherence-only is reported alongside to quantify what the cheap screen alone buys.
 
@@ -56,7 +56,7 @@ The cheapest real-data test of M1, before the expensive E4. Extends `contextual_
 - **Hosts.** GPT-2 (existing adapter) and Qwen2.5-0.5B.
 - **Data.** WordNet polysemous lemmas with ≥2 senses and ≥10 sense-tagged sentences each (SemCor; WiC for pairs). Targets: centered contextual hidden states at the lemma's last subtoken in each sentence, layer chosen by a small audit (reported).
 - **Composition.** Union frame per lemma; `q` from P1 (causal mean of the sentence's preceding token embeddings) and P2 (host hidden state at an earlier layer).
-- **Learners.** M0 one vector per lemma; M0 per sense with oracle sense (upper bound); M1 with `q`; operator ablation.
+- **Learners.** M0 one vector per lemma; M0 per sense with oracle sense (upper bound); M1 with `q`; context attention over free per-sense vectors (Dasigi et al. 2017 / KnowBERT style, isolates what bound-edge keys add); operator ablation.
 - **Splits.** Node-disjoint lemmas; sentence-disjoint contexts.
 - **Metrics.** (i) contextual variance explained `1 − ‖ŷ − y‖² / ‖y − ȳ_lemma‖²` on held-out contexts of held-out lemmas; (ii) retrieval MRR (existing `retrieval_metrics`); (iii) sense accuracy of attention mass against gold senses vs the most-frequent-sense baseline.
 - **Gate.** M1 beats M0 on (i) and (ii) with CIs excluding zero over 3 seeds on held-out lemmas, and (iii) beats most-frequent-sense.
@@ -76,7 +76,7 @@ Extends 01b Stage A/B ([global_local_relations.py](../../src/vsa_embed/experimen
 Masked-ontology recovery, as the 01d design intended, now with the M3 statistic.
 
 - **Setup.** Collapse senses: one atomic per polysemous lemma across its senses. Collapse relations: `{part, member, substance} meronym → meronym`, `{hypernym, instance hypernym} → hypernym`. Train the best E2 configuration (or the 50M E4 model) with M3 enabled.
-- **Policies.** None; uniform enlargement (dictionary × (1 + γ), matched final parameters); random splits (matched count); coherence-only; M3 default; the 01d design's fixed pool of `K = 20` stem-cell experts with entmax routing, implemented minimally, for the relation case.
+- **Policies.** None; uniform enlargement (dictionary × (1 + γ), matched final parameters); random splits (matched count); coherence-only; M3 default; NP-MSSG / AdaGram context-clustering sense induction (sense-recovery baseline); the 01d design's fixed pool of `K = 20` stem-cell experts with entmax routing, implemented minimally, for the relation case.
 - **Metrics.** Sense recovery: ARI vs WordNet senses over split lemmas, split precision vs polysemy; relation-subtype recovery: ARI of the edge partition vs original labels; loss and held-out MRR per added parameter; growth curve; cross-seed agreement of partitions; card coherence (human-readable).
 - **Gate.** M3 recovers collapsed senses and relations with ARI above random-split and uniform-enlargement at matched parameters (3 seeds, CIs excluding zero), false-split rate ≤ 5% on monosemous lemmas, and improves held-out metrics per added parameter over uniform enlargement.
 
@@ -98,6 +98,8 @@ Matched non-embedding parameters, tokens, steps and schedule; channel parameters
 | C0 | none | baseline |
 | C1 | random fixed span vectors (matched params) | span-boundary information, extra capacity |
 | C2 | free per-concept span vectors | composition vs a per-entity table |
+| C1h | hashed n-gram span memory keyed by the span's subtokens (Engram / Over-Tokenized style), matched parameters, same gate and position | structure vs any extra lookup memory for multi-token units (added after C1 literature search) |
+| C3t | type/relation-only composition: attention over the concept's relation types, no fillers, no binding (Bootleg / UmlsBERT style) | whether filler binding matters |
 | C3 | M0 static VSA, operator from E2 | structure |
 | C4 | C3 + M2 factored mapping | learned mapping |
 | C5 | C4 + M1 contextual (P1) | context |
@@ -123,7 +125,7 @@ Post-training weight-only quantization of every final model at INT8 and INT4 wit
 
 ### E4.5 Table compression (E4c)
 
-Replace rows of linked single-token concepts by `P c + δ` at 4 and 2 bits; equal-bytes comparison against an INT4/INT2-quantized full table.
+Replace rows of linked single-token concepts by `P c + δ` at 4 and 2 bits; equal-bytes comparison against an INT4/INT2-quantized full table, ALBERT-factorized embeddings, quotient–remainder / hash embeddings and a tensor-train table.
 
 ### E4.6 Continued-pretraining track (pretrained hosts)
 
@@ -185,7 +187,7 @@ On E4's best models.
 - **E5.1 Faithfulness.** For linked spans, ablate the top-`k` attention-weighted edges vs random edges vs bottom-`k`; measure the change in loss and in probe predictions (comprehensiveness / sufficiency). Expect top-`k` ≫ random.
 - **E5.2 Sense alignment.** Attention mass per sub-frame vs gold senses on the jointly trained model (E1 measured this on frozen anchors).
 - **E5.3 Rating study (LLM-graded now, clinicians later).** Replicate the paper's neighbour study (28/40 vs 4/40 strongly related for rare codes) on the clinical track (E8-T1), adding ratings of edge-level explanations, M3 cards and E7 authoring cards (are discovered senses, relation sub-types and authored edges meaningful?). Graded by the LLM-judge protocol of §0.12 for an estimate; the identical item set, rubric and pre-registered `n` are kept for a later clinician study. One-tailed Fisher test as in the paper, reported with judge agreement; claims from this stage are labelled "LLM-graded estimate".
-- **E5.4 Zero-shot insertion via the span channel.** Dossier experiment 02's strict protocol (reserved concepts, synthetic/private names against contamination, no definition in the prompt), using the span channel instead of tokenizer surgery. Tests: property selection, entailment, paraphrase consistency, and concept-level generation rank via the semantic head. Baselines: matched random, surface mean, definition mean, definition encoder, C2 fallback, graph embedding + projection. Scenarios, one per E8 track: new SNOMED CT / ICD / RxNorm concepts (T1), new API symbols from the synthetic private library (T2), new SKUs and product types (T3), new compounds by IUPAC name (T4), synthetic private glossary terms (T5), new EuroVoc descriptors (T6); on pretrained hosts only the synthetic/private scenarios count as contamination-free.
+- **E5.4 Zero-shot insertion via the span channel.** Dossier experiment 02's strict protocol (reserved concepts, synthetic/private names against contamination, no definition in the prompt), using the span channel instead of tokenizer surgery. Tests: property selection, entailment, paraphrase consistency, and concept-level generation rank via the semantic head. Baselines: matched random, surface mean, definition mean, definition encoder, à la carte, a CoLLEGe-style generator (text-evidence generators reported separately from the structure-only claim), C2 fallback, graph embedding + projection. Scenarios, one per E8 track: new SNOMED CT / ICD / RxNorm concepts (T1), new API symbols from the synthetic private library (T2), new SKUs and product types (T3), new compounds by IUPAC name (T4), synthetic private glossary terms (T5), new EuroVoc descriptors (T6); on pretrained hosts only the synthetic/private scenarios count as contamination-free.
 - **E5.5 Frequency disentanglement.** Frequency predictability from embeddings (the paper's t-SNE claim, made quantitative) for C0 vs channel conditions.
 
 ## E6 — Deep injection and readout (escalation tier X4; ties to dossier experiment 03)
@@ -201,11 +203,11 @@ Tests the clarifications' key question: can a pretrained small model read text, 
 
 ### E7.1 Authoring quality
 
-Masked-ontology recovery: the host reads `D_read` and authors frames for candidate concepts. Metrics: edge precision/recall/F1 against the hidden gold subgraph, relation-type accuracy, candidate discovery recall (fraction of hidden gold concepts found by the surprisal screen), LLM-judged plausibility of authored edges that have no gold counterpart (§0.12). Baselines: Hearst/lexico-syntactic pattern extraction, the teacher author, random frames with matched degree.
+Masked-ontology recovery: the host reads `D_read` and authors frames for candidate concepts. Metrics: edge precision/recall/F1 against the hidden gold subgraph, relation-type accuracy, candidate discovery recall (fraction of hidden gold concepts found by the surprisal screen), LLM-judged plausibility of authored edges that have no gold counterpart (§0.12). Baselines: Hearst/lexico-syntactic pattern extraction, OLLM / LLMs4OL-style prompting, the teacher author, random frames with matched degree.
 
 ### E7.2 Self-improvement
 
-Committed: round `r = 0 → 1` of the M5 loop on SmolLM2-360M, 25M reading tokens, 3 seeds. Conditions (formulation §5.4): gold → host; self → self; self without verification; teacher → host; random frames → host; compute-matched continued pretraining. Rounds 2–3 and the Qwen2.5-0.5B repeat are tier X3, unlocked if round-1 utility and the loss gap over the compute-matched control are positive with CI (§0.13).
+Committed: round `r = 0 → 1` of the M5 loop on SmolLM2-360M, 25M reading tokens, 3 seeds. Conditions (formulation §5.4): gold → host; self → self; self without verification; teacher → host; random frames → host; compute-matched continued pretraining; EntiGraph-style synthetic continued pretraining at matched tokens. Rounds 2–3 and the Qwen2.5-0.5B repeat are tier X3, unlocked if round-1 utility and the loss gap over the compute-matched control are positive with CI (§0.13).
 
 - **Primary endpoint.** Loss on held-out contexts of concepts that entered the ontology only through authoring (not in the curated ontology), and on masked gold concepts, relative to the compute-matched control.
 - **Secondary.** Probes (E4.2), locality on general text, drift across rounds, authored-edge precision per round, growth of the dictionary through M3.
@@ -236,7 +238,7 @@ All application areas from [proposal.md](proposal.md) §6 are explored; the ques
 
 | Track | Ontology / gold | Corpus | Track tasks | Committed scale | GPU-h |
 |---|---|---|---|---|---:|
-| T1 clinical (flagship; licences held) | SNOMED CT, UMLS (ICD-10, RxNorm, MeSH sources) | PubMed abstracts + PMC-OA subset; MIMIC-IV notes | BLURB subset (NER, relations, via probing), PubMedQA/BioASQ cloze, ICD coding on MIMIC-IV notes (probe), E5.3 neighbour study | 50M + SmolLM2-360M | ≈ 25 |
+| T1 clinical (flagship; licences held) | SNOMED CT, UMLS (ICD-10, RxNorm, MeSH sources) | PubMed abstracts + PMC-OA subset; MIMIC-IV notes | BLURB subset (NER, relations, via probing), PubMedQA/BioASQ cloze, ICD coding on MIMIC-IV notes (probe) with GRAM as the rare-code baseline, E5.3 neighbour study | 50M + SmolLM2-360M | ≈ 25 |
 | T2 developer tools | API schemas and type signatures (synthetic private library + real Python/JS libraries) | docs, READMEs, code comments | symbol → signature/property probes, doc-QA cloze, new-symbol zero-shot | 50M + SmolLM2-135M | ≈ 20 |
 | T3 product catalogues | Google product taxonomy, GS1 GPC, product attributes | Amazon ESCI, WDC product corpus | query–product relevance (probe), attribute prediction, new-SKU zero-shot | SmolLM2-135M | ≈ 6 |
 | T4 chemistry | ChEBI (roles, functional groups), PubChem synonyms | PubChem descriptions, open chemistry abstracts | IUPAC-name → class/role probes, property cloze, new-compound zero-shot | SmolLM2-135M | ≈ 6 |
