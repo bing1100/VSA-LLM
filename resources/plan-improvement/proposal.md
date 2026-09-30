@@ -15,7 +15,7 @@ Two facts from the repository set the frame:
 
 So this proposal moves the program to the joint-training regime on small language models, treats the binding operator as an ablation rather than a premise, and makes idea.md's efficiency, explainability and zero-shot claims into pre-registered, stratified measurements. The primary experiment (E4) trains ≈ 125M-parameter LMs with and without the channel at matched parameters and tokens, with two controls that decide whether any gain is composition (vs a free per-concept table) or merely span-boundary information (vs random fixed span vectors).
 
-Both regimes are tested: from-scratch training is the pre-registered core, and continued pretraining of pretrained small hosts (SmolLM2-135M/360M, Qwen2.5-0.5B) is a required second track. The pretrained regime opens a fifth mechanism: **self-authored ontologies** (M5, E7), where the model reads text, generalizes it into ontology frames, verifies them against held-out text, and uses them to improve its own weights. Every application area in §6 is explored (E8), with the clinical track as flagship now that SNOMED CT, UMLS and MIMIC access is in hand. All work runs on one local RTX 3090 (≈ 3,200 GPU-hours, the factor that sets the calendar); Claude implements, the author reviews at the gates.
+Both regimes are tested: from-scratch training is the pre-registered core, and continued pretraining of pretrained small hosts (SmolLM2-135M/360M, Qwen2.5-0.5B) is a required second track. The pretrained regime opens a fifth mechanism: **self-authored ontologies** (M5, E7), where the model reads text, generalizes it into ontology frames, verifies them against held-out text, and uses them to improve its own weights. Every application area in §6 is explored (E8), with the clinical track as flagship now that SNOMED CT, UMLS and MIMIC access is in hand. All work runs on one local RTX 3090 under an evidence-first compute plan: a committed ≈ 400 GPU-hours of short runs measures how fast each condition converges (data multiplier, fitted loss curves, projections), and longer or larger runs are escalation tiers unlocked only when that evidence justifies their cost. Claude implements, the author reviews at the gates.
 
 ## 1. Problem and thesis (from idea.md)
 
@@ -37,6 +37,7 @@ Traceability from the note to this proposal:
 | (clarifications) a pretrained model reads text, writes its own ontology, and improves its own weights | M5 self-authoring loop with held-out-utility verification | H-G | E7 |
 | (clarifications) explore every application area | per-track ontology, linker, cardinality table, from-scratch and pretrained runs | H-A, H-E, H-G | E8 |
 | (clarifications) feasibility depends on how many words are ≥ `ℓ` subtokens | span-cardinality table per tokenizer × `ℓ_min` | H-A | E4.7 |
+| (clarifications) spend few GPU hours; measure convergence speed and build the case for more | data multiplier, fitted curves and projections at every checkpoint; pre-registered escalation rule | H-A, H-B | E4 §0.13, escalation tiers X1–X4 |
 
 ## 2. Where the repository stands
 
@@ -96,16 +97,16 @@ Full definitions, cost model and limits: [formulation.md](formulation.md).
 | Exp. | Question | Depends on | GPU cost (local 3090) | Gate (primary endpoint) |
 |---|---|---|---|---|
 | E0 | do M1/M2/M3 recover planted structure and do no harm without it? | — | CPU | contextual recovery; split precision/recall ≥ 0.9, false splits ≤ 5%; transfer of induced factors |
-| E1 | does contextual composition explain contextual variance of polysemous words on a frozen host? | E0.1 | ≈ 60 h | variance explained and MRR over static, sense alignment > MFS |
-| E2 | which mapping and operator transfer to node-disjoint concepts, at what data cost? | 01b code | ≈ 60 h | induced mapping ≥ feature salience; operator family chosen |
-| E3 | does M3 recover collapsed WordNet senses and relation sub-types? | E0.2, E2 | ≈ 100 h | ARI > random/uniform growth at matched params |
-| **E4** | does the channel reduce the tax in 50M–350M LMs from scratch and in pretrained hosts; does it beat the free-table and random-vector controls; does it survive quantization; which `ℓ_min` is feasible? | E2, E3 | ≈ 1,760 h | held-out-concept loss < C2, all linked strata < C1, locality ≤ 0.5%, ≥2 probes improve |
-| E5 | are explanations faithful and well rated; does zero-shot insertion work via the span channel? | E4 | ≈ 100 h | top-`k` ≫ random ablation; 02-protocol baselines beaten |
-| E6 | can the model use the algebra (readout, depth) with mid-network injection? | E4, E5 | ≈ 60 h | 03-style compositional gains |
-| E7 | can a pretrained host author, verify and use its own ontology? | E4.6 | ≈ 350 h | self-authored > compute-matched continued pretraining and random frames |
-| E8 | do the gains carry into clinical, developer-tools, product, chemistry, enterprise and legal domains? | E4, E7 | ≈ 730 h | E4 gate on each track's held-out stratum + one track task |
+| E1 | does contextual composition explain contextual variance of polysemous words on a frozen host? | E0.1 | ≈ 20 h | variance explained and MRR over static, sense alignment > MFS |
+| E2 | which mapping and operator transfer to node-disjoint concepts, at what data cost? | 01b code | ≈ 20 h | induced mapping ≥ feature salience; operator family chosen |
+| E3 | does M3 recover collapsed WordNet senses and relation sub-types? | E0.2, E2 | ≈ 20 h | ARI > random/uniform growth at matched params |
+| **E4** | does the channel reduce the tax (and learn faster) in 50M/125M LMs from scratch and in pretrained hosts; does it beat the free-table and random-vector controls; does it survive quantization; which `ℓ_min` is feasible? | E2, E3 | ≈ 190 h | held-out-concept loss < C2, all linked strata < C1, locality ≤ 0.5%, ≥2 probes improve |
+| E5 | are explanations faithful and well rated; does zero-shot insertion work via the span channel? | E4 | ≈ 40 h (with quantization) | top-`k` ≫ random ablation; 02-protocol baselines beaten |
+| E6 | can the model use the algebra (readout, depth) with mid-network injection? | E4, E5 | tier X4 | 03-style compositional gains |
+| E7 | can a pretrained host author, verify and use its own ontology? | E4.6 | ≈ 40 h (round 1) | self-authored > compute-matched continued pretraining and random frames |
+| E8 | do the gains carry into clinical, developer-tools, product, chemistry, enterprise and legal domains? | E4, E7 | ≈ 70 h | E4 gate on each track's held-out stratum + one track task |
 
-≈ 3,200 GPU-hours on one RTX 3090, ≈ 42 weeks end to end with no external deadline; decision points after E0, after E2/E3, after E4-125M, after E5 and after E7. Details: [experiments.md](experiments.md), schedule in [tasks.md](tasks.md).
+≈ 400 committed GPU-hours on one RTX 3090 (≈ 3 weeks of GPU time), ≈ 22 weeks end to end, set by implementation; decision points after E0, after E2/E3, after E4-125M, after E5, after E7, and a final evidence report that requests escalation tiers (X1 125M at 2.5B tokens ≈ 190 h; X2 350M ≈ 700 h; X3 longer continued pretraining and multi-round self-authoring ≈ 350 h; X4 full tracks, E6, multilingual ≈ 600 h) only where the convergence evidence meets the pre-registered rule. Details: [experiments.md](experiments.md), schedule in [tasks.md](tasks.md).
 
 ## 6. Real-world applications
 
@@ -148,10 +149,11 @@ Relative to the outside literature, the internal review has no coverage of four 
 | Splitting is unstable or grows without bound | permutation null, budget, cooldown, consolidation phase, false-split rate as a gated metric |
 | Contamination of pretrained hosts | from-scratch models for the core claim; synthetic private concepts for zero-shot |
 | Probe evaluations on small LMs are noisy | paired bootstrap over examples, several probes, pre-registered endpoints |
-| Licences and data terms (SNOMED, UMLS, MIMIC) | access held; MIMIC-derived text never leaves the machine (local judge only, no external APIs); licence versions recorded in the linker manifest |
-| Compute: one RTX 3090 (24 GB), shared with the desktop | ≈ 3,200 GPU-h queue ordered by value, backfill of design-independent baselines, checkpoint/resume every 30 min, 350M at 2.5B tokens and last; measured throughput replaces the planning figure before G2 |
+| Licences and data terms (SNOMED, UMLS, MIMIC) | access held; MIMIC-derived text may go to the Claude judge (confirmed) but is never committed or published; licence versions recorded in the linker manifest |
+| Compute: one RTX 3090 (24 GB), shared with the desktop | ≈ 400 committed GPU-h of convergence-speed runs; larger runs only through the escalation rule; checkpoint/resume every 30 min; measured throughput replaces the planning figure before G2 |
+| Short runs mislead: early-training gains can wash out | fitted curves with projected gaps and their CIs are part of the escalation rule; the report says whether a gain is early-only |
 | Self-authoring reinforces its own errors | disjoint authoring/validation contexts, held-out-utility acceptance, replay and locality gate, hidden gold audits, compute-matched control |
-| LLM-graded ratings are not expert ratings | two judges, prompt paraphrases, agreement and calibration reported; claims labelled as estimates; identical items kept for the later clinician study |
+| LLM-graded ratings are not expert ratings | Claude Code as judge with the model pinned, repeated calls and prompt paraphrases, self-agreement and calibration reported; claims labelled as estimates; identical items kept for the later clinician study |
 
 Failure readings from the dossier still apply: good geometry with poor behavior means the interface is missing; seen concepts work but held-out fail means the mapping memorizes; structure that only reduces adaptation cost is a few-shot result, not zero-shot.
 
@@ -167,7 +169,8 @@ New modules in `vsa_embed`, each with tests, building on what exists:
 | `span_channel.py` | linker (alias tables, holdout), injection with last-subtoken rule, gate, semantic head | — |
 | `integrations/transformers.py` | `inputs_embeds` hook for HF causal LMs (GPT-2, SmolLM2, Qwen2.5); frozen/LoRA host; tied-output helper; chunked cross-entropy | — |
 | `authoring.py` | M5: surprisal candidate discovery, constrained frame authoring, held-out utility with bootstrap bounds, authoring cards, round driver | `compose.py`, `developmental.py`, `span_channel.py` |
-| `judging.py` | LLM-judge harness: rubric, blinding, randomization, API and local judges, verdict cache, agreement statistics | — |
+| `judging.py` | LLM-judge harness: rubric, blinding, randomization, headless Claude Code calls with a pinned model, verdict cache, agreement statistics | — |
+| `convergence.py` | per-stratum checkpoint losses, data multipliers, curve fits with bootstrap projections, escalation-rule verdicts | — |
 | `experiments/` | E0–E4 runners under the run-folder contract | existing runners |
 
 Tests to add: utility `U_{j,e}` equals the finite-difference loss change for small `β`; authoring and validation contexts disjoint; `τ → ∞` equals uniform bundle; segment-softmax equals a loop; per-usage gradients equal autograd per-sample gradients; split gain is ≥ 0 and 0 when all usages agree; permutation null calibration on noise; no leakage from held-out rows; causal-leak test; row normalization; duplicate-index accumulation.

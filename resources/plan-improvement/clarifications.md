@@ -2,7 +2,7 @@
 
 Questions whose answers change [tasks.md](tasks.md) or the proposal. Each states the default that the schedule assumes if no answer is given, so work can start without blocking. Answer inline under each item.
 
-**Status (2026-09-30): all 24 answered and applied.** The table records where each answer landed; follow-up questions raised by the answers are at the end, each with the default the plan now assumes.
+**Status (2026-09-30): all 30 answered and applied** (1–24 in the table below; 25–30 at the end). The table records where each answer landed; follow-up questions raised by the answers are at the end, each with the default the plan now assumes.
 
 | # | Answer, in short | Applied in |
 |---|---|---|
@@ -144,8 +144,25 @@ yes
 Each has a default the plan already assumes; answer only to change it.
 
 25. **API judge.** Which API model should be the external LLM judge for ontology-only items (codes, preferred terms, neighbours, edges)? *Default:* a current frontier model with its version pinned in the protocol file, plus a local ≈ 7B instruct model on the 3090 as the second judge.
+- just use a frontier model - call claude code itself to do the judging
 26. **MIMIC and external services.** Does your MIMIC data-use agreement allow any MIMIC-derived text to reach an external LLM service? *Default:* no; MIMIC-derived items are graded by the local judge only, and the harness enforces it.
+yes it can reach external llm services
 27. **Compute budget.** ≈ 3,200 GPU-hours is ≈ 23 weeks of the 3090 at realistic utilization. Is that acceptable, and if something must be cut, is the 350M phase the first cut? *Default:* keep everything, run 350M last; cut order as in the tasks.md risk table.
+Lets reduce so its alot fewer gpu hours - we instead want to see the speed that convergence occurs and generate evidence in which we can justofy additional gpu hours
 28. **Self-authoring relation vocabulary.** Closed (the target ontology's relation labels) as the main condition and open relations as an ablation? *Default:* yes.
+yes
 29. **Desktop GPU.** Long jobs will share the GPU that drives the desktop (≈ 22 GB usable, some UI lag possible). Acceptable, or should jobs pause while you are working? *Default:* run continuously; jobs checkpoint every 30 min and can be paused from the queue.
+default answer is good
 30. **SmolLM2-360M download.** It is not in the local cache yet (≈ 0.7 GB). *Default:* download when B6 starts.
+default is good
+
+### How 25–30 were applied (2026-09-30)
+
+| # | Answer, in short | Applied in |
+|---|---|---|
+| 25 | frontier model only; call Claude Code itself | judge = headless `claude -p` with the model pinned, ≥3 calls with paraphrases, self-agreement instead of inter-judge κ (experiments §0.12, B13); the same client is the M5 teacher author, so no local 7B model is needed |
+| 26 | MIMIC-derived text may reach external LLM services | local-only judging rule removed (experiments §0.12, E7, E8-T1; tasks C2, rule 9); MIMIC text is still never committed or published |
+| 27 | far fewer GPU hours; measure convergence speed and build evidence for more | committed budget ≈ 400 GPU-h (was ≈ 3,200): 50M at 300M tokens, 125M at 500M tokens, continued pretraining at 100M tokens, E7 round 1, short E8 runs; convergence metrics (data multiplier, fitted curves, projections) and a pre-registered escalation rule (experiments §0.13); larger runs moved to escalation tiers X1–X4 requested in the W3 evidence report at G6; new `convergence.py` (B14); calendar ≈ 22 weeks |
+| 28 | closed relation vocabulary, open as ablation | unchanged (formulation §5.5) |
+| 29 | run continuously | unchanged (B11) |
+| 30 | download SmolLM2-360M at B6 | unchanged (B6) |

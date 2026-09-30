@@ -291,7 +291,7 @@ A model that writes its own training signal can reinforce its own errors. The gu
 | gold → host | curated ontology (M1–M4 as in E4); upper reference |
 | self → self | the host authors for its own channel (the claim) |
 | self, no verification | step 3 reduced to self-consistency; measures what verification buys |
-| teacher → host | a larger local model (≈ 7B instruct, 4-bit, fits the 24 GB GPU) authors; upper bound on authoring quality |
+| teacher → host | a frontier model (Claude Code, headless) authors; upper bound on authoring quality |
 | self → from-scratch 125M | cross-authoring: does a pretrained model's ontology help a model trained from scratch? |
 | random frames → host | matched edge counts and degree distribution; isolates capacity |
 | none, compute-matched | continued pretraining on `D_read` with extra tokens equal to the FLOPs of authoring + verification |
