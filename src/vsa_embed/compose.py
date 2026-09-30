@@ -153,6 +153,10 @@ class FrameComposer(nn.Module):
             elif concept_factor == "hybrid":
                 self.delta = nn.Parameter(torch.zeros(concepts, key_dimension))
         self.projector = nn.Linear(dimension, output_dimension, bias=False) if output_dimension else None
+        # When True, the next compositions record `z_i` (pre-normalization rows, with gradients
+        # retained) and their schedule so M3 can read per-usage gradients after backward.
+        self.capture_usage = False
+        self.captured: list[dict[str, Tensor]] = []
 
     @property
     def schedule(self) -> FrameSchedule:
@@ -235,11 +239,50 @@ class FrameComposer(nn.Module):
         weights = self.edge_weights(edge_index, segments, concept_ids, bound, context)
         summed = bound.new_zeros(concept_ids.numel(), bound.shape[-1]).index_add(
             0, segments, weights.unsqueeze(-1) * bound)
+        if self.capture_usage and summed.requires_grad:
+            summed.retain_grad()
+            self.captured.append({"summed": summed, "segments": segments, "edge_index": edge_index,
+                                  "weights": weights.detach(), "concept_ids": concept_ids})
         return normalize(summed), weights, edge_index
 
     def forward(self, concept_ids: Tensor, context: Tensor | None = None) -> Tensor:
         rows = self.compose(concept_ids, context)
         return self.projector(rows) if self.projector is not None else rows
+
+    # -- growth (used by the developmental dictionary, M3) --------------------------------------
+
+    def add_atomics(self, vectors: Tensor) -> Tensor:
+        """Append atomic rows; returns their ids. The `atomics` Parameter object is replaced."""
+        start = self.atomics.shape[0]
+        self.atomics = nn.Parameter(torch.cat([self.atomics.detach(), vectors.to(self.atomics)], 0))
+        self.atomic_count = self.atomics.shape[0]
+        return torch.arange(start, self.atomic_count, device=self.atomics.device)
+
+    def add_relation_copies(self, sources: Tensor, offsets: Tensor | None = None) -> Tensor:
+        """Append relations copied from `sources` (plus optional `offsets` on their vector).
+
+        Supported for families with one vector per relation (`hrr`, `hrr_identity`, `diagonal`,
+        `map`), whose relation parameter is `roles` or `diagonal`.
+        """
+        name = "roles" if hasattr(self.transform, "roles") else "diagonal" if hasattr(self.transform, "diagonal") else None
+        if name is None:
+            raise ValueError(f"relation splitting is not supported for operator {self.operator!r}")
+        current = getattr(self.transform, name)
+        new = current.detach()[sources].clone()
+        if offsets is not None:
+            new = new + offsets.to(new)
+        setattr(self.transform, name, nn.Parameter(torch.cat([current.detach(), new], 0),
+                                                   requires_grad=current.requires_grad))
+        start = self.relation_count
+        self.relation_count += sources.numel()
+        self.transform.relation_count = self.relation_count
+        if self.mode == "attentive":
+            self.relation_keys = nn.Parameter(torch.cat([self.relation_keys.detach(),
+                                                         self.relation_keys.detach()[sources]], 0))
+        return torch.arange(start, self.relation_count, device=current.device)
+
+    def relation_vectors(self) -> Tensor:
+        return getattr(self.transform, "roles", None) if hasattr(self.transform, "roles") else self.transform.diagonal
 
     # -- inspection ---------------------------------------------------------------------------
 
