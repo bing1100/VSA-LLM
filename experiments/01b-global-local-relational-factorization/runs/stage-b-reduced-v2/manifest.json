@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "created_at": "2026-09-30T23:14:44.731042+00:00",
+  "git_sha": "f9d49d80d195979625fd4d09386c360b3d877943",
+  "git_dirty": true,
+  "python": "3.12.4",
+  "platform": "Linux-7.0.0-30-generic-x86_64-with-glibc2.43",
+  "packages": {
+    "torch": "2.11.0",
+    "transformers": "4.54.0",
+    "nltk": "3.8.1",
+    "PyYAML": "6.0.2",
+    "numpy": "2.2.6",
+    "safetensors": "0.5.3",
+    "vsa-embed": null
+  },
+  "device": "cpu",
+  "cuda_device": null,
+  "torch_num_threads": 1,
+  "argv": [
+    "/home/bhux/workplace/VSA-LLM/src/vsa_embed/experiments/wordnet_relations.py",
+    "--config",
+    "experiments/01b-global-local-relational-factorization/stage-b-reduced-v2.yaml",
+    "--output",
+    "experiments/01b-global-local-relational-factorization/runs/stage-b-reduced-v2"
+  ],
+  "config_sha256": "599fc84176d9c104a38432302bf5ae46c27e76eff705274c5c6fa989370c3091",
+  "wordnet": "3.0",
+  "host": {
+    "model": "gpt2",
+    "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "batch_size": 24,
+    "max_length": 64,
+    "anchor_truncation": "gloss"
+  },
+  "anchor_sha256": {
+    "static": "8076c89abece85f523d9ecd59f27a181db89c7f3acedb8f0d427b76e1b7487c8",
+    "contextual": "44014cf2435f90ed98b7cd1dfcee742431c12ffa089d05e99eb5a5a453132183"
+  },
+  "relation_counts": {
+    "hypernym": 80,
+    "instance_hypernym": 80,
+    "member_meronym": 80,
+    "substance_meronym": 80,
+    "part_meronym": 80,
+    "antonym": 80,
+    "attribute": 80
+  },
+  "dropped_same_token_edges": 0
+}

@@ -118,8 +118,8 @@ class FrameComposer(nn.Module):
         normalize_atomics: bool = True, rank: int = 8,
     ) -> None:
         super().__init__()
-        if mode not in {"bundle", "attentive"}:
-            raise ValueError("mode must be 'bundle' or 'attentive'")
+        if mode not in {"bundle", "salience", "attentive"}:
+            raise ValueError("mode must be 'bundle', 'salience' or 'attentive'")
         if concept_factor not in {"induced", "free", "hybrid"}:
             raise ValueError("concept_factor must be 'induced', 'free' or 'hybrid'")
         if weight_mode not in {"softmax", "sigmoid", "raw"}:
@@ -141,6 +141,9 @@ class FrameComposer(nn.Module):
         if frozen:
             self.transform.requires_grad_(False)
         self.key_dimension = key_dimension
+        if mode == "salience":
+            # 01b-style feature salience: one learned logit per relation, no concept or context input.
+            self.relation_salience = nn.Parameter(torch.zeros(relation_count))
         if mode == "attentive":
             self.relation_keys = nn.Parameter(torch.randn(relation_count, key_dimension) / key_dimension**0.5)
             self.atomic_key = nn.Linear(dimension, key_dimension, bias=False)
@@ -195,6 +198,10 @@ class FrameComposer(nn.Module):
         count = concept_ids.numel()
         if self.mode == "bundle":
             return bound.new_ones(edge_index.numel())
+        if self.mode == "salience":
+            logits = self.relation_salience[self.schedule.relations[edge_index]]
+            degrees = self.schedule.degrees[concept_ids].to(logits.dtype)
+            return degrees[segments] * segment_softmax(logits, segments, count)
         static = bound.new_zeros(count, bound.shape[-1]).index_add(0, segments, bound)
         if self.concept_factor == "free":
             factor = self.free_factor[concept_ids]
@@ -307,7 +314,7 @@ class FrameComposer(nn.Module):
                 continue
             if name == "atomics":
                 group = "atomic"
-            elif name.startswith("transform.") or name == "relation_keys":
+            elif name.startswith("transform.") or name in {"relation_keys", "relation_salience"}:
                 group = "relation"
             elif name in {"free_factor", "delta"}:
                 group = "concept_local"

@@ -46,6 +46,7 @@ class DevelopmentalConfig:
     epsilon: float = 0.05
     permutations: int = 200
     p_value: float = 0.01
+    test: str = "permutation"           # or "anderson" (G-means-style normality test on projections)
     merge_cosine: float = 0.98
     freeze_activity: float = 0.0        # freeze vectors whose activity stays below this
     freeze_patience: int = 500
@@ -87,6 +88,23 @@ def split_test(
             exceed += 1
     return {"labels": labels, "momenta": momenta, "direction": direction, "gain": gain,
             "p_value": (1 + exceed) / (1 + permutations)}
+
+
+def anderson_split_test(usages: Tensor, gradients: Tensor) -> dict[str, Any]:
+    """G-means-style alternative: Anderson–Darling normality test of usage projections on `v*`.
+
+    A unimodal (normal) projection means no split; rejection at 1% accepts one. Uses SciPy.
+    """
+    from scipy.stats import anderson
+    labels, momenta = usage_momenta(usages, gradients)
+    direction = top_between_usage_direction(momenta)
+    projections = (momenta @ direction).double().numpy()
+    result = anderson(projections, dist="norm")
+    critical_1pct = float(result.critical_values[list(result.significance_level).index(1.0)])
+    statistic = float(result.statistic)
+    return {"labels": labels, "momenta": momenta, "direction": direction,
+            "gain": split_gain(momenta, direction), "statistic": statistic,
+            "p_value": 0.0 if statistic > critical_1pct else 1.0}
 
 
 def _replace_parameter(optimizer: torch.optim.Optimizer | None, old: nn.Parameter, new: nn.Parameter,
@@ -246,7 +264,10 @@ class DevelopmentalDictionary:
             grads = torch.cat([g for _, g in entries])
             if usages.unique().numel() < self.config.min_usages or usages.numel() < self.config.min_contributions:
                 continue
-            result = split_test(usages, grads, permutations=self.config.permutations, generator=self.generator)
+            if self.config.test == "anderson":
+                result = anderson_split_test(usages, grads)
+            else:
+                result = split_test(usages, grads, permutations=self.config.permutations, generator=self.generator)
             result["contributions"] = int(usages.numel())
             tested.append((vector_id, result))
         self.records.clear()
@@ -324,16 +345,33 @@ class DevelopmentalDictionary:
             go_negative[position] = not sign_of[int(usage_of_edge[position])]
         unobserved = (~observed).nonzero().flatten()
         if unobserved.numel() and self.config.target == "atomics":
-            concept_of = usage_of_edge
             with torch.no_grad():
-                pos_ids = torch.tensor([l for l, p in sign_of.items() if p], device=uses.device)
-                neg_ids = torch.tensor([l for l, p in sign_of.items() if not p], device=uses.device)
-                if pos_ids.numel() and neg_ids.numel():
-                    centre_pos = self.composer.compose(pos_ids).mean(0)
-                    centre_neg = self.composer.compose(neg_ids).mean(0)
-                    rows = self.composer.compose(concept_of[unobserved])
+                features = self._frame_context(usage_of_edge, int(self.composer.schedule.fillers[uses[0]]))
+                observed_idx = observed.nonzero().flatten()
+                negative = go_negative[observed_idx]
+                if bool(negative.any()) and bool((~negative).any()):
+                    centre_neg = features[observed_idx[negative]].mean(0)
+                    centre_pos = features[observed_idx[~negative]].mean(0)
+                    rows = features[unobserved]
                     go_negative[unobserved] = (rows @ centre_neg) > (rows @ centre_pos)
         return go_negative
+
+    def _frame_context(self, concepts: Tensor, excluded_atomic: int) -> Tensor:
+        """Mean of each concept's other atomics (the split atomic left out): the frame context.
+
+        Unobserved usages carry no gradient; their frame's other fillers are the evidence of
+        which sense they use (formulation §3.4). The concept's full composition is a poor router:
+        for trained concepts it is fitted to targets that already contain the sense.
+        """
+        schedule = self.composer.schedule
+        atomics = F.normalize(self.composer.atomic_vectors().detach(), dim=-1)
+        rows = []
+        for concept in concepts.tolist():
+            fillers = schedule.fillers[int(schedule.offsets[concept]):int(schedule.offsets[concept + 1])]
+            others = fillers[fillers != excluded_atomic]
+            rows.append(F.normalize(atomics[others].mean(0), dim=0) if others.numel()
+                        else atomics.new_zeros(atomics.shape[1]))
+        return torch.stack(rows)
 
     # -- consolidation ------------------------------------------------------------------------
 

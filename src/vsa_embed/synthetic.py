@@ -154,19 +154,35 @@ class PolysemyTeacherData:
 def make_polysemy_teacher(
     *, concept_count: int = 600, atomic_count: int = 48, relation_count: int = 6, dimension: int = 64,
     polysemous_atomics: int = 8, polysemous_relations: int = 2, degree_range: tuple[int, int] = (3, 6),
-    holdout_concepts: int = 100, noise_std: float = 0.0, seed: int = 0,
+    holdout_concepts: int = 100, noise_std: float = 0.0, domain_signal: float = 0.5, seed: int = 0,
 ) -> PolysemyTeacherData:
-    """Planted senses: each polysemous label is two hidden vectors used by disjoint concepts."""
+    """Planted senses: each polysemous label is two hidden vectors used by disjoint concepts.
+
+    Each concept belongs to one of two domains, and a polysemous label takes that domain's sense.
+    With `domain_signal > 0`, that fraction of a concept's edges draws its atomic from a
+    domain-specific half of the monosemous atomics, so a concept's frame carries evidence of its
+    domain (as "bank" co-occurs with "money" or with "water"). Without it, the sense of a concept
+    never seen in training is unidentifiable from its frame and no router can beat chance.
+    """
     g = torch.Generator().manual_seed(seed)
     frames = _random_frames(concept_count, atomic_count, relation_count, degree_range, g)
+    poly_atoms = torch.randperm(atomic_count, generator=g)[:polysemous_atomics].sort().values
+    poly_rels = torch.randperm(relation_count, generator=g)[:polysemous_relations].sort().values
+    domain = torch.randint(0, 2, (concept_count,), generator=g)
+    if domain_signal > 0:
+        mono = [a for a in range(atomic_count) if a not in set(poly_atoms.tolist())]
+        pools = (mono[: len(mono) // 2], mono[len(mono) // 2:])
+        for i, frame in enumerate(frames):
+            pool = pools[int(domain[i])]
+            rewritten = set()
+            for relation, atomic in frame:
+                if atomic not in set(poly_atoms.tolist()) and float(torch.rand((), generator=g)) < domain_signal:
+                    atomic = pool[int(torch.randint(len(pool), (), generator=g))]
+                rewritten.add((relation, atomic))
+            frames[i] = sorted(rewritten)
     schedule = FrameSchedule.from_frames(frames)
     sense_atomics = F.normalize(torch.randn(atomic_count, 2, dimension, generator=g), dim=-1)
     sense_roles = F.normalize(torch.randn(relation_count, 2, dimension, generator=g), dim=-1)
-    poly_atoms = torch.randperm(atomic_count, generator=g)[:polysemous_atomics].sort().values
-    poly_rels = torch.randperm(relation_count, generator=g)[:polysemous_relations].sort().values
-    # Each concept belongs to one "domain" (0/1); a polysemous label takes the sense of the
-    # concept's domain, so senses are used by disjoint concept subsets.
-    domain = torch.randint(0, 2, (concept_count,), generator=g)
     concept_of_edge = torch.repeat_interleave(torch.arange(concept_count), schedule.degrees)
     edge_domain = domain[concept_of_edge]
     atom_poly = torch.isin(schedule.fillers, poly_atoms)

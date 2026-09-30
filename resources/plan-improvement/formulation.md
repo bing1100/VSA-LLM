@@ -174,7 +174,7 @@ A second-order alternative (splitting along the minimum eigenvector of a Hessian
 
 ### 3.4 Usages without gradient signal
 
-Rare, held-out and new concepts have no `m^{(u)}` and are not assigned by sign. They route over the siblings with the frame query of §1: `p(θ_s | i) = softmax_s ⟨ū_i, k_{θ_s}⟩`, soft during a commitment window, then hard. This keeps zero-shot composition working after splits and reuses the 01d routing idea with a bounded sibling set instead of a global expert pool.
+Rare, held-out and new concepts have no `m^{(u)}` and are not assigned by sign. They route by their frame context: the mean of the concept's other fillers (the split atomic left out) is compared with the same feature averaged over each child's observed usages, and the nearer child wins (implemented; E0.2 showed that routing by the concept's full composed vector fails, because trained concepts' compositions are fitted to targets that already contain the sense). With attentive composition the same comparison can use the frame query of §1, `p(θ_s | i) = softmax_s ⟨ū_i, k_{θ_s}⟩`, soft during a commitment window, then hard. This keeps zero-shot composition working after splits and reuses the 01d routing idea with a bounded sibling set instead of a global expert pool.
 
 ### 3.5 Merge, prune, allocate
 

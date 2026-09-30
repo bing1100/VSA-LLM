@@ -1,0 +1,87 @@
+experiment: 01b-stage-b-reduced-v2
+protocol: 2
+host:
+  model: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  batch_size: 24
+  max_length: 64
+  anchor_truncation: gloss
+data:
+  relation_types:
+  - hypernym
+  - instance_hypernym
+  - member_meronym
+  - substance_meronym
+  - part_meronym
+  - antonym
+  - attribute
+  max_edges_per_relation: 80
+  min_edges_per_relation: 75
+  selection_seed: 20260717
+  test_fraction: 0.2
+  validation_fraction: 0.0
+  symmetric_relations:
+  - antonym
+  - attribute
+  drop_same_token_edges: false
+tracks:
+- static_raw
+- static_centered
+- contextual_raw
+- contextual_centered
+split_modes:
+- node_disjoint
+- token_disjoint
+- edge_disjoint
+- edge_disjoint_size_matched
+methods:
+- additive
+- relation_mean
+- offset
+- hrr
+- hrr_identity
+- diagonal
+- family: low_rank_identity
+  rank: 8
+- family: low_rank_matched
+  match: hrr
+- shuffled_offset
+- shuffled_hrr
+- shuffled_hrr_identity
+- shuffled_diagonal
+- family: shuffled_low_rank_identity
+  rank: 8
+- family: shuffled_low_rank_matched
+  match: hrr
+seeds:
+- 11
+- 22
+- 33
+fit:
+  rank: 8
+  steps: 250
+  learning_rate: 0.01
+  cosine_weight: 1.0
+  rank_positives: target_set
+  shuffle: derangement
+  max_residual_scale: 0.25
+  max_log_basis_scale: 0.25
+  correction_weight: 0.0
+  offset_weight: 0.0
+  basis_weight: 0.0
+  rank_weight: 0.0
+  rank_temperature: 0.07
+  parameter_free_objective: true
+evaluation:
+  ties: mid
+acceptance:
+  primary_split: node_disjoint
+  primary_track: contextual_centered
+  candidate: hrr
+  primary_control: additive
+  min_mrr_gain: 0.01
+  min_paired_wins: 3
+  min_cosine_gain: 0.0
+  promotion_eligible: false
+device: cpu
+num_threads: 1
