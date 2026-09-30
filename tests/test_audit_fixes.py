@@ -329,3 +329,15 @@ def test_wilson_threshold_is_more_conservative_than_the_point_rule() -> None:
     _, lower_coverage, lower_accuracy = precision_threshold(confidence, correct, 0.9, method="wilson_lower")
     assert lower_coverage < point_coverage
     assert lower_accuracy >= 0.9
+
+
+def test_parameter_free_objective_reports_the_objective_without_an_optimizer() -> None:
+    from vsa_embed.real_relations import fit_host_relations
+    source = F.normalize(torch.randn(6, 4), dim=-1)
+    target = F.normalize(torch.randn(6, 4), dim=-1)
+    data = HostEdges(source, target, torch.arange(6) % 2, torch.arange(6), torch.arange(6))
+    initial, final = fit_host_relations(HostRelationModel(2, 4, "additive"), data, steps=3,
+                                        learning_rate=0.1, cosine_weight=1.0, rank_weight=1.0,
+                                        parameter_free_objective=True)
+    expected = F.mse_loss(source, target) + (1 - F.cosine_similarity(source, target).mean())
+    assert initial == final and initial > float(expected)  # includes the rank term

@@ -29,6 +29,19 @@ class RelationTransform(nn.Module, ABC):
     @abstractmethod
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor: ...
 
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        """Apply `T_rᵀ`, so `⟨T_r x, y⟩ = ⟨x, T_rᵀ y⟩`.
+
+        Every family here is linear in its input, so the vector-Jacobian product at any point is
+        the adjoint; subclasses override it with a closed form where one is cheap.
+        """
+        self._validate(relation_ids, vectors)
+        probe = torch.zeros_like(vectors, requires_grad=True)
+        with torch.enable_grad():
+            output = self.forward(relation_ids, probe)
+            (result,) = torch.autograd.grad(output, probe, grad_outputs=vectors, create_graph=vectors.requires_grad)
+        return result
+
     def complexity(self) -> dict[str, int | str]:
         return {"family": self.family, "parameters": sum(p.numel() for p in self.parameters())}
 
@@ -41,6 +54,9 @@ class AdditiveRelation(RelationTransform):
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         self._validate(relation_ids, vectors)
         return vectors
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self.forward(relation_ids, vectors)
 
 
 class HRRRelation(RelationTransform):
@@ -70,6 +86,11 @@ class HRRRelation(RelationTransform):
         self._validate(relation_ids, vectors)
         return self.algebra.bind(self.roles[relation_ids], vectors)
 
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        # The adjoint of circular convolution is circular correlation (HRR unbinding).
+        self._validate(relation_ids, vectors)
+        return self.algebra.unbind(vectors, self.roles[relation_ids])
+
 
 class MAPRelation(RelationTransform):
     """Relation vectors interpreted as diagonal elementwise operators."""
@@ -84,6 +105,9 @@ class MAPRelation(RelationTransform):
         self._validate(relation_ids, vectors)
         return self.roles[relation_ids] * vectors
 
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self.forward(relation_ids, vectors)
+
 
 class DiagonalRelation(RelationTransform):
     """Unconstrained learned diagonal operators."""
@@ -97,6 +121,9 @@ class DiagonalRelation(RelationTransform):
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         self._validate(relation_ids, vectors)
         return self.diagonal[relation_ids] * vectors
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self.forward(relation_ids, vectors)
 
 
 class LowRankRelation(RelationTransform):
@@ -131,6 +158,11 @@ class LowRankRelation(RelationTransform):
         hidden = torch.einsum("...rd,...d->...r", right, vectors)
         return vectors + torch.einsum("...dr,...r->...d", left, hidden)
 
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        self._validate(relation_ids, vectors)
+        hidden = torch.einsum("...dr,...d->...r", self.left[relation_ids], vectors)
+        return vectors + torch.einsum("...rd,...r->...d", self.right[relation_ids], hidden)
+
 
 class TiedLowRankRelation(RelationTransform):
     """Identity plus a scaled symmetric update `x + U diag(σ) Uᵀ x` per relation.
@@ -155,6 +187,9 @@ class TiedLowRankRelation(RelationTransform):
         basis = self.basis[relation_ids]
         hidden = torch.einsum("...dr,...d->...r", basis, vectors) * self.scales[relation_ids]
         return vectors + torch.einsum("...dr,...r->...d", basis, hidden)
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self.forward(relation_ids, vectors)  # symmetric by construction
 
 
 def matched_tied_rank(target_parameters: int, relation_count: int, dimension: int) -> int:
@@ -181,6 +216,10 @@ class OrthogonalRelation(RelationTransform):
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         self._validate(relation_ids, vectors)
         return torch.einsum("...de,...e->...d", self.matrices()[relation_ids], vectors)
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        self._validate(relation_ids, vectors)
+        return torch.einsum("...ed,...e->...d", self.matrices()[relation_ids], vectors)
 
 
 def create_relation_transform(

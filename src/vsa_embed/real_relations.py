@@ -150,7 +150,6 @@ def fit_host_relations(
     if not parameters and not parameter_free_objective:
         loss = float(1 - F.cosine_similarity(model(train.sources, train.relation_ids), train.targets).mean())
         return loss, loss
-    optimizer = torch.optim.Adam(parameters, lr=learning_rate)
     def objective() -> Tensor:
         prediction = model(train.sources, train.relation_ids)
         data_loss = F.mse_loss(prediction, train.targets) + cosine_weight * (
@@ -168,6 +167,7 @@ def fit_host_relations(
     with torch.no_grad(): initial = float(objective())
     if not parameters:
         return initial, initial
+    optimizer = torch.optim.Adam(parameters, lr=learning_rate)
     for _ in range(steps):
         optimizer.zero_grad(set_to_none=True); loss = objective(); loss.backward(); optimizer.step()
     with torch.no_grad(): final = float(objective())

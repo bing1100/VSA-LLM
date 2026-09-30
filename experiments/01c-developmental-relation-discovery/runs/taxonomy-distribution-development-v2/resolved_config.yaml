@@ -1,0 +1,74 @@
+experiment: 01c4-taxonomy-distribution-development-v2
+protocol: 2
+host:
+  model: gpt2
+  revision: 607a30d783dfa663caf39e06633721c8d4cfcd7e
+  batch_size: 16
+  max_length: 64
+  anchor_truncation: gloss
+data:
+  relation_types:
+  - hypernym
+  - instance_hypernym
+  max_edges_per_relation: 120
+  min_edges_per_relation: 80
+  selection_seed: 20260717
+  test_fraction: 0.25
+  validation_fraction: 0.0
+  symmetric_relations:
+  - antonym
+  - attribute
+  drop_same_token_edges: false
+tracks:
+- contextual_centered
+split_modes:
+- node_disjoint
+methods:
+- offset
+- hrr
+- basis_offset_residual_hrr
+- basis_offset_diagonal_control
+- basis_offset_rotated_diagonal_control
+- family: low_rank_matched
+  match: basis_offset_residual_hrr
+- shuffled_offset
+- shuffled_basis_offset_residual_hrr
+- shuffled_basis_offset_diagonal_control
+- shuffled_basis_offset_rotated_diagonal_control
+- family: shuffled_low_rank_matched
+  match: basis_offset_residual_hrr
+seeds:
+- 17
+- 37
+- 59
+fit:
+  rank: 8
+  steps: 300
+  learning_rate: 0.01
+  cosine_weight: 0.25
+  rank_weight: 1.0
+  rank_temperature: 0.07
+  max_residual_scale: 0.15
+  max_log_basis_scale: 0.2
+  correction_weight: 0.05
+  offset_weight: 0.01
+  basis_weight: 0.05
+  rank_positives: target_set
+  shuffle: derangement
+  parameter_free_objective: true
+evaluation:
+  ties: mid
+acceptance:
+  mode: taxonomy_retrieval
+  primary_split: node_disjoint
+  primary_track: contextual_centered
+  candidate: basis_offset_residual_hrr
+  non_hrr_control: basis_offset_rotated_diagonal_control
+  shuffled_control: shuffled_basis_offset_residual_hrr
+  reconstruction_baseline: offset
+  min_mrr_gain_over_non_hrr: 0.01
+  min_cosine_delta: -0.02
+  min_paired_wins: 2
+  promotion_eligible: false
+device: cpu
+num_threads: 1

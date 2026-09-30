@@ -1,0 +1,147 @@
+{
+  "experiment_stage": "01c",
+  "protocol": 2,
+  "conditions": 312,
+  "primary_split": "node_disjoint",
+  "primary_track": "contextual_centered",
+  "mean_metrics": {
+    "offset": {
+      "cosine": 0.3788441518942515,
+      "mse": 0.0016175933415070176,
+      "target_mrr": 0.2006505678097407,
+      "target_recall_at_10": 0.3829641838868459
+    },
+    "hrr": {
+      "cosine": 0.2749771277109782,
+      "mse": 0.0018880803836509585,
+      "target_mrr": 0.2356319079796473,
+      "target_recall_at_10": 0.37831859787305194
+    },
+    "hrr_identity": {
+      "cosine": 0.27504080533981323,
+      "mse": 0.0018879146858428915,
+      "target_mrr": 0.23605602979660034,
+      "target_recall_at_10": 0.37831859787305194
+    },
+    "basis_offset_residual_hrr": {
+      "cosine": 0.3830648561318715,
+      "mse": 0.0016066019888967276,
+      "target_mrr": 0.21230444312095642,
+      "target_recall_at_10": 0.4003816644350688
+    },
+    "basis_offset_diagonal_control": {
+      "cosine": 0.383174995581309,
+      "mse": 0.0016063151803488533,
+      "target_mrr": 0.21418630083402,
+      "target_recall_at_10": 0.39783714214960736
+    },
+    "basis_offset_rotated_diagonal_control": {
+      "cosine": 0.3839829663435618,
+      "mse": 0.0016042110898221533,
+      "target_mrr": 0.21288295090198517,
+      "target_recall_at_10": 0.39783714214960736
+    },
+    "low_rank_matched": {
+      "cosine": 0.13058500985304514,
+      "mse": 0.002264101601516207,
+      "target_mrr": 0.12048622220754623,
+      "target_recall_at_10": 0.24144395192464194
+    },
+    "shuffled_offset": {
+      "cosine": 0.17212535440921783,
+      "mse": 0.002155923517420888,
+      "target_mrr": 0.09668790300687154,
+      "target_recall_at_10": 0.1824776828289032
+    },
+    "shuffled_hrr": {
+      "cosine": 0.20683863262335458,
+      "mse": 0.002065524458885193,
+      "target_mrr": 0.20601836840311685,
+      "target_recall_at_10": 0.295073280731837
+    },
+    "shuffled_basis_offset_residual_hrr": {
+      "cosine": 0.1980848362048467,
+      "mse": 0.0020883208295951286,
+      "target_mrr": 0.11451899756987889,
+      "target_recall_at_10": 0.20403150220712027
+    },
+    "shuffled_basis_offset_diagonal_control": {
+      "cosine": 0.1980276256799698,
+      "mse": 0.002088469841207067,
+      "target_mrr": 0.11390192806720734,
+      "target_recall_at_10": 0.21846098204453787
+    },
+    "shuffled_basis_offset_rotated_diagonal_control": {
+      "cosine": 0.19850170612335205,
+      "mse": 0.0020872350626935563,
+      "target_mrr": 0.11450650294621785,
+      "target_recall_at_10": 0.21125444769859314
+    },
+    "shuffled_low_rank_matched": {
+      "cosine": 0.07689040650924046,
+      "mse": 0.002403931381801764,
+      "target_mrr": 0.08814139664173126,
+      "target_recall_at_10": 0.20746309558550516
+    }
+  },
+  "validation_metrics": {},
+  "candidate_selection": "named in config",
+  "best_candidate": "basis_offset_residual_hrr",
+  "retrieval_eligible_candidates": [],
+  "reconstruction_baseline": "offset",
+  "retrieval_baseline": "hrr",
+  "non_hrr_control": "basis_offset_rotated_diagonal_control",
+  "matched_shuffled_control": "shuffled_basis_offset_residual_hrr",
+  "cosine_gain_over_reconstruction_baseline": 0.004220704237619999,
+  "cosine_gain_over_reconstruction_baseline_ci": {
+    "mean": 0.004220704237620036,
+    "ci_low": -0.008138123898944423,
+    "ci_high": 0.016579532374184497,
+    "n": 3
+  },
+  "cosine_gain_over_non_hrr_control_ci": {
+    "mean": -0.000918110211690267,
+    "ci_low": -0.0024105174392044905,
+    "ci_high": 0.0005742970158239565,
+    "n": 3
+  },
+  "mrr_delta_from_retrieval_baseline": -0.02332746485869089,
+  "cosine_gain_over_matched_shuffled": 0.1849800199270248,
+  "paired_results": [
+    {
+      "seed": 13,
+      "cosine_gain_over_reconstruction_baseline": -0.0009739995002746582,
+      "mrr_delta_from_retrieval_baseline": -0.030434131622314453,
+      "cosine_gain_over_matched_shuffled": 0.14507466554641724,
+      "cosine_gain_over_non_hrr_control": -0.0010626614093780518
+    },
+    {
+      "seed": 31,
+      "cosine_gain_over_reconstruction_baseline": 0.004694640636444092,
+      "mrr_delta_from_retrieval_baseline": -0.038699209690093994,
+      "cosine_gain_over_matched_shuffled": 0.2203795611858368,
+      "cosine_gain_over_non_hrr_control": -0.0002582967281341553
+    },
+    {
+      "seed": 53,
+      "cosine_gain_over_reconstruction_baseline": 0.008941471576690674,
+      "mrr_delta_from_retrieval_baseline": -0.0008490532636642456,
+      "cosine_gain_over_matched_shuffled": 0.1894858330488205,
+      "cosine_gain_over_non_hrr_control": -0.0014333724975585938
+    }
+  ],
+  "paired_reconstruction_wins": 2,
+  "paired_retrieval_noninferior": 1,
+  "paired_shuffled_wins": 3,
+  "exploratory_criteria_passed": false,
+  "proxy_criteria_only": true,
+  "design_items_not_evaluated": [
+    "2 positive relation-residual R\u00b2",
+    "6 improves more than one relation family",
+    "7 reproduces on a second ontology/domain",
+    "8 stable across target paraphrases/templates",
+    "9 frozen-host behavioral locality"
+  ],
+  "promotion_eligible": false,
+  "gate_passed": false
+}

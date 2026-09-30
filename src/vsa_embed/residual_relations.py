@@ -105,6 +105,14 @@ class ResidualHRRRelation(nn.Module):
     def forward(self, sources: Tensor, relation_ids: Tensor) -> Tensor:
         return self.components(sources, relation_ids)["output"]
 
+    def adjoint_at(self, sources: Tensor, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        """Jacobian transpose at `sources` applied to `vectors` (the map is not linear)."""
+        probe = sources.detach().requires_grad_(True)
+        with torch.enable_grad():
+            output = self.forward(probe, relation_ids)
+            (result,) = torch.autograd.grad(output, probe, grad_outputs=vectors)
+        return result
+
     def diagnostics(self, sources: Tensor, relation_ids: Tensor) -> dict[str, float]:
         with torch.no_grad():
             parts = self.components(sources, relation_ids)
