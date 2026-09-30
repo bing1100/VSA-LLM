@@ -39,7 +39,7 @@
 
 25. Minixhofer, B., Paischer, F., & Rekabsaz, N. (2022). *WECHSEL: Effective Initialization of Subword Embeddings for Cross-lingual Transfer of Monolingual Language Models*. NAACL. <https://doi.org/10.18653/v1/2022.naacl-main.293>
 26. Dobler, K. & de Melo, G. (2024). *FOCUS: Effective Embedding Initialization for Monolingual Specialization of Multilingual Models*. **Preprint/ACL-era work; verify final venue.** <https://arxiv.org/abs/2305.14481>
-27. Ostendorff, M. & Rehm, G. (2024). *CoLLEGe: Concept Embedding Generation for Large Language Models*. **Preprint.** <https://arxiv.org/abs/2403.15362>
+27. Teehan, R., Lake, B., & Ren, M. (2024). *CoLLEGe: Concept Embedding Generation for Large Language Models*. COLM 2024. <https://arxiv.org/abs/2403.15362> *(Corrected 2026-09-30: the earlier entry named the wrong authors.)*
 28. *Zero-shot Cross-lingual Alignment for Embedding Initialization* (2024). Findings of ACL. <https://doi.org/10.18653/v1/2024.findings-acl.358>
 29. *Token Distillation: Attention-aware Input Embeddings for New Tokens* (2025). **Preprint.** <https://arxiv.org/abs/2505.20133>
 30. *Training-Free Tokenizer Transplantation via Orthogonal Matching Pursuit* (2025). **Preprint.** <https://arxiv.org/abs/2506.06607>
@@ -78,7 +78,7 @@
 
 ## Source repository
 
-54. *Learning the Structure of Medical Concepts from Their Descriptions and Ontology with Holographic Embeddings* / HRR-BERT manuscript (2024), local copy: [`../vsa-paper.md`](../vsa-paper.md). The local repository snapshots under `../models-main`, `../bertha_experiments-main`, and `../bert-on-mimic-iv-main` are the implementation evidence reviewed here.
+54. Hu, Yu, Tuinstra, Rezai, Bokadia, DiMaio, Fortin, Vartian & Tripp (2024). *Encoding Medical Ontologies With Holographic Reduced Representations for Transformers*. Joint proceedings of KiL 2024 and DL4KG 2024 (KDD 2024), CEUR-WS Vol-3894, paper 13 — cite this record (corrected 2026-09-30). Earlier manuscript title: *Learning the Structure of Medical Concepts from Their Descriptions and Ontology with Holographic Embeddings* / HRR-BERT manuscript (2024), local copy: [`../vsa-paper.md`](../vsa-paper.md). The local repository snapshots under `../models-main`, `../bertha_experiments-main`, and `../bert-on-mimic-iv-main` are the implementation evidence reviewed here.
 
 ## Search caveats
 

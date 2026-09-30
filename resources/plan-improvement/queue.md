@@ -11,18 +11,18 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 3 | A3 gates and provenance | 0 | — | done (5762dca) |
 | 4 | A4 statistics helpers | 0 | — | done (5762dca) |
 | 5 | A5 splits and nits | 0 | — | done (5762dca) |
-| 6 | A6 protocol-2 re-runs, stale marks, dossier errata, proposal §2 refresh | 0 | A1–A5 | running |
-| 7 | W1 dossier index and roadmap update | W | A6 | todo |
+| 6 | A6 protocol-2 re-runs, stale marks, dossier errata, proposal §2 refresh | 0 | A1–A5 | done |
+| 7 | W1 dossier index and roadmap update | W | A6 | done |
 | 8 | C1 literature search → `related-work.md` | C | — | done (ca06236; baselines applied to experiments.md) |
-| 9 | G0 freeze M1/M3/M4 interfaces | gate | A1–A5, C1 | todo |
+| 9 | G0 freeze M1/M3/M4 interfaces | gate | A1–A5, C1 | done ([gates.md](gates.md)) |
 | 10 | B1 `compose.py` (FrameComposer, M0/M1/M2) | B | A5 | done |
 | 11 | B2 relation adjoints | B | A2 | done |
 | 12 | B9 synthetic teachers for E0 | B | B1 | done |
 | 13 | B3 `context.py` (P1 encoder, P2 sidecar) | B | B1 | done |
 | 14 | B4 `developmental.py` (M3) | B | B1, B2 | done |
-| 15 | D0.1 contextual composition identifiability (CPU) | D | B1, B9 | todo |
-| 16 | D0.3 factored-mapping transfer (CPU) | D | B1, B9 | todo |
-| 17 | D0.2 split detection (CPU) | D | B4, B9 | todo |
+| 15 | D0.1 contextual composition identifiability (CPU) | D | B1, B9 | running |
+| 16 | D0.3 factored-mapping transfer (CPU) | D | B1, B9 | running |
+| 17 | D0.2 split detection (CPU) | D | B4, B9 | running |
 | 18 | G1 mechanisms recover planted structure | gate | D0 | todo |
 | 19 | B5 `span_channel.py` (linker, cardinality report, injection) | B | B1 | todo |
 | 20 | B6 `integrations/transformers.py` (+ SmolLM2-360M download) | B | B5 | todo |

@@ -602,3 +602,25 @@ The first runnable matrix is deliberately narrow:
 - joint cosine/residual-`R²`/MRR reporting.
 
 Only after one model jointly beats the offset reconstruction baseline and preserves the HRR retrieval signal should the 20-expert developmental learner be implemented.
+
+## Errata (2026-09-30, implementation audit)
+
+Source: [implementation audit](../../../plan-improvement/audit.md); corrected re-runs under evaluation protocol 2 in `runs/*-v2/` (configs `*-v2.yaml`, commit `5762dca`, single-threaded CPU). The text above is kept as recorded; these corrections supersede it.
+
+1. **01c.5 "rank-4 low-rank transfer is best" is a leakage artifact (audit F1).** The recorded split held out sources but not their parents: 21–28 of ≈71 test parents per seed were training endpoints. Recomputed from the seed-19 checkpoints, rank-4 low-rank scored 0.5704 MRR on queries whose parent was seen in training and 0.1705 on queries with no seen parent (HRR basis 0.3000 / 0.2559; diagonal control 0.3255 / 0.3158). Under protocol 2, whole neighbourhoods are held out together with their parents (no test parent is a training endpoint):
+
+   | Method | Query MRR | Set R@10 | Set NLL ↓ |
+   |---|---:|---:|---:|
+   | offset | 0.3255 | 0.3919 | 3.1447 |
+   | low-rank rank-4 (12,288 params) | 0.3378 | 0.3784 | 3.7849 |
+   | shuffled low-rank rank-4 | 0.3426 | 0.3468 | 4.0673 |
+   | low-rank parameter-matched | 0.2202 | 0.3333 | 3.3588 |
+   | basis + offset + HRR | 0.3244 | 0.3514 | 3.2933 |
+   | **basis + offset + diagonal control** | **0.3597** | **0.3919** | 3.1476 |
+   | basis + offset + rotated-diagonal control | 0.3414 | 0.3694 | 3.2400 |
+
+   Low-rank no longer leads and ties its own shuffled-label control, so it was not using relation labels. HRR loses to both diagonal controls (vs rotated control −0.0169, per-seed 95% CI [−0.052, +0.018]).
+2. **01c.2 development "basis model on the Pareto frontier" is a pre-fix artifact (audit F4).** With current code its MRR is 0.2145, not 0.2585, and the selector picks a different candidate. `runs/development/`, `runs/smoke/` and `runs/smoke-bounded/` are marked stale.
+3. **The recorded diagonal control could not use its basis (audit F8).** With diagonal binding, `normalize(normalize(r ⊙ (x ⊙ s)) ⊙ s⁻¹) = normalize(r ⊙ x)`, so the basis cancelled and the control had less capacity than HRR at equal parameters. The recorded negatives were therefore conservative. The protocol-2 re-runs add a rotated-diagonal control (diagonal binding inside a fixed random orthogonal mix, basis effective). Results: 01c.3 HRR cosine gain over offset +0.0042 (95% CI [−0.008, +0.017]), rotated control cosine 0.3840 vs HRR 0.3831, MRR still −0.023 below pure HRR; 01c.4 distribution MRR HRR − rotated control −0.0014 (CI [−0.0065, +0.0037]), HRR − recorded diagonal control −0.0098.
+4. **Selection, shuffles and statistics (audit F2, F6, F9).** 01c candidate selection read the test split; shuffled controls left 41–70% of labels unchanged; decisions used point estimates. Protocol 2 names candidates in advance (or selects on validation), uses derangement shuffles, and reports per-seed CIs. `promotion_eligible` now defaults to False.
+5. **Conclusion.** "Fixed global circular-convolution HRR is rejected for one-hop transfer in frozen GPT-2 space" stands and is strengthened: no protocol-2 run shows an HRR advantage over a capacity-fair diagonal operator, and the 01b retrieval gain that motivated 01c also does not survive protocol 2 (01b errata). The program continues in [`../../../plan-improvement/`](../../../plan-improvement/proposal.md), where the operator is an ablation in the joint-training regime.

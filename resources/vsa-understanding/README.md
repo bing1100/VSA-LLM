@@ -4,6 +4,8 @@
 
 This directory explains the HRR/BERTHA code in `../`, reviews adjacent research, and proposes a program for ontology-compositional embeddings in open-weight LLMs.
 
+> **Status update (2026-09-30).** The frozen-host distillation route described below was tested in experiments 01a–01c and did not pass: after the implementation audit's corrected re-runs, circular-convolution composition shows no advantage over identity or a capacity-fair diagonal operator for one-hop transfer in frozen GPT-2 space (errata in the 01b and 01c experiment READMEs). The program now continues as a joint-training, small-LM proposal with the binding operator as an ablation: see [`../plan-improvement/`](../plan-improvement/proposal.md) (proposal, formulation, experiments, audit, tasks, queue). 01d is replaced by the M3 developmental dictionary.
+
 ## Bottom line
 
 The existing work demonstrates a real and useful effect: a token never updated by gradient descent can still acquire a useful representation because its vector is recomputed from atomic components shared with observed concepts. That is **structural transfer**, not ordinary prompt-based zero-shot learning.

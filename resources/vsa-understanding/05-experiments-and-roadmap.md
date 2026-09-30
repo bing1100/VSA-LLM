@@ -169,6 +169,8 @@ Run 00b before promoting a backend and before experiment 06:
 
 ### Consequences for experiments 01–09
 
+> **Errata (2026-09-30).** The 01b and 01c rows below are superseded. 01b's HRR retrieval gain was test-selected and does not survive the corrected protocol (+0.0023, CI [−0.064, +0.069]); 01c is complete and refuted; 01d is replaced by the M3 developmental dictionary of [`../plan-improvement/formulation.md`](../plan-improvement/formulation.md) §3. See the errata in the 01b/01c experiment READMEs and [`../plan-improvement/audit.md`](../plan-improvement/audit.md).
+
 | Experiment | Decision after 00 | Required change |
 |---|---|---|
 | **01a fixed-path factorization** | **Gate failed; retain as negative result** | Do not scale the ancestor-depth HRR recipe. Preserve its leakage controls and additive/shuffled baselines. |

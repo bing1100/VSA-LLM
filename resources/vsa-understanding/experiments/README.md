@@ -34,9 +34,10 @@ These folders convert the ten proposals into experiment seeds. The order maximiz
 
 ## Current status after experiment 01b Stage B
 
-- **Proceed now:** 01c fixed-graph reconstruction rescue; continue 00b and the exact graph/compiler portion of 05 in parallel.
-- **Recorded split result:** 01b Stage B found a seed-consistent HRR retrieval gain, but pure HRR lost reconstruction cosine to identity and relation offset. Direct insertion is not authorized.
-- **Proceed conditionally:** 01d only after a passing 01c operator/target; 02 only after joint reconstruction, discovery, behavior, and locality gates; 03 after a candidate sidecar/overlay.
+- **Status correction (2026-09-30):** 01c is complete and **refuted** (fixed global HRR adds nothing over a capacity-fair diagonal operator for one-hop frozen-host transfer), and the 01b retrieval gain does not survive the corrected evaluation protocol; see the errata in the 01b and 01c READMEs. The program continues in [`../../plan-improvement/`](../../plan-improvement/proposal.md). *(Superseded line: "Proceed now: 01c fixed-graph reconstruction rescue; continue 00b and the exact graph/compiler portion of 05 in parallel.")*
+- **Recorded split result (superseded, see 01b errata):** 01b Stage B found a seed-consistent HRR retrieval gain, but pure HRR lost reconstruction cosine to identity and relation offset. Direct insertion is not authorized. Under protocol 2 the retrieval gain is +0.0023 (CI [−0.064, +0.069]).
+- **01d is replaced** by the M3 developmental dictionary (split statistic, permutation null, routing) of [`../../plan-improvement/formulation.md`](../../plan-improvement/formulation.md) §3, implemented in `src/vsa_embed/developmental.py` and tested first on synthetic teachers (E0.2).
+- **Proceed conditionally (historical):** 01d only after a passing 01c operator/target; 02 only after joint reconstruction, discovery, behavior, and locality gates; 03 after a candidate sidecar/overlay.
 - **Defer:** broad multilingual expansion (04) until insertion/readout work; VSA-backed memory (06) until 00b.
 - **Keep downstream-gated:** 07–09 must not consume the current flat-memory calibrators as if they were promoted artifacts.
 

@@ -297,3 +297,26 @@ Implementation and artifacts:
 - `src/vsa_embed/experiments/wordnet_relations.py`: auditable YAML runner and paired gates;
 - `experiments/01b-global-local-relational-factorization/stage-b-{smoke,reduced}.yaml`;
 - `experiments/01b-global-local-relational-factorization/runs/stage-b-reduced/`.
+
+## Errata (2026-09-30, implementation audit)
+
+Source: [implementation audit](../../../plan-improvement/audit.md); corrected re-run under evaluation protocol 2 in `experiments/01b-global-local-relational-factorization/runs/stage-b-reduced-v2/` (config `stage-b-reduced-v2.yaml`, commit `84d1ff4`). The text above is kept as recorded; these corrections supersede it.
+
+1. **Node count.** The Stage-B graph has **966** synset nodes, not 798 (every artifact says 966). With `attribute` grouped as a symmetric relation (protocol 2) the resampled graph has 974.
+2. **Relation-query accuracy (audit F5a).** For a parameter-free model every candidate relation scores the same and `argmax` returns relation 0, so additive's "accuracy" was exactly the hypernym share of each test set. The statement "HRR 0.216–0.275 … above additive" is therefore empty; offset, diagonal and low-rank scored at least as high as HRR. Protocol 2 reports tie-aware accuracy for parametric models only.
+3. **The retrieval PASS was test-selected (audit F2, F6).** The runner picked the best structured family by test MRR and then tested it on the same rows. The three seed gains (+0.0162, +0.0168, +0.0251) give a 95% t-interval of [0.007, 0.032], whose lower bound is below the gate's own 0.01 margin.
+4. **Protocol-2 re-run (candidate `hrr` named in advance; mid-rank ties; shared candidate sets; derangement shuffles; identity-initialized HRR, identity low-rank and parameter-matched low-rank added).** On the primary node-disjoint contextual-centered condition:
+
+   | Method | Target MRR |
+   |---|---:|
+   | additive | 0.2254 |
+   | hrr | 0.2277 |
+   | hrr_identity | 0.2279 |
+   | **diagonal** | **0.2540** |
+   | offset | 0.2096 |
+   | low_rank_identity (rank 8) | 0.1926 |
+   | low_rank_matched | 0.1772 |
+   | shuffled hrr | 0.1818 |
+
+   HRR − additive per seed: −0.0158, +0.0331, −0.0104 (mean +0.0023, 95% CI [−0.064, +0.069]; 1 of 3 wins). **The retrieval gate no longer passes.** HRR still beats its shuffled-label control in all three seeds (mean +0.046, CI [−0.012, +0.104]), so relation labels carry signal, but the diagonal operator is best and HRR's advantage over identity does not survive. `hrr` and `hrr_identity` give the same result, so initialization was not the issue. The reconstruction verdict (HRR cosine −0.039 vs additive) is unchanged.
+5. **Stale run.** `runs/stage-b-smoke/` is marked stale (its per-relation MRR used 3–11 candidates and its YAML was edited after the run).

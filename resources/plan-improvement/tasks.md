@@ -10,7 +10,7 @@ Dependency-ordered plan for implementing and running the program in [proposal.md
 
 - **ID:** A = audit fixes, B = infrastructure, C = data / access / literature / evaluation protocol, D = experiments (D0–D8 = E0–E8), W = documentation and write-up.
 - **Depends on:** hard prerequisites. **Impacts:** what a task changes or invalidates downstream — the reason it sits where it does.
-- **Status:** all tasks are `todo`. Update in place; do not renumber.
+- **Status:** tracked in [queue.md](queue.md) (execution order and status) and [gates.md](gates.md) (gate decisions). Do not renumber.
 
 ## Critical path
 
