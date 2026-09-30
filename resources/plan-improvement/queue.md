@@ -26,9 +26,9 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 18 | G1 mechanisms recover planted structure | gate | D0 | todo |
 | 19 | B5 `span_channel.py` (linker, cardinality report, injection) | B | B1 | done |
 | 20 | B6 `integrations/transformers.py` (+ SmolLM2-360M download) | B | B5 | done |
-| 21 | B7 from-scratch LM training harness | B | B5 | todo |
-| 22 | B14 `convergence.py` | B | B7 | todo |
-| 23 | B11 local GPU job queue | B | B7 | todo |
+| 21 | B7 from-scratch LM training harness | B | B5 | done |
+| 22 | B14 `convergence.py` | B | B7 | done |
+| 23 | B11 local GPU job queue | B | B7 | done |
 | 24 | B8 evaluation harness (probes, PTQ, faithfulness) | B | B7 | todo |
 | 25 | B10 CI and benchmarks | B | B1–B5 | todo |
 | 26 | C3 general corpus, linking, holdout, cardinality tables | C | B5 | todo |
