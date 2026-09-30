@@ -24,7 +24,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 16 | D0.3 factored-mapping transfer (CPU) | D | B1, B9 | running |
 | 17 | D0.2 split detection (CPU) | D | B4, B9 | running |
 | 18 | G1 mechanisms recover planted structure | gate | D0 | todo |
-| 19 | B5 `span_channel.py` (linker, cardinality report, injection) | B | B1 | todo |
+| 19 | B5 `span_channel.py` (linker, cardinality report, injection) | B | B1 | done |
 | 20 | B6 `integrations/transformers.py` (+ SmolLM2-360M download) | B | B5 | todo |
 | 21 | B7 from-scratch LM training harness | B | B5 | todo |
 | 22 | B14 `convergence.py` | B | B7 | todo |

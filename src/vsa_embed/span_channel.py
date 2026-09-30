@@ -1,0 +1,329 @@
+"""Span-level semantic channel (M4): alias linking, span tables, cardinality, injection.
+
+Linking is deterministic and **prefix-causal**: whether a concept is injected at token `t`
+depends only on the text up to the end of token `t`. Two rules follow, both found while
+implementing formulation §4.2:
+
+- `boundary="prefix"` (default): an alias "ends at token t" if the text up to the end of `t`
+  ends with the alias and the alias starts at a word boundary. The right word boundary is *not*
+  checked, because it depends on token `t+1` ("bank" + "ing"); requiring it would reveal the next
+  token through the presence or absence of an injection. Among aliases ending at `t`, the longest
+  one wins (looking back only), so "new york" is linked at "york" even if "city" follows, and
+  "new york city" is linked again at "city".
+- `boundary="next_token"`: the alias must end at a word boundary and the vector is injected at
+  the token *after* the word (which already reveals that boundary), one step later.
+
+Matching runs on character offsets, so one alias table serves every tokenizer; span lengths in
+subtokens are computed per tokenizer from its offset mapping.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from collections import Counter
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Sequence
+
+import torch
+from torch import Tensor, nn
+from torch.nn import functional as F
+
+from .compose import FrameComposer, FrameSchedule
+
+LINKER_VERSION = "1.0"
+_WORD = re.compile(r"\w", re.UNICODE)
+
+
+def normalize_alias(text: str) -> str:
+    """Lowercase, underscores to spaces, collapse whitespace."""
+    return " ".join(text.replace("_", " ").lower().split())
+
+
+@dataclass
+class AliasTable:
+    """Surface forms → link entries; an entry is a set of concepts sharing that surface form.
+
+    A polysemous surface form links to one entry whose frame is the union of its concepts'
+    frames (formulation §1.2); attentive composition then selects among them.
+    """
+
+    alias_to_entry: dict[str, int]
+    entry_concepts: list[tuple[int, ...]]
+    holdout: frozenset[int] = frozenset()
+
+    @classmethod
+    def from_pairs(cls, pairs: Iterable[tuple[str, int]], *, holdout: Iterable[int] = (),
+                   include_holdout: bool = False) -> "AliasTable":
+        """Build from (alias, concept) pairs. Unless `include_holdout`, held-out concepts and
+        every alias pointing to them are removed (linker holdout, experiments §0.1)."""
+        held = frozenset(int(c) for c in holdout)
+        by_alias: dict[str, set[int]] = {}
+        for alias, concept in pairs:
+            key = normalize_alias(alias)
+            if key and _WORD.search(key):
+                by_alias.setdefault(key, set()).add(int(concept))
+        if not include_holdout:
+            # An alias that can mean a held-out concept is dropped entirely, not just narrowed:
+            # otherwise its surviving senses would still expose the held-out string in training.
+            by_alias = {a: cs for a, cs in by_alias.items() if not cs & held}
+        entries: dict[tuple[int, ...], int] = {}
+        alias_to_entry = {}
+        for alias in sorted(by_alias):
+            concepts = tuple(sorted(by_alias[alias]))
+            alias_to_entry[alias] = entries.setdefault(concepts, len(entries))
+        entry_concepts = [None] * len(entries)
+        for concepts, index in entries.items():
+            entry_concepts[index] = concepts
+        return cls(alias_to_entry, entry_concepts, held)
+
+    def digest(self) -> str:
+        payload = json.dumps({"aliases": sorted(self.alias_to_entry.items()),
+                              "entries": self.entry_concepts, "holdout": sorted(self.holdout),
+                              "version": LINKER_VERSION}).encode()
+        return hashlib.sha256(payload).hexdigest()
+
+    def entry_schedule(self, concept_frames: Sequence[Sequence[tuple[int, int]]]) -> FrameSchedule:
+        """Frames of link entries: the union of member concepts' frames (duplicates removed)."""
+        frames = []
+        for concepts in self.entry_concepts:
+            union: list[tuple[int, int]] = []
+            seen: set[tuple[int, int]] = set()
+            for concept in concepts:
+                for edge in concept_frames[concept]:
+                    if tuple(edge) not in seen:
+                        seen.add(tuple(edge)); union.append(tuple(edge))
+            frames.append(union)
+        return FrameSchedule.from_frames(frames)
+
+
+@dataclass(frozen=True)
+class Span:
+    start_token: int
+    end_token: int        # last subtoken of the alias
+    inject_token: int     # position that receives the vector (== end_token for prefix mode)
+    entry: int
+    confidence: float
+    length: int           # subtokens
+
+
+class CausalLinker:
+    """Longest backward alias match at every token end (see module docstring)."""
+
+    def __init__(self, table: AliasTable, *, boundary: str = "prefix", min_subtokens: int = 2) -> None:
+        if boundary not in {"prefix", "next_token"}:
+            raise ValueError("boundary must be 'prefix' or 'next_token'")
+        self.table, self.boundary, self.min_subtokens = table, boundary, min_subtokens
+        # Reversed character trie: walk backwards from a token end.
+        self.trie: dict[str, Any] = {}
+        self.max_length = 0
+        for alias, entry in table.alias_to_entry.items():
+            node = self.trie
+            for char in reversed(alias):
+                node = node.setdefault(char, {})
+            node["$"] = entry
+            self.max_length = max(self.max_length, len(alias))
+
+    def _match_ending_at(self, lowered: str, end: int) -> tuple[int, int] | None:
+        """Longest alias equal to `lowered[s:end]` with a word boundary before `s`."""
+        node, best, position = self.trie, None, end - 1
+        spaced = False
+        while position >= 0 and end - position <= self.max_length + 1:
+            char = lowered[position]
+            if char.isspace():
+                if spaced:           # collapse runs of whitespace in the text
+                    position -= 1; continue
+                char, spaced = " ", True
+            else:
+                spaced = False
+            node = node.get(char)
+            if node is None:
+                break
+            start = position
+            if "$" in node and (start == 0 or not (lowered[start - 1].isalnum() or lowered[start - 1] == "_")):
+                best = (start, node["$"])
+            position -= 1
+        return best
+
+    def link(self, text: str, offsets: Sequence[tuple[int, int]]) -> list[Span]:
+        """Spans for one text given its tokenizer offset mapping (one (start, end) per token)."""
+        lowered = text.lower()
+        starts = [start for start, _ in offsets]
+        spans: list[Span] = []
+        for token, (token_start, token_end) in enumerate(offsets):
+            if token_end <= token_start:
+                continue
+            match = self._match_ending_at(lowered, token_end)
+            if match is None:
+                continue
+            char_start, entry = match
+            if self.boundary == "next_token":
+                # Inject at the next token, whose presence reveals whether the word ended.
+                if token + 1 >= len(offsets):
+                    continue
+                if token_end < len(lowered) and (lowered[token_end].isalnum() or lowered[token_end] == "_"):
+                    continue
+                inject = token + 1
+            else:
+                inject = token
+            # Token starts are non-decreasing: the last token starting at or before the alias start covers it.
+            first = max(t for t in range(token + 1) if starts[t] <= char_start)
+            length = token - first + 1
+            if length < self.min_subtokens:
+                continue
+            confidence = 1.0 / len(self.table.entry_concepts[entry])
+            spans.append(Span(first, token, inject, entry, confidence, length))
+        return spans
+
+
+def link_batch(linker: CausalLinker, texts: Sequence[str], offsets: Sequence[Sequence[tuple[int, int]]]) -> dict[str, Tensor]:
+    """Flatten spans of a batch into tensors for `SpanChannel`."""
+    rows = [(b, s.start_token, s.end_token, s.inject_token, s.entry, s.confidence, s.length)
+            for b, (text, offset) in enumerate(zip(texts, offsets)) for s in linker.link(text, offset)]
+    if not rows:
+        empty = torch.zeros(0, dtype=torch.long)
+        return {"batch": empty, "start": empty, "end": empty, "inject": empty, "entry": empty,
+                "confidence": torch.zeros(0), "length": empty}
+    columns = list(zip(*rows))
+    return {
+        "batch": torch.tensor(columns[0]), "start": torch.tensor(columns[1]), "end": torch.tensor(columns[2]),
+        "inject": torch.tensor(columns[3]), "entry": torch.tensor(columns[4]),
+        "confidence": torch.tensor(columns[5], dtype=torch.float32), "length": torch.tensor(columns[6]),
+    }
+
+
+# -- cardinality ------------------------------------------------------------------------------
+
+def alias_subtoken_lengths(table: AliasTable, tokenizer: Any) -> dict[str, int]:
+    """Subtoken length of each alias as it appears mid-sentence (with a leading space)."""
+    return {alias: len(tokenizer.encode(" " + alias, add_special_tokens=False)) for alias in table.alias_to_entry}
+
+
+def cardinality_report(
+    table: AliasTable, tokenizer: Any, texts: Iterable[str], *, thresholds: Sequence[int] = (1, 2, 3, 4),
+    boundary: str = "prefix", window: int = 1024,
+) -> list[dict[str, Any]]:
+    """Feasibility table (formulation §4.1) for one tokenizer × alias table × corpus sample.
+
+    For each `ℓ_min`: linkable entries (an alias of ≥ ℓ_min subtokens), entries linked in the
+    corpus, span occurrences, fraction of tokens inside linked spans, occurrences-per-entry
+    histogram, and mean distinct entries per `window`-token window (the channel's per-batch cost).
+    """
+    lengths = alias_subtoken_lengths(table, tokenizer)
+    linker = CausalLinker(table, boundary=boundary, min_subtokens=1)
+    all_spans: list[tuple[int, list[Span]]] = []
+    total_tokens = 0
+    for text in texts:
+        encoded = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
+        offsets = encoded["offset_mapping"]
+        total_tokens += len(offsets)
+        all_spans.append((len(offsets), linker.link(text, offsets)))
+    rows = []
+    for threshold in thresholds:
+        linkable = {entry for alias, entry in table.alias_to_entry.items() if lengths[alias] >= threshold}
+        counts: Counter[int] = Counter()
+        covered = 0
+        windows: list[int] = []
+        for n_tokens, spans in all_spans:
+            kept = [s for s in spans if s.length >= threshold]
+            counts.update(s.entry for s in kept)
+            covered_positions = {t for s in kept for t in range(s.start_token, s.end_token + 1)}
+            covered += len(covered_positions)
+            for start in range(0, max(n_tokens, 1), window):
+                windows.append(len({s.entry for s in kept if start <= s.inject_token < start + window}))
+        histogram = Counter(min(c, 1000) for c in counts.values())
+        rows.append({
+            "min_subtokens": threshold, "linkable_entries": len(linkable), "linked_entries": len(counts),
+            "span_occurrences": sum(counts.values()), "covered_token_fraction": covered / max(1, total_tokens),
+            "tokens": total_tokens,
+            "entries_seen_once": histogram.get(1, 0), "entries_seen_2_to_9": sum(v for k, v in histogram.items() if 2 <= k < 10),
+            "entries_seen_10_plus": sum(v for k, v in histogram.items() if k >= 10),
+            "mean_distinct_entries_per_window": sum(windows) / max(1, len(windows)),
+        })
+    return rows
+
+
+# -- the channel --------------------------------------------------------------------------------
+
+class SpanChannel(nn.Module):
+    """Add gated, projected concept vectors to input embeddings at linked positions.
+
+    `h_t^{(0)} = E[x_t] + 1[t = inject] · g_t · P c_j(q_t)`, `g_t = σ(w_g·[E[x_t]; P c_j; conf] + b_g)`.
+    `mode="free"` replaces composition by a free per-entry table (control C2); `mode="random"`
+    uses fixed random per-entry vectors (control C1); `mode="hashed"` uses a hashed table keyed by
+    the span's subtoken ids (control C1h). Otherwise rows come from the `FrameComposer`.
+    """
+
+    def __init__(self, composer: FrameComposer | None, model_dimension: int, *, entry_count: int,
+                 mode: str = "compose", hashed_buckets: int = 0, gate_bias: float = -2.0,
+                 semantic_dimension: int = 0) -> None:
+        super().__init__()
+        if mode not in {"compose", "free", "random", "hashed"}:
+            raise ValueError("mode must be compose, free, random or hashed")
+        if mode == "compose" and composer is None:
+            raise ValueError("compose mode needs a FrameComposer")
+        self.mode, self.composer, self.entry_count = mode, composer, entry_count
+        source_dimension = composer.atomics.shape[1] if mode == "compose" else model_dimension
+        if mode == "compose":
+            self.projector = nn.Linear(source_dimension, model_dimension, bias=False)
+        elif mode == "free":
+            self.table = nn.Embedding(entry_count, model_dimension)
+            nn.init.normal_(self.table.weight, std=model_dimension**-0.5)
+        elif mode == "random":
+            self.register_buffer("table_fixed", torch.randn(entry_count, model_dimension) / model_dimension**0.5)
+            self.scale = nn.Parameter(torch.ones(()))
+        else:
+            if hashed_buckets < 1:
+                raise ValueError("hashed mode needs hashed_buckets")
+            self.table = nn.Embedding(hashed_buckets, model_dimension)
+            nn.init.normal_(self.table.weight, std=model_dimension**-0.5)
+            self.hashed_buckets = hashed_buckets
+        self.gate = nn.Linear(2 * model_dimension + 1, 1)
+        nn.init.zeros_(self.gate.weight); nn.init.constant_(self.gate.bias, gate_bias)
+        self.semantic_head = nn.Linear(model_dimension, model_dimension, bias=False) if semantic_dimension else None
+
+    def rows(self, spans: dict[str, Tensor], input_ids: Tensor | None = None, context: Tensor | None = None) -> Tensor:
+        entries = spans["entry"]
+        if self.mode == "compose":
+            return self.projector(self.composer.compose(entries, context))
+        if self.mode == "free":
+            return self.table(entries)
+        if self.mode == "random":
+            return self.scale * self.table_fixed[entries]
+        if input_ids is None:
+            raise ValueError("hashed mode needs input_ids")
+        keys = []
+        for b, s, e in zip(spans["batch"].tolist(), spans["start"].tolist(), spans["end"].tolist()):
+            keys.append(hash(tuple(input_ids[b, s:e + 1].tolist())) % self.hashed_buckets)
+        return self.table(torch.tensor(keys, device=entries.device))
+
+    def forward(self, embeddings: Tensor, spans: dict[str, Tensor], *, input_ids: Tensor | None = None,
+                context: Tensor | None = None) -> Tensor:
+        """`embeddings`: (batch, time, d). `context`: (spans, context_dim) or None."""
+        if spans["entry"].numel() == 0:
+            return embeddings
+        batch, position = spans["batch"].to(embeddings.device), spans["inject"].to(embeddings.device)
+        rows = self.rows({k: v.to(embeddings.device) for k, v in spans.items()}, input_ids, context).to(embeddings.dtype)
+        token_vectors = embeddings[batch, position]
+        confidence = spans["confidence"].to(embeddings.device, embeddings.dtype)[:, None]
+        gate = torch.sigmoid(self.gate(torch.cat([token_vectors, rows, confidence], -1)))
+        addition = torch.zeros_like(embeddings)
+        addition = addition.index_put((batch, position), gate * rows, accumulate=True)
+        return embeddings + addition
+
+    def semantic_loss(self, hidden: Tensor, spans: dict[str, Tensor], *, temperature: float = 0.1,
+                      input_ids: Tensor | None = None) -> Tensor:
+        """InfoNCE between `W_o h_{s−1}` and the span's concept row (formulation §4.3)."""
+        if self.semantic_head is None:
+            raise ValueError("channel built without semantic_dimension")
+        keep = spans["start"] > 0
+        if not bool(keep.any()):
+            return hidden.new_zeros(())
+        subset = {k: v[keep] for k, v in spans.items()}
+        queries = self.semantic_head(hidden[subset["batch"], subset["start"] - 1])
+        rows = self.rows(subset, input_ids)
+        unique, inverse = torch.unique(subset["entry"], return_inverse=True)
+        keys = torch.zeros(unique.numel(), rows.shape[1], device=rows.device, dtype=rows.dtype).index_copy(0, inverse, rows)
+        logits = F.normalize(queries, dim=-1) @ F.normalize(keys, dim=-1).T / temperature
+        return F.cross_entropy(logits, inverse)
