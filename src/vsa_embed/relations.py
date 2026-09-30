@@ -44,13 +44,26 @@ class AdditiveRelation(RelationTransform):
 
 
 class HRRRelation(RelationTransform):
-    """Relation vectors interpreted as circulant HRR operators."""
+    """Relation vectors interpreted as circulant HRR operators.
+
+    The historical `hrr` family starts from random roles (`cos(T x, x) ≈ 0`), while every
+    other family starts at the identity. `identity_init=True` (family `hrr_identity`) starts
+    from the HRR identity element, a unit impulse whose spectrum is all ones, plus small noise,
+    so family and initialization can be separated.
+    """
 
     family = "hrr"
 
-    def __init__(self, relation_count: int, dimension: int) -> None:
+    def __init__(self, relation_count: int, dimension: int, *, identity_init: bool = False,
+                 init_noise: float = 0.01) -> None:
         super().__init__(relation_count, dimension)
-        self.roles = nn.Parameter(torch.randn(relation_count, dimension) / dimension**0.5)
+        if identity_init:
+            self.family = "hrr_identity"
+            roles = init_noise * torch.randn(relation_count, dimension) / dimension**0.5
+            roles[:, 0] += 1.0
+        else:
+            roles = torch.randn(relation_count, dimension) / dimension**0.5
+        self.roles = nn.Parameter(roles)
         self.algebra = HRRAlgebra()
 
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
@@ -87,18 +100,29 @@ class DiagonalRelation(RelationTransform):
 
 
 class LowRankRelation(RelationTransform):
-    """Identity plus a relation-specific rank-r update."""
+    """Identity plus a relation-specific rank-r update.
+
+    The historical `low_rank` family initializes both factors randomly, so it is not the
+    identity at initialization. `identity_init=True` (family `low_rank_identity`) zeroes the
+    left factor, which makes `T(x) = x` at step 0 while keeping gradients alive.
+    """
 
     family = "low_rank"
 
-    def __init__(self, relation_count: int, dimension: int, rank: int = 8) -> None:
+    def __init__(self, relation_count: int, dimension: int, rank: int = 8, *,
+                 identity_init: bool = False) -> None:
         super().__init__(relation_count, dimension)
         if not 1 <= rank <= dimension:
             raise ValueError("rank must be in [1, dimension]")
         self.rank = rank
         scale = dimension**-0.5
-        self.left = nn.Parameter(torch.randn(relation_count, dimension, rank) * scale)
-        self.right = nn.Parameter(torch.randn(relation_count, rank, dimension) * scale)
+        left = torch.randn(relation_count, dimension, rank) * scale
+        right = torch.randn(relation_count, rank, dimension) * scale
+        if identity_init:
+            self.family = "low_rank_identity"
+            left = torch.zeros_like(left)
+        self.left = nn.Parameter(left)
+        self.right = nn.Parameter(right)
 
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         self._validate(relation_ids, vectors)
@@ -106,6 +130,36 @@ class LowRankRelation(RelationTransform):
         left = self.left[relation_ids]
         hidden = torch.einsum("...rd,...d->...r", right, vectors)
         return vectors + torch.einsum("...dr,...r->...d", left, hidden)
+
+
+class TiedLowRankRelation(RelationTransform):
+    """Identity plus a scaled symmetric update `x + U diag(σ) Uᵀ x` per relation.
+
+    Costs `rank · (dimension + 1)` parameters per relation, so rank 1 matches a `d`-parameter
+    family such as `hrr` or `diagonal` to within one scalar; the untied `low_rank` family
+    cannot go below `2d`. `σ` starts at zero, so the transform starts at the identity.
+    """
+
+    family = "low_rank_tied"
+
+    def __init__(self, relation_count: int, dimension: int, rank: int = 1) -> None:
+        super().__init__(relation_count, dimension)
+        if not 1 <= rank <= dimension:
+            raise ValueError("rank must be in [1, dimension]")
+        self.rank = rank
+        self.basis = nn.Parameter(torch.randn(relation_count, dimension, rank) * dimension**-0.5)
+        self.scales = nn.Parameter(torch.zeros(relation_count, rank))
+
+    def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        self._validate(relation_ids, vectors)
+        basis = self.basis[relation_ids]
+        hidden = torch.einsum("...dr,...d->...r", basis, vectors) * self.scales[relation_ids]
+        return vectors + torch.einsum("...dr,...r->...d", basis, hidden)
+
+
+def matched_tied_rank(target_parameters: int, relation_count: int, dimension: int) -> int:
+    """Largest tied low-rank rank whose parameter count does not exceed the target (min 1)."""
+    return max(1, min(dimension, target_parameters // (relation_count * (dimension + 1))))
 
 
 class OrthogonalRelation(RelationTransform):
@@ -135,9 +189,12 @@ def create_relation_transform(
     factories = {
         "additive": lambda: AdditiveRelation(relation_count, dimension),
         "hrr": lambda: HRRRelation(relation_count, dimension),
+        "hrr_identity": lambda: HRRRelation(relation_count, dimension, identity_init=True),
         "map": lambda: MAPRelation(relation_count, dimension),
         "diagonal": lambda: DiagonalRelation(relation_count, dimension),
         "low_rank": lambda: LowRankRelation(relation_count, dimension, rank),
+        "low_rank_identity": lambda: LowRankRelation(relation_count, dimension, rank, identity_init=True),
+        "low_rank_tied": lambda: TiedLowRankRelation(relation_count, dimension, rank),
         "orthogonal": lambda: OrthogonalRelation(relation_count, dimension),
     }
     try:

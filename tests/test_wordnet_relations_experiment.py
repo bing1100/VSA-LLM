@@ -37,7 +37,8 @@ def test_stage_b_runner_writes_auditable_artifacts(tmp_path: Path, monkeypatch) 
         "device": "cpu",
     }
     result = experiment.run(config, tmp_path)
-    assert result["gate_passed"]
+    assert result["retrieval_gate_passed"]
+    assert not result["promotion_eligible"] and not result["gate_passed"]
     for name in ("metrics.csv", "splits.csv", "nodes.csv", "edges.csv", "relation_models.pt",
                  "summary.json", "resolved_config.yaml", "manifest.json", "report.md"):
         assert (tmp_path / name).is_file()
@@ -64,7 +65,9 @@ def test_01c_summary_requires_reconstruction_and_retrieval() -> None:
         "min_paired_wins": 2, "require_matched_shuffled": True,
     }}
     result = experiment.summarize(rows, config)
-    assert result["gate_passed"]
+    assert result["exploratory_criteria_passed"]
+    # promotion_eligible now defaults to False (audit F10), so the final gate stays closed.
+    assert not result["promotion_eligible"] and not result["gate_passed"]
     assert result["best_candidate"] == "offset_residual_hrr"
 
 

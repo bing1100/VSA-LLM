@@ -5,11 +5,8 @@ from __future__ import annotations
 import argparse
 import csv
 import itertools
-import json
-import platform
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +16,7 @@ import yaml
 from vsa_embed.algebra import create_algebra
 from vsa_embed.atomics import random_hypervectors
 from vsa_embed.metrics import retrieval_metrics
+from vsa_embed.provenance import prepare_output_dir, write_run_metadata
 
 
 DTYPES = {"float32": torch.float32, "float64": torch.float64}
@@ -104,7 +102,7 @@ def run_trial(trial: Trial, *, candidate_count: int, query_count: int, device: s
 
 
 def run(config: dict[str, Any], output_dir: Path, *, device: str = "cpu") -> list[dict[str, Any]]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    prepare_output_dir(output_dir)
     trials = _trial_grid(config)
     candidate_count = int(config.get("candidate_count", 2048))
     query_count = int(config.get("query_count", 32))
@@ -113,15 +111,7 @@ def run(config: dict[str, Any], output_dir: Path, *, device: str = "cpu") -> lis
     with (output_dir / "metrics.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader(); writer.writerows(results)
-    (output_dir / "resolved_config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
-    manifest = {
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "python": platform.python_version(),
-        "torch": torch.__version__,
-        "device": device,
-        "trials": len(results),
-    }
-    (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    write_run_metadata(output_dir, config, device=device, trials=len(results))
     _write_report(results, output_dir / "report.md")
     return results
 

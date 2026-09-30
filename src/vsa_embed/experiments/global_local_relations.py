@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import platform
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +18,7 @@ from vsa_embed.global_local import (
     make_synthetic_relations,
     relational_metrics,
 )
+from vsa_embed.provenance import prepare_output_dir, write_run_metadata
 
 
 def _spec(value: str | dict[str, Any]) -> dict[str, Any]:
@@ -32,7 +31,7 @@ def _parameter_count(model: torch.nn.Module) -> int:
 
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     """Run nested learning curves and write reproducible Stage-A artifacts."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    prepare_output_dir(output_dir)
     synthetic = config["synthetic"]
     fit_config = config["fit"]
     budgets = sorted(int(x) for x in config["data_budgets"])
@@ -95,14 +94,10 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         for row in rows:
             handle.write(json.dumps(row) + "\n")
     torch.save({"schema_version": 1, "models": checkpoints}, output_dir / "relation_transforms.pt")
-    (output_dir / "resolved_config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
-    manifest = {
-        "schema_version": 1, "created_at": datetime.now(timezone.utc).isoformat(),
-        "python": platform.python_version(), "torch": torch.__version__,
-        "split": "nested_relation_balanced_prefix_with_fixed_test",
-        "edge_specific_parameters": 0, "concept_specific_parameters": 0,
-    }
-    (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    write_run_metadata(
+        output_dir, config, device="cpu", split="nested_relation_balanced_prefix_with_fixed_test",
+        edge_specific_parameters=0, concept_specific_parameters=0,
+    )
     summary = summarize(rows, config)
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     (output_dir / "report.md").write_text(render_report(summary, rows, config))

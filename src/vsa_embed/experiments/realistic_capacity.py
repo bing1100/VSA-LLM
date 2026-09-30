@@ -19,6 +19,8 @@ from torch.nn import functional as F
 from vsa_embed.algebra import create_algebra
 from vsa_embed.atomics import correlated_hypervectors, random_hypervectors
 from vsa_embed.confidence import expected_calibration_error, fit_logistic_calibrator, precision_threshold
+from vsa_embed.provenance import prepare_output_dir, write_run_metadata
+from vsa_embed.statistics import wilson_interval
 
 
 @dataclass(frozen=True)
@@ -108,11 +110,12 @@ def _tensor(rows: list[dict[str, Any]], key: str) -> torch.Tensor:
 
 
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
-    output_dir.mkdir(parents=True, exist_ok=True)
     calibration_seeds = list(config["calibration_seeds"])
     evaluation_seeds = list(config["evaluation_seeds"])
     if set(calibration_seeds) & set(evaluation_seeds):
         raise ValueError("calibration and evaluation seeds must be disjoint")
+    prepare_output_dir(output_dir)
+    config = {"threshold_method": "point", **config}
     profiles = config["degree_profile_definitions"]
     all_rows: list[dict[str, Any]] = []
     summaries, models = [], {}
@@ -125,11 +128,16 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         calibrator = fit_logistic_calibrator(_tensor(train, "margin"), _tensor(train, "correct"))
         train_conf = calibrator.predict(_tensor(train, "margin"))
         test_conf = calibrator.predict(_tensor(test, "margin"))
-        threshold, calibration_coverage, calibration_accuracy = precision_threshold(train_conf, _tensor(train, "correct").bool(), config["target_accepted_accuracy"])
+        threshold, calibration_coverage, calibration_accuracy = precision_threshold(
+            train_conf, _tensor(train, "correct").bool(), config["target_accepted_accuracy"],
+            method=config["threshold_method"],
+        )
         accepted = test_conf >= threshold
         test_correct = _tensor(test, "correct").bool()
         coverage = accepted.float().mean().item()
         selective_accuracy = test_correct[accepted].float().mean().item() if accepted.any() else 0.0
+        accepted_n, accepted_correct = int(accepted.sum()), int(test_correct[accepted].sum())
+        selective_ci = wilson_interval(accepted_correct, accepted_n) if accepted_n else (0.0, 0.0)
         key = "|".join(map(str, asdict(condition).values()))
         models[key] = {**asdict(condition), **calibrator.to_dict(), "threshold": threshold}
         for row, confidence, is_accepted in zip(test, test_conf, accepted):
@@ -144,6 +152,9 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
             "brier": torch.mean((test_conf - test_correct.float()) ** 2).item(), "threshold": threshold,
             "calibration_coverage": calibration_coverage, "calibration_selective_accuracy": calibration_accuracy,
             "evaluation_coverage": coverage, "evaluation_selective_accuracy": selective_accuracy,
+            "evaluation_accepted_n": accepted_n,
+            "evaluation_selective_accuracy_ci_low": selective_ci[0],
+            "evaluation_selective_accuracy_ci_high": selective_ci[1],
         })
     _write_csv(output_dir / "observations.csv", all_rows)
     _write_csv(output_dir / "summary.csv", summaries)
@@ -152,7 +163,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "python": platform.python_version(), "torch": torch.__version__, "models": models,
     }
     (output_dir / "capacity_model.json").write_text(json.dumps(artifact, indent=2) + "\n")
-    (output_dir / "resolved_config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
+    write_run_metadata(output_dir, config, device="cpu")
     _write_report(summaries, output_dir / "report.md", config)
     return {"conditions": len(summaries), "observations": len(all_rows)}
 
@@ -176,6 +187,22 @@ def _write_report(rows: list[dict[str, Any]], path: Path, config: dict[str, Any]
         and r["evaluation_selective_accuracy"] >= config["target_accepted_accuracy"]
         for r in rows
     )
+    confident = sum(
+        r["evaluation_coverage"] > 0
+        and r["evaluation_selective_accuracy_ci_low"] >= config["target_accepted_accuracy"]
+        for r in rows
+    )
+    promote = both == len(rows) and confident == len(rows)
+    cells: dict[tuple[Any, ...], dict[str, float]] = {}
+    for r in rows:
+        cell = (r["dimension"], r["correlation"], r["degree_profile"], r["noise_std"])
+        cells.setdefault(cell, {})[r["algebra"]] = r["top1"]
+    winners = {max(scores, key=scores.get) for scores in cells.values() if len(scores) > 1}
+    dominance = (
+        f"- {next(iter(winners))} has the best top-1 in every condition cell."
+        if len(winners) == 1 else
+        f"- No algebra has the best top-1 in every condition cell (cell winners: {sorted(winners)})."
+    )
 
     def grouped_finding(field: str, label: str, metrics: tuple[str, ...]) -> str:
         values = sorted({r[field] for r in rows}, key=str)
@@ -194,12 +221,14 @@ def _write_report(rows: list[dict[str, Any]], path: Path, config: dict[str, Any]
         f"- ECE gate (`≤ {config['max_ece']:.2f}`): **{passing}/{len(rows)} conditions pass**.",
         f"- Held-out selective accuracy (`≥ {config['target_accepted_accuracy']:.2f}`, nonzero coverage): **{selective}/{len(rows)} pass**.",
         f"- Both calibration gates: **{both}/{len(rows)} pass**.",
-        "- **Decision: do not promote a universal default backend or confidence policy.**",
+        f"- Selective accuracy with the Wilson 95% lower bound at or above target: **{confident}/{len(rows)}**.",
+        f"- Threshold rule: `{config.get('threshold_method', 'point')}`.",
+        f"- **Decision (computed): {'promote' if promote else 'do not promote'} a universal default backend or confidence policy.**",
         "", "## Aggregate findings", "",
         grouped_finding("dimension", "Dimension", ("top1", "ece")),
         grouped_finding("correlation", "Candidate correlation", ("top1", "evaluation_coverage")),
         grouped_finding("degree_profile", "Degree profile", ("top1", "ece", "evaluation_selective_accuracy")),
-        "- No algebra dominates consistently enough to justify selection before degree-aware calibration and sharding.",
+        dominance,
         "", "Calibration and evaluation use disjoint seeds. Confidence is based only on the observable top-1/top-2 similarity gap.", "",
     ]
     path.write_text("\n".join(lines))

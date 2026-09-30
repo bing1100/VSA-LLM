@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import csv
 import itertools
-import json
-import platform
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,6 +18,7 @@ from vsa_embed.factorization import (
     geometry_metrics,
     nearest_recipe_predictions,
 )
+from vsa_embed.provenance import prepare_output_dir, write_run_metadata
 
 
 def synthetic_ontology(config: dict[str, Any], seed: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -94,7 +93,7 @@ def _fit_method(
 
 
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    prepare_output_dir(output_dir)
     rows: list[dict[str, Any]] = []
     saved_model: OntologyFactorizer | None = None
     for seed in config["seeds"]:
@@ -125,9 +124,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "state_dict": saved_model.state_dict() if saved_model is not None else {},
     }
     torch.save(artifact, output_dir / "factorizer.pt")
-    (output_dir / "resolved_config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
-    manifest = {"schema_version": 1, "python": platform.python_version(), "torch": torch.__version__}
-    (output_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    write_run_metadata(output_dir, config, device="cpu")
     report = [
         "# Experiment 01 synthetic factorization sandbox", "",
         "| Method | Mean held-out kNN overlap |", "|---|---:|",

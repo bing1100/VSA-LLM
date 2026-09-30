@@ -78,7 +78,10 @@ class UnitaryHRRAlgebra(HRRAlgebra):
     @staticmethod
     def make_role(vector: Tensor) -> Tensor:
         spectrum = torch.fft.rfft(vector)
-        phase = spectrum / spectrum.abs().clamp_min(1e-8)
+        magnitude = spectrum.abs()
+        # Exactly-zero bins (common for bipolar input) have no phase; use phase 1 there so
+        # the role stays unitary instead of losing that frequency.
+        phase = torch.where(magnitude > 1e-8, spectrum / magnitude.clamp_min(1e-8), torch.ones_like(spectrum))
         # DC and Nyquist bins must be real for irfft to represent a real signal.
         phase[..., 0] = torch.ones_like(phase[..., 0])
         if vector.shape[-1] % 2 == 0:

@@ -65,16 +65,36 @@ def expected_calibration_error(confidence: Tensor, correct: Tensor, bins: int = 
     )
 
 
-def precision_threshold(confidence: Tensor, correct: Tensor, target_accuracy: float) -> tuple[float, float, float]:
-    """Choose maximum-coverage calibration threshold meeting target accuracy."""
+def precision_threshold(
+    confidence: Tensor, correct: Tensor, target_accuracy: float, *, method: str = "point",
+) -> tuple[float, float, float]:
+    """Choose maximum-coverage calibration threshold meeting target accuracy.
+
+    `method="point"` requires the calibration point estimate to reach the target, which puts
+    calibration accuracy right at the target and lets held-out accuracy fall below it about
+    half the time. `method="wilson_lower"` requires the Wilson 95% lower bound of the accepted
+    prefix to reach the target instead, trading coverage for a held-out margin.
+    """
+    if method not in {"point", "wilson_lower"}:
+        raise ValueError("method must be 'point' or 'wilson_lower'")
     order = confidence.argsort(descending=True)
     ordered_conf = confidence[order]
-    cumulative_accuracy = correct[order].float().cumsum(0) / torch.arange(1, order.numel() + 1)
+    counts = torch.arange(1, order.numel() + 1, device=confidence.device)
+    cumulative_correct = correct[order].float().cumsum(0)
+    cumulative_accuracy = cumulative_correct / counts
+    if method == "wilson_lower":
+        z = 1.96
+        p, n = cumulative_accuracy, counts.to(cumulative_accuracy.dtype)
+        centre = (p + z * z / (2 * n)) / (1 + z * z / n)
+        half = z * torch.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+        criterion = centre - half
+    else:
+        criterion = cumulative_accuracy
     # Thresholding includes all confidence ties. Only evaluate prefixes ending
     # at a tie boundary so reported calibration coverage is realizable.
     tie_ends = torch.ones_like(ordered_conf, dtype=torch.bool)
     tie_ends[:-1] = ordered_conf[:-1] != ordered_conf[1:]
-    valid = ((cumulative_accuracy >= target_accuracy) & tie_ends).nonzero(as_tuple=False).flatten()
+    valid = ((criterion >= target_accuracy) & tie_ends).nonzero(as_tuple=False).flatten()
     if valid.numel() == 0:
         return 1.0, 0.0, 0.0
     selected = int(valid[-1])

@@ -89,8 +89,10 @@ def make_synthetic_relations(
     sources = F.normalize(torch.randn(n, dimension, generator=g), dim=-1)
     edge_features = torch.randn(n, edge_feature_dimension, generator=g)
     concept_features = torch.randn(n, concept_feature_dimension, generator=g)
-    torch.manual_seed(seed + 10_000)
-    teacher = create_relation_transform(family, relation_count, dimension, rank=rank)
+    # Teacher initialization draws from the global RNG; fork it so callers' streams are untouched.
+    with torch.random.fork_rng(devices=[]):
+        torch.manual_seed(seed + 10_000)
+        teacher = create_relation_transform(family, relation_count, dimension, rank=rank)
     # Learners start near identity where useful, but synthetic teachers must be
     # non-degenerate and relation-specific or the identity control can explain them.
     with torch.no_grad():
