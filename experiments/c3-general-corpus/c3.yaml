@@ -1,0 +1,24 @@
+# C3: general-track corpus (FineWeb-Edu sample-10BT shards 000-001) linked with WordNet, GPT-2 BPE.
+experiment: c3-general-corpus
+seed: 20261001
+tokenizer: gpt2
+workers: 10
+paths:
+  data_root: ~/data/vsa-llm/c3/wordnet-gpt2-v1
+  shards:
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/001_00000.parquet   # evaluation documents come first
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_docs: 5000
+  presample_docs: 20000
+  holdout_fraction: 0.10
+  holdout_min_count: 5
+  min_subtokens: 2
+  train_tokens: 1100000000
+  train_min_subtokens: 2
+  l1_slice_tokens: 300000000
+  cardinality_docs: 2000
+cardinality_tokenizers: [gpt2, HuggingFaceTB/SmolLM2-135M, Qwen/Qwen2.5-0.5B]

@@ -32,7 +32,8 @@ from torch.nn import functional as F
 
 from .compose import FrameComposer, FrameSchedule
 
-LINKER_VERSION = "1.0"
+LINKER_VERSION = "1.1"   # 1.1: trie end marker can no longer collide with a "$" in text
+_END = object()          # trie end marker; not a character, so it cannot collide with text
 _WORD = re.compile(r"\w", re.UNICODE)
 
 
@@ -132,7 +133,7 @@ class CausalLinker:
             node = self.trie
             for char in reversed(alias):
                 node = node.setdefault(char, {})
-            node["$"] = entry
+            node[_END] = entry
             self.max_length = max(self.max_length, len(alias))
 
     def _match_ending_at(self, lowered: str, end: int) -> tuple[int, int] | None:
@@ -151,8 +152,8 @@ class CausalLinker:
             if node is None:
                 break
             start = position
-            if "$" in node and (start == 0 or not (lowered[start - 1].isalnum() or lowered[start - 1] == "_")):
-                best = (start, node["$"])
+            if _END in node and (start == 0 or not (lowered[start - 1].isalnum() or lowered[start - 1] == "_")):
+                best = (start, node[_END])
             position -= 1
         return best
 

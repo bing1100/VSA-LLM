@@ -139,3 +139,11 @@ def test_training_view_keeps_entry_ids_and_drops_heldout_aliases() -> None:
     assert "aspirin" not in train.alias_to_entry and "aspirin" in full.alias_to_entry
     assert train.alias_to_entry["bank"] == full.alias_to_entry["bank"]
     assert full.heldout_entries() == {full.alias_to_entry["aspirin"]}
+
+
+def test_dollar_signs_in_text_do_not_break_the_trie() -> None:
+    t = AliasTable.from_pairs([("us$", 0), ("cash", 1)])
+    linker = CausalLinker(t, min_subtokens=1)
+    text = "it cost us$ 5 in $$ cash"
+    spans = linker.link(text, word_piece_offsets(text))
+    assert {t.entry_concepts[s.entry] for s in spans} == {(0,), (1,)}

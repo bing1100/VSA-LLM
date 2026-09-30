@@ -26,11 +26,18 @@ from ..span_channel import AliasTable, CausalLinker
 SPAN_FIELDS = ("start", "end", "inject", "entry", "length")
 
 
-def _encode_batch(args: tuple[str, str, AliasTable, str, int, list[str]]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]]]:
-    tokenizer_name, revision, table, boundary, min_subtokens, texts = args
-    from transformers import AutoTokenizer  # imported in workers
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, revision=revision or None, local_files_only=True)
-    linker = CausalLinker(table, boundary=boundary, min_subtokens=min_subtokens)
+_WORKER: dict[str, Any] = {}
+
+
+def _init_worker(tokenizer_name: str, revision: str, table: AliasTable, boundary: str, min_subtokens: int) -> None:
+    """Load the tokenizer and build the linker once per worker process."""
+    from transformers import AutoTokenizer
+    _WORKER["tokenizer"] = AutoTokenizer.from_pretrained(tokenizer_name, revision=revision or None, local_files_only=True)
+    _WORKER["linker"] = CausalLinker(table, boundary=boundary, min_subtokens=min_subtokens)
+
+
+def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]]]:
+    tokenizer, linker = _WORKER["tokenizer"], _WORKER["linker"]
     encoded = tokenizer(texts, return_offsets_mapping=True, add_special_tokens=False)
     tokens, spans = [], []
     for text, ids, offsets in zip(texts, encoded["input_ids"], encoded["offset_mapping"]):
@@ -51,31 +58,33 @@ def build_corpus(
     texts: Iterable[str], out_dir: Path, *, tokenizer_name: str, table: AliasTable, eos_id: int,
     max_tokens: int, revision: str | None = None, boundary: str = "prefix", min_subtokens: int = 1,
     batch_texts: int = 256, workers: int = 8, extra_manifest: dict[str, Any] | None = None,
+    vocab_size: int = 50257,
 ) -> dict[str, Any]:
     """Tokenize and link documents in parallel until `max_tokens`; spans keep every length (≥ 1),
     so `ℓ_min` is applied at sampling time and one corpus serves every threshold."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    dtype = np.uint16
+    dtype = np.uint16 if vocab_size <= 65536 else np.uint32
     token_path = out_dir / "tokens.bin"
     position, documents = 0, 0
     span_parts: dict[str, list[np.ndarray]] = {k: [] for k in (*SPAN_FIELDS, "confidence")}
 
-    def batches() -> Iterator[tuple]:
+    def batches() -> Iterator[list[str]]:
         chunk: list[str] = []
         for text in texts:
             chunk.append(text)
             if len(chunk) == batch_texts:
-                yield (tokenizer_name, revision or "", table, boundary, min_subtokens, chunk); chunk = []
+                yield chunk; chunk = []
         if chunk:
-            yield (tokenizer_name, revision or "", table, boundary, min_subtokens, chunk)
+            yield chunk
 
-    with token_path.open("wb") as handle, get_context("spawn").Pool(workers) as pool:
+    initargs = (tokenizer_name, revision or "", table, boundary, min_subtokens)
+    with token_path.open("wb") as handle, get_context("spawn").Pool(workers, _init_worker, initargs) as pool:
         for tokens, spans in pool.imap(_encode_batch, batches()):
             for ids, doc_spans in zip(tokens, spans):
                 if position >= max_tokens:
                     break
-                if int(ids.max(initial=0)) >= 65536:
-                    raise ValueError("token id ≥ 65,536: uint16 storage needs a smaller vocabulary")
+                if int(ids.max(initial=0)) >= vocab_size:
+                    raise ValueError(f"token id ≥ vocab_size {vocab_size}")
                 block = np.concatenate([ids, [eos_id]]).astype(dtype)
                 handle.write(block.tobytes())
                 for key in span_parts:
@@ -88,8 +97,13 @@ def build_corpus(
     arrays = {k: (np.concatenate(v) if v else np.zeros(0, dtype=np.float32 if k == "confidence" else np.int64))
               for k, v in span_parts.items()}
     order = np.argsort(arrays["inject"], kind="stable")
-    np.savez(out_dir / "spans.npz", **{k: v[order] for k, v in arrays.items()})
-    manifest = {"tokens": int(position), "documents": documents, "dtype": "uint16", "tokenizer": tokenizer_name,
+    # Compact on-disk types: positions and entries int32, lengths uint8, confidence float16.
+    compact = {"start": np.int32, "end": np.int32, "inject": np.int32, "entry": np.int32,
+               "length": np.uint8, "confidence": np.float16}
+    if position >= 2**31:
+        raise ValueError("corpus too large for int32 span positions")
+    np.savez(out_dir / "spans.npz", **{k: v[order].astype(compact[k]) for k, v in arrays.items()})
+    manifest = {"tokens": int(position), "documents": documents, "dtype": np.dtype(dtype).name, "tokenizer": tokenizer_name,
                 "tokenizer_revision": revision, "alias_table_sha256": table.digest(), "boundary": boundary,
                 "spans": int(arrays["inject"].size), "eos_id": eos_id, **(extra_manifest or {})}
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
@@ -135,8 +149,8 @@ def collate_windows(windows: Sequence[tuple[np.ndarray, dict[str, np.ndarray]]])
         for key in (*SPAN_FIELDS, "confidence"):
             parts[key].append(spans[key])
         parts["batch"].append(np.full(spans["entry"].shape[0], b, dtype=np.int64))
-    spans_t = {k: torch.from_numpy(np.concatenate(v)) for k, v in parts.items()}
-    spans_t["confidence"] = spans_t["confidence"].float()
+    spans_t = {k: torch.from_numpy(np.concatenate(v).astype(np.float32 if k == "confidence" else np.int64))
+               for k, v in parts.items()}
     return ids, spans_t
 
 
