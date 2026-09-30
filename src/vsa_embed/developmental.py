@@ -47,6 +47,7 @@ class DevelopmentalConfig:
     permutations: int = 200
     p_value: float = 0.01
     test: str = "permutation"           # or "anderson" (G-means-style normality test on projections)
+    route_unobserved: str = "context"   # or "parent": unobserved usages keep the unsplit parent vector
     merge_cosine: float = 0.98
     freeze_activity: float = 0.0        # freeze vectors whose activity stays below this
     freeze_patience: int = 500
@@ -299,7 +300,17 @@ class DevelopmentalDictionary:
         old = self._parameter()
         theta = old.detach()[vector_id].float().cpu()
         offset = self.config.epsilon * theta.norm() * direction
-        if self.config.target == "atomics":
+        keep_parent = self.config.route_unobserved == "parent" and self.config.target == "atomics"
+        if keep_parent:
+            # Two new children for observed usages; the parent keeps its value for usages without
+            # evidence (held-out or rare), for which the collapsed vector is the best guess.
+            ids = composer.add_atomics(torch.stack([theta + offset, theta - offset]).to(old))
+            _replace_parameter(self.optimizer, old, composer.atomics, torch.tensor([vector_id, vector_id]))
+            positive_id, new_id = int(ids[0]), int(ids[1])
+            uses = (schedule.fillers == vector_id).nonzero().flatten()
+            usage_of_edge = torch.repeat_interleave(
+                torch.arange(schedule.concept_count, device=schedule.offsets.device), schedule.degrees)[uses]
+        elif self.config.target == "atomics":
             new_id = int(composer.add_atomics((theta - offset)[None].to(old))[0])
             with torch.no_grad():
                 composer.atomics[vector_id] += offset.to(composer.atomics)
@@ -315,19 +326,32 @@ class DevelopmentalDictionary:
             _replace_parameter(self.optimizer, old, new_param, torch.tensor([vector_id]))
             uses = (schedule.relations == vector_id).nonzero().flatten()
             usage_of_edge = uses
-        self._grow_state(torch.tensor([vector_id]))
-        go_negative = self._assign(uses, usage_of_edge, labels, positive)
         relations, fillers = schedule.relations.clone(), schedule.fillers.clone()
         target = fillers if self.config.target == "atomics" else relations
-        target[uses[go_negative]] = new_id
+        if keep_parent:
+            self._grow_state(torch.tensor([vector_id, vector_id]))
+            observed = torch.isin(usage_of_edge, labels.to(usage_of_edge.device))
+            sign_of = {int(l): bool(p) for l, p in zip(labels.tolist(), positive.tolist())}
+            to_positive = torch.tensor([bool(o) and sign_of.get(int(u), False) for o, u in
+                                        zip(observed.tolist(), usage_of_edge.tolist())], dtype=torch.bool)
+            go_negative = observed.cpu() & ~to_positive
+            target[uses[to_positive.to(uses.device)]] = positive_id
+            target[uses[go_negative.to(uses.device)]] = new_id
+            children = (positive_id, new_id)
+        else:
+            self._grow_state(torch.tensor([vector_id]))
+            go_negative = self._assign(uses, usage_of_edge, labels, positive)
+            target[uses[go_negative]] = new_id
+            children = (vector_id, new_id)
         composer.set_schedule(FrameSchedule(schedule.offsets, relations, fillers))
         self.splits += 1
-        for child in (vector_id, new_id):
+        for child in children:
             self.cooldown_until[child] = self.step + self.config.cooldown
-        self.siblings.append((vector_id, new_id))
+        self.siblings.append(children)
         card = {
             "event": "split", "target": self.config.target, "step": self.step, "parent": vector_id,
-            "children": [vector_id, new_id], "gain": result["gain"], "p_value": result["p_value"],
+            "children": list(children), "parent_kept_for_unobserved": keep_parent,
+            "gain": result["gain"], "p_value": result["p_value"],
             "contributions": result["contributions"], "observed_usages": int(labels.numel()),
             "usages_to_new_child": int(go_negative.sum()), "usages_kept": int((~go_negative).sum()),
             "direction": direction.tolist(),

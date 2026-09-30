@@ -232,9 +232,12 @@ def _split_quality(tracker: DevelopmentalDictionary | None, planted: torch.Tenso
     retired = {card["retired"] for card in cards if card["event"] == "merge"}
     final_ids = final.fillers if target == "atomics" else final.relations
     original_ids = original.fillers if target == "atomics" else original.relations
-    # A parent is split at convergence if its original edges still point at more than one id.
+    # A parent is split at convergence if its original edges from *training* concepts still point
+    # at more than one id (with parent fallback, held-out usages keep the parent id by design).
+    edge_concept_all = torch.repeat_interleave(torch.arange(original.concept_count), original.degrees)
+    train_edges = torch.isin(edge_concept_all, train_concepts)
     parents = {v for v in raw_parents
-               if (final_ids[original_ids == v]).unique().numel() > 1 and v not in retired}
+               if (final_ids[(original_ids == v) & train_edges]).unique().numel() > 1 and v not in retired}
     planted_set = set(planted.tolist())
     def rates(split_set: set[int]) -> tuple[float, float, float]:
         true_pos = len(split_set & planted_set)
@@ -324,9 +327,23 @@ def _values(rows: list[dict[str, Any]], **match: Any) -> list[float]:
     return [row for row in rows if all(row.get(k) == v for k, v in match.items())]
 
 
-def summarize(rows: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, Any]:
+def summarize(rows: list[dict[str, Any]], config: dict[str, Any],
+              parts: tuple[str, ...] = ("d01", "d03", "d02")) -> dict[str, Any]:
     seeds = config["seeds"]
-    summary: dict[str, Any] = {"d01": {}, "d03": {}, "d02": {}}
+    summary: dict[str, Any] = {"d01": {"gate_passed": None}, "d03": {"gate_passed": None}, "d02": {"gate_passed": None}}
+    d01_pass = d03_pass = d02_pass = True
+    if "d01" in parts:
+        d01_pass = _summarize_d01(rows, config, seeds, summary)
+    if "d03" in parts:
+        d03_pass = _summarize_d03(rows, config, summary)
+    if "d02" in parts:
+        d02_pass = _summarize_d02(rows, config, summary)
+    summary["parts"] = list(parts)
+    summary["g1_all_gates_passed"] = d01_pass and d03_pass and d02_pass if len(parts) == 3 else None
+    return summary
+
+
+def _summarize_d01(rows, config, seeds, summary) -> bool:
     # D0.1: M1 with context vs M0 on held-out concepts × held-out contexts.
     d01_pass = True
     for strength in [0.0] + [float(s) for s in config["d01"]["context_strengths"]]:
@@ -347,6 +364,10 @@ def summarize(rows: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, A
         d01_pass &= ok
         summary["d01"][f"{teacher}_{strength}"] = {"m1_q_minus_m0_test_cosine": ci, "passes": ok}
     summary["d01"]["gate_passed"] = d01_pass
+    return d01_pass
+
+
+def _summarize_d03(rows, config, summary) -> bool:
     # D0.3: induced/hybrid transfer, free does not.
     ranks = config["d03"]["ranks"]
     d03 = {}
@@ -361,7 +382,12 @@ def summarize(rows: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, A
     margin = float(config["d03"]["transfer_margin"])
     summary["d03"] = {"test_cosine": d03, "best_free": best_free, "best_induced_or_hybrid": best_induced,
                       "gate_passed": best_induced >= d03["m0"] and best_induced - best_free >= margin}
+    return summary["d03"]["gate_passed"]
+
+
+def _summarize_d02(rows, config, summary) -> bool:
     # D0.2: M3 precision/recall/ARI/false splits per target.
+    summary["d02"] = {}
     d02_pass = True
     for condition in config["d02"]["conditions"]:
         target = condition["target"]
@@ -378,22 +404,41 @@ def summarize(rows: list[dict[str, Any]], config: dict[str, Any]) -> dict[str, A
         d02_pass &= bool(ok)
         summary["d02"][target] = {"policies": per_policy, "passes": bool(ok)}
     summary["d02"]["gate_passed"] = d02_pass
-    summary["g1_all_gates_passed"] = d01_pass and summary["d03"]["gate_passed"] and d02_pass
-    return summary
+    return d02_pass
 
 
 def render_report(summary: dict[str, Any]) -> str:
     def ci(value: dict[str, Any]) -> str:
         return f"{value['mean']:+.4f}" + ("" if value["ci_low"] is None else f" [{value['ci_low']:+.4f}, {value['ci_high']:+.4f}]")
-    lines = ["# Experiment E0 — synthetic identifiability", "", "## D0.1 contextual composition", "",
+    lines = ["# Experiment E0 — synthetic identifiability", ""]
+    if "d01" in summary.get("parts", ["d01"]):
+        lines += _d01_lines(summary, ci)
+    if "d03" in summary.get("parts", ["d03"]):
+        lines += _d03_lines(summary)
+    if "d02" in summary.get("parts", ["d02"]):
+        lines += _d02_lines(summary)
+    if summary.get("g1_all_gates_passed") is not None:
+        lines += [f"**G1 (all E0 gates): {'PASS' if summary['g1_all_gates_passed'] else 'FAIL'}.**", ""]
+    return "\n".join(lines)
+
+
+def _d01_lines(summary, ci) -> list[str]:
+    lines = ["## D0.1 contextual composition", "",
              "| Teacher | M1(q) − M0, held-out concepts × held-out contexts (cosine, 95% CI) | Passes |", "|---|---|---|"]
     for key, value in summary["d01"].items():
         if key != "gate_passed":
             lines.append(f"| {key} | {ci(value['m1_q_minus_m0_test_cosine'])} | {value['passes']} |")
-    lines += ["", f"D0.1 gate: **{'PASS' if summary['d01']['gate_passed'] else 'FAIL'}**.", "",
-              "## D0.3 factored mapping (held-out concept cosine)", "", "| Learner | Cosine |", "|---|---:|",
-              *[f"| {k} | {v:.4f} |" for k, v in summary["d03"]["test_cosine"].items()], "",
-              f"D0.3 gate: **{'PASS' if summary['d03']['gate_passed'] else 'FAIL'}**.", "", "## D0.2 split detection", ""]
+    return lines + ["", f"D0.1 gate: **{'PASS' if summary['d01']['gate_passed'] else 'FAIL'}**.", ""]
+
+
+def _d03_lines(summary) -> list[str]:
+    return ["## D0.3 factored mapping (held-out concept cosine)", "", "| Learner | Cosine |", "|---|---:|",
+            *[f"| {k} | {v:.4f} |" for k, v in summary["d03"]["test_cosine"].items()], "",
+            f"D0.3 gate: **{'PASS' if summary['d03']['gate_passed'] else 'FAIL'}**.", ""]
+
+
+def _d02_lines(summary) -> list[str]:
+    lines = ["## D0.2 split detection", ""]
     for target, value in summary["d02"].items():
         if target == "gate_passed":
             continue
@@ -405,9 +450,7 @@ def render_report(summary: dict[str, Any]) -> str:
                          f"{m['ari']:.3f} | {m['ari_heldout']:.3f} | {m['false_split_rate']:.3f} ({m['raw_false_split_rate']:.3f}) | "
                          f"{m['test_cosine']:.4f} |")
         lines += ["", f"Passes: **{value['passes']}**.", ""]
-    lines += [f"D0.2 gate: **{'PASS' if summary['d02']['gate_passed'] else 'FAIL'}**.", "",
-              f"**G1 (all E0 gates): {'PASS' if summary['g1_all_gates_passed'] else 'FAIL'}.**", ""]
-    return "\n".join(lines)
+    return lines + [f"D0.2 gate: **{'PASS' if summary['d02']['gate_passed'] else 'FAIL'}**.", ""]
 
 
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -425,19 +468,19 @@ def run(config: dict[str, Any], output_dir: Path, *, parts: tuple[str, ...] = ("
         if "d03" in parts: rows += run_factored(config, int(seed))
         if "d02" in parts: rows += run_splits(config, int(seed))
     _write_csv(output_dir / "metrics.csv", rows)
-    summary = summarize(rows, config) if parts == ("d01", "d03", "d02") else {}
+    summary = summarize(rows, config, parts)
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str) + "\n")
-    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu")
-    if summary:
-        (output_dir / "report.md").write_text(render_report(summary))
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", parts=list(parts))
+    (output_dir / "report.md").write_text(render_report(summary))
     return summary
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True); parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--parts", nargs="+", default=["d01", "d03", "d02"], choices=["d01", "d03", "d02"])
     args = parser.parse_args(argv)
-    summary = run(yaml.safe_load(args.config.read_text()), args.output)
+    summary = run(yaml.safe_load(args.config.read_text()), args.output, parts=tuple(args.parts))
     print(json.dumps({k: summary.get(k) for k in ("g1_all_gates_passed",)}, indent=2))
 
 
