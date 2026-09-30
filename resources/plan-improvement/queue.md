@@ -35,7 +35,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 27 | C2 clinical data (SNOMED CT, UMLS, MIMIC, PubMed) | C | B5 | todo |
 | 28 | C4 throughput benchmark on the 3090 | C | B6, B7 | done |
 | 29 | B12 `authoring.py` (M5) | B | B4, B5, B6 | todo |
-| 30 | B13 `judging.py` (Claude Code judge) | B | — | todo |
+| 30 | B13 `judging.py` (Claude Code judge) | B | — | done |
 | 31 | C5 LLM-judge protocol and calibration set | C | B13 | todo |
 | 32 | D1 E1 contextual composition on frozen anchors | D | A6, B1, B3, C3 | todo |
 | 33 | D2 E2 mapping × operator frontier | D | A6, B1, B2, C2 | todo |

@@ -166,3 +166,4 @@ default is good
 | 28 | closed relation vocabulary, open as ablation | unchanged (formulation §5.5) |
 | 29 | run continuously | unchanged (B11) |
 | 30 | download SmolLM2-360M at B6 | unchanged (B6) |
+c
