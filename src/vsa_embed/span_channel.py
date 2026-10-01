@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from bisect import bisect_right
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
@@ -178,8 +179,9 @@ class CausalLinker:
                 inject = token + 1
             else:
                 inject = token
-            # Token starts are non-decreasing: the last token starting at or before the alias start covers it.
-            first = max(t for t in range(token + 1) if starts[t] <= char_start)
+            # Token starts are non-decreasing: the last token starting at or before the alias start
+            # covers it (binary search; a linear scan made long documents quadratic).
+            first = min(token, bisect_right(starts, char_start, 0, token + 1) - 1)
             length = token - first + 1
             if length < self.min_subtokens:
                 continue
