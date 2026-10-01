@@ -72,7 +72,9 @@ def choose_holdout(counts: Counter, lengths: dict[int, int], table: AliasTable, 
 
 
 def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
-    git_at_start = prepare_output_dir(output_dir)
+    git_at_start = prepare_output_dir(output_dir) if not (output_dir / "resolved_config.yaml").exists() else None
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "resolved_config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     paths, data = config["paths"], config["data"]
     data_root = Path(paths["data_root"]).expanduser()
     data_root.mkdir(parents=True, exist_ok=True)
@@ -103,7 +105,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     presample_dir = data_root / "presample"
     build_corpus(iter_texts(shards, skip=eval_docs, limit=presample_docs), presample_dir,
                  tokenizer_name=tokenizer_name, table=base_table, eos_id=eos, max_tokens=10**12,
-                 workers=int(config["workers"]))
+                 workers=int(config["workers"]), reuse=True)
     presample = TokenCorpus.open(presample_dir)
     counts = Counter(presample.spans["entry"].tolist())
     holdout = choose_holdout(counts, entry_length, base_table, ontology.concept_names,
@@ -116,15 +118,15 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     train_table = full.without_holdout()
     heldout_entries = sorted(full.heldout_entries())
     eval_manifest = build_corpus(iter_texts(shards, limit=eval_docs), data_root / "eval", tokenizer_name=tokenizer_name,
-                                 table=full, eos_id=eos, max_tokens=10**12, workers=int(config["workers"]))
+                                 table=full, eos_id=eos, max_tokens=10**12, workers=int(config["workers"]), reuse=True)
     # Training spans are stored from ℓ ≥ train_min_subtokens (single-token spans cover ~45% of
     # tokens with WordNet); an all-lengths slice serves the ℓ_min = 1 feasibility sweep.
     train_manifest = build_corpus(iter_texts(shards, skip=eval_docs), data_root / "train", tokenizer_name=tokenizer_name,
                                   table=train_table, eos_id=eos, max_tokens=int(data["train_tokens"]),
-                                  workers=int(config["workers"]), min_subtokens=int(data["train_min_subtokens"]))
+                                  workers=int(config["workers"]), min_subtokens=int(data["train_min_subtokens"]), reuse=True)
     l1_manifest = build_corpus(iter_texts(shards, skip=eval_docs), data_root / "train-l1", tokenizer_name=tokenizer_name,
                                table=train_table, eos_id=eos, max_tokens=int(data["l1_slice_tokens"]),
-                               workers=int(config["workers"]), min_subtokens=1)
+                               workers=int(config["workers"]), min_subtokens=1, reuse=True)
 
     # 4. channel ontology and cardinality.
     train_corpus = TokenCorpus.open(data_root / "train")

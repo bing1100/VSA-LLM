@@ -92,10 +92,14 @@ def build_corpus(
     texts: Iterable[str], out_dir: Path, *, tokenizer_name: str, table: AliasTable, eos_id: int,
     max_tokens: int, revision: str | None = None, boundary: str = "prefix", min_subtokens: int = 1,
     batch_texts: int = 256, workers: int = 8, extra_manifest: dict[str, Any] | None = None,
-    vocab_size: int = 50257,
+    vocab_size: int = 50257, reuse: bool = False,
 ) -> dict[str, Any]:
     """Tokenize and link documents in parallel until `max_tokens`; spans keep every length (≥ 1),
     so `ℓ_min` is applied at sampling time and one corpus serves every threshold."""
+    if reuse and (out_dir / "manifest.json").exists():
+        existing = json.loads((out_dir / "manifest.json").read_text())
+        if existing.get("alias_table_sha256") == table.digest():
+            return existing          # completed earlier with the same alias table: resume past it
     out_dir.mkdir(parents=True, exist_ok=True)
     dtype = np.uint16 if vocab_size <= 65536 else np.uint32
     token_path = out_dir / "tokens.bin"
