@@ -48,6 +48,7 @@ class DevelopmentalConfig:
     p_value: float = 0.01
     test: str = "permutation"           # or "anderson" (G-means-style normality test on projections)
     route_unobserved: str = "context"   # or "parent": unobserved usages keep the unsplit parent vector
+    sync_parent: bool = True            # with "parent": keep the parent at the usage-weighted mean of its children
     merge_cosine: float = 0.98
     freeze_activity: float = 0.0        # freeze vectors whose activity stays below this
     freeze_patience: int = 500
@@ -156,6 +157,7 @@ class DevelopmentalDictionary:
         self.low_activity_steps = torch.zeros(count, dtype=torch.long)
         self.provisional: set[int] = set()
         self.siblings: list[tuple[int, int]] = []
+        self.parent_links: list[tuple[int, int, int, float, float]] = []   # parent, child+, child−, weights
         self.cards: list[dict[str, Any]] = []
 
     # -- bookkeeping ----------------------------------------------------------------------------
@@ -248,8 +250,20 @@ class DevelopmentalDictionary:
     def budget_left(self) -> int:
         return int(self.config.growth_budget * self.initial_count) - self.splits
 
+    def sync_parents(self) -> None:
+        """Parent-fallback splits: the parent (used only by unobserved usages) tracks the
+        usage-weighted mean of its children, i.e. what the collapsed vector would have learned."""
+        if not self.parent_links:
+            return
+        parameter = self._parameter()
+        with torch.no_grad():
+            for parent, plus, minus, w_plus, w_minus in self.parent_links:
+                parameter[parent] = (w_plus * parameter[plus] + w_minus * parameter[minus]) / (w_plus + w_minus)
+
     def grow(self) -> list[dict[str, Any]]:
         """Every `screen_every` steps: test recorded candidates, split accepted ones, re-screen."""
+        if self.config.route_unobserved == "parent" and self.config.sync_parent:
+            self.sync_parents()
         if self.step == 0 or self.step % self.config.screen_every:
             return []
         accepted = self._test_candidates()
@@ -349,6 +363,7 @@ class DevelopmentalDictionary:
             target[uses[to_positive.to(uses.device)]] = positive_id
             target[uses[go_negative.to(uses.device)]] = new_id
             children = (positive_id, new_id)
+            self.parent_links.append((vector_id, positive_id, new_id, float(to_positive.sum()), float(go_negative.sum())))
         else:
             self._grow_state(torch.tensor([vector_id]))
             go_negative = self._assign(uses, usage_of_edge, labels, positive)
