@@ -80,6 +80,15 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     eos = tokenizer.eos_token_id
     shards = [str(Path(p).expanduser()) for p in paths["shards"]]
+    for shard in shards:   # refuse corrupt downloads (a shard failed the hub's sha256 once)
+        expected = (paths.get("shard_sha256") or {}).get(Path(shard).name)
+        if expected:
+            digest = hashlib.sha256()
+            with open(shard, "rb") as handle:
+                for chunk in iter(lambda: handle.read(1 << 24), b""):
+                    digest.update(chunk)
+            if not digest.hexdigest().startswith(expected):
+                raise ValueError(f"{shard} sha256 {digest.hexdigest()[:16]} != expected {expected}")
 
     ontology = build_wordnet_ontology(wn, max_atomics=int(config["ontology"]["max_atomics"]),
                                       max_degree=int(config["ontology"]["max_degree"]))
