@@ -34,17 +34,21 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--probes", type=Path, default=Path("~/data/vsa-llm/probes").expanduser())
+    parser.add_argument("--hosts", nargs="*", default=None)
+    parser.add_argument("--quantization-only", action="store_true")
     args = parser.parse_args(argv)
     git_at_start = prepare_output_dir(args.output)
     device = torch.device("cuda")
     lambada_path = args.probes / "lambada" / "data" / "lambada_test_en.jsonl"
     ppl_texts = [json.loads(l)["text"] for l in lambada_path.read_text().splitlines()[:300]]
     results = {}
-    for name in ("gpt2", "HuggingFaceTB/SmolLM2-135M", "HuggingFaceTB/SmolLM2-360M"):
+    hosts = args.hosts or ["gpt2", "HuggingFaceTB/SmolLM2-135M", "HuggingFaceTB/SmolLM2-360M"]
+    for name in hosts:
         tokenizer = AutoTokenizer.from_pretrained(name, local_files_only=True)
         model = AutoModelForCausalLM.from_pretrained(name, local_files_only=True, torch_dtype=torch.bfloat16).to(device).eval()
         adapter = ModelAdapter(model, tokenizer, device)
-        entry = {"probes": run_probes(adapter, args.probes, lambada_limit=None), "ppl_bf16": perplexity(model, tokenizer, ppl_texts, device)}
+        entry = {"probes": None if args.quantization_only else run_probes(adapter, args.probes, lambada_limit=None),
+                 "ppl_bf16": perplexity(model, tokenizer, ppl_texts, device)}
         for bits in (8, 4):
             quantized = AutoModelForCausalLM.from_pretrained(name, local_files_only=True, torch_dtype=torch.bfloat16).to(device).eval()
             try:
@@ -62,7 +66,8 @@ def main(argv: list[str] | None = None) -> None:
              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     fmt = lambda v: f"{v:.3f}" if isinstance(v, float) else str(v)[:30]
     for name, e in results.items():
-        p = e["probes"]
+        p = e["probes"] or {"lambada_accuracy": "—", "wic_prompt_accuracy": "—", "wic_probe_accuracy": "—",
+                            "wic_majority": "—", "card660": {"spearman": "—"}, "rare_words": {"spearman": "—"}}
         lines.append(f"| {name} | {fmt(p['lambada_accuracy'])} | {fmt(p['wic_prompt_accuracy'])} | {fmt(p['wic_probe_accuracy'])} | "
                      f"{fmt(p['wic_majority'])} | {fmt(p['card660']['spearman'])} | {fmt(p['rare_words']['spearman'])} | "
                      f"{fmt(e['ppl_bf16'])} | {fmt(e['ppl_int8'])} | {fmt(e['ppl_int4'])} |")

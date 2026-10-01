@@ -36,7 +36,10 @@ def quantize_weight_only(model: nn.Module, bits: int, *, group_size: int = 128, 
     if bits not in (8, 4):
         raise ValueError("bits must be 8 or 4")
     converted = conv1d_to_linear(model)
-    config = Int8WeightOnlyConfig() if bits == 8 else Int4WeightOnlyConfig(group_size=group_size)
+    # INT4 uses the tile-packed tinygemm layout: the default "plain" layout needs the mslk package,
+    # which has no usable release.
+    config = Int8WeightOnlyConfig() if bits == 8 else Int4WeightOnlyConfig(group_size=group_size,
+                                                                          int4_packing_format="tile_packed_to_4d")
     names = {id(m): n for n, m in model.named_modules()}
 
     def keep(module: nn.Module, fqn: str) -> bool:
