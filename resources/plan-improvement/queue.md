@@ -43,7 +43,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 35 | D4.0 harness shake-out; freeze training recipe | D | B7, B8, B11, B14, C3 | todo |
 | 36 | D4.8 early no-channel baselines | D | D4.0 | todo |
 | 37 | G2 pre-registration (`preregistration.md`, escalation rule) | gate | D1–D3, C4 | todo |
-| 38 | C6 developer-tools benchmark | C | B5 | todo |
+| 38 | C6 developer-tools benchmark | C | B5 | done (benchmark v1, leakage audit 0) |
 | 39 | D4.7 span-cardinality feasibility | D | C3, D4.0 | todo |
 | 40 | D4.9 50M screen | D | G2 | todo |
 | 41 | D4.1 125M convergence runs | D | D4.9 | todo |
