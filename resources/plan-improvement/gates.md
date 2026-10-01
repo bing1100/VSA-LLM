@@ -11,3 +11,15 @@ Decisions taken by applying the pre-registered rules in [tasks.md](tasks.md) and
 **Changes forced by C1** (applied to the plan, not to the interfaces): claims narrowed to the wording in proposal §7; new baselines C1h (hashed n-gram span memory) and C3t (type/relation-only composition) in E4, free-sense attention in E1, Anderson–Darling split test and NP-MSSG/AdaGram in E0.2/E3, GRAM on T1, equal-bytes compression tables, à la carte and CoLLEGe-style generators, EntiGraph-style and OLLM/LLMs4OL controls in E7. None of these requires an interface change: C1h and C3t are span-channel conditions (B5/B7), the others are experiment-side baselines.
 
 **Legacy reproducibility.** Single-threaded, the protocol-aware runners reproduce the four recorded configs bit-for-bit on all shared columns (old vs new code, 1,944 rows, 0 differing cells). Multithreaded CPU training is not bit-reproducible across processes on this machine, so new runs set `num_threads: 1`.
+
+## G1 — mechanisms recover planted structure (2026-09-30)
+
+**Inputs.** E0 development run, 3 seeds, CPU single-threaded (`experiments/e0-synthetic-identifiability/runs/e0-development/`, commit `2cc5d0b`).
+
+**Decision: PASS — proceed to E1–E3.**
+
+- D0.1: attentive composition with a context query recovers held-out concept × held-out context targets far better than the static bundle (+0.36 to +0.46 cosine across context strengths 0.5–4, CIs exclude zero) and equals it on the static teacher (no harm).
+- D0.3: the induced concept factor transfers to composition-disjoint concepts (held-out cosine 0.976 at k = 4 vs 0.60–0.70 for the free factor and 0.62 for M0); rank k = k* = 4 is best, larger ranks lose a little.
+- D0.2: M3 with the permutation null recovers all planted polysemous atomics and relation sub-types at convergence (precision = recall = 1.0, ARI on training usages 1.0, no surviving false splits). The screen alone over-splits (raw false-split rate 0.38); consolidation merges spillover splits back, so the consolidation phase is required, not optional. The Anderson–Darling variant keeps more false splits (0.08) and coherence-only misses senses (recall 0.92 atomics, 0.67 relations); random splits do not recover structure (ARI 0.02).
+
+**Caveat found by E0 (not covered by the gate).** Held-out usages of a split vector carry no gradient and were routed near chance (ARI ≈ 0.05), so splitting slightly lowered held-out cosine (0.939 vs 0.946 without growth). Two changes follow: routing now uses the frame context (formulation §3.4), and M3 gains `route_unobserved: parent`, which keeps the unsplit vector for usages without evidence (single-seed check: held-out cosine 0.948 vs 0.949 without growth; precision 0.89, recall 1.0). A three-seed D0.2 run of the parent variant is in `runs/d02-parent-routing/`; E3 and E4-C6 use whichever variant has the better held-out cosine at equal training-usage recovery.

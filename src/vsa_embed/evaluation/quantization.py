@@ -40,10 +40,15 @@ def quantize_weight_only(model: nn.Module, bits: int, *, group_size: int = 128, 
     # which has no usable release.
     config = Int8WeightOnlyConfig() if bits == 8 else Int4WeightOnlyConfig(group_size=group_size,
                                                                           int4_packing_format="tile_packed_to_4d")
-    names = {id(m): n for n, m in model.named_modules()}
+    embedding = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else None
+    tied = {id(embedding.weight)} if embedding is not None else set()
 
     def keep(module: nn.Module, fqn: str) -> bool:
         if not isinstance(module, nn.Linear):
+            return False
+        # The output head (often tied to the input embedding) stays in full precision, as in
+        # standard GPTQ/AWQ practice; quantizing a tied head also corrupts the embedding lookup.
+        if fqn.endswith("lm_head") or id(module.weight) in tied:
             return False
         if not include_channel and (fqn.startswith(channel_prefix) or ".channel." in fqn):
             return False
