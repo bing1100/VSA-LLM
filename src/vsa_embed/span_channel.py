@@ -270,7 +270,7 @@ class SpanChannel(nn.Module):
 
     def __init__(self, composer: FrameComposer | None, model_dimension: int, *, entry_count: int,
                  mode: str = "compose", hashed_buckets: int = 0, gate_bias: float = -2.0,
-                 semantic_dimension: int = 0) -> None:
+                 semantic_dimension: int = 0, free_dimension: int = 0) -> None:
         super().__init__()
         if mode not in {"compose", "free", "random", "hashed"}:
             raise ValueError("mode must be compose, free, random or hashed")
@@ -281,8 +281,12 @@ class SpanChannel(nn.Module):
         if mode == "compose":
             self.projector = nn.Linear(source_dimension, model_dimension, bias=False)
         elif mode == "free":
-            self.table = nn.Embedding(entry_count, model_dimension)
-            nn.init.normal_(self.table.weight, std=model_dimension**-0.5)
+            # `free_dimension` > 0: a low-dimensional free table plus a projector, so the control's
+            # parameter count can be matched to the composition channel.
+            width = free_dimension or model_dimension
+            self.table = nn.Embedding(entry_count, width)
+            nn.init.normal_(self.table.weight, std=width**-0.5)
+            self.free_projector = nn.Linear(width, model_dimension, bias=False) if free_dimension else None
             # Entries never trained (held-out concepts) fall back to the mean of trained rows (C2).
             self.register_buffer("unseen", torch.zeros(entry_count, dtype=torch.bool))
         elif mode == "random":
@@ -307,7 +311,7 @@ class SpanChannel(nn.Module):
             if bool(self.unseen.any()):
                 fallback = self.table.weight[~self.unseen].mean(0)
                 rows = torch.where(self.unseen[entries][:, None], fallback.expand_as(rows), rows)
-            return rows
+            return self.free_projector(rows) if self.free_projector is not None else rows
         if self.mode == "random":
             return self.scale * self.table_fixed[entries]
         if input_ids is None:

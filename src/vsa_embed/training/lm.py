@@ -66,7 +66,7 @@ def resolve_config(config: dict[str, Any]) -> dict[str, Any]:
     channel.setdefault("mode", "none")
     for key, value in {"operator": "hrr", "composition": "attentive", "dimension": 256, "key_dimension": 32,
                        "context_window": 0, "gate_bias": -2.0, "hashed_buckets": 0, "developmental": None,
-                       "concept_factor": "induced"}.items():
+                       "concept_factor": "induced", "free_dimension": 0, "frames": "ontology"}.items():
         channel.setdefault(key, value)
     c.setdefault("device", "cuda")
     return c
@@ -100,12 +100,14 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
     entries = int(ontology["entry_count"])
     if mode != "compose":
         return SpanChannel(None, width, entry_count=entries, mode=mode, hashed_buckets=int(settings["hashed_buckets"]),
-                           gate_bias=float(settings["gate_bias"]),
+                           gate_bias=float(settings["gate_bias"]), free_dimension=int(settings["free_dimension"]),
                            semantic_dimension=width if config["train"]["semantic_weight"] else 0), None
-    schedule = FrameSchedule(ontology["offsets"], ontology["relations"], ontology["fillers"])
+    schedule = frame_variant(FrameSchedule(ontology["offsets"], ontology["relations"], ontology["fillers"]),
+                             settings["frames"], int(ontology["relation_count"]), seed=int(config["seed"]))
+    atomic_count = int(ontology["relation_count"]) if settings["frames"] == "relation_only" else int(ontology["atomic_count"])
     context_window = int(settings["context_window"])
     composer = FrameComposer(
-        schedule, int(ontology["atomic_count"]), int(ontology["relation_count"]), int(settings["dimension"]),
+        schedule, atomic_count, int(ontology["relation_count"]), int(settings["dimension"]),
         operator=settings["operator"], mode=settings["composition"], concept_factor=settings["concept_factor"],
         key_dimension=int(settings["key_dimension"]),
         context_dimension=int(settings["key_dimension"]) if context_window else 0,
@@ -114,6 +116,24 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
                           semantic_dimension=width if config["train"]["semantic_weight"] else 0)
     context = CausalLocalContext(width, int(settings["key_dimension"]), window=context_window) if context_window else None
     return channel, context
+
+
+def frame_variant(schedule: FrameSchedule, variant: str, relation_count: int, *, seed: int) -> FrameSchedule:
+    """`ontology` (as is); `relation_only` (C3t: each edge's filler is its relation type, so the
+    concept is a bag of relation types — no fillers, and with `untyped`, no binding); `shuffled`
+    (C1s: entries receive other entries' frames — matched parameters, wrong structure)."""
+    if variant == "ontology":
+        return schedule
+    if variant == "relation_only":
+        return FrameSchedule(schedule.offsets, schedule.relations, schedule.relations.clone())
+    if variant == "shuffled":
+        from ..real_relations import derange_labels
+        count = schedule.concept_count
+        order = derange_labels(torch.arange(count), torch.Generator().manual_seed(seed + 4242))
+        frames = [list(zip(schedule.relations[schedule.offsets[j]:schedule.offsets[j + 1]].tolist(),
+                           schedule.fillers[schedule.offsets[j]:schedule.offsets[j + 1]].tolist())) for j in order.tolist()]
+        return FrameSchedule.from_frames(frames)
+    raise ValueError("frames must be ontology, relation_only or shuffled")
 
 
 def _lr(step: int, total_steps: int, warmup_steps: int, peak: float, floor_ratio: float) -> float:
