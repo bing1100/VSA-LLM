@@ -280,7 +280,7 @@ Adding a candidate edge `e` to concept `j` with a small mass `β` changes the pr
 U_{j,e} = −∂L_val/∂β |_{β=0} = −Σ_{occurrences of j in validation contexts} ⟨ g_j, v_e ⟩        (g_j = ∂L/∂z_j, §3.1)
 ```
 
-`g_j` is what the backward pass of §3.1 already produces, and `v_e` is one bind, so every candidate edge of every candidate concept is scored from a single validation pass; a bootstrap over occurrences gives the confidence bound. No per-edge retraining is needed. Edges that pass enter the frame with the normal M1 weights and are trained. Edges already in a frame are re-scored the same way (utility of their current contribution) each round; negative utility in two consecutive rounds removes the edge.
+`g_j` is what the backward pass of §3.1 already produces, and `v_e` is one bind, so every candidate edge of every candidate concept is scored from a single validation pass; a bootstrap over occurrences gives the confidence bound. *(Implementation note, B12: a brand-new concept starts with an empty frame, where `z_j = 0` and the expansion through the row normalisation is undefined, so `authoring.py` scores edges by the exact loss difference on the validation occurrences — with and without the edge — rather than by this first-order estimate.)* No per-edge retraining is needed. Edges that pass enter the frame with the normal M1 weights and are trained. Edges already in a frame are re-scored the same way (utility of their current contribution) each round; negative utility in two consecutive rounds removes the edge.
 
 ### 5.3 Guards against self-confirmation
 
