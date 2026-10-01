@@ -45,11 +45,24 @@ def _init_worker(tokenizer_name: str, revision: str, table_path: str, boundary: 
     _WORKER["linker"] = CausalLinker(table, boundary=boundary, min_subtokens=min_subtokens)
 
 
-def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]]]:
+def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]], int]:
     tokenizer, linker = _WORKER["tokenizer"], _WORKER["linker"]
-    encoded = tokenizer(texts, return_offsets_mapping=True, add_special_tokens=False)
+    try:
+        encoded = tokenizer(texts, return_offsets_mapping=True, add_special_tokens=False)
+        pairs = list(zip(texts, encoded["input_ids"], encoded["offset_mapping"]))
+    except BaseException as error:   # the Rust tokenizer can panic on rare inputs (pyo3 PanicException)
+        if isinstance(error, (KeyboardInterrupt, SystemExit)):
+            raise
+        pairs = []
+        for text in texts:            # retry one document at a time and skip the ones that panic
+            try:
+                single = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
+                pairs.append((text, single["input_ids"], single["offset_mapping"]))
+            except BaseException as inner:
+                if isinstance(inner, (KeyboardInterrupt, SystemExit)):
+                    raise
     tokens, spans = [], []
-    for text, ids, offsets in zip(texts, encoded["input_ids"], encoded["offset_mapping"]):
+    for text, ids, offsets in pairs:
         found = linker.link(text, offsets)
         tokens.append(np.asarray(ids, dtype=np.int64))
         spans.append({
@@ -60,7 +73,7 @@ def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np
             "length": np.asarray([s.length for s in found], dtype=np.int64),
             "confidence": np.asarray([s.confidence for s in found], dtype=np.float32),
         })
-    return tokens, spans
+    return tokens, spans, len(texts) - len(pairs)
 
 
 def build_corpus(
@@ -74,7 +87,7 @@ def build_corpus(
     out_dir.mkdir(parents=True, exist_ok=True)
     dtype = np.uint16 if vocab_size <= 65536 else np.uint32
     token_path = out_dir / "tokens.bin"
-    position, documents = 0, 0
+    position, documents, skipped_documents = 0, 0, 0
     span_parts: dict[str, list[np.ndarray]] = {k: [] for k in (*SPAN_FIELDS, "confidence")}
 
     def batches() -> Iterator[list[str]]:
@@ -105,7 +118,8 @@ def build_corpus(
 
     with token_path.open("wb") as handle, ProcessPoolExecutor(
             workers, mp_context=get_context("spawn"), initializer=_init_worker, initargs=initargs) as pool:
-        for tokens, spans in ordered_results(pool):
+        for tokens, spans, skipped in ordered_results(pool):
+            skipped_documents += skipped
             for ids, doc_spans in zip(tokens, spans):
                 if position >= max_tokens:
                     break
@@ -132,7 +146,8 @@ def build_corpus(
     np.savez(out_dir / "spans.npz", **{k: v[order].astype(compact[k]) for k, v in arrays.items()})
     manifest = {"tokens": int(position), "documents": documents, "dtype": np.dtype(dtype).name, "tokenizer": tokenizer_name,
                 "tokenizer_revision": revision, "alias_table_sha256": table.digest(), "boundary": boundary,
-                "spans": int(arrays["inject"].size), "eos_id": eos_id, **(extra_manifest or {})}
+                "spans": int(arrays["inject"].size), "eos_id": eos_id, "skipped_documents": skipped_documents,
+                **(extra_manifest or {})}
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
 
