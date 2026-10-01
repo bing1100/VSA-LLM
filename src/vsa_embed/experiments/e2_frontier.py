@@ -204,7 +204,11 @@ def main(argv: list[str] | None = None) -> None:
     for family, data in datasets.items():
         for seed in config["seeds"]:
             split = node_disjoint_split(len(data.concept_ids), seed=int(seed))
-            jobs = [(m, o, b, False) for m in MAPPINGS for o in config["operators"] for b in config["budgets"]]
+            # Every mapping × operator at the full budget; data-to-threshold curves (smaller budgets)
+            # only for the primary and binary mappings.
+            jobs = [(m, o, 1.0, False) for m in MAPPINGS for o in config["operators"]]
+            jobs += [(m, o, b, False) for m in (config["primary_mapping"], "binary") for o in config["operators"]
+                     for b in config["budgets"] if float(b) < 1.0]
             jobs += [(config["primary_mapping"], o, 1.0, True) for o in config["operators"]]
             for mapping, operator, budget, shuffled in jobs:
                 schedule = deranged_schedule(data.schedule, int(seed)) if shuffled else data.schedule

@@ -171,6 +171,7 @@ def run_seed(config: dict[str, Any], data: dict[str, Any], seed: int, device) ->
     for operator in config["operator_ablation"]:
         learners[f"m1_p2_{operator.replace(':', '_')}"] = ("attentive", "lemma", "p2", operator)
     for name, (mode, unit, query, operator) in learners.items():
+        log(f"  learner {name}")
         schedule = data["lemma_schedule"] if unit == "lemma" else data["sense_schedule"]
         concept = torch.tensor([it["lemma_concept"] if unit == "lemma" else it["sense_concept"] for it in items])
         context = data[query] if query else None
@@ -239,10 +240,17 @@ def sense_accuracy(weights, edges, concepts, index, items, data) -> dict[str, fl
     return {"sense_accuracy": correct / max(1, counted), "mfs_accuracy": mfs / max(1, counted), "sense_n": counted}
 
 
+def log(message: str) -> None:
+    import time
+    print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
+
+
 def prepare(config: dict[str, Any], device) -> dict[str, Any]:
+    log("loading SemCor")
     instances = load_semcor(Path(config["semcor_root"]).expanduser(), wn)
     lemmas = select_items(instances, min_per_sense=int(config["min_per_sense"]), max_per_sense=int(config["max_per_sense"]),
                           max_senses=int(config["max_senses"]), seed=int(config["selection_seed"]))
+    log(f"selected {len(lemmas)} lemmas; building ontology")
     onto = build_wordnet_ontology(wn, max_atomics=int(config["max_atomics"]))
     concept_index = onto.concept_index
     lemma_frames, sense_frames, edge_owner, items = [], [], [], []
@@ -270,7 +278,9 @@ def prepare(config: dict[str, Any], device) -> dict[str, Any]:
     model = AutoModelForCausalLM.from_pretrained(config["host"], local_files_only=True, torch_dtype=torch.float32).to(device).eval()
     n_layers = model.config.num_hidden_layers
     layers = sorted({n_layers // 2, (3 * n_layers) // 4, n_layers})
+    log(f"{len(items)} sentences; computing host states")
     states, p1, p2 = host_states(model, tokenizer, [it["obj"] for it in items], layers, device)
+    log("host states done")
     # Target-only layer audit on a fixed 80% of lemmas (independent of every seed's split).
     ordered = sorted(lemmas)
     audit_lemmas = {k for i, k in enumerate(ordered) if i % 5}
@@ -318,6 +328,7 @@ def main(argv: list[str] | None = None) -> None:
     data = prepare(config, device)
     rows = []
     for seed in config["seeds"]:
+        log(f"seed {seed}")
         rows += run_seed(config, data, int(seed), device)
     summary = summarize(rows, config)
     summary.update(layer=data["layer"], separability=data["separability"], lemmas=len(data["lemmas"]), items=len(data["items"]))
