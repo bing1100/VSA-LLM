@@ -206,10 +206,10 @@ def _random_split(tracker: DevelopmentalDictionary, generator: torch.Generator) 
     ids = schedule.fillers if tracker.config.target == "atomics" else schedule.relations
     vector_id = int(ids[torch.randint(ids.numel(), (), generator=generator)])
     if tracker.config.target == "atomics":
-        usage_of_edge = torch.repeat_interleave(torch.arange(schedule.concept_count), schedule.degrees)
-        labels = usage_of_edge[ids == vector_id].unique()
+        usage_of_edge = torch.repeat_interleave(torch.arange(schedule.concept_count, device=ids.device), schedule.degrees)
+        labels = usage_of_edge[ids == vector_id].unique().cpu()
     else:
-        labels = (ids == vector_id).nonzero().flatten()
+        labels = (ids == vector_id).nonzero().flatten().cpu()
     if labels.numel() < 2:
         return
     dim = tracker.momentum.shape[1]

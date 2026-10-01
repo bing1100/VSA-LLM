@@ -1,0 +1,104 @@
+experiment: e0-synthetic-identifiability
+seeds:
+- 101
+- 202
+- 303
+num_threads: 1
+d01:
+  operator: hrr
+  key_dimension: 8
+  context_strengths:
+  - 0.5
+  - 1.0
+  - 2.0
+  - 4.0
+  gate_min_strength: 1.0
+  no_harm_margin: 0.005
+  steps: 3000
+  learning_rate: 0.01
+  batch: 128
+  teacher:
+    concept_count: 400
+    atomic_count: 64
+    relation_count: 6
+    dimension: 64
+    key_dimension: 8
+    context_count: 8
+    heldout_contexts: 2
+    samples_per_concept: 4
+    holdout_concepts: 80
+d03:
+  operator: hrr
+  ranks:
+  - 4
+  - 8
+  - 16
+  - 32
+  transfer_margin: 0.01
+  steps: 3000
+  learning_rate: 0.01
+  batch: 128
+  teacher:
+    concept_count: 400
+    atomic_count: 64
+    relation_count: 6
+    dimension: 64
+    key_dimension: 4
+    samples_per_concept: 1
+    holdout_concepts: 80
+d02:
+  operator: hrr
+  policies:
+  - none
+  - m3
+  - m3_anderson
+  - coherence_only
+  - random
+  - oracle
+  teacher:
+    concept_count: 600
+    dimension: 64
+    degree_range:
+    - 3
+    - 6
+    holdout_concepts: 100
+  conditions:
+  - target: atomics
+    teacher:
+      atomic_count: 48
+      relation_count: 6
+      polysemous_atomics: 8
+      polysemous_relations: 0
+  - target: relations
+    teacher:
+      atomic_count: 48
+      relation_count: 6
+      polysemous_atomics: 0
+      polysemous_relations: 2
+  schedule:
+    learning_rate: 0.02
+    batch: 64
+    warmup_steps: 1500
+    growth_steps: 2000
+    final_steps: 1000
+  developmental:
+    beta: 0.9
+    screen_every: 200
+    activity_percentile: 0.25
+    coherence_threshold: 0.6
+    max_candidates: 16
+    min_usages: 6
+    min_contributions: 40
+    max_splits_per_round: 4
+    growth_budget: 0.5
+    cooldown: 400
+    epsilon: 0.05
+    permutations: 199
+    p_value: 0.01
+    merge_cosine: 0.98
+    route_unobserved: parent
+  gate:
+    precision: 0.9
+    recall: 0.9
+    ari: 0.8
+    false_split_rate: 0.05
