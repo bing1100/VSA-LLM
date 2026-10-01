@@ -37,7 +37,11 @@ def _init_worker(tokenizer_name: str, revision: str, table_path: str, boundary: 
     The table is passed by path: pickling a ~150k-alias table into every spawn payload deadlocked
     the parent on a full pipe, and fork is unsafe in a multi-threaded (torch) parent.
     """
+    import os
     import pickle
+    # Each worker tokenizes single-threaded (process-level parallelism only): the Rust tokenizer's
+    # internal threads were associated with panics and corrupted ids on rare inputs.
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     from transformers import AutoTokenizer
     with open(table_path, "rb") as handle:
         table = pickle.load(handle)
@@ -62,7 +66,15 @@ def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np
                 if isinstance(inner, (KeyboardInterrupt, SystemExit)):
                     raise
     tokens, spans = [], []
+    vocabulary = len(tokenizer)
+    checked = []
     for text, ids, offsets in pairs:
+        # Byte-level BPE is lossless: a document whose ids are out of range or do not decode back
+        # to the text was corrupted by the tokenizer and is dropped (counted as skipped).
+        if ids and (max(ids) >= vocabulary or tokenizer.decode(ids) != text):
+            continue
+        checked.append((text, ids, offsets))
+    for text, ids, offsets in checked:
         found = linker.link(text, offsets)
         tokens.append(np.asarray(ids, dtype=np.int64))
         spans.append({
@@ -73,7 +85,7 @@ def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np
             "length": np.asarray([s.length for s in found], dtype=np.int64),
             "confidence": np.asarray([s.confidence for s in found], dtype=np.float32),
         })
-    return tokens, spans, len(texts) - len(pairs)
+    return tokens, spans, len(texts) - len(checked)
 
 
 def build_corpus(
