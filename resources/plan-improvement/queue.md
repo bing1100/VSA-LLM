@@ -2,6 +2,8 @@
 
 Every committed task from [tasks.md](tasks.md), in the order it will be executed. Claude works down this list continuously and updates the status column as tasks land (`todo` → `running` → `done`, or `blocked` with a reason). Gate decisions G1–G5 are taken by applying the pre-registered rules and recorded in [gates.md](gates.md) for the author's review; work continues after each. Escalation tiers X1–X4 (GPU work beyond the committed ≈ 400 hours) are **not** queued: they wait for the author's approval at G6.
 
+> **BLOCKED (2026-09-30): faulty RAM detected on the experiment machine — see [gates.md](gates.md#blocker--faulty-ram-on-the-experiment-machine-2026-09-30). All experiment runs are paused until the memory is fixed; committed results will be re-run and checked after the fix.**
+
 GPU jobs are queued through the local job queue (B11) once it exists; until then they run one at a time from the shell.
 
 | # | Task | Phase | Depends on | Status |
@@ -31,15 +33,15 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 23 | B11 local GPU job queue | B | B7 | done |
 | 24 | B8 evaluation harness (probes, PTQ, faithfulness) | B | B7 | done (LAMBADA GPT-2 0.310 vs ≈ 0.325 reference; INT8 ≤ 1.5% PPL, INT4 +12–37%) |
 | 25 | B10 CI and benchmarks | B | B1–B5 | todo |
-| 26 | C3 general corpus, linking, holdout, cardinality tables | C | B5 | todo |
+| 26 | C3 general corpus, linking, holdout, cardinality tables | C | B5 | blocked: RAM errors corrupt reads/tokenization |
 | 27 | C2 clinical data (SNOMED CT, UMLS, MIMIC, PubMed) | C | B5 | blocked: SNOMED CT / UMLS / MIMIC release files are not on this machine (needs the author's UMLS and PhysioNet credentials); open MeSH + PubMed parts prepared meanwhile |
 | 28 | C4 throughput benchmark on the 3090 | C | B6, B7 | done |
 | 29 | B12 `authoring.py` (M5) | B | B4, B5, B6 | done |
 | 30 | B13 `judging.py` (Claude Code judge) | B | — | done |
-| 31 | C5 LLM-judge protocol and calibration set | C | B13 | todo |
-| 32 | D1 E1 contextual composition on frozen anchors | D | A6, B1, B3, C3 | todo |
-| 33 | D2 E2 mapping × operator frontier | D | A6, B1, B2, C2 | todo |
-| 34 | D3 E3 developmental recovery on WordNet | D | D2, D0.2 | todo |
+| 31 | C5 LLM-judge protocol and calibration set | C | B13 | done |
+| 32 | D1 E1 contextual composition on frozen anchors | D | A6, B1, B3, C3 | running when stopped (RAM) |
+| 33 | D2 E2 mapping × operator frontier | D | A6, B1, B2, C2 | running when stopped (RAM) |
+| 34 | D3 E3 developmental recovery on WordNet | D | D2, D0.2 | running when stopped (RAM) |
 | 35 | D4.0 harness shake-out; freeze training recipe | D | B7, B8, B11, B14, C3 | todo |
 | 36 | D4.8 early no-channel baselines | D | D4.0 | todo |
 | 37 | G2 pre-registration (`preregistration.md`, escalation rule) | gate | D1–D3, C4 | todo |
