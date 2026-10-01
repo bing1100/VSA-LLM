@@ -51,6 +51,9 @@ def resolve_config(config: dict[str, Any]) -> dict[str, Any]:
     model = c.setdefault("model", {})
     model.setdefault("size", "50M"); model.setdefault("vocab_size", 50257); model.setdefault("seq_len", 1024)
     model.setdefault("gradient_checkpointing", False)
+    model.setdefault("pretrained", None)        # HF id of a pretrained host (continued pretraining)
+    model.setdefault("host_mode", "train")      # train | frozen | lora (pretrained hosts)
+    model.setdefault("lora_rank", 16)
     train = c.setdefault("train", {})
     for key, value in {"micro_batch": 16, "grad_accum": 32, "total_tokens": 300_000_000, "lr": 1e-3,
                        "min_lr_ratio": 0.1, "warmup_tokens": 10_000_000, "weight_decay": 0.1,
@@ -80,7 +83,14 @@ def eval_token_schedule(first: int, total: int) -> list[int]:
     return points + [total]
 
 
-def build_model(config: dict[str, Any]) -> GPT2LMHeadModel:
+def build_model(config: dict[str, Any]):
+    if config["model"]["pretrained"]:
+        from transformers import AutoModelForCausalLM
+        model = AutoModelForCausalLM.from_pretrained(config["model"]["pretrained"], local_files_only=True,
+                                                     torch_dtype=torch.float32, attn_implementation="sdpa")
+        if config["model"]["gradient_checkpointing"]:
+            model.gradient_checkpointing_enable(); model.config.use_cache = False
+        return model
     size = config["model"]["size"]
     gpt2 = GPT2Config(vocab_size=config["model"]["vocab_size"], n_positions=config["model"]["seq_len"], **MODEL_SIZES[size])
     gpt2._attn_implementation = "sdpa"
@@ -207,12 +217,18 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     heldout = set(ontology["heldout_entries"]) if ontology else set()
     frequency = np.asarray(ontology["train_frequency"]) if ontology else None
     base = build_model(config)
-    channel, context = build_channel(config, ontology, base.config.n_embd)
+    width = base.get_input_embeddings().weight.shape[1]
+    channel, context = build_channel(config, ontology, width)
     if channel is not None and ontology is not None:
         channel.set_unseen(ontology["heldout_entries"])
-    model = ChannelLM(base, channel, context=context).to(device)
-    decay = [p for n, p in model.named_parameters() if p.ndim >= 2 and "wte" not in n and "wpe" not in n]
-    no_decay = [p for n, p in model.named_parameters() if not (p.ndim >= 2 and "wte" not in n and "wpe" not in n)]
+    model = ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if config["model"]["pretrained"] else "train",
+                      lora_rank=int(config["model"]["lora_rank"])).to(device)
+    trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+    embedding_names = ("wte", "wpe", "embed_tokens")
+    decay = [p for n, p in trainable if p.ndim >= 2 and not any(e in n for e in embedding_names)]
+    no_decay = [p for n, p in trainable if not (p.ndim >= 2 and not any(e in n for e in embedding_names))]
+    if not decay and not no_decay:
+        raise ValueError("no trainable parameters (frozen host without a channel?)")
     train_cfg = config["train"]
     optimizer = torch.optim.AdamW([{"params": decay, "weight_decay": train_cfg["weight_decay"]},
                                    {"params": no_decay, "weight_decay": 0.0}], lr=train_cfg["lr"],
@@ -281,7 +297,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
             total_loss += float(loss.detach()) / accum
         if tracker is not None:
             tracker.observe()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), train_cfg["grad_clip"])
+        torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], train_cfg["grad_clip"])
         optimizer.step(); optimizer.zero_grad(set_to_none=True)
         if tracker is not None:
             for card in tracker.grow():

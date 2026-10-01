@@ -88,3 +88,15 @@ def test_stratum_masks_place_after_and_inside_targets() -> None:
     assert masks["inside"][0].nonzero().flatten().tolist() == [3, 4]
     assert masks["after_heldout"][0].nonzero().flatten().tolist() == list(range(5, 13))
     assert not bool((masks["unlinked"] & masks["after"]).any())
+
+
+def test_pretrained_host_lora_trains_only_adapters_and_channel(setup, tmp_path: Path, monkeypatch) -> None:
+    import vsa_embed.training.lm as lm_module
+    tiny = lambda config: transformers.GPT2LMHeadModel(transformers.GPT2Config(vocab_size=50257, n_positions=64, n_embd=32, n_layer=1, n_head=2))
+    monkeypatch.setattr(lm_module, "build_model", tiny)
+    cfg = config(setup["root"], "compose")
+    cfg["model"].update(pretrained="fake-host", host_mode="lora", lora_rank=2)
+    result = train(cfg, tmp_path / "lora")
+    assert result["steps"] == 6
+    state = torch.load(tmp_path / "lora" / "final.pt", weights_only=False)["model"]
+    assert any("lora_a" in k for k in state)
