@@ -29,13 +29,18 @@ SPAN_FIELDS = ("start", "end", "inject", "entry", "length")
 
 
 _WORKER: dict[str, Any] = {}
+_SHARED: dict[str, Any] = {}     # set in the parent before forking; inherited copy-on-write
 
 
-def _init_worker(tokenizer_name: str, revision: str, table: AliasTable, boundary: str, min_subtokens: int) -> None:
-    """Load the tokenizer and build the linker once per worker process."""
+def _init_worker(tokenizer_name: str, revision: str, boundary: str, min_subtokens: int) -> None:
+    """Load the tokenizer and build the linker once per worker process.
+
+    Workers are forked and inherit the alias table from `_SHARED`; pickling a ~150k-alias table
+    to every spawned worker deadlocked the parent on a full pipe.
+    """
     from transformers import AutoTokenizer
     _WORKER["tokenizer"] = AutoTokenizer.from_pretrained(tokenizer_name, revision=revision or None, local_files_only=True)
-    _WORKER["linker"] = CausalLinker(table, boundary=boundary, min_subtokens=min_subtokens)
+    _WORKER["linker"] = CausalLinker(_SHARED["table"], boundary=boundary, min_subtokens=min_subtokens)
 
 
 def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]]]:
@@ -79,7 +84,10 @@ def build_corpus(
         if chunk:
             yield chunk
 
-    initargs = (tokenizer_name, revision or "", table, boundary, min_subtokens)
+    import os
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")   # fork safety for the Rust tokenizer
+    _SHARED["table"] = table
+    initargs = (tokenizer_name, revision or "", boundary, min_subtokens)
 
     def ordered_results(executor: ProcessPoolExecutor) -> Iterator[tuple]:
         # Bounded in-flight window, results in submission order. A crashed worker raises
@@ -93,7 +101,7 @@ def build_corpus(
             yield pending.popleft().result()
 
     with token_path.open("wb") as handle, ProcessPoolExecutor(
-            workers, mp_context=get_context("spawn"), initializer=_init_worker, initargs=initargs) as pool:
+            workers, mp_context=get_context("fork"), initializer=_init_worker, initargs=initargs) as pool:
         for tokens, spans in ordered_results(pool):
             for ids, doc_spans in zip(tokens, spans):
                 if position >= max_tokens:
