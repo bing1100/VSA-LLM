@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from collections import deque
+from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import get_context
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Sequence
@@ -78,8 +80,21 @@ def build_corpus(
             yield chunk
 
     initargs = (tokenizer_name, revision or "", table, boundary, min_subtokens)
-    with token_path.open("wb") as handle, get_context("spawn").Pool(workers, _init_worker, initargs) as pool:
-        for tokens, spans in pool.imap(_encode_batch, batches()):
+
+    def ordered_results(executor: ProcessPoolExecutor) -> Iterator[tuple]:
+        # Bounded in-flight window, results in submission order. A crashed worker raises
+        # BrokenProcessPool here instead of hanging the build (multiprocessing.Pool hangs).
+        pending: deque = deque()
+        for chunk in batches():
+            pending.append(executor.submit(_encode_batch, chunk))
+            if len(pending) >= 2 * workers:
+                yield pending.popleft().result()
+        while pending:
+            yield pending.popleft().result()
+
+    with token_path.open("wb") as handle, ProcessPoolExecutor(
+            workers, mp_context=get_context("spawn"), initializer=_init_worker, initargs=initargs) as pool:
+        for tokens, spans in ordered_results(pool):
             for ids, doc_spans in zip(tokens, spans):
                 if position >= max_tokens:
                     break
@@ -92,7 +107,7 @@ def build_corpus(
                     span_parts[key].append(values + position if key in ("start", "end", "inject") else values)
                 position += block.size; documents += 1
             if position >= max_tokens:
-                pool.terminate()
+                pool.shutdown(wait=False, cancel_futures=True)
                 break
     arrays = {k: (np.concatenate(v) if v else np.zeros(0, dtype=np.float32 if k == "confidence" else np.int64))
               for k, v in span_parts.items()}
