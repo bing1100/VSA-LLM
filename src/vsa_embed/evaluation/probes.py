@@ -34,33 +34,42 @@ class ModelAdapter:
     device: torch.device
     layer: int = -1                  # hidden layer for representations (−1 = final)
     spans_fn: Callable[[Sequence[str], Sequence[Sequence[tuple[int, int]]]], dict[str, torch.Tensor]] | None = None
-    batch_size: int = 16
+    batch_size: int = 32
     max_length: int = 256
+    need_logits: bool = False
 
     def _forward(self, texts: Sequence[str]) -> tuple[list[torch.Tensor], list[list[tuple[int, int]]], list[torch.Tensor], list[list[int]]]:
-        """Per text: hidden states (T, d), offsets, per-position next-token logits source, ids."""
+        """Per text: hidden states (T, d), offsets, next-token logits (T, V), ids. Batched with right padding."""
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.tokenizer.padding_side = "right"
         states, offsets_all, logits_all, ids_all = [], [], [], []
         for start in range(0, len(texts), self.batch_size):
             batch = list(texts[start:start + self.batch_size])
-            encoded = self.tokenizer(batch, return_offsets_mapping=True, add_special_tokens=False,
-                                     truncation=True, max_length=self.max_length)
-            for text, ids, offsets in zip(batch, encoded["input_ids"], encoded["offset_mapping"]):
-                input_ids = torch.tensor([ids], device=self.device)
-                spans = self.spans_fn([text], [offsets]) if self.spans_fn else None
-                with torch.no_grad(), torch.autocast(self.device.type, dtype=torch.bfloat16, enabled=self.device.type == "cuda"):
-                    if hasattr(self.model, "hidden_states") and hasattr(self.model, "channel"):
-                        embeddings = self.model.embed(input_ids, {k: v.to(self.device) for k, v in spans.items()} if spans else None)
-                        out = self.model.base(inputs_embeds=embeddings, output_hidden_states=True)
-                        hidden_layers = out.hidden_states
-                        head = self.model.model.get_output_embeddings()
-                    else:
-                        out = self.model.base_model(input_ids=input_ids, output_hidden_states=True)
-                        hidden_layers = out.hidden_states
-                        head = self.model.get_output_embeddings()
-                    final = hidden_layers[-1][0].float()
-                    chosen = hidden_layers[self.layer][0].float()
-                    logits = F.linear(final, head.weight.float())
-                states.append(chosen.cpu()); offsets_all.append(list(offsets)); logits_all.append(logits.cpu()); ids_all.append(ids)
+            encoded = self.tokenizer(batch, return_offsets_mapping=True, add_special_tokens=False, padding=True,
+                                     truncation=True, max_length=self.max_length, return_tensors="pt")
+            input_ids = encoded["input_ids"].to(self.device); mask = encoded["attention_mask"].to(self.device)
+            spans = None
+            if self.spans_fn:
+                offsets_list = [[tuple(o) for o, m in zip(offs.tolist(), msk.tolist()) if m] for offs, msk in
+                                zip(encoded["offset_mapping"], encoded["attention_mask"])]
+                spans = {k: v.to(self.device) for k, v in self.spans_fn(batch, offsets_list).items()}
+            with torch.no_grad(), torch.autocast(self.device.type, dtype=torch.bfloat16, enabled=self.device.type == "cuda"):
+                if hasattr(self.model, "channel") and hasattr(self.model, "embed"):
+                    embeddings = self.model.embed(input_ids, spans)
+                    out = self.model.base(inputs_embeds=embeddings, attention_mask=mask, output_hidden_states=True)
+                    head = self.model.model.get_output_embeddings()
+                else:
+                    out = self.model.base_model(input_ids=input_ids, attention_mask=mask, output_hidden_states=True)
+                    head = self.model.get_output_embeddings()
+                final, chosen = out.hidden_states[-1].float(), out.hidden_states[self.layer].float()
+                logits = F.linear(final, head.weight.float()) if self.need_logits else None
+            for row in range(len(batch)):
+                n = int(encoded["attention_mask"][row].sum())
+                states.append(chosen[row, :n].cpu())
+                offsets_all.append([tuple(o) for o in encoded["offset_mapping"][row, :n].tolist()])
+                logits_all.append(logits[row, :n].cpu() if logits is not None else None)
+                ids_all.append(encoded["input_ids"][row, :n].tolist())
         return states, offsets_all, logits_all, ids_all
 
     def word_state(self, texts: Sequence[str], char_spans: Sequence[tuple[int, int]]) -> torch.Tensor:
@@ -77,21 +86,29 @@ class ModelAdapter:
 
 def lambada(adapter: ModelAdapter, path: Path, *, limit: int | None = None) -> dict[str, float]:
     rows = [json.loads(line) for line in path.read_text().splitlines()][:limit]
-    correct, losses = 0, []
+    texts, word_ids_all, context_lengths = [], [], []
     for row in rows:
-        text = row["text"]
-        context, word = text.rsplit(" ", 1)
-        context_ids = adapter.tokenizer(context, add_special_tokens=False)["input_ids"]
-        word_ids = adapter.tokenizer(" " + word, add_special_tokens=False)["input_ids"]
-        _, _, logits, _ = adapter._forward([context + " " + word])
-        logits = logits[0]
-        positions = range(len(context_ids) - 1, len(context_ids) - 1 + len(word_ids))
-        if max(positions) >= logits.shape[0]:
-            continue
-        predicted = [int(logits[p].argmax()) for p in positions]
-        correct += int(predicted == word_ids)
-        log_probs = torch.log_softmax(logits[list(positions)], -1)
-        losses.append(-float(log_probs[torch.arange(len(word_ids)), torch.tensor(word_ids)].mean()))
+        context, word = row["text"].rsplit(" ", 1)
+        context_lengths.append(len(adapter.tokenizer(context, add_special_tokens=False)["input_ids"]))
+        word_ids_all.append(adapter.tokenizer(" " + word, add_special_tokens=False)["input_ids"])
+        texts.append(context + " " + word)
+    adapter.need_logits = True
+    correct, losses = 0, []
+    try:
+        for start in range(0, len(texts), adapter.batch_size):
+            _, _, logits_batch, ids_batch = adapter._forward(texts[start:start + adapter.batch_size])
+            for k, (logits, ids) in enumerate(zip(logits_batch, ids_batch)):
+                i = start + k
+                word_ids, n_context = word_ids_all[i], context_lengths[i]
+                positions = list(range(n_context - 1, n_context - 1 + len(word_ids)))
+                if positions[-1] >= logits.shape[0] or ids[n_context:n_context + len(word_ids)] != word_ids:
+                    continue      # tokenization of the joined text differs from context + word
+                predicted = logits[positions].argmax(-1).tolist()
+                correct += int(predicted == word_ids)
+                log_probs = torch.log_softmax(logits[positions], -1)
+                losses.append(-float(log_probs[torch.arange(len(word_ids)), torch.tensor(word_ids)].mean()))
+    finally:
+        adapter.need_logits = False
     return {"lambada_accuracy": correct / max(1, len(losses)), "lambada_word_loss": float(np.mean(losses)), "n": len(losses)}
 
 
