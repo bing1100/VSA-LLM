@@ -29,18 +29,20 @@ SPAN_FIELDS = ("start", "end", "inject", "entry", "length")
 
 
 _WORKER: dict[str, Any] = {}
-_SHARED: dict[str, Any] = {}     # set in the parent before forking; inherited copy-on-write
 
 
-def _init_worker(tokenizer_name: str, revision: str, boundary: str, min_subtokens: int) -> None:
-    """Load the tokenizer and build the linker once per worker process.
+def _init_worker(tokenizer_name: str, revision: str, table_path: str, boundary: str, min_subtokens: int) -> None:
+    """Load the tokenizer and the alias table (from a file) once per spawned worker.
 
-    Workers are forked and inherit the alias table from `_SHARED`; pickling a ~150k-alias table
-    to every spawned worker deadlocked the parent on a full pipe.
+    The table is passed by path: pickling a ~150k-alias table into every spawn payload deadlocked
+    the parent on a full pipe, and fork is unsafe in a multi-threaded (torch) parent.
     """
+    import pickle
     from transformers import AutoTokenizer
+    with open(table_path, "rb") as handle:
+        table = pickle.load(handle)
     _WORKER["tokenizer"] = AutoTokenizer.from_pretrained(tokenizer_name, revision=revision or None, local_files_only=True)
-    _WORKER["linker"] = CausalLinker(_SHARED["table"], boundary=boundary, min_subtokens=min_subtokens)
+    _WORKER["linker"] = CausalLinker(table, boundary=boundary, min_subtokens=min_subtokens)
 
 
 def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]]]:
@@ -84,10 +86,11 @@ def build_corpus(
         if chunk:
             yield chunk
 
-    import os
-    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")   # fork safety for the Rust tokenizer
-    _SHARED["table"] = table
-    initargs = (tokenizer_name, revision or "", boundary, min_subtokens)
+    import pickle
+    table_path = out_dir / ".alias_table.pkl"
+    with table_path.open("wb") as handle:
+        pickle.dump(table, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    initargs = (tokenizer_name, revision or "", str(table_path), boundary, min_subtokens)
 
     def ordered_results(executor: ProcessPoolExecutor) -> Iterator[tuple]:
         # Bounded in-flight window, results in submission order. A crashed worker raises
@@ -101,7 +104,7 @@ def build_corpus(
             yield pending.popleft().result()
 
     with token_path.open("wb") as handle, ProcessPoolExecutor(
-            workers, mp_context=get_context("fork"), initializer=_init_worker, initargs=initargs) as pool:
+            workers, mp_context=get_context("spawn"), initializer=_init_worker, initargs=initargs) as pool:
         for tokens, spans in ordered_results(pool):
             for ids, doc_spans in zip(tokens, spans):
                 if position >= max_tokens:
@@ -119,6 +122,7 @@ def build_corpus(
                 break
     arrays = {k: (np.concatenate(v) if v else np.zeros(0, dtype=np.float32 if k == "confidence" else np.int64))
               for k, v in span_parts.items()}
+    table_path.unlink(missing_ok=True)
     order = np.argsort(arrays["inject"], kind="stable")
     # Compact on-disk types: positions and entries int32, lengths uint8, confidence float16.
     compact = {"start": np.int32, "end": np.int32, "inject": np.int32, "entry": np.int32,
