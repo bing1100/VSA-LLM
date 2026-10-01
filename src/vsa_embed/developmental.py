@@ -300,8 +300,17 @@ class DevelopmentalDictionary:
         old = self._parameter()
         theta = old.detach()[vector_id].float().cpu()
         offset = self.config.epsilon * theta.norm() * direction
-        keep_parent = self.config.route_unobserved == "parent" and self.config.target == "atomics"
-        if keep_parent:
+        keep_parent = self.config.route_unobserved == "parent"
+        old_keys = getattr(composer, "relation_keys", None)
+        if keep_parent and self.config.target == "relations":
+            ids = composer.add_relation_copies(torch.tensor([vector_id, vector_id]), torch.stack([offset, -offset]))
+            _replace_parameter(self.optimizer, old, composer.relation_vectors(), torch.tensor([vector_id, vector_id]))
+            if old_keys is not None:
+                _replace_parameter(self.optimizer, old_keys, composer.relation_keys, torch.tensor([vector_id, vector_id]))
+            positive_id, new_id = int(ids[0]), int(ids[1])
+            uses = (schedule.relations == vector_id).nonzero().flatten()
+            usage_of_edge = uses
+        elif keep_parent:
             # Two new children for observed usages; the parent keeps its value for usages without
             # evidence (held-out or rare), for which the collapsed vector is the best guess.
             ids = composer.add_atomics(torch.stack([theta + offset, theta - offset]).to(old))
@@ -324,6 +333,8 @@ class DevelopmentalDictionary:
             with torch.no_grad():
                 new_param[vector_id] += offset.to(new_param)
             _replace_parameter(self.optimizer, old, new_param, torch.tensor([vector_id]))
+            if old_keys is not None:
+                _replace_parameter(self.optimizer, old_keys, composer.relation_keys, torch.tensor([vector_id]))
             uses = (schedule.relations == vector_id).nonzero().flatten()
             usage_of_edge = uses
         relations, fillers = schedule.relations.clone(), schedule.fillers.clone()

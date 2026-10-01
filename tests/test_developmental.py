@@ -115,3 +115,22 @@ def test_allocate_and_merge_cards() -> None:
     events = tracker.consolidate()
     assert events and events[0]["kept"] == 1 and int(composer.schedule.fillers[1]) == 1
     assert bool(tracker.frozen[new_id])
+
+
+def test_relation_split_in_attentive_mode_registers_new_keys_with_the_optimizer() -> None:
+    schedule = FrameSchedule.from_frames([[(0, 0), (1, 1)], [(0, 2), (1, 0)], [(0, 1)]])
+    torch.manual_seed(5)
+    composer = FrameComposer(schedule, 3, 2, 12, operator="hrr", mode="attentive")
+    optimizer = torch.optim.Adam(composer.parameters(), lr=0.01)
+    composer(torch.arange(3)).sum().backward(); optimizer.step()
+    for route in ("context", "parent"):
+        tracker = DevelopmentalDictionary(composer, optimizer, DevelopmentalConfig(target="relations", route_unobserved=route,
+                                                                                    growth_budget=4.0))
+        direction = F.normalize(torch.randn(12), dim=0)
+        edges = (composer.schedule.relations == 0).nonzero().flatten()
+        tracker._split(0, {"direction": direction, "labels": edges, "momenta": torch.stack([direction, -direction, direction][:edges.numel()]),
+                           "gain": 1.0, "p_value": 0.001, "contributions": 10})
+        params = optimizer.param_groups[0]["params"]
+        assert any(p is composer.relation_keys for p in params)
+        assert any(p is composer.relation_vectors() for p in params)
+        assert composer.relation_keys.shape[0] == composer.relation_count
