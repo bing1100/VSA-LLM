@@ -23,8 +23,10 @@ which the linker treats as one polysemous alias.
 **Documents** (API reference entries, module source files with docstrings and comments, type stubs,
 usage examples, tutorials, Q&A threads, issue reports with tracebacks, changelogs, migration notes,
 code reviews, READMEs) state facts consistent with the schemas. Focus symbols are drawn by a Zipf law
-over a random rank order, Zipf–Mandelbrot `(rank + zipf_offset) ** -zipf` (evaluation documents draw
-`uniform_focus` of their focus symbols uniformly, which over-samples the tail).
+over a random rank order, Zipf–Mandelbrot `(rank + zipf_offset) ** -zipf`, times `niche_weight` for the
+symbols of the last `niche_libraries` libraries (rarely documented niche libraries: a rare tail at every
+corpus size). Evaluation documents draw `uniform_focus` of their focus symbols uniformly, which
+over-samples the tail.
 
 Splits: `train` (in training and evaluation documents), `heldout` (frozen, stratified by Zipf rank;
 functions, methods and leaf classes — a held-out class takes its methods with it; only in evaluation
@@ -239,7 +241,7 @@ def generate_private_libraries(*, seed: int, libraries: int = 16, typescript_fra
                                functions: tuple[int, int] = (10, 18), methods: tuple[int, int] = (2, 6),
                                exceptions: tuple[int, int] = (10, 16), constants: tuple[int, int] = (0, 2),
                                heldout_fraction: float = 0.10, zero_shot: int = 600, zipf: float = 1.2,
-                               zipf_offset: float = 0.0,
+                               zipf_offset: float = 0.0, niche_libraries: int = 0, niche_weight: float = 0.01,
                                deprecated_fraction: float = 0.04, experimental_fraction: float = 0.05,
                                forbidden: set[str] | None = None) -> dict[str, Any]:
     """A deterministic set of private libraries (JSON-serialisable; see the module docstring)."""
@@ -350,6 +352,15 @@ def generate_private_libraries(*, seed: int, libraries: int = 16, typescript_fra
             elif roll < deprecated_fraction + experimental_fraction:
                 fn["status"] = "experimental"
     _assign_weights(symbols, rng, zipf, zipf_offset)
+    # niche libraries: the last `niche_libraries` (generation order, no random draw, so the symbols and the
+    # holdout do not depend on it) are documented `niche_weight` times less often — a long tail of rarely
+    # documented libraries whose symbols stay rare even in a large corpus
+    niche = {lib["name"] for lib in libs[len(libs) - niche_libraries:]} if niche_libraries else set()
+    for lib in libs:
+        lib["niche"] = lib["name"] in niche
+    for s in symbols:
+        if s["library"] in niche:
+            s["weight"] *= niche_weight
     _choose_heldout(symbols, rng, heldout_fraction)
     symbols += _zero_shot(libs, symbols, names, rng, zero_shot)
     return {"seed": seed, "zipf": zipf, "zipf_offset": zipf_offset, "libraries": libs, "symbols": symbols}

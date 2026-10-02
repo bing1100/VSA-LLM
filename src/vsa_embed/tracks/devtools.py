@@ -43,14 +43,13 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Iterator
 
-from ..benchmarks.devtools_libraries import (AliasMatcher, generate_private_libraries, hidden_names, library_documents,
-                                             qualname, symbol_facts)
+from ..benchmarks.devtools_libraries import (BUILTIN_TYPES, AliasMatcher, generate_private_libraries, hidden_names,
+                                             library_documents, qualname, symbol_facts)
 from ..data.api_docs import build_snapshot, read_jsonl_gz, snapshot_sha256
-from ..ontologies.devtools import _RealIndex, build_devtools_ontology, private_concept, real_canonical, real_concept
+from ..ontologies.devtools import _RealIndex, build_devtools_ontology, private_concept, real_concept
 from ..ontologies.wordnet import FrameOntology
 from . import Track
-from .common import (RelationTemplates, SyntheticConcept, choice_items, entailment_items, mention_item, text_vocabulary,
-                     wordnet_forbidden)
+from .common import RelationTemplates, SyntheticConcept, _relations, mention_item, text_vocabulary, wordnet_forbidden
 
 SIGNATURE = {
     "returns": RelationTemplates(["`{x}` returns", "The return type of `{x}` is", "Calling `{x}` gives you a value of type"],
@@ -251,7 +250,8 @@ class DevToolsTrack(Track):
             | text_vocabulary(u["text"] for u in units) | {w for r in records for a in r["aliases"] for w in re.findall(r"[a-z]+", a.lower())}
         generator = {k: tuple(v) if isinstance(v, list) else v for k, v in settings.items() if k in (
             "libraries", "typescript_fraction", "modules", "classes", "functions", "methods", "exceptions", "constants",
-            "heldout_fraction", "zero_shot", "zipf", "zipf_offset", "deprecated_fraction", "experimental_fraction")}
+            "heldout_fraction", "zero_shot", "zipf", "zipf_offset", "niche_libraries", "niche_weight", "deprecated_fraction",
+            "experimental_fraction")}
         private = generate_private_libraries(seed=seed, forbidden=forbidden, **generator)
         self.docs_dir.mkdir(parents=True, exist_ok=True)
         (self.docs_dir / "libraries.json").write_text(json.dumps(private, indent=1) + "\n")
@@ -369,6 +369,7 @@ class DevToolsTrack(Track):
         summary = {
             "request": request, "code_sha256": _code_digest(), **stats, "audit": audit, "forbidden_words": len(forbidden),
             "private": {"libraries": len(private["libraries"]),
+                        "niche_libraries": [l["name"] for l in private["libraries"] if l.get("niche")],
                         "languages": dict(Counter(l["language"] for l in private["libraries"])),
                         "symbols": len(symbols), "by_kind": dict(sorted(Counter(s["kind"] for s in symbols).items())),
                         "by_split": dict(sorted(Counter(s["split"] for s in symbols).items())),
@@ -451,13 +452,13 @@ class DevToolsTrack(Track):
         heldout = [r for r in records if r["split"] == "heldout"]
         synthetic = [r for r in records if r["split"] == "synthetic"]
         pools = _pools(records)
-        signature = _grouped(choice_items, train_sample + heldout, SIGNATURE, pools, task="signature_probe", seed=seed,
+        signature = _grouped(shaped_choice_items, train_sample + heldout, SIGNATURE, pools, task="signature_probe", seed=seed,
                              max_paraphrases=2, max_relations=k)
-        doc_qa = _grouped(choice_items, train_sample + heldout, DOC_QA, pools, task="doc_qa_cloze", seed=seed + 1,
+        doc_qa = _grouped(shaped_choice_items, train_sample + heldout, DOC_QA, pools, task="doc_qa_cloze", seed=seed + 1,
                           max_paraphrases=2, max_relations=k)
-        zero_property = _grouped(choice_items, synthetic + heldout, ZEROSHOT, pools, task="zeroshot_property",
+        zero_property = _grouped(shaped_choice_items, synthetic + heldout, ZEROSHOT, pools, task="zeroshot_property",
                                  seed=seed + 2, max_relations=k)
-        zero_entail = _grouped(entailment_items, synthetic + heldout, ZEROSHOT, pools, task="zeroshot_entailment",
+        zero_entail = _grouped(shaped_entailment_items, synthetic + heldout, ZEROSHOT, pools, task="zeroshot_entailment",
                                seed=seed + 3, max_relations=k)
         probe = []
         for r in sorted(train_sample, key=lambda r: r["concept"]) + heldout + synthetic:
@@ -524,6 +525,70 @@ def real_facts(record: dict[str, Any], index: _RealIndex) -> dict[str, list[str]
         if shown:
             facts[relation] = shown
     return facts
+
+
+_BUILTINS = {t for types in BUILTIN_TYPES.values() for t in types} | {"Exception", "Error", "None", "void", "object"}
+
+
+def filler_shape(value: str) -> tuple[bool, ...]:
+    """Surface shape of a filler (builtin type, dotted path, CamelCase, snake_case, several words): distractors
+    of the same shape as the answer, so no option stands out by its form (a builtin among class names, a
+    module among classes)."""
+    return (value in _BUILTINS, "." in value, value[:1].isupper(), "_" in value, " " in value)
+
+
+def _distractors(rng: random.Random, truth: str, pool: list[str], k: int) -> list[str]:
+    same = [p for p in pool if filler_shape(p) == filler_shape(truth)]
+    return rng.sample(same if len(same) >= k else pool, k)
+
+
+def shaped_choice_items(concepts: list[dict[str, Any]], templates: dict[str, RelationTemplates],
+                        pools: dict[str, list[str]], *, track: str, task: str, seed: int, choices: int = 4,
+                        max_paraphrases: int = 3, max_relations: int | None = None) -> list[dict[str, Any]]:
+    """`common.choice_items` (same rows) with shape-matched distractors (`filler_shape`)."""
+    rng = random.Random(seed)
+    items: list[dict[str, Any]] = []
+    for concept in concepts:
+        for relation in _relations(concept, templates, max_relations, rng):
+            fillers = concept["facts"][relation]
+            pool = sorted(set(pools.get(relation, ())) - set(fillers))
+            if len(pool) < choices - 1:
+                continue
+            truth = rng.choice(sorted(fillers))
+            options = [truth] + _distractors(rng, truth, pool, choices - 1)
+            rng.shuffle(options)
+            spec = templates[relation]
+            group = f"{track}-{task}-{len(items):06d}"
+            for paraphrase, prompt in enumerate(spec.prompts[:max_paraphrases]):
+                items.append({
+                    "id": f"{group}-p{paraphrase}", "group": group, "track": track, "task": task,
+                    "split": concept["split"], "concept": concept["concept"], "surface": concept["surface"],
+                    "relation": relation, "paraphrase": paraphrase, "prompt": prompt.format(x=concept["surface"]),
+                    "choices": [spec.answer.format(y=o) for o in options], "label": options.index(truth),
+                })
+    return items
+
+
+def shaped_entailment_items(concepts: list[dict[str, Any]], templates: dict[str, RelationTemplates],
+                            pools: dict[str, list[str]], *, track: str, task: str, seed: int,
+                            max_relations: int | None = None) -> list[dict[str, Any]]:
+    """`common.entailment_items` (same rows) with a shape-matched corrupted filler."""
+    rng = random.Random(seed)
+    items: list[dict[str, Any]] = []
+    for concept in concepts:
+        for relation in _relations(concept, templates, max_relations, rng):
+            fillers = concept["facts"][relation]
+            pool = sorted(set(pools.get(relation, ())) - set(fillers))
+            if not pool:
+                continue
+            truth = rng.choice(sorted(fillers))
+            pair = f"{track}-{task}-{len(items) // 2:06d}"
+            for label, filler in ((1, truth), (0, _distractors(rng, truth, pool, 1)[0])):
+                items.append({"id": f"{pair}-{label}", "pair": pair, "track": track, "task": task,
+                              "split": concept["split"], "concept": concept["concept"], "surface": concept["surface"],
+                              "relation": relation, "statement": templates[relation].statement.format(x=concept["surface"], y=filler),
+                              "label": label})
+    return items
 
 
 def _pools(records: list[dict[str, Any]]) -> dict[tuple[str, str], dict[str, list[str]]]:

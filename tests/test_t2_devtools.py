@@ -107,6 +107,16 @@ def test_private_libraries_are_deterministic_prefix_free_and_follow_language_con
     assert all(s["kind"] in ("function", "method", "class") for s in symbols if s["split"] == "heldout")
 
 
+def test_niche_libraries_only_rescale_weights() -> None:
+    plain = generate_private_libraries(seed=6, **SMALL)
+    niche = generate_private_libraries(seed=6, niche_libraries=1, niche_weight=0.01, **SMALL)
+    tail = niche["libraries"][-1]["name"]
+    assert [l["niche"] for l in niche["libraries"]] == [False] * 2 + [True]
+    for a, b in zip(plain["symbols"], niche["symbols"]):
+        assert {k: v for k, v in a.items() if k != "weight"} == {k: v for k, v in b.items() if k != "weight"}
+        assert b["weight"] == pytest.approx(a["weight"] * (0.01 if a["library"] == tail else 1.0))
+
+
 def test_private_documents_hide_heldout_and_zeroshot_symbols() -> None:
     data = generate_private_libraries(seed=4, **SMALL)
     train = list(library_documents(data, split="train", seed=4, max_chars=400_000))
@@ -283,6 +293,21 @@ def test_real_holdout_avoids_contained_prefix_and_referenced_aliases() -> None:
     held = choose_real_holdout(records, mentions, fraction=1.0, min_mentions=5, seed=1)
     assert set(held) == {"c.b.g", "d.F", "e.h"}
     assert choose_real_holdout(records, {**mentions, "e.h": 2}, fraction=1.0, min_mentions=5, seed=1) == ["c.b.g", "d.F"]
+
+
+def test_distractors_match_the_shape_of_the_answer() -> None:
+    from vsa_embed.tracks.devtools import SIGNATURE, filler_shape, shaped_choice_items, shaped_entailment_items
+    pools = {"returns": ["int", "str", "float", "bool", "BrainshToulk", "ZelkFra", "GroushZham", "KlaxPou"],
+             "member_of": ["brainsh", "zelkra", "pouxa", "BrainshToulk", "ZelkFra", "GroushZham"]}
+    concepts = [{"concept": f"c{i}", "surface": f"fn_{i}", "split": "train",
+                 "facts": {"returns": [rng_value], "member_of": [owner]}}
+                for i, (rng_value, owner) in enumerate([("list", "dulka"), ("TrimVou", "TrimVou")])]
+    rows = shaped_choice_items(concepts, SIGNATURE, pools, track="t2", task="signature_probe", seed=1, max_paraphrases=1)
+    for row in rows:
+        shapes = {filler_shape(choice.strip()) for choice in row["choices"]}
+        assert len(shapes) == 1, row["choices"]
+    pairs = shaped_entailment_items(concepts, SIGNATURE, pools, track="t2", task="zeroshot_entailment", seed=1)
+    assert len(pairs) == 8 and [r["label"] for r in pairs[:2]] == [1, 0]
 
 
 def test_interleave_spreads_the_secondary_stream_by_characters() -> None:
