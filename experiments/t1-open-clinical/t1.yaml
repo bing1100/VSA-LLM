@@ -44,7 +44,7 @@ data:
   holdout_min_count: 5
   holdout_min_subtokens: 2
   holdout_max_containing: 5
-  expected_holdout_sha256: fd4244eae86a54d13bfaffa69b95848e1a7a002072d6ee048344af88c2a1cf29   # frozen 2026-10-02 (runs/slice-v1); a build that differs fails
+  expected_holdout_sha256: 1c477afda9822b260596c046fcdd3ca7205d9a5c0e22b44892d0cc1870ddcd88   # re-frozen 2026-10-02 from the full config before any training (the slice pin fd4244ea… came from a different mix calibration: the slice capped eval_general_docs, which feeds the chars-per-token calibration); a build that differs fails
   min_subtokens: 2
   train_tokens: 300000000
   train_min_subtokens: 1          # spans of every length stored: one corpus serves ℓ_min ∈ {1, 2, 3, 4}
