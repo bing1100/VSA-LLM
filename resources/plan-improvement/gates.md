@@ -62,7 +62,7 @@ Env `vsa-repro`: Python 3.12.4, torch 2.11.0+cu128, transformers 4.54.0, numpy 2
 
 ## D2 (E2) — mapping × operator frontier on frozen GPT-2 anchors (2026-10-02)
 
-**Inputs.** `experiments/e2-mapping-operator-frontier/runs/v2/` (bhux-tiny, commit `57e4e23`), WordNet and MeSH 2026, 6,000 concepts each, node-disjoint test, 3 seeds, 7 mapping × 7 operator cells plus shuffled-label controls.
+**Inputs.** `experiments/e2-mapping-operator-frontier/runs/v2/` (bhux-tiny, commit `07a7315` per its manifest), WordNet and MeSH 2026, 6,000 concepts each, node-disjoint test, 3 seeds, 7 mapping × 7 operator cells plus shuffled-label controls.
 
 **Pre-registered gate (experiments.md E2).** M2-induced transfers at least as well as feature salience and beats binary; the best operator is carried to E4, and a tie with `random_fixed` is recorded for C8 to decide.
 
