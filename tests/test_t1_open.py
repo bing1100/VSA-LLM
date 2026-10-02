@@ -11,7 +11,8 @@ import pytest
 
 from vsa_embed.data.pubmed import (citation_text, extract_file, iter_citations, parse_md5_sidecar, pmid_bucket,
                                    section_label)
-from vsa_embed.experiments.t1_items import neighbourhood, pubmedqa_items, rare_neighbour_items, sentence_around
+from vsa_embed.experiments.t1_items import (neighbourhood, pubmedqa_items, pubmedqa_with_context, rare_neighbour_items,
+                                            sentence_around)
 from vsa_embed.experiments.t1_open_corpus import (assert_alias_disjoint, choose_track_holdout, containment_index,
                                                   holdout_closure, load_config, mix_documents, stratum_counts, verdict,
                                                   whole_word_substrings, window_mask)
@@ -374,8 +375,29 @@ def test_pubmedqa_items(tmp_path: Path) -> None:
     (tmp_path / "gt.json").write_text(json.dumps({"10": "yes", "11": "no"}))
     items = pubmedqa_items(tmp_path / "qa.parquet", tmp_path / "gt.json", seed=1)
     assert [i["official_test"] for i in items] == [True, True, False, False, False, False]
-    assert items[0]["context"] == "Background: A.\nResults: B." and items[2]["fold"] is not None and items[0]["fold"] is None
+    assert "context" not in items[0] and items[2]["fold"] is not None and items[0]["fold"] is None
     assert items == pubmedqa_items(tmp_path / "qa.parquet", tmp_path / "gt.json", seed=1)
+    joined = pubmedqa_with_context(items, tmp_path / "qa.parquet")
+    assert joined[0]["context"] == "Background: A.\nResults: B." and joined[0]["long_answer"] == "Yes."
+    rows[0]["context"] = {"contexts": ["changed."], "labels": ["BACKGROUND"]}
+    pq.write_table(pa.Table.from_pylist(rows), tmp_path / "qa.parquet")
+    with pytest.raises(ValueError):
+        pubmedqa_with_context(items, tmp_path / "qa.parquet")
+
+
+def test_context_pointers_resolve(tmp_path: Path) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from vsa_embed.experiments.t1_items import _context, resolve_contexts
+    text = "Title here.\n\nBackground: The rheumatoid arthritis cohort was large. Next sentence."
+    start = text.index("rheumatoid")
+    pointer = _context({"pmid": 5, "start": start, "end": start + 20, "text": text})
+    assert "text" not in pointer and pointer["alias"] == "rheumatoid arthritis"
+    path = tmp_path / "p.parquet"
+    pq.write_table(pa.table({"pmid": [5], "year": [2026], "text": [text], "mesh": [[]]}), path)
+    resolved = resolve_contexts([{"id": "x", "context": pointer}], [path])[0]["context"]
+    assert resolved["text"] == "Background: The rheumatoid arthritis cohort was large."
+    assert resolved["text"][resolved["span"][0]:resolved["span"][1]] == "rheumatoid arthritis"
 
 
 def test_rare_neighbour_selection_is_preregistered() -> None:

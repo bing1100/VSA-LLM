@@ -698,6 +698,8 @@ def render_report(summary: dict[str, Any], by_source: dict[str, dict[str, Any]],
              "Ontology: MeSH 2026 descriptors (frames from tree positions, pharmacological actions, see-also); "
              "corpus: PubMed 2026 baseline abstracts mixed 50/50 (tokens) with FineWeb-Edu (the C3 stream). "
              "Pretrained hosts may have seen PubMed; the newest baseline files were used to limit overlap.", "",
+             "Data: PubMed, courtesy of the U.S. National Library of Medicine (2026 baseline snapshot, not updated); "
+             "MeSH 2026, U.S. National Library of Medicine.", "",
              f"Linker: {onto['aliases']:,} aliases over {onto['entries']:,} entries (alias policy {onto.get('alias_policy')}).", "",
              "| tokenizer | aliases | ≥ 2 subtokens | 1 / 2 / 3 / 4 / 5+ |", "|---|---:|---:|---|"]
     for name, s in onto["alias_subtokens"].items():
