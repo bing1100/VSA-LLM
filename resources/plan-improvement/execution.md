@@ -94,3 +94,6 @@ New names not new semantics; one frozen holdout per track; freeze the linker bef
 | 9 | BLESS endpoint: the `[h_x; h_y]` concat probe equals a relatum-only control (memorizes the relatum) | WP-probe | G2 | primary = interaction probe `[|h_x−h_y|; h_x⊙h_y]` and prompt AUC; concat and relatum-only reported as controls |
 | 10 | Probe layer (final vs middle) | WP-probe | G2 | final layer (as B8) for every reported number; one middle-layer sensitivity run per stage |
 | 11 | Per-item probe outputs (≈ 0.3 MB per checkpoint) | WP-probe | now | committed with each run folder (needed for paired tests); `*.pt` checkpoints are git-ignored |
+| 12 | T1-open evaluation corpus and size | WP-T1 | before D4.5 | gate strata on `eval-pubmed` with ≥ 2,048 windows (3,072 if ℓ_min = 3); locality on `eval-general`; ℓ_min = 2 |
+| 13 | T1-open rare stratum power (measured only by the full build) | WP-T1 | after the full T1 build | if underpowered, report the rare stratum as exploratory rather than re-freezing the holdout |
+| 14 | T1-open CPT corpus mix (50/50 PubMed/general like from-scratch) | WP-T1 | before D4.5 | keep 50/50 (same recipe as from scratch; locality measurable) |
