@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import torch
 from torch import nn
@@ -24,7 +25,8 @@ def test_stage_b_runner_writes_auditable_artifacts(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr(experiment, "collect_wordnet_graph", lambda *a, **k: (nodes, edges))
     contextual = torch.nn.functional.normalize(torch.randn(12, 8), dim=-1)
     monkeypatch.setattr(experiment, "contextual_anchors", lambda *a, **k: contextual)
-    monkeypatch.setattr(experiment.wn, "get_version", lambda: "fixture")
+    # Replace the lazy corpus loader itself: patching an attribute on it would load WordNet.
+    monkeypatch.setattr(experiment, "wn", SimpleNamespace(get_version=lambda: "fixture"))
     config = {
         "host": {"model": "fake", "revision": "fixed", "batch_size": 4, "max_length": 16},
         "data": {"relation_types": ["hypernym", "antonym"], "max_edges_per_relation": 10,
