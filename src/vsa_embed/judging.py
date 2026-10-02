@@ -10,6 +10,12 @@ The CLI is run lean — no tools, no settings, no session persistence — from a
 
     claude -p <prompt> --output-format json --model <model> --tools "" --setting-sources ""
            --no-session-persistence --json-schema <schema>
+
+Alternatively (`exchange_dir`), verdicts come from an interactive Claude Code session through files:
+each ungraded (item, call) is written to `requests/<key>.json` (prompt, schema, response path — no
+item id, gold or system label), the session writes the verdict object to `responses/<key>.json`,
+and re-running the study validates and caches it. Answered requests are removed, so `requests/`
+always lists the outstanding work.
 """
 
 from __future__ import annotations
@@ -39,6 +45,29 @@ def claude_cli_runner(prompt: str, schema: dict[str, Any], model: str, *, timeou
     return json.loads(completed.stdout)
 
 
+def schema_problem(value: Any, schema: dict[str, Any]) -> str | None:
+    """Why `value` violates the (flat) JSON schemas used here, or None if it conforms."""
+    kind = schema.get("type")
+    checks = {"object": lambda v: isinstance(v, dict), "string": lambda v: isinstance(v, str),
+              "boolean": lambda v: isinstance(v, bool),
+              "integer": lambda v: isinstance(v, int) and not isinstance(v, bool)}
+    if kind in checks and not checks[kind](value):
+        return f"expected {kind}, got {type(value).__name__}"
+    if "enum" in schema and value not in schema["enum"]:
+        return f"{value!r} not in {schema['enum']}"
+    if "minimum" in schema and value < schema["minimum"] or "maximum" in schema and value > schema["maximum"]:
+        return f"{value!r} outside [{schema.get('minimum')}, {schema.get('maximum')}]"
+    if kind == "object":
+        missing = [k for k in schema.get("required", []) if k not in value]
+        if missing:
+            return f"missing {missing}"
+        for name, sub in schema.get("properties", {}).items():
+            problem = schema_problem(value[name], sub) if name in value else None
+            if problem:
+                return f"{name}: {problem}"
+    return None
+
+
 @dataclass
 class JudgeClient:
     cache_dir: Path
@@ -46,6 +75,7 @@ class JudgeClient:
     calls: int = 3
     retries: int = 2
     runner: Runner | None = None
+    exchange_dir: Path | None = None
     spent_usd: float = field(default=0.0, init=False)
 
     def _key(self, prompt: str, schema: dict[str, Any], call: int) -> str:
@@ -65,7 +95,7 @@ class JudgeClient:
                 records.append(json.loads(path.read_text())); continue
             record: dict[str, Any] = {"item": item_id, "call": call, "model": self.model,
                                       "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest()}
-            for attempt in range(self.retries + 1):
+            for attempt in range(0 if self.exchange_dir is not None else self.retries + 1):
                 try:
                     envelope = runner(prompt, schema, self.model)
                     verdict = envelope.get("structured_output")
@@ -77,11 +107,33 @@ class JudgeClient:
                     break
                 except (ValueError, RuntimeError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
                     record.update(error=str(error)[:300], attempts=attempt + 1)
+            if self.exchange_dir is not None:
+                record.update(self._exchange(key, prompt, schema, call))
             if "verdict" in record:
                 record.pop("error", None)
                 path.write_text(json.dumps(record, indent=2) + "\n")   # only successful verdicts are cached
             records.append(record)
         return records
+
+    def _exchange(self, key: str, prompt: str, schema: dict[str, Any], call: int) -> dict[str, Any]:
+        """Read the session's verdict for `key`, or post the request and report it pending."""
+        request, response = self.exchange_dir / "requests" / f"{key}.json", self.exchange_dir / "responses" / f"{key}.json"
+        if response.exists():
+            try:
+                verdict = json.loads(response.read_text())
+                problem = schema_problem(verdict, schema)
+            except json.JSONDecodeError as error:
+                problem = f"not JSON: {error}"
+            if problem is None:
+                request.unlink(missing_ok=True)
+                return {"verdict": verdict, "judge": "claude-code-session", "cost_usd": None}
+            error = f"invalid response: {problem}"
+        else:
+            error = "pending"
+        request.parent.mkdir(parents=True, exist_ok=True); response.parent.mkdir(parents=True, exist_ok=True)
+        request.write_text(json.dumps({"key": key, "model": self.model, "call": call, "prompt": prompt, "schema": schema,
+                                       "response_path": str(response.resolve()), "last_error": error}, indent=2) + "\n")
+        return {"error": error}
 
 
 def blind_options(options: dict[str, Any], seed: int) -> tuple[list[Any], dict[str, str]]:

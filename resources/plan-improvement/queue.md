@@ -3,6 +3,8 @@
 Every committed task from [tasks.md](tasks.md), in the order it will be executed. Claude works down this list continuously and updates the status column as tasks land (`todo` → `running` → `done`, or `blocked` with a reason). Gate decisions G1–G5 are taken by applying the pre-registered rules and recorded in [gates.md](gates.md) for the author's review; work continues after each. Escalation tiers X1–X4 (GPU work beyond the committed ≈ 400 hours) are **not** queued: they wait for the author's approval at G6.
 
 > **BLOCKED (2026-09-30): faulty RAM detected on the experiment machine — see [gates.md](gates.md#blocker--faulty-ram-on-the-experiment-machine-2026-09-30). All experiment runs are paused until the memory is fixed; committed results will be re-run and checked after the fix.**
+>
+> **2026-10-02:** moved to a new machine (`bhux-tiny`, clean RAM screen). The re-run checks and resumption steps are in [runbook.md](runbook.md); E0 already reproduces.
 
 GPU jobs are queued through the local job queue (B11) once it exists; until then they run one at a time from the shell.
 

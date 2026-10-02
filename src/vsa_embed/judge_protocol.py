@@ -116,3 +116,51 @@ def wordnet_calibration_items(wordnet: Any, *, count: int = 30, seed: int = 0) -
         items.append({"id": f"calib-neighbours-{i}", "gold": gold,
                       "fields": {"concept": name, "items": ", ".join(r.replace("_", " ") for r in related)}})
     return items
+
+
+def main(argv: list[str] | None = None) -> int:
+    """`calibrate`: the C5 neighbours calibration through a Claude Code session (file exchange).
+
+    Run it once to post the requests, have the session answer every file in `<output>/exchange/requests/`,
+    then run it again: exit code 3 while verdicts are pending or invalid, 0 once results are written.
+    Accuracy is binary, as in v1: majority score ≥ 2 counts as related, gold 3 is related and gold 0 is not.
+    """
+    import argparse
+    import json
+    from pathlib import Path
+
+    from nltk.corpus import wordnet
+
+    from .judging import calibration_agreement
+    from .provenance import write_run_metadata
+
+    parser = argparse.ArgumentParser(description=main.__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("command", choices=["calibrate"])
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--count", type=int, default=30); parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--calls", type=int, default=3); parser.add_argument("--model", default="claude-opus-5-5")
+    args = parser.parse_args(argv)
+    client = JudgeClient(args.output / "cache", model=args.model, calls=args.calls, exchange_dir=args.output / "exchange")
+    items = wordnet_calibration_items(wordnet, count=args.count, seed=args.seed)
+    result = run_study(client, "neighbours", items, seed=args.seed)
+    outstanding = sorted((args.output / "exchange" / "requests").glob("*.json"))
+    if outstanding:
+        invalid = sum(json.loads(p.read_text())["last_error"] != "pending" for p in outstanding)
+        print(f"{len(outstanding)} requests outstanding ({invalid} with invalid responses) in "
+              f"{args.output / 'exchange' / 'requests'}; answer them, then re-run this command")
+        return 3
+    judged = {i["id"]: i["majority"] >= 2 for i in result["items"]}
+    gold = {i["id"]: i["gold"] == 3 for i in result["items"]}
+    summary = {"study": "neighbours", "items": len(items), "graded": sum(bool(i["scores"]) for i in result["items"]),
+               "accuracy_vs_ontology_gold": calibration_agreement(judged, gold),
+               "fleiss_kappa_across_calls": result["fleiss_kappa"], "model": args.model, "calls_per_item": args.calls,
+               "judge": "claude-code-session (file exchange, one fresh subagent per request)"}
+    (args.output / "results.json").write_text(json.dumps(result, indent=2) + "\n")
+    (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    write_run_metadata(args.output, vars(args) | {"output": str(args.output)}, device="cpu")
+    print(json.dumps(summary, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
