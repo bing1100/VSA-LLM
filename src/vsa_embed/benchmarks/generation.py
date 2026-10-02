@@ -427,6 +427,7 @@ def render_markdown(result: dict[str, Any]) -> str:
         f"{machine['ram_gib']} GiB RAM; {machine['platform']}.",
         f"- Python {machine['python']}, torch {machine['packages'].get('torch')}, commit `{machine.get('git_sha')}` "
         f"(dirty: {machine.get('git_dirty')}), run at {machine['created_at']}.",
+        f"- Command: `vsa-bench-generation {' '.join(machine.get('argv', []))}`",
         f"- Host load average (1/5/15 min) at start {machine['load_average_at_start']}, at end "
         f"{machine.get('load_average_at_end', '?')}: other jobs shared this machine, so CPU latencies carry some noise.",
     ]
@@ -436,9 +437,10 @@ def render_markdown(result: dict[str, Any]) -> str:
             f"{gpu['allocator_cap_gib']} GiB for this process (plus the CUDA context), wall-clock budget "
             f"{gpu['time_budget_s']} s (used {gpu.get('wall_seconds', '?')} s). **The GPU was shared:** other jobs held "
             f"{gpu['used_by_others_gib_at_start']} GiB and ran at {gpu.get('utilization_percent_at_start', '?')}% "
-            "utilization when the benchmark started, so GPU latencies include time-slicing with that job and are "
-            "upper bounds with high variance; compare sparse and full within the table, not against an idle GPU. "
-            "`OOM` means the step does not fit under the cap.",
+            "utilization when the benchmark started, so every GPU step is time-sliced with that job: the 3-12 ms of the "
+            "sparse rows is mostly queueing, not compute, and a sparse step can even look slower than a full one. "
+            "**Treat the GPU latency table as qualitative** and rely on the GPU memory table (allocator numbers, not "
+            "affected by sharing), the OOM boundary, and the CPU tables. `OOM` means the step does not fit under the cap.",
         ]
     for device in devices:
         title = "CPU" if device == "cpu" else "GPU (shared, capped)"
