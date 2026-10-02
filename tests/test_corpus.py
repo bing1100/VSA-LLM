@@ -37,3 +37,18 @@ def test_build_and_sample_corpus(tmp_path: Path) -> None:
     assert bool((long_only[1]["length"] >= 2).all())
     starts = eval_windows(corpus, count=5, length=16)
     assert len(starts) == 5 and starts == sorted(starts)
+
+
+def test_window_search_matches_for_int32_and_int64_span_index() -> None:
+    import numpy as np
+    from vsa_embed.data.corpus import TokenCorpus
+    rng = np.random.default_rng(0)
+    inject = np.sort(rng.integers(0, 5000, size=400))
+    spans = {"start": inject - 1, "end": inject, "inject": inject, "entry": rng.integers(0, 50, size=400),
+             "length": np.full(400, 2), "confidence": np.ones(400, dtype=np.float16)}
+    tokens = np.arange(5100, dtype=np.uint16)
+    wide = TokenCorpus.__new__(TokenCorpus); wide.tokens = tokens; wide.spans = {k: v.astype(np.int64) if k != "confidence" else v for k, v in spans.items()}
+    narrow = TokenCorpus.__new__(TokenCorpus); narrow.tokens = tokens; narrow.spans = {k: v.astype(np.int32) if k != "confidence" else v for k, v in spans.items()}
+    for start in (0, 17, 999, 4000):
+        a, b = wide.window(start, 256), narrow.window(start, 256)
+        assert (a[0] == b[0]).all() and all((a[1][k] == b[1][k]).all() for k in a[1])

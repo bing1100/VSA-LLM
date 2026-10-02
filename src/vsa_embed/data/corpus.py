@@ -207,8 +207,13 @@ class TokenCorpus:
                entry_mask: np.ndarray | None = None) -> tuple[np.ndarray, dict[str, np.ndarray]]:
         """Tokens `[start, start + length)` and the spans lying fully inside, in local positions."""
         ids = np.asarray(self.tokens[start:start + length], dtype=np.int64)
-        lo = np.searchsorted(self.spans["inject"], start, side="left")
-        hi = np.searchsorted(self.spans["inject"], start + length, side="left")
+        inject = self.spans["inject"]
+        # Search with the array's own dtype: a Python int against an int32 array makes numpy cast the
+        # whole span index on every call (≈ 30 ms for 49M spans).
+        bounds = np.asarray([start, start + length], dtype=np.int64)
+        if inject.dtype != np.int64 and bounds[1] <= np.iinfo(inject.dtype).max:
+            bounds = bounds.astype(inject.dtype)
+        lo, hi = np.searchsorted(inject, bounds, side="left")
         keep = (self.spans["start"][lo:hi] >= start) & (self.spans["length"][lo:hi] >= min_subtokens)
         if entry_mask is not None:
             keep &= entry_mask[self.spans["entry"][lo:hi]]
