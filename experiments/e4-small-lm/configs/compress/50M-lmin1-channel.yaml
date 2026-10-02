@@ -1,0 +1,52 @@
+# E4.5 (D4.3): table compression on a 50M model trained WITH a composition channel at ℓ_min = 1
+# (D4.7), so `P c + δ` can start from the run's own trained dictionary (`init: run`: atomics,
+# relation parameters and attention of the channel's composer, at the channel's dimension) as
+# well as from a fresh one. The `run` below is a placeholder: pass the D4.7 ℓ_min = 1 run of the
+# best composition condition with --run.
+#
+#   PYTHONPATH=src python -m vsa_embed.experiments.e4_compress \
+#       --config experiments/e4-small-lm/configs/compress/50M-lmin1-channel.yaml \
+#       --run experiments/e4-small-lm/runs/<D4.7 stage>/<50M ℓmin-1 best run> \
+#       --output experiments/e4-small-lm/runs/e4.5-compress-50M-lmin1-<condition>-s1-v1
+#
+# `marginal_bytes` of the `-run` points counts what the table adds to a model that already holds
+# the channel's dictionary and schedule (projector, bias, row map, δ). Planned GPU time ≈ 45–60 min.
+run: experiments/e4-small-lm/runs/lmin/50M-best-lmin1-s1
+device: cuda
+seed: 0
+rows:
+  link_corpus: ~/data/vsa-llm/c3/wordnet-gpt2-v1/train-l1
+  link_tokens: 300000000
+  include_heldout: false
+  min_link_rate: 0.5
+  min_links: 1
+  frequency_corpus: ~/data/vsa-llm/c3/wordnet-gpt2-v1/train-l1
+  frequency_tokens: 300000000
+  bins_per_million: [5, 100]
+group_size: 64
+fit:
+  steps: 2000
+  lr: 0.003
+  batch_rows: 8192
+finetune:
+  tokens: 0
+composed:
+  - {init: run, delta_bits: 0, fit_dictionary: false}
+  - {init: run, delta_bits: 2, fit_dictionary: false}
+  - {init: run, delta_bits: 4, fit_dictionary: false}
+  - {init: run, delta_bits: 2}
+  - {dimension: 64, delta_bits: 2}
+  - {dimension: 64, delta_bits: 4}
+baselines:
+  int: {mixed: true}
+  albert: {}
+  qr: {operation: mult}
+  hashing: {}
+  hash_embedding: {hashes: 2}
+  tt: {}
+points:
+  - {method: int, bits: 2}
+  - {method: int, bits: 3}
+  - {method: int, bits: 4}
+  - {method: int, bits: 8}
+resamples: 10000
