@@ -37,3 +37,25 @@ Decisions taken by applying the pre-registered rules in [tasks.md](tasks.md) and
 **Needed from the author.** Run memtest86+ from boot; if it reports errors, disable XMP/EXPO (run the RAM at JEDEC speed) or reseat/replace the failing DIMM; then re-run `python scripts/memcheck.py 20 8` until it reports 0. After that, Claude re-runs the committed experiments, checks they reproduce, and resumes the queue.
 
 **memtester confirmation (2026-10-01).** `memtester 4.7.1` (built from source, run without root on 16 GiB of unlocked memory, 1 loop) reported **2,122 failures at ≥ 308 distinct offsets**, in every test category (stuck address, random value, compare XOR/SUB/MUL/DIV/OR/AND, …). The flips are overwhelmingly single bits at positions 1 and 3 of 64-bit words (1,162 and 994 occurrences), with a further cluster of rarely-flipped higher bits. A consistent low-bit pattern points to a hardware fault on a data line or memory running outside its stable settings (XMP/EXPO overclock), not software. memtest86+ (`/boot/mt86+x64`, GRUB menu) is still the authoritative test; it needs a reboot by the author.
+
+### Resolved: new machine `bhux-tiny` (2026-10-02)
+
+The experiment machine was replaced by `bhux-tiny` (Ryzen 5 8600G, 60 GiB RAM, RTX 3090). Every committed result that later work relies on was re-run there and compared with `scripts/compare_runs.py` (details in [runbook.md](runbook.md) and `reports/R0-reproduction.md`):
+
+| Check | Outcome |
+|---|---|
+| RAM screen `memcheck.py 16 4` and `16 8` | 0 bad words (old machine: 204 at 6 GiB) |
+| E0 development (`2cc5d0b`) | MATCH at 1e-12 (8,100 + 154 cells); G1 passes again |
+| D0.2 parent-sync (`9986d72`), parent-routing (`bf5f535`), parent-routing-v2 (`01e8090`) | MATCH at 1e-12 (576 + 115 cells each) |
+| B6 host memory | identical peak memory in all 19 rows, tokens/s within 1% (run at HEAD: the recorded dirty-tree commit `2ad45e5` crashes with transformers 4.54) |
+| B8 probes (`e2078a4`) | LAMBADA, WiC identical; Spearman within 0.0035 |
+| B8 PTQ | identical PPL at HEAD (the recorded commit `8e83d64` predates the full-precision output head of `4fae7cb`) |
+| C5 judge calibration v2 | accuracy 30/30, Fleiss κ 0.926 (v1 0.812) |
+
+Env `vsa-repro`: Python 3.12.4, torch 2.11.0+cu128, transformers 4.54.0, numpy 2.2.6, nltk 3.8.1, PyYAML 6.0.2, safetensors 0.5.3, scipy 1.18.1, pyarrow 25.0.1, tokenizers 0.21.4, torchao 0.18.0.
+
+**Decision: blocker lifted.** Committed results stand. Partial E1/E2/E3/C3 outputs from the old machine stay untrusted; their re-runs use new run IDs.
+
+**Judge harness note (C5 v2).** v1 used lean `claude -p --tools ""`; v2 used Claude Code subagents with the default system prompt. Agreement numbers are comparable, individual verdicts are not. Both harnesses pass calibration, so later studies may use either; each study records its harness (see [execution.md](execution.md)).
+
+**Author decisions of 2026-10-02.** T1 runs on open MeSH + PubMed (labelled open-clinical) until SNOMED CT / UMLS / MIMIC files are supplied; a small S0 sanity pilot (≈ 6 GPU-h) runs before the committed E4 blocks; G6 escalation still needs the author's approval. See [execution.md](execution.md).

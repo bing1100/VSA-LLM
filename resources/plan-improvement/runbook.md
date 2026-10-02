@@ -74,8 +74,10 @@ Then tell the session: *"Follow resources/plan-improvement/runbook.md from the f
 
 - [x] **B6 host memory** (`b6-host-memory/runs/3090-v1`, commit `2ad45e5`): `$PY src/vsa_embed/experiments/host_memory.py --output ~/workplace/vsa-repro-runs/b6-3090`. This is a hardware measurement, so compare `report.md` against the committed one by eye. Peak memory per host × micro-batch within ±5% and the same pass/fail against 22 GB counts as reproduced.
   2026-10-02: **reproduced** — peak memory identical in all 19 rows (the SmolLM2-360M micro-batch-16 row is `nan` in both), tokens/s within 1%. The recorded commit `2ad45e5` (dirty tree) crashes with transformers 4.54 (`GPT2LMHeadModel(..., attn_implementation=…)`); the fix landed later, so this ran at HEAD `724219a`.
-- [ ] **B8 probes** (`b8-probe-validation/runs/v1`, commit `e2078a4`): `$PY src/vsa_embed/experiments/b8_validation.py --output ~/workplace/vsa-repro-runs/b8-v1`. Compare the probe columns only; v1's quantization columns are superseded (see its NOTE.md). Accept LAMBADA, WiC and Spearman within ±0.005.
-- [ ] **B8 PTQ** (`runs/v1-ptq`, commit `8e83d64`, `--quantization-only`): compare PPL bf16, INT8 and INT4 within ±1%.
+- [x] **B8 probes** (`b8-probe-validation/runs/v1`, commit `e2078a4`): `$PY src/vsa_embed/experiments/b8_validation.py --output ~/workplace/vsa-repro-runs/b8-v1`. Compare the probe columns only; v1's quantization columns are superseded (see its NOTE.md). Accept LAMBADA, WiC and Spearman within ±0.005.
+  2026-10-02: **reproduced** at `e2078a4` — LAMBADA and WiC identical for all three hosts, Spearman within 0.0035 (largest: SmolLM2-135M CARD-660 0.2145 → 0.2111). INT4 errors (`mslk`) as in the committed run.
+- [x] **B8 PTQ** (`runs/v1-ptq`, commit `8e83d64`, `--quantization-only`): compare PPL bf16, INT8 and INT4 within ±1%.
+  2026-10-02: at `8e83d64` (dirty tree) GPT-2 INT8/INT4 differ (40.36 / 2,874 vs 37.27 / 41.68) because the full-precision output head landed later (`4fae7cb`); **at HEAD every PPL is identical** to the committed run (bf16, INT8, INT4 for all three hosts).
 
 ## Step 4 — C5 judge calibration through this Claude Code session
 
@@ -107,8 +109,9 @@ Other judge studies (`edge_explanation`, `split_card`, `authored_edge` in D5.3 a
 
 ## Step 5 — lift the blocker
 
-- [ ] When Steps 1, 3 and 4 pass, add a dated section to gates.md under the BLOCKER heading, "Resolved: new machine `bhux-tiny`". List memcheck, each comparison and its outcome, and the env versions.
-- [ ] In queue.md, remove the BLOCKED banner and set C3, D1, D2 and D3 back to `todo`. Commit.
+- [x] When Steps 1, 3 and 4 pass, add a dated section to gates.md under the BLOCKER heading, "Resolved: new machine `bhux-tiny`". List memcheck, each comparison and its outcome, and the env versions.
+  2026-10-02: done; summary in `reports/R0-reproduction.md`.
+- [x] In queue.md, remove the BLOCKED banner and set C3, D1, D2 and D3 back to `todo`. Commit.
 
 ## Step 6 — resume the queue (in [queue.md](queue.md) order)
 
