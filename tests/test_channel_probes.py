@@ -177,6 +177,14 @@ def test_wordnet_rebuild_matches_the_ontology_alias_pairs(tmp_path: Path) -> Non
     assert info["source"] == "wordnet" and info["checks"]["digest"] and table.digest() == expected.digest()
 
 
+def test_run_tokenizer_prefers_the_corpus_manifest(setup) -> None:
+    # SmolLM2-360M runs train on SmolLM2-135M-tokenized corpora: the manifest's tokenizer made the ids.
+    config = {"model": {"pretrained": "HuggingFaceTB/SmolLM2-360M"}, "data": {"eval": str(setup["root"] / "eval")}}
+    assert cp.run_tokenizer(config) == ("gpt2", "prefix")
+    assert cp.run_tokenizer({"model": {"pretrained": "host"}, "data": {}}) == ("host", "prefix")
+    assert cp.run_tokenizer({"model": {"pretrained": None}, "data": {}}) == ("gpt2", "prefix")
+
+
 def test_c0_run_behaves_exactly_like_the_plain_model(setup) -> None:
     adapter = cp.load_run(setup["runs"]["none"], device="cpu")
     assert adapter.spans_fn is None and adapter.linker is not None

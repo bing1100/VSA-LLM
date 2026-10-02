@@ -265,19 +265,18 @@ def restore_composer_schedule(composer: FrameComposer, saved: dict[str, Any]) ->
 
 
 def run_tokenizer(config: dict[str, Any]) -> tuple[str, str]:
-    """Tokenizer name and linker boundary of a run: the host's tokenizer for pretrained hosts,
-    otherwise the corpus manifest's (GPT-2 BPE for the from-scratch track)."""
-    name, boundary = config["model"].get("pretrained"), "prefix"
+    """Tokenizer name and linker boundary of a run: the corpus manifest's tokenizer (it produced the
+    training ids; hosts of one family share it, e.g. SmolLM2-360M runs on SmolLM2-135M-tokenized
+    corpora), else the pretrained host's, else GPT-2 BPE (the from-scratch track)."""
+    name, boundary = None, "prefix"
     for key in ("eval", "train"):
         path = config["data"].get(key)
         manifest = Path(path) / "manifest.json" if path else None
         if manifest is not None and manifest.is_file():
             data = json.loads(manifest.read_text())
-            if name and data.get("tokenizer") and data["tokenizer"] != name:
-                raise ValueError(f"run host {name} but corpus tokenizer {data['tokenizer']}")
-            name, boundary = name or data.get("tokenizer"), data.get("boundary", boundary)
+            name, boundary = data.get("tokenizer"), data.get("boundary", boundary)
             break
-    return name or "gpt2", boundary
+    return name or config["model"].get("pretrained") or "gpt2", boundary
 
 
 def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.device | str | None = None,
