@@ -1,0 +1,28 @@
+probes_root: /home/bhux/data/vsa-llm/probes
+hosts:
+- HuggingFaceTB/SmolLM2-135M
+- gpt2
+settings:
+  lambada_limit: null
+  wic_train_limit: null
+  wsd_dataset: ALL
+  wsd_train_cap: 100
+  wsd_steps: 200
+  seed: 0
+  l2: 0.01
+  steps: 400
+  bless_test_fraction: 0.3
+  hyperlex_split: lexical
+  ridge_grid:
+  - 1.0
+  - 10.0
+  - 100.0
+  - 1000.0
+  - 10000.0
+  noun_template: The {x} is a kind of {y}
+  noun_null: thing
+  verb_template: To {x} is a way to {y}
+  verb_null: do
+references:
+  b8_committed: experiments/b8-probe-validation/runs/v1/results.json
+  b8_rerun_this_machine: /home/bhux/workplace/vsa-repro-runs/b8-v1/results.json
