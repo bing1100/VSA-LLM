@@ -1,0 +1,332 @@
+{
+  "track": "open-clinical (MeSH + PubMed)",
+  "ontology": {
+    "source": "/home/bhux/data/vsa-llm/mesh/desc2026.gz",
+    "descriptors": 31110,
+    "alias_policy": {
+      "exclude_classes": [
+        "2"
+      ],
+      "drop_lexical_tags": [
+        "ABB",
+        "ACR"
+      ],
+      "drop_resolved_inverted": true
+    },
+    "alias_stats": {
+      "terms": 267023,
+      "kept_unresolved_comma": 6723,
+      "kept_permuted": 56998,
+      "dropped_resolved_inverted": 91412,
+      "kept_terms": 173258,
+      "dropped_abbreviation": 1877,
+      "dropped_excluded_class": 463,
+      "descriptors_excluded_class": 194,
+      "dropped_function_word": 3,
+      "descriptors_without_alias": 1
+    },
+    "max_atomics": 8192,
+    "max_degree": 16,
+    "concepts": 31110,
+    "atomics": 8192,
+    "relations": 5,
+    "aliases": 173258,
+    "entries": 30915,
+    "alias_subtokens": {
+      "gpt2": {
+        "aliases": 173258,
+        "aliases_2plus_subtokens": 171122,
+        "histogram_1_2_3_4_5plus": [
+          2136,
+          19221,
+          31779,
+          31540,
+          88582
+        ]
+      },
+      "HuggingFaceTB/SmolLM2-135M": {
+        "aliases": 173258,
+        "aliases_2plus_subtokens": 170385,
+        "histogram_1_2_3_4_5plus": [
+          2873,
+          24042,
+          35241,
+          30930,
+          80172
+        ]
+      },
+      "Qwen/Qwen2.5-0.5B": {
+        "aliases": 173258,
+        "aliases_2plus_subtokens": 171033,
+        "histogram_1_2_3_4_5plus": [
+          2225,
+          21046,
+          34007,
+          30556,
+          85424
+        ]
+      }
+    }
+  },
+  "mix": {
+    "domain_share": 0.5,
+    "chars_per_token": {
+      "pubmed": 4.727942445350239,
+      "general": 4.627420469839267
+    },
+    "calibration_tokenizer": "gpt2",
+    "general_shards": [
+      "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet",
+      "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet"
+    ],
+    "general_eval_docs_skipped": 5000,
+    "pubmed_eval_buckets": 800,
+    "eval_pubmed_docs": null,
+    "excluded_pubmedqa_pmids": 1000
+  },
+  "presample": {
+    "tokens": 10000288,
+    "documents": 17906,
+    "dtype": "uint16",
+    "tokenizer": "gpt2",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "d6987ad3308e7e2799dce50ce7e0cc810f209031433fd07f6a759ec9bba71b07",
+    "boundary": "prefix",
+    "spans": 934754,
+    "eos_id": 50256,
+    "skipped_documents": 0,
+    "track": "open-clinical (MeSH + PubMed)",
+    "max_tokens_requested": 10000000,
+    "stream_signature": "b6a8fda4c60b9087113021a20c0c9f3a877b07ab5378c0fe966388a2e6781f5c",
+    "source_shares": {
+      "exact": true,
+      "documents": {
+        "pubmed": 13192,
+        "general": 4714
+      },
+      "tokens": {
+        "pubmed": 5018767,
+        "general": 4981521
+      },
+      "share": {
+        "pubmed": 0.5018622463673046,
+        "general": 0.49813775363269536
+      }
+    }
+  },
+  "holdout": {
+    "concepts": 1976,
+    "chosen_entries": 702,
+    "closure_entries": 1274,
+    "heldout_entries": 1976,
+    "eligible_entries": 7023,
+    "excluded_hub_entries": 1125,
+    "sha256": "1c477afda9822b260596c046fcdd3ca7205d9a5c0e22b44892d0cc1870ddcd88"
+  },
+  "corpora": {
+    "gpt2": {
+      "tokenizer": "gpt2",
+      "corpora": {
+        "eval": {
+          "tokens": 9895896,
+          "documents": 18205,
+          "dtype": "uint16",
+          "tokenizer": "gpt2",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+          "boundary": "prefix",
+          "spans": 915674,
+          "eos_id": 50256,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "9d79f1c55cd5107e21e255c770e8d22ca840e14ebf61caca6ef59e78fba9d110"
+        },
+        "eval-pubmed": {
+          "tokens": 14622326,
+          "documents": 39252,
+          "dtype": "uint16",
+          "tokenizer": "gpt2",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+          "boundary": "prefix",
+          "spans": 1490914,
+          "eos_id": 50256,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "fe79220aba2a603a3db4ec872555764e0e5ae0980cd2a948c94b83574b729c2a"
+        },
+        "eval-general": {
+          "tokens": 4945038,
+          "documents": 5000,
+          "dtype": "uint16",
+          "tokenizer": "gpt2",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+          "boundary": "prefix",
+          "spans": 413047,
+          "eos_id": 50256,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "d0540460e9e056904f17a982cf5fc5477333cfb9023c4944a3a795d72cb75552"
+        },
+        "train": {
+          "tokens": 300000302,
+          "documents": 546794,
+          "dtype": "uint16",
+          "tokenizer": "gpt2",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "98859f586bedd58297106b3ade261286c06560d7d6c6da7eaabd44580e5fa99a",
+          "boundary": "prefix",
+          "spans": 26232134,
+          "eos_id": 50256,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 300000000,
+          "stream_signature": "b6a8fda4c60b9087113021a20c0c9f3a877b07ab5378c0fe966388a2e6781f5c"
+        }
+      },
+      "source_shares": {
+        "eval": {
+          "exact": true,
+          "documents": {
+            "pubmed": 13205,
+            "general": 5000
+          },
+          "tokens": {
+            "pubmed": 4950858,
+            "general": 4945038
+          },
+          "share": {
+            "pubmed": 0.5002940612957129,
+            "general": 0.4997059387042871
+          }
+        },
+        "train": {
+          "exact": true,
+          "documents": {
+            "pubmed": 402058,
+            "general": 144736
+          },
+          "tokens": {
+            "pubmed": 149955179,
+            "general": 150045123
+          },
+          "share": {
+            "pubmed": 0.4998500934842392,
+            "general": 0.5001499065157607
+          }
+        }
+      },
+      "linked_entries_in_train_at_min_subtokens": 24583,
+      "ontology_sha256": "3b8441e49b191190f29e5ff093a9e624474fe561fc4f125a5344aa79deef3ade"
+    },
+    "HuggingFaceTB/SmolLM2-360M": {
+      "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+      "corpora": {
+        "eval": {
+          "tokens": 9983671,
+          "documents": 18205,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+          "boundary": "prefix",
+          "spans": 903178,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "9d79f1c55cd5107e21e255c770e8d22ca840e14ebf61caca6ef59e78fba9d110"
+        },
+        "eval-pubmed": {
+          "tokens": 14739829,
+          "documents": 39252,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+          "boundary": "prefix",
+          "spans": 1464979,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "fe79220aba2a603a3db4ec872555764e0e5ae0980cd2a948c94b83574b729c2a"
+        },
+        "eval-general": {
+          "tokens": 4998786,
+          "documents": 5000,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+          "boundary": "prefix",
+          "spans": 409243,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "d0540460e9e056904f17a982cf5fc5477333cfb9023c4944a3a795d72cb75552"
+        },
+        "train": {
+          "tokens": 130000254,
+          "documents": 233013,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "98859f586bedd58297106b3ade261286c06560d7d6c6da7eaabd44580e5fa99a",
+          "boundary": "prefix",
+          "spans": 11026262,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "open-clinical (MeSH + PubMed)",
+          "max_tokens_requested": 130000000,
+          "stream_signature": "b6a8fda4c60b9087113021a20c0c9f3a877b07ab5378c0fe966388a2e6781f5c"
+        }
+      },
+      "source_shares": {
+        "eval": {
+          "exact": true,
+          "documents": {
+            "pubmed": 13205,
+            "general": 5000
+          },
+          "tokens": {
+            "pubmed": 4984885,
+            "general": 4998786
+          },
+          "share": {
+            "pubmed": 0.4993038131965687,
+            "general": 0.5006961868034313
+          }
+        },
+        "train": {
+          "exact": true,
+          "documents": {
+            "pubmed": 171952,
+            "general": 61061
+          },
+          "tokens": {
+            "pubmed": 64780034,
+            "general": 65220220
+          },
+          "share": {
+            "pubmed": 0.4983069802309771,
+            "general": 0.5016930197690229
+          }
+        }
+      },
+      "linked_entries_in_train_at_min_subtokens": 22782,
+      "ontology_sha256": "c3eaf3ab77e4a2f37a4d20cff7e64cb401aefdc203e4976b5a76b2283ba23bfe"
+    }
+  },
+  "hosts": {
+    "HuggingFaceTB/SmolLM2-360M": "/home/bhux/data/vsa-llm/t1/mesh-pubmed-gpt2-v1/hosts/smollm2"
+  },
+  "train_l1_slice": null,
+  "alias_table_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+  "data_root": "/home/bhux/data/vsa-llm/t1/mesh-pubmed-gpt2-v1"
+}

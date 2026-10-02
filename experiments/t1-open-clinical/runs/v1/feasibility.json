@@ -1,0 +1,305 @@
+{
+  "criteria": {
+    "split": "eval-pubmed",
+    "heldout_min_entries_5plus": 300,
+    "heldout_min_occurrences": 2000,
+    "rare_min_entries": 300,
+    "rare_min_occurrences": 2000,
+    "trainer_windows": 1024,
+    "window_length": 1024
+  },
+  "by_tokenizer": {
+    "gpt2": [
+      {
+        "min_subtokens": 1,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14622326,
+          "linked_spans": 1490914,
+          "heldout_occurrences": 77278,
+          "heldout_entries_linked": 1310,
+          "heldout_entries_5plus": 935,
+          "rare_occurrences": 1995,
+          "rare_entries_linked": 1136,
+          "rare_entries_5plus": 46
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 107423,
+          "heldout_occurrences": 5597,
+          "heldout_entries_linked": 665,
+          "heldout_entries_5plus": 254,
+          "rare_occurrences": 141,
+          "rare_entries_linked": 95,
+          "rare_entries_5plus": 1
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": false
+        },
+        "verdict": "feasible for the held-out stratum only (rare stratum underpowered)",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14278,
+        "eval_windows_needed": null
+      },
+      {
+        "min_subtokens": 2,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14622326,
+          "linked_spans": 620181,
+          "heldout_occurrences": 50299,
+          "heldout_entries_linked": 1306,
+          "heldout_entries_5plus": 916,
+          "rare_occurrences": 1995,
+          "rare_entries_linked": 1136,
+          "rare_entries_5plus": 46
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 44499,
+          "heldout_occurrences": 3629,
+          "heldout_entries_linked": 644,
+          "heldout_entries_5plus": 218,
+          "rare_occurrences": 141,
+          "rare_entries_linked": 95,
+          "rare_entries_5plus": 1
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": false
+        },
+        "verdict": "feasible for the held-out stratum only (rare stratum underpowered)",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14278,
+        "eval_windows_needed": null
+      },
+      {
+        "min_subtokens": 3,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14622326,
+          "linked_spans": 312332,
+          "heldout_occurrences": 25409,
+          "heldout_entries_linked": 1131,
+          "heldout_entries_5plus": 659,
+          "rare_occurrences": 2320,
+          "rare_entries_linked": 1361,
+          "rare_entries_5plus": 50
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 22548,
+          "heldout_occurrences": 1812,
+          "heldout_entries_linked": 450,
+          "heldout_entries_5plus": 122,
+          "rare_occurrences": 165,
+          "rare_entries_linked": 116,
+          "rare_entries_5plus": 1
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "feasible",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14278,
+        "eval_windows_needed": 14278
+      },
+      {
+        "min_subtokens": 4,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14622326,
+          "linked_spans": 156223,
+          "heldout_occurrences": 14570,
+          "heldout_entries_linked": 820,
+          "heldout_entries_5plus": 419,
+          "rare_occurrences": 2327,
+          "rare_entries_linked": 1402,
+          "rare_entries_5plus": 50
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 11314,
+          "heldout_occurrences": 1052,
+          "heldout_entries_linked": 289,
+          "heldout_entries_5plus": 71,
+          "rare_occurrences": 173,
+          "rare_entries_linked": 119,
+          "rare_entries_5plus": 1
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "feasible",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14278,
+        "eval_windows_needed": 14278
+      }
+    ],
+    "HuggingFaceTB/SmolLM2-360M": [
+      {
+        "min_subtokens": 1,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14739829,
+          "linked_spans": 1464979,
+          "heldout_occurrences": 76915,
+          "heldout_entries_linked": 1309,
+          "heldout_entries_5plus": 936,
+          "rare_occurrences": 5956,
+          "rare_entries_linked": 2565,
+          "rare_entries_5plus": 278
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 104656,
+          "heldout_occurrences": 5589,
+          "heldout_entries_linked": 673,
+          "heldout_entries_5plus": 247,
+          "rare_occurrences": 400,
+          "rare_entries_linked": 264,
+          "rare_entries_5plus": 5
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "feasible",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14393,
+        "eval_windows_needed": 6144
+      },
+      {
+        "min_subtokens": 2,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14739829,
+          "linked_spans": 521763,
+          "heldout_occurrences": 46325,
+          "heldout_entries_linked": 1297,
+          "heldout_entries_5plus": 908,
+          "rare_occurrences": 5965,
+          "rare_entries_linked": 2570,
+          "rare_entries_5plus": 278
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 37043,
+          "heldout_occurrences": 3339,
+          "heldout_entries_linked": 637,
+          "heldout_entries_5plus": 199,
+          "rare_occurrences": 401,
+          "rare_entries_linked": 265,
+          "rare_entries_5plus": 5
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "feasible",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14393,
+        "eval_windows_needed": 6144
+      },
+      {
+        "min_subtokens": 3,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14739829,
+          "linked_spans": 219982,
+          "heldout_occurrences": 18705,
+          "heldout_entries_linked": 1077,
+          "heldout_entries_5plus": 580,
+          "rare_occurrences": 6411,
+          "rare_entries_linked": 2951,
+          "rare_entries_5plus": 260
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 15464,
+          "heldout_occurrences": 1371,
+          "heldout_entries_linked": 400,
+          "heldout_entries_5plus": 85,
+          "rare_occurrences": 418,
+          "rare_entries_linked": 297,
+          "rare_entries_5plus": 3
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "feasible",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14393,
+        "eval_windows_needed": 6144
+      },
+      {
+        "min_subtokens": 4,
+        "frequency_source": "measured",
+        "split": {
+          "tokens_considered": 14739829,
+          "linked_spans": 103431,
+          "heldout_occurrences": 9645,
+          "heldout_entries_linked": 734,
+          "heldout_entries_5plus": 338,
+          "rare_occurrences": 5483,
+          "rare_entries_linked": 2733,
+          "rare_entries_5plus": 179
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 7234,
+          "heldout_occurrences": 672,
+          "heldout_entries_linked": 241,
+          "heldout_entries_5plus": 34,
+          "rare_occurrences": 334,
+          "rare_entries_linked": 260,
+          "rare_entries_5plus": 2
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "feasible",
+        "trainer_windows_verdict": "infeasible",
+        "windows_for_whole_split": 14393,
+        "eval_windows_needed": 12288
+      }
+    ]
+  }
+}

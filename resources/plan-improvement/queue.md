@@ -34,7 +34,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 24 | B8 evaluation harness (probes, PTQ, faithfulness) | B | B7 | done (LAMBADA GPT-2 0.310 vs ≈ 0.325 reference; INT8 ≤ 1.5% PPL, INT4 +12–37%) |
 | 25 | B10 CI and benchmarks | B | B1–B5 | done (CI workflow, property tests, `experiments/b10-benchmarks/generation.md`: sparse composition 100–280× faster and ~100–220× less memory than materializing 100k rows on CPU) |
 | 26 | C3 general corpus, linking, holdout, cardinality tables | C | B5 | done (`runs/v2`: 1.10B train tokens, 0 skipped docs, holdout 4,105 concepts / 5,900 entries, sha256 `7f2462ed…`) |
-| 27 | C2 clinical data (SNOMED CT, UMLS, MIMIC, PubMed) | C | B5 | open part (MeSH + PubMed, T1-open) in progress as WP-T1; SNOMED CT / UMLS / MIMIC waiting for the author's files |
+| 27 | C2 clinical data (SNOMED CT, UMLS, MIMIC, PubMed) | C | B5 | T1-open done (`experiments/t1-open-clinical/runs/v1`: MeSH 2026 + PubMed 2026, 300M GPT-2 + 130M SmolLM2 train tokens, holdout 1,976 entries `1c477afd…`; held-out stratum feasible at ℓ_min 2, rare stratum borderline → exploratory); SNOMED CT / UMLS / MIMIC waiting for the author's files |
 | 28 | C4 throughput benchmark on the 3090 | C | B6, B7 | done |
 | 29 | B12 `authoring.py` (M5) | B | B4, B5, B6 | done |
 | 30 | B13 `judging.py` (Claude Code judge) | B | — | done |
