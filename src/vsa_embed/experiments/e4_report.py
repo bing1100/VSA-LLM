@@ -62,12 +62,12 @@ from ..provenance import prepare_output_dir, write_run_metadata
 from ..statistics import holm_adjust, mean_confidence_interval, paired_ratio_bootstrap
 
 STRATA = ("all", "unlinked", "inside", "after", "after_heldout", "after_rare", "after_mid", "after_frequent",
-          "after_len1", "after_len2", "after_len3plus")
+          "after_len1", "after_len2", "after_len3plus", "after_rare_seen", "after_unseen")
 LINKED = STRATA[2:]
-KEY_STRATA = ("all", "unlinked", "after", "after_heldout", "after_rare", "inside")
+KEY_STRATA = ("all", "unlinked", "after", "after_heldout", "after_rare", "after_rare_seen", "inside")
 CONTROLS = frozenset({"C0", "C0'", "C1", "C1s", "C1h", "C2", "C2f"})
 ESCALATION_CONTROLS = ("C1", "C2", "C1h")
-ESCALATION_STRATA = ("after_heldout", "after_rare")
+ESCALATION_STRATA = ("after_heldout", "after_rare_seen")   # runs without it fall back to `after_rare`
 PROBE_FAMILIES = {"wic": "WiC", "rare_word": "rare-word similarity", "wsd": "WSD", "domain": "domain task"}
 NAME = re.compile(r"(?:^|-)(?P<size>[^-]+)-(?P<condition>[^-]+)-s(?P<seed>\d+)$")
 ALPHA = 0.05
@@ -328,7 +328,7 @@ def gate_items(candidate: str, grid: dict[str, dict[int, Run]], paired: dict[str
     if "C2" not in grid:
         items["1"] = unavailable("C2 not in this cohort")
     else:
-        held, rare = get("C2", "after_heldout"), get("C2", "after_rare")
+        held, rare = get("C2", "after_heldout"), get("C2", "after_rare_seen") or get("C2", "after_rare")
         own, free = _mean_manifest(grid[candidate], "channel_parameters"), _mean_manifest(grid["C2"], "channel_parameters")
         if held is None or rare is None:
             items["1"] = unavailable("held-out or rare stratum missing")
@@ -438,7 +438,8 @@ def escalation(grid: dict[str, dict[int, Run]], versus_baseline: dict[str, Any],
                projection_tokens: float, smaller: dict[tuple[str, str], float]) -> dict[str, Any]:
     verdicts: dict[str, Any] = {}
     for candidate in candidates:
-        for stratum in ESCALATION_STRATA:
+        strata = [s if s in versus_baseline or s != "after_rare_seen" else "after_rare" for s in ESCALATION_STRATA]
+        for stratum in strata:
             comparison = versus_baseline.get(stratum, {}).get(candidate)
             if comparison is None:
                 continue

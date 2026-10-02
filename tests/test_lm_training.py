@@ -176,3 +176,18 @@ def test_window_losses_survive_an_interrupted_run(setup, tmp_path: Path) -> None
     assert set(load_window_losses(tmp_path / "run" / "eval_windows.npz")["evals"]) == {0, 64, 128}
     train(cfg, tmp_path / "run", resume=True)
     assert set(load_window_losses(tmp_path / "run" / "eval_windows.npz")["evals"]) == {0, 64, 128, 256, 384}
+
+
+def test_rare_stratum_split_into_unseen_and_seen() -> None:
+    import numpy as np
+    import torch
+    from vsa_embed.training.lm import stratum_masks
+    ids = torch.zeros(1, 40, dtype=torch.long)
+    spans = {"batch": torch.tensor([0, 0, 0]), "start": torch.tensor([1, 11, 21]), "end": torch.tensor([2, 12, 22]),
+             "entry": torch.tensor([0, 1, 2]), "length": torch.tensor([2, 2, 2])}
+    frequency = np.array([0, 5, 50])
+    masks = stratum_masks(ids, spans, frequency, heldout=set())
+    assert masks["after_unseen"][0, 2:10].all() and not masks["after_unseen"][0, 12:20].any()
+    assert masks["after_rare_seen"][0, 12:20].all() and not masks["after_rare_seen"][0, 2:10].any()
+    assert torch.equal(masks["after_rare"], masks["after_unseen"] | masks["after_rare_seen"])
+    assert masks["after_mid"][0, 22:30].all()

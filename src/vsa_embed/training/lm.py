@@ -16,8 +16,9 @@ Evaluation strata (per target token `j`, predicted from position `j − 1`):
 `all`; `unlinked` (not inside or within 8 tokens after a linked span); `inside` (subtokens 2..ℓ of
 a span); `after` (the 8 tokens after a span) and its splits by entry status — `after_heldout`
 (held-out concepts, never linked in training), `after_rare` / `after_mid` / `after_frequent`
-(training frequency 1–9 / 10–99 / ≥ 100) — and by span length (`after_len1`, `after_len2`,
-`after_len3plus`).
+(training frequency 1–9 / 10–99 / ≥ 100; `after_rare` also holds entries never linked in training, which
+`after_unseen` (frequency 0, not held out) and `after_rare_seen` (1–9) separate) — and by span length
+(`after_len1`, `after_len2`, `after_len3plus`).
 
 Continued pretraining of pretrained hosts (`model.pretrained`, E4.6) adds optional keys, read with
 defaults so that from-scratch configs resolve exactly as before:
@@ -191,7 +192,8 @@ def stratum_masks(ids: torch.Tensor, spans: dict[str, torch.Tensor], frequency: 
     shape = (batch, length - 1)
     inside = torch.zeros(shape, dtype=torch.bool)
     after: dict[str, torch.Tensor] = {name: torch.zeros(shape, dtype=torch.bool) for name in (
-        "after", "after_heldout", "after_rare", "after_mid", "after_frequent", "after_len1", "after_len2", "after_len3plus")}
+        "after", "after_heldout", "after_rare", "after_mid", "after_frequent", "after_len1", "after_len2", "after_len3plus",
+        "after_unseen", "after_rare_seen")}
     for b, s, e, entry, n in zip(spans["batch"].tolist(), spans["start"].tolist(), spans["end"].tolist(),
                                  spans["entry"].tolist(), spans["length"].tolist()):
         if e > s:
@@ -205,6 +207,8 @@ def stratum_masks(ids: torch.Tensor, spans: dict[str, torch.Tensor], frequency: 
         elif frequency is not None:
             count = int(frequency[entry])
             names.append("after_rare" if count < 10 else "after_mid" if count < 100 else "after_frequent")
+            if count < 10:   # `after_rare` keeps entries never linked in training; these two split it
+                names.append("after_unseen" if count == 0 else "after_rare_seen")
         for name in names:
             after[name][b, lo:hi] = True
     masks = {"all": torch.ones(shape, dtype=torch.bool), "inside": inside, **after}
