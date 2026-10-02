@@ -58,7 +58,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 47 | D5.3, D5.4 LLM-graded rating study, zero-shot insertion | D | C5, C6, D4.5 | todo |
 | 48 | G4 explainability and zero-shot claims | gate | D5 | todo |
 | 49 | C7 application tracks T3–T6 data | C | B5, B8 | done (T4 chemistry, T5 glossary feasible; T3 product, T6 legal infeasible on the seen-rare stratum — held-out-only gate) |
-| 50 | D7 self-authoring round 1 | D | B12, D4.4 | todo |
+| 50 | D7 self-authoring round 1 | D | B12, D4.4 | implemented (WP-E7; D7.0/D7.1 can run before G3, D7.2/D7.3 after G3) |
 | 51 | G5 self-authoring claim | gate | D7 | todo |
 | 52 | D8.2–D8.6 application tracks T2–T6 | D | C6, C7, G3 | todo |
 | 53 | D8.8 cross-track report; D4.6 E4 report | D | D8, D4 | todo |
