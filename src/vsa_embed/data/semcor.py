@@ -23,6 +23,50 @@ class SenseInstance:
     synset: str
 
 
+@dataclass(frozen=True)
+class WSDInstance:
+    """One tagged word of a Raganato-format dataset with every gold sense key."""
+
+    instance_id: str
+    sentence_id: str
+    text: str
+    start: int
+    end: int
+    lemma: str
+    pos: str              # NOUN | VERB | ADJ | ADV
+    keys: tuple[str, ...]
+
+
+def load_wsd_instances(xml_path: Path, key_path: Path) -> list[WSDInstance]:
+    """All gold-keyed instances of one dataset of the WSD Evaluation Framework (SemCor, ALL, …).
+
+    Sentence text and character spans follow `load_semcor` (tokens joined by single spaces).
+    Sense keys are returned as given; mapping them to synsets is left to the caller.
+    """
+    keys: dict[str, tuple[str, ...]] = {}
+    for line in key_path.read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            keys[parts[0]] = tuple(parts[1:])
+    instances: list[WSDInstance] = []
+    for _, sentence in ET.iterparse(xml_path, events=("end",)):
+        if sentence.tag != "sentence":
+            continue
+        words, position, tagged = [], 0, []
+        for token in sentence:
+            text = token.text or ""
+            start = position + (1 if words else 0)
+            words.append(text)
+            position = start + len(text)
+            if token.tag == "instance" and token.get("id") in keys:
+                tagged.append((token.get("id"), start, position, token.get("lemma"), token.get("pos")))
+        text = " ".join(words)
+        for instance_id, start, end, lemma, pos in tagged:
+            instances.append(WSDInstance(instance_id, sentence.get("id"), text, start, end, lemma, pos, keys[instance_id]))
+        sentence.clear()
+    return instances
+
+
 def load_semcor(root: Path, wordnet: Any) -> list[SenseInstance]:
     base = root / "Training_Corpora" / "SemCor"
     keys: dict[str, str] = {}

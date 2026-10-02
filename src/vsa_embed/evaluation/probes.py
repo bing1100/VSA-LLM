@@ -38,30 +38,39 @@ class ModelAdapter:
     max_length: int = 256
     need_logits: bool = False
 
-    def _forward(self, texts: Sequence[str]) -> tuple[list[torch.Tensor], list[list[tuple[int, int]]], list[torch.Tensor], list[list[int]]]:
-        """Per text: hidden states (T, d), offsets, next-token logits (T, V), ids. Batched with right padding."""
+    def _autocast(self):
+        return torch.autocast(self.device.type, dtype=torch.bfloat16, enabled=self.device.type == "cuda")
+
+    def _run_batch(self, batch: list[str]) -> tuple[Any, Any, Any]:
+        """Tokenize one batch (right padding) and run the model: (encoding, outputs with hidden states, output head)."""
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.padding_side = "right"
+        encoded = self.tokenizer(batch, return_offsets_mapping=True, add_special_tokens=False, padding=True,
+                                 truncation=True, max_length=self.max_length, return_tensors="pt")
+        input_ids = encoded["input_ids"].to(self.device); mask = encoded["attention_mask"].to(self.device)
+        spans = None
+        if self.spans_fn:
+            offsets_list = [[tuple(o) for o, m in zip(offs.tolist(), msk.tolist()) if m] for offs, msk in
+                            zip(encoded["offset_mapping"], encoded["attention_mask"])]
+            spans = {k: v.to(self.device) for k, v in self.spans_fn(batch, offsets_list).items()}
+        with torch.no_grad(), self._autocast():
+            if hasattr(self.model, "channel") and hasattr(self.model, "embed"):
+                embeddings = self.model.embed(input_ids, spans)
+                out = self.model.base(inputs_embeds=embeddings, attention_mask=mask, output_hidden_states=True)
+                head = self.model.model.get_output_embeddings()
+            else:
+                out = self.model.base_model(input_ids=input_ids, attention_mask=mask, output_hidden_states=True)
+                head = self.model.get_output_embeddings()
+        return encoded, out, head
+
+    def _forward(self, texts: Sequence[str]) -> tuple[list[torch.Tensor], list[list[tuple[int, int]]], list[torch.Tensor], list[list[int]]]:
+        """Per text: hidden states (T, d), offsets, next-token logits (T, V), ids. Batched with right padding."""
         states, offsets_all, logits_all, ids_all = [], [], [], []
         for start in range(0, len(texts), self.batch_size):
             batch = list(texts[start:start + self.batch_size])
-            encoded = self.tokenizer(batch, return_offsets_mapping=True, add_special_tokens=False, padding=True,
-                                     truncation=True, max_length=self.max_length, return_tensors="pt")
-            input_ids = encoded["input_ids"].to(self.device); mask = encoded["attention_mask"].to(self.device)
-            spans = None
-            if self.spans_fn:
-                offsets_list = [[tuple(o) for o, m in zip(offs.tolist(), msk.tolist()) if m] for offs, msk in
-                                zip(encoded["offset_mapping"], encoded["attention_mask"])]
-                spans = {k: v.to(self.device) for k, v in self.spans_fn(batch, offsets_list).items()}
-            with torch.no_grad(), torch.autocast(self.device.type, dtype=torch.bfloat16, enabled=self.device.type == "cuda"):
-                if hasattr(self.model, "channel") and hasattr(self.model, "embed"):
-                    embeddings = self.model.embed(input_ids, spans)
-                    out = self.model.base(inputs_embeds=embeddings, attention_mask=mask, output_hidden_states=True)
-                    head = self.model.model.get_output_embeddings()
-                else:
-                    out = self.model.base_model(input_ids=input_ids, attention_mask=mask, output_hidden_states=True)
-                    head = self.model.get_output_embeddings()
+            encoded, out, head = self._run_batch(batch)
+            with torch.no_grad(), self._autocast():
                 final, chosen = out.hidden_states[-1].float(), out.hidden_states[self.layer].float()
                 logits = F.linear(final, head.weight.float()) if self.need_logits else None
             for row in range(len(batch)):
@@ -71,6 +80,27 @@ class ModelAdapter:
                 logits_all.append(logits[row, :n].cpu() if logits is not None else None)
                 ids_all.append(encoded["input_ids"][row, :n].tolist())
         return states, offsets_all, logits_all, ids_all
+
+    def token_logprobs(self, texts: Sequence[str]) -> tuple[list[torch.Tensor], list[list[tuple[int, int]]]]:
+        """Per text: `log p(x_t | x_<t)` for t = 1..T−1 (float32, length T−1) and the offsets.
+
+        The log-softmax runs on the device, so only one number per token leaves it (cheap for
+        likelihood prompting; `_forward` with `need_logits` copies full vocabulary rows).
+        """
+        scores, offsets_all = [], []
+        for start in range(0, len(texts), self.batch_size):
+            batch = list(texts[start:start + self.batch_size])
+            encoded, out, head = self._run_batch(batch)
+            with torch.no_grad():
+                with self._autocast():
+                    logits = F.linear(out.hidden_states[-1].float(), head.weight.float())
+                ids = encoded["input_ids"].to(logits.device)
+                picked = torch.log_softmax(logits[:, :-1].float(), -1).gather(-1, ids[:, 1:, None]).squeeze(-1).cpu()
+            for row in range(len(batch)):
+                n = int(encoded["attention_mask"][row].sum())
+                scores.append(picked[row, :max(0, n - 1)])
+                offsets_all.append([tuple(o) for o in encoded["offset_mapping"][row, :n].tolist()])
+        return scores, offsets_all
 
     def word_state(self, texts: Sequence[str], char_spans: Sequence[tuple[int, int]]) -> torch.Tensor:
         """State at the last subtoken overlapping each character span."""
