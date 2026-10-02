@@ -11,6 +11,8 @@ job per config to the local GPU queue (`.jobs/`). Without `--conditions` the sta
 - `shakeout` — D4.0: C0, C1, C2, C5 × seeds 1, 2 at 50M × 200M tokens (checkpoints every 10 min),
   plus a kill-and-resume check (`C5@resume`, seed 1: stops after half the steps, a second job
   resumes it); priority 50.
+- `recipe` — D4.0 recipe sweep: C0 at 50M × 100M tokens, tokens/step {65k, 131k, 262k} × lr {1e-3, 2e-3,
+  4e-3}, seed 1; priority 25. Its best setting is passed to `shakeout`/`baselines` with `--overrides`.
 - `baselines` — D4.8: C0 at 50M × 300M and 125M × 500M tokens (the committed recipe), seeds 1–3;
   priority 90 (lowest, backfill).
 
@@ -61,6 +63,15 @@ STAGES: dict[str, dict[str, Any]] = {
         # 200M tokens = 762 steps of 262,144 tokens; stop after 381, then resume (bit-exactness check).
         {"sizes": ["50M"], "conditions": ["C5@resume"], "seeds": [1],
          "overrides": {"train": {**_SHAKEOUT["train"], "stop_after_steps": 381}, "eval": _SHAKEOUT["eval"]}}]},
+    # D4.0 recipe sweep (added after the S0 pilot: at 262k tokens/step a 100M-token run is only 381 optimizer
+    # steps and the loss is still ≈ 5.6): C0 at 50M × 100M tokens over tokens/step {65k, 131k, 262k} × peak lr
+    # {1e-3, 2e-3, 4e-3}; the best final loss fixes the recipe that `shakeout` and `baselines` then use.
+    "recipe": {"priority": 25, "blocks": [
+        {"sizes": ["50M"], "conditions": [f"C0@b{accum * 32}k_lr{lr:g}"], "seeds": [1],
+         "overrides": {"train": {"total_tokens": 100_000_000, "warmup_tokens": 5_000_000, "checkpoint_minutes": 5,
+                                 "micro_batch": 32, "grad_accum": accum, "lr": lr},
+                       "eval": {"first_tokens": 10_000_000, "windows": 512, "save_window_losses": True}}}
+        for accum in (2, 4, 8) for lr in (1e-3, 2e-3, 4e-3)]},
     "baselines": {"priority": 90, "blocks": [
         {"sizes": ["50M", "125M"], "conditions": ["C0"], "seeds": [1, 2, 3], "overrides": {"eval": {"save_window_losses": True}}}]},
 }
