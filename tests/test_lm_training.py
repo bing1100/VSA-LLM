@@ -100,3 +100,55 @@ def test_pretrained_host_lora_trains_only_adapters_and_channel(setup, tmp_path: 
     assert result["steps"] == 6
     state = torch.load(tmp_path / "lora" / "final.pt", weights_only=False)["model"]
     assert any("lora_a" in k for k in state)
+
+
+def test_eval_rows_carry_training_tokens_and_stratum_counts(setup, tmp_path: Path) -> None:
+    from vsa_embed.convergence import load_curves
+    train(config(setup["root"], "none"), tmp_path / "rows")
+    rows = [json.loads(line) for line in (tmp_path / "rows" / "metrics.jsonl").read_text().splitlines()]
+    evals = [r for r in rows if r["type"] == "eval"]
+    assert sorted({r["tokens"] for r in evals}) == [0, 64, 128, 256, 384]
+    assert all(r["stratum_tokens"] >= 0 for r in evals)
+    assert [t for t, _ in load_curves(tmp_path / "rows")["all"]] == [64.0, 128.0, 256.0, 384.0]
+
+
+def test_window_losses_are_opt_in_and_sum_to_the_logged_strata(setup, tmp_path: Path) -> None:
+    import numpy as np
+    import yaml
+    from vsa_embed.training.lm import load_window_losses
+    train(config(setup["root"], "compose"), tmp_path / "off")
+    assert not (tmp_path / "off" / "eval_windows.npz").exists()
+    assert "save_window_losses" not in yaml.safe_load((tmp_path / "off" / "resolved_config.yaml").read_text())["eval"]
+    cfg = config(setup["root"], "compose")
+    cfg["eval"]["save_window_losses"] = True
+    train(cfg, tmp_path / "on")
+    data = load_window_losses(tmp_path / "on" / "eval_windows.npz")
+    rows = [json.loads(line) for line in (tmp_path / "on" / "metrics.jsonl").read_text().splitlines()]
+    evals = [r for r in rows if r["type"] == "eval"]
+    assert set(data["evals"]) == {r["tokens"] for r in evals}
+    assert data["starts"].shape == (4,)
+    for row in evals:
+        sums, counts = data["evals"][row["tokens"]]
+        assert sums.shape == counts.shape == (len(data["strata"]), 4)
+        index = data["strata"].index(row["stratum"])
+        assert int(counts[index].sum()) == row["stratum_tokens"]
+        if row["stratum_tokens"]:
+            assert float(sums[index].sum() / counts[index].sum()) == pytest.approx(row["loss"], rel=1e-5)
+    # Windows are fixed by the eval corpus, so another condition sees the same windows and counts.
+    other = config(setup["root"], "free")
+    other["eval"]["save_window_losses"] = True
+    train(other, tmp_path / "free")
+    free = load_window_losses(tmp_path / "free" / "eval_windows.npz")
+    np.testing.assert_array_equal(free["starts"], data["starts"])
+    np.testing.assert_array_equal(free["evals"][384][1], data["evals"][384][1])
+
+
+def test_window_losses_survive_an_interrupted_run(setup, tmp_path: Path) -> None:
+    from vsa_embed.training.lm import load_window_losses
+    torch.set_num_threads(1)
+    cfg = config(setup["root"], "none", train={"stop_after_steps": 3})
+    cfg["eval"]["save_window_losses"] = True
+    assert train(cfg, tmp_path / "run").get("interrupted")
+    assert set(load_window_losses(tmp_path / "run" / "eval_windows.npz")["evals"]) == {0, 64, 128}
+    train(cfg, tmp_path / "run", resume=True)
+    assert set(load_window_losses(tmp_path / "run" / "eval_windows.npz")["evals"]) == {0, 64, 128, 256, 384}

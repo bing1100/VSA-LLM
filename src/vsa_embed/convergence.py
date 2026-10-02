@@ -17,20 +17,40 @@ from pathlib import Path
 from typing import Any, Sequence
 
 import numpy as np
+import yaml
 
 from .statistics import mean_confidence_interval
 
 Curve = list[tuple[float, float]]
 
 
-def load_curves(run_dir: Path) -> dict[str, Curve]:
-    """Stratum → sorted (tokens, loss) points, excluding the step-0 evaluation."""
-    curves: dict[str, Curve] = {}
+def load_evaluations(run_dir: Path) -> dict[str, dict[float, dict[str, float]]]:
+    """Stratum → training tokens → `{"loss", "stratum_tokens"}` from the trainer's `metrics.jsonl`.
+
+    An evaluation repeated after a resume keeps its last value. Rows without `stratum_tokens`
+    (trainer before the fix) logged the stratum's target count under `tokens`; their training
+    tokens are recovered as `step × tokens_per_step` from `resolved_config.yaml`."""
+    per_step = None
+    evaluations: dict[str, dict[float, dict[str, float]]] = {}
     for line in (run_dir / "metrics.jsonl").read_text().splitlines():
-        row = json.loads(line)
-        if row.get("type") == "eval" and row["tokens"] > 0 and math.isfinite(row["loss"]):
-            curves.setdefault(row["stratum"], []).append((float(row["tokens"]), float(row["loss"])))
-    return {k: sorted(v) for k, v in curves.items()}
+        row = json.loads(line) if line.strip() else {}
+        if row.get("type") != "eval":
+            continue
+        tokens, count = row["tokens"], row.get("stratum_tokens")
+        if "stratum_tokens" not in row:
+            if per_step is None:
+                config = yaml.safe_load((run_dir / "resolved_config.yaml").read_text())
+                per_step = config["model"]["seq_len"] * config["train"]["micro_batch"] * config["train"]["grad_accum"]
+            tokens, count = row["step"] * per_step, row["tokens"]
+        evaluations.setdefault(row["stratum"], {})[float(tokens)] = {"loss": float(row["loss"]), "stratum_tokens": count}
+    return evaluations
+
+
+def load_curves(run_dir: Path) -> dict[str, Curve]:
+    """Stratum → sorted (tokens, loss) points, excluding the step-0 evaluation (see `load_evaluations`)."""
+    curves = {stratum: sorted((t, v["loss"]) for t, v in points.items() if t > 0 and math.isfinite(v["loss"]))
+              for stratum, points in load_evaluations(run_dir).items()}
+    return {k: v for k, v in curves.items() if v}
 
 
 def tokens_to_loss(curve: Curve, target: float) -> float | None:

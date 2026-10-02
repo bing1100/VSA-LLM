@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import functools
 import math
 from typing import Sequence
 
+import numpy as np
 import torch
 from torch import Tensor
 
@@ -50,6 +52,60 @@ def paired_bootstrap_ci(
         "ci_high": float(torch.quantile(means, 0.975)),
         "n": int(differences.numel()),
     }
+
+
+@functools.lru_cache(maxsize=8)
+def _cluster_weights(clusters: int, resamples: int, seed: int) -> np.ndarray:
+    """Multiplicity of each cluster in each bootstrap resample (resamples × clusters)."""
+    return np.random.default_rng(seed).multinomial(clusters, np.full(clusters, 1.0 / clusters), size=resamples).astype(np.float64)
+
+
+def paired_ratio_bootstrap(
+    differences: Sequence[float] | np.ndarray, denominators: Sequence[float] | np.ndarray,
+    baseline: Sequence[float] | np.ndarray | None = None, *, resamples: int = 2000, seed: int = 0,
+) -> dict[str, float | int | None]:
+    """Cluster bootstrap of a token-weighted paired difference `Σ d / Σ n`.
+
+    Each cluster (e.g. an evaluation window, carrying every seed) contributes its summed paired
+    loss difference `d` and its target count `n`; resampling clusters keeps text shared across
+    seeds together. With `baseline` (the reference's summed loss per cluster) the relative
+    difference `Σ d / Σ baseline` is bootstrapped from the same resamples. `p_value` is the
+    two-sided percentile-bootstrap p for a zero difference. The same `(clusters, resamples,
+    seed)` reuse the same resamples (common random numbers across strata and conditions).
+    """
+    d = np.asarray(differences, dtype=np.float64)
+    n = np.asarray(denominators, dtype=np.float64)
+    if d.shape != n.shape or d.ndim != 1 or d.size == 0:
+        raise ValueError("differences and denominators must be equal-length non-empty vectors")
+    if n.sum() <= 0:
+        raise ValueError("denominators sum to zero")
+    weights = _cluster_weights(d.size, resamples, seed)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        draws = (weights @ d) / (weights @ n)
+        draws = draws[np.isfinite(draws)]
+        result: dict[str, float | int | None] = {
+            "mean": float(d.sum() / n.sum()),
+            "ci_low": float(np.quantile(draws, 0.025)), "ci_high": float(np.quantile(draws, 0.975)),
+            "p_value": float(min(1.0, 2 * (min((draws <= 0).sum(), (draws >= 0).sum()) + 1) / (draws.size + 1))),
+            "clusters": int(d.size), "nonempty_clusters": int((n > 0).sum()), "resamples": int(draws.size),
+        }
+        if baseline is not None:
+            b = np.asarray(baseline, dtype=np.float64)
+            relative = (weights @ d) / (weights @ b)
+            relative = relative[np.isfinite(relative)]
+            result.update(relative=float(d.sum() / b.sum()), relative_ci_low=float(np.quantile(relative, 0.025)),
+                          relative_ci_high=float(np.quantile(relative, 0.975)))
+    return result
+
+
+def holm_adjust(p_values: Sequence[float]) -> list[float]:
+    """Holm step-down adjusted p-values (monotone, capped at 1), in the input order."""
+    order = sorted(range(len(p_values)), key=lambda i: p_values[i])
+    adjusted, running = [1.0] * len(p_values), 0.0
+    for rank, index in enumerate(order):
+        running = max(running, min(1.0, (len(p_values) - rank) * float(p_values[index])))
+        adjusted[index] = running
+    return adjusted
 
 
 def wilson_interval(successes: int, total: int, *, z: float = 1.96) -> tuple[float, float]:

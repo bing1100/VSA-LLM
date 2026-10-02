@@ -3,7 +3,11 @@
 One run = one condition × seed. Conditions differ only in the channel; the batches are a pure
 function of `(data.seed, step)`, so runs are paired. The run folder holds `resolved_config.yaml`,
 `manifest.json`, `metrics.jsonl` (training loss and stratified evaluations at log-spaced token
-counts), `checkpoint.pt` (latest, rewritten every `checkpoint_minutes`) and `final.pt`.
+counts), `checkpoint.pt` (latest, rewritten every `checkpoint_minutes`) and `final.pt`. With
+`eval.save_window_losses: true` (opt-in) every evaluation also writes per-window, per-stratum loss
+sums and target counts to `eval_windows.npz` (`strata`, `starts`, `sum_<tokens>` and
+`count_<tokens>`, strata × windows); the windows are identical across conditions, so condition
+differences are paired by window.
 
 Evaluation strata (per target token `j`, predicted from position `j − 1`):
 `all`; `unlinked` (not inside or within 8 tokens after a linked span); `inside` (subtokens 2..ℓ of
@@ -183,7 +187,10 @@ def stratum_masks(ids: torch.Tensor, spans: dict[str, torch.Tensor], frequency: 
 
 @torch.no_grad()
 def evaluate(model: ChannelLM, corpus: TokenCorpus, starts: list[int], config: dict[str, Any],
-             frequency: np.ndarray | None, heldout: set[int], device: torch.device) -> dict[str, dict[str, float]]:
+             frequency: np.ndarray | None, heldout: set[int], device: torch.device, *,
+             window_sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = None) -> dict[str, dict[str, float]]:
+    """Stratified loss over the evaluation windows; `window_sink` (if given) collects per-window
+    loss sums and target counts per stratum."""
     model.eval()
     length, batch = config["model"]["seq_len"], config["eval"]["batch"]
     sums: dict[str, float] = {}; counts: dict[str, int] = {}
@@ -197,6 +204,10 @@ def evaluate(model: ChannelLM, corpus: TokenCorpus, starts: list[int], config: d
         for name, mask in stratum_masks(ids, spans, frequency, heldout).items():
             sums[name] = sums.get(name, 0.0) + float(per_token[mask].sum())
             counts[name] = counts.get(name, 0) + int(mask.sum())
+            if window_sink is not None:
+                window_sums, window_counts = window_sink.setdefault(name, ([], []))
+                window_sums.append(per_token.double().masked_fill(~mask, 0.0).sum(1).numpy())
+                window_counts.append(mask.sum(1).numpy().astype(np.int32))
     model.train()
     return {name: {"loss": sums[name] / counts[name] if counts[name] else float("nan"), "tokens": counts[name]}
             for name in sums}
@@ -264,10 +275,18 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         with metrics_path.open("a") as handle:
             handle.write(json.dumps(row) + "\n")
 
+    save_windows = bool(config["eval"].get("save_window_losses", False))   # opt-in; absent from older configs
+
     def run_eval(tokens: int) -> None:
-        results = evaluate(model, eval_corpus, eval_starts, config, frequency, heldout, device)
+        sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = {} if save_windows else None
+        results = evaluate(model, eval_corpus, eval_starts, config, frequency, heldout, device, window_sink=sink)
         for stratum, value in results.items():
-            log({"type": "eval", "step": step, "tokens": tokens, "stratum": stratum, **value})
+            # `tokens` = training tokens at this evaluation; `stratum_tokens` = target tokens in the
+            # stratum (rows written before this fix carry only the latter, under `tokens`).
+            log({"type": "eval", "step": step, "tokens": tokens, "stratum": stratum, "loss": value["loss"],
+                 "stratum_tokens": value["tokens"]})
+        if sink is not None:
+            save_window_losses(output_dir / "eval_windows.npz", tokens, eval_starts, sink)
         evaluated.add(tokens)
 
     if 0 not in evaluated:
@@ -330,6 +349,33 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                            channel_parameters=sum(p.numel() for p in channel.parameters()) if channel else 0,
                            steps=total_steps, tokens_per_step=tokens_per_step)
     return {"steps": step, "tokens": step * tokens_per_step}
+
+
+def save_window_losses(path: Path, tokens: int, starts: list[int],
+                       sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]]) -> None:
+    """Add one evaluation's per-window sums/counts (strata × windows) to `path`, rewritten atomically."""
+    arrays: dict[str, np.ndarray] = {}
+    if path.exists():
+        with np.load(path) as existing:
+            arrays = {key: existing[key] for key in existing.files}
+    strata = list(sink)
+    if "strata" in arrays and arrays["strata"].tolist() != strata:
+        raise ValueError(f"{path} holds strata {arrays['strata'].tolist()}, not {strata}")
+    arrays["strata"] = np.asarray(strata)
+    arrays["starts"] = np.asarray(starts, dtype=np.int64)
+    arrays[f"sum_{tokens}"] = np.stack([np.concatenate(sink[name][0]) for name in strata])
+    arrays[f"count_{tokens}"] = np.stack([np.concatenate(sink[name][1]) for name in strata])
+    temporary = path.with_suffix(".tmp")
+    with temporary.open("wb") as handle:
+        np.savez_compressed(handle, **arrays)
+    temporary.replace(path)
+
+
+def load_window_losses(path: Path) -> dict[str, Any]:
+    """`{"strata": [...], "starts": array, "evals": {tokens: (sums, counts)}}` from `eval_windows.npz`."""
+    with np.load(path) as data:
+        evals = {int(key[4:]): (data[key], data[f"count_{key[4:]}"]) for key in data.files if key.startswith("sum_")}
+        return {"strata": data["strata"].tolist(), "starts": data["starts"], "evals": dict(sorted(evals.items()))}
 
 
 def _schedule_state(channel: SpanChannel | None) -> dict[str, torch.Tensor] | None:
