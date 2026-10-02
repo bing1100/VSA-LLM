@@ -1,0 +1,11 @@
+# E7 clinical track (WP-E7, D7.0c): hook for T1-open (MeSH 2026 + PubMed; WP-T1). Not runnable until WP-T1 provides,
+# under t1_root:
+#   ontology.pt   entries, frames (offsets/relations/fillers), relation/atomic/concept names, entry_concepts, train_frequency
+#   aliases.json  alias → entry, held-out aliases included
+#   holdout.json  the held-out MeSH subgraph (entry ids) = the gold audit set, frozen and hashed by WP-T1
+#   PubMed reading texts (abstracts after the T1 training documents) as jsonl or parquet
+# `prepare --track clinical` stops with the list of missing files; with them, the general-track code path applies
+# (MeSH relations: parent, branch, pharmacological_action, see_also as the closed vocabulary).
+t1_root: ~/data/vsa-llm/t1/mesh-pubmed-v1
+data_root: ~/data/vsa-llm/e7/clinical-v1
+seed: 20261002

@@ -178,6 +178,47 @@ class CausalLinker:
             position -= 1
         return best
 
+    def _matches_ending_at(self, lowered: str, end: int) -> list[tuple[int, int]]:
+        """Every alias equal to `lowered[s:end]` with a word boundary before `s` (shortest first);
+        `_match_ending_at` returns the last of these."""
+        node, found, position = self.trie, [], end - 1
+        spaced = False
+        while position >= 0 and end - position <= self.max_length + 1:
+            char = lowered[position]
+            if char.isspace():
+                if spaced:
+                    position -= 1; continue
+                char, spaced = " ", True
+            else:
+                spaced = False
+            node = node.get(char)
+            if node is None:
+                break
+            if _END in node and (position == 0 or not (lowered[position - 1].isalnum() or lowered[position - 1] == "_")):
+                found.append((position, node[_END]))
+            position -= 1
+        return found
+
+    def all_matches(self, text: str, offsets: Sequence[tuple[int, int]]) -> list[tuple[int, int, int, int]]:
+        """Every alias match before the longest-match choice of `link` (prefix boundary only):
+        `(token, first_token, entry, characters)` for each alias ending at each token end and covering
+        ≥ `min_subtokens` subtokens. `link` keeps, per token, the match with the most characters and drops
+        it when it is shorter than `min_subtokens`; a shorter alias ending at the same token never covers
+        more subtokens, so dropping short matches here first changes nothing (`data.match_corpus`)."""
+        if self.boundary != "prefix":
+            raise ValueError("all_matches supports the prefix boundary only")
+        lowered = text.lower()
+        starts = [start for start, _ in offsets]
+        rows = []
+        for token, (token_start, token_end) in enumerate(offsets):
+            if token_end <= token_start:
+                continue
+            for char_start, entry in self._matches_ending_at(lowered, token_end):
+                first = min(token, bisect_right(starts, char_start, 0, token + 1) - 1)
+                if token - first + 1 >= self.min_subtokens:
+                    rows.append((token, first, entry, token_end - char_start))
+        return rows
+
     def link(self, text: str, offsets: Sequence[tuple[int, int]]) -> list[Span]:
         """Spans for one text given its tokenizer offset mapping (one (start, end) per token)."""
         lowered = text.lower()

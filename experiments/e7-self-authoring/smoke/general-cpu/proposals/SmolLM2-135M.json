@@ -1,0 +1,197 @@
+{
+ "author": "SmolLM2-135M",
+ "settings": {
+  "candidates": 12,
+  "contexts": 2,
+  "samples": 2,
+  "temperature": 0.5,
+  "top_p": 0.95,
+  "max_new_tokens": 48,
+  "min_share": 0.3,
+  "batch": 8,
+  "max_validation": 6,
+  "context_chars": 400
+ },
+ "kind": "host",
+ "model": "HuggingFaceTB/SmolLM2-135M",
+ "candidates": {
+  "glycosidase": {
+   "votes": [
+    [
+     "is_a",
+     "enzyme",
+     1
+    ],
+    [
+     "part_of",
+     "protein",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "sublime repose": {
+   "votes": [],
+   "samples": 2,
+   "contexts": [
+    22
+   ]
+  },
+  "key functional residues": {
+   "votes": [],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "exosome-like vesicles": {
+   "votes": [],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "tricorn interacting factor": {
+   "votes": [
+    [
+     "is_a",
+     "interacting factor",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "key functional": {
+   "votes": [],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "modfold": {
+   "votes": [
+    [
+     "is_a",
+     "model",
+     1
+    ],
+    [
+     "part_of",
+     "venom",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "mammalian apa": {
+   "votes": [
+    [
+     "is_a",
+     "enzyme",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "tricorn interacting": {
+   "votes": [
+    [
+     "part_of",
+     "f3",
+     2
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "iturrioz": {
+   "votes": [
+    [
+     "is_a",
+     "amino acid",
+     1
+    ],
+    [
+     "part_of",
+     "aminopeptidase a",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "exosome-like": {
+   "votes": [],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "contemplative sublimity": {
+   "votes": [
+    [
+     "is_a",
+     "gothic",
+     1
+    ],
+    [
+     "is_a",
+     "sublime",
+     1
+    ],
+    [
+     "part_of",
+     "abbey",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    22
+   ]
+  }
+ },
+ "examples": [
+  {
+   "prompt": "Each example names a concept from a text and lists facts about it, one per line as `relation: related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of. A related concept is a short general noun phrase.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nConcept: golden retriever\nis_a: dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nConcept: carburetor\nis_a: device\npart_of: engine\n\nText: (PVDF) membranes were from Bio-Rad. The low molecular weight column calibration kit, enhanced chemiluminescence (ECL) reagents and ECL glycoprotein detection module were from GE Healthcare. N Glycosidase F enzyme was from Roche Diagnostics Limited, and trypsin, thrombin and the GoTaq PCR Core System were from Promega. L-Glutamyl-7-amido-4-methylcoumarin (Glu-AMC) and\nConcept: glycosidase\n",
+   "completion": "\nText: The gold leaf is covered with a thin layer of gold, which is why it is known as gold leaf.\nConcept: gold leaf\n\nText: The water is very cold.\nConcept: cold\n\n"
+  },
+  {
+   "prompt": "Each example names a concept from a text and lists facts about it, one per line as `relation: related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of. A related concept is a short general noun phrase.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nConcept: golden retriever\nis_a: dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nConcept: carburetor\nis_a: device\npart_of: engine\n\nText: with the Tilneys, experiences a moment of isolating fear during a thunderstorm at the abbey, comes to love a hyacinth under the tutelage of Eleanor Tilney, and finally shares a mournful moment of sublime repose with Eleanor in a \u201cgloomy\u201d grove of Scotch firs (183).4 Catherine thus moves from an appreciation of the picturesque (in amiable social interaction at Beechen Cliff), to the Burkean sublime (the\nConcept: sublime repose\n",
+   "completion": "\nText: The great and terrible event of the 1914-18 war was the great and terrible event of the 1914-18 war.\nConcept: great\n\nText: The great"
+  },
+  {
+   "prompt": "Each example names a concept from a text and lists facts about it, one per line as `relation: related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of. A related concept is a short general noun phrase.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nConcept: golden retriever\nis_a: dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nConcept: carburetor\nis_a: device\npart_of: engine\n\nText: completely conserved and lower case letters indicate partial conservation. Cysteine residues and predicted N-glycosylation sites (predicted using NetNGlyc) are in white text with black background. Key functional residues based on similarity with the mouse sequence are indicated in bold font: zinc and calcium binding residues are in black type with grey shading and indicated by Z and C at the top of the column\nConcept: key functional residues\n",
+   "completion": "\nText: The critical mass of the sample is 100 kg. The concentration of the sample in the sample container is 0.1 g/L.\nConcept: sample\n\nText: The sample is prepared by"
+  }
+ ],
+ "ledger": [
+  {
+   "stage": "authoring",
+   "parameters": 134515008.0,
+   "forward_tokens": 0,
+   "prompt_tokens": 6370,
+   "generated_tokens": 1152,
+   "flops": 2023643780352.0,
+   "seconds": 14.327559918165207,
+   "note": "SmolLM2-135M"
+  }
+ ],
+ "seconds": 14.327570968074724
+}

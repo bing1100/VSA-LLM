@@ -31,6 +31,16 @@ defaults so that from-scratch configs resolve exactly as before:
 
 For pretrained hosts the corpora are checked against the host: token ids must fit its embedding
 table, and a corpus that records its tokenizer fingerprint (host corpora do) must match the host's.
+
+Two further opt-in keys (E7 self-authoring; absent keys change nothing):
+
+- `train.init_from` (null): a state file `{"model": state, "trainable_only": bool}` (e.g. a previous
+  run's `final.pt`, or one prepared from it with a grown dictionary) loaded before training starts;
+  a resumed run takes its checkpoint instead.
+- `eval.reference_strata` (null): an `.npz` written by `save_reference_strata` with boolean target
+  masks over the evaluation windows; each mask becomes an extra stratum (`ref_<name>`) in
+  `metrics.jsonl` and `eval_windows.npz`. The masks are fixed by the caller, so they are identical
+  across conditions whose linkers differ (paired comparisons on the same target tokens).
 """
 
 from __future__ import annotations
@@ -202,12 +212,36 @@ def stratum_masks(ids: torch.Tensor, spans: dict[str, torch.Tensor], frequency: 
     return masks
 
 
+def save_reference_strata(path: Path, starts: list[int] | np.ndarray, masks: dict[str, np.ndarray], length: int) -> None:
+    """Write fixed target masks (each windows × (length − 1), bool) for `eval.reference_strata`."""
+    starts = np.asarray(starts, dtype=np.int64)
+    arrays: dict[str, np.ndarray] = {"starts": starts, "names": np.asarray(sorted(masks)), "length": np.asarray(length)}
+    for name in sorted(masks):
+        mask = np.asarray(masks[name], dtype=bool)
+        if mask.shape != (starts.size, length - 1):
+            raise ValueError(f"mask {name!r} has shape {mask.shape}, expected {(starts.size, length - 1)}")
+        arrays[f"mask_{name}"] = np.packbits(mask, axis=None)
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, **arrays)
+
+
+def load_reference_strata(path: Path, starts: list[int], length: int) -> dict[str, np.ndarray]:
+    """Masks of `save_reference_strata`, checked against the run's evaluation windows; keys `ref_<name>`."""
+    with np.load(path) as data:
+        if not np.array_equal(data["starts"], np.asarray(starts, dtype=np.int64)) or int(data["length"]) != length:
+            raise ValueError(f"{path} was written for other evaluation windows")
+        shape = (len(starts), length - 1)
+        return {f"ref_{name}": np.unpackbits(data[f"mask_{name}"], count=shape[0] * shape[1]).astype(bool).reshape(shape)
+                for name in data["names"].tolist()}
+
+
 @torch.no_grad()
 def evaluate(model: ChannelLM, corpus: TokenCorpus, starts: list[int], config: dict[str, Any],
              frequency: np.ndarray | None, heldout: set[int], device: torch.device, *,
-             window_sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = None) -> dict[str, dict[str, float]]:
+             window_sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = None,
+             reference: dict[str, np.ndarray] | None = None) -> dict[str, dict[str, float]]:
     """Stratified loss over the evaluation windows; `window_sink` (if given) collects per-window
-    loss sums and target counts per stratum."""
+    loss sums and target counts per stratum; `reference` adds fixed per-window target masks."""
     model.eval()
     length, batch = config["model"]["seq_len"], config["eval"]["batch"]
     sums: dict[str, float] = {}; counts: dict[str, int] = {}
@@ -218,7 +252,10 @@ def evaluate(model: ChannelLM, corpus: TokenCorpus, starts: list[int], config: d
         with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
             per_token = model(ids_d, spans={k: v.to(device) for k, v in spans.items()} if model.channel else None,
                               labels=ids_d, reduction="none")["loss"].float().cpu()
-        for name, mask in stratum_masks(ids, spans, frequency, heldout).items():
+        masks = stratum_masks(ids, spans, frequency, heldout)
+        if reference:
+            masks.update({name: torch.from_numpy(values[i:i + batch]) for name, values in reference.items()})
+        for name, mask in masks.items():
             sums[name] = sums.get(name, 0.0) + float(per_token[mask].sum())
             counts[name] = counts.get(name, 0) + int(mask.sum())
             if window_sink is not None:
@@ -276,7 +313,9 @@ def _evaluate_only(model: ChannelLM, config: dict[str, Any], output_dir: Path, e
     schedule = eval_token_schedule(config["eval"]["first_tokens"], total_steps * tokens_per_step)
     starts = eval_windows(eval_corpus, count=config["eval"]["windows"], length=seq_len)
     sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = {} if config["eval"].get("save_window_losses") else None
-    results = evaluate(model, eval_corpus, starts, config, frequency, heldout, device, window_sink=sink)
+    reference = (load_reference_strata(Path(config["eval"]["reference_strata"]), starts, seq_len)
+                 if config["eval"].get("reference_strata") else None)
+    results = evaluate(model, eval_corpus, starts, config, frequency, heldout, device, window_sink=sink, reference=reference)
     # Same row format as a trained run's evaluations, at the step where that run evaluates each point.
     rows = [{"type": "eval", "step": -(-tokens // tokens_per_step), "tokens": tokens, "stratum": stratum,
              "loss": value["loss"], "stratum_tokens": value["tokens"], "eval_only": True}
@@ -328,6 +367,9 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                       lora_rank=int(config["model"]["lora_rank"])).to(device)
     train_cfg = config["train"]
     trainable_only = bool(train_cfg.get("save_trainable_only", False))
+    if train_cfg.get("init_from") and not (resume and checkpoint_path.exists()):
+        initial = torch.load(train_cfg["init_from"], weights_only=False, map_location="cpu")
+        load_model_state(model, initial["model"], trainable_only=bool(initial.get("trainable_only", False)))
     if eval_only:
         return _evaluate_only(model, config, output_dir, eval_corpus, frequency, heldout, device, git_at_start)
     trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
@@ -373,10 +415,13 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
             handle.write(json.dumps(row) + "\n")
 
     save_windows = bool(config["eval"].get("save_window_losses", False))   # opt-in; absent from older configs
+    reference = (load_reference_strata(Path(config["eval"]["reference_strata"]), eval_starts, seq_len)
+                 if config["eval"].get("reference_strata") else None)
 
     def run_eval(tokens: int) -> None:
         sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = {} if save_windows else None
-        results = evaluate(model, eval_corpus, eval_starts, config, frequency, heldout, device, window_sink=sink)
+        results = evaluate(model, eval_corpus, eval_starts, config, frequency, heldout, device, window_sink=sink,
+                           reference=reference)
         for stratum, value in results.items():
             # `tokens` = training tokens at this evaluation; `stratum_tokens` = target tokens in the
             # stratum (rows written before this fix carry only the latter, under `tokens`).
@@ -409,7 +454,8 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                     loss = loss + train_cfg["semantic_weight"] * channel.semantic_loss(out["hidden"], spans_d, input_ids=ids)
                 if channel is not None and channel.composer is not None:
                     loss = loss + train_cfg["delta_weight"] * channel.composer.delta_penalty()
-            (loss / accum).backward()
+            if loss.requires_grad:      # a frozen host with no linked span in this micro-batch has nothing to train
+                (loss / accum).backward()
             total_loss += float(loss.detach()) / accum
         if tracker is not None:
             tracker.observe()

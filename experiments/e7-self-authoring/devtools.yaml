@@ -1,0 +1,20 @@
+# E7 dev-tools track (WP-E7, D7.0b / D7.1): the C6 v1 synthetic library; its documentation (train.jsonl) is D_read,
+# 20% of the symbols occurring in it are masked and their schemas are the gold.
+#   PYTHONPATH=src python -m vsa_embed.experiments.e7_authoring prepare --track devtools \
+#       --config experiments/e7-self-authoring/devtools.yaml --run experiments/e7-self-authoring/runs/devtools-v1
+# Candidates are identifiers (snake_case / CamelCase, kept with their underscores). Note: C6's own alias table
+# cannot link snake_case symbols (normalize_alias maps "_" to " "), so a T2 channel round needs a C6 linker fix first.
+devtools_root: experiments/c6-devtools-benchmark/v1
+data_root: ~/data/vsa-llm/e7/devtools-v1
+seed: 20261002
+mask:
+  fraction: 0.2
+  min_count: 1
+discovery:
+  min_count: 3
+  keep: 2000
+authoring:
+  candidates: 300
+  contexts: 4
+direct:
+  documents: 300

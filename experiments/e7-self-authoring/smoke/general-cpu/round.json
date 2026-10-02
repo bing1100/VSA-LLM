@@ -1,0 +1,103 @@
+{
+ "host": "SmolLM2-135M",
+ "host_mode": "frozen",
+ "channel_condition": "C5",
+ "operator": "hrr",
+ "key_dimension": 8,
+ "channel_dimension": 256,
+ "base_tokens": 3072,
+ "round_tokens": 2048,
+ "sequences_per_step": 16,
+ "seq_len": 256,
+ "verification": {
+  "window": 96,
+  "after": 8,
+  "min_validation": 2,
+  "quantile": 0.05,
+  "resamples": 500,
+  "batch": 8,
+  "max_edges": 8
+ },
+ "new_fillers": {
+  "min_concepts": 2
+ },
+ "cm_stages": [
+  "discovery",
+  "authoring",
+  "verification"
+ ],
+ "teacher_verified": true,
+ "teacher_condition": true,
+ "entigraph": {
+  "writer": "SmolLM2-135M",
+  "per_entity": 1,
+  "max_new_tokens": 32,
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "batch": 8,
+  "share": 0.1,
+  "context_chars": 600
+ },
+ "notes": {
+  "writer": "SmolLM2-135M",
+  "samples": 1,
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "max_new_tokens": 32,
+  "batch": 8,
+  "share": 0.1
+ },
+ "spa": {
+  "writer": "SmolLM2-135M",
+  "documents": 6,
+  "passage_chars": 1200,
+  "max_new_tokens": 48,
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "batch": 6,
+  "share": 0.1
+ },
+ "verbal": {
+  "share": 0.02
+ },
+ "text": {
+  "budget": "tokens"
+ },
+ "eval": {
+  "first_fraction": 0.5
+ },
+ "cross": {
+  "seed": 1,
+  "condition": "self",
+  "train_tokens": 200000,
+  "run_tokens": 2048,
+  "size": "50M",
+  "channel_condition": "C5",
+  "seeds": [
+   1
+  ],
+  "workers": 4,
+  "config_overrides": {
+   "train": {
+    "micro_batch": 2,
+    "grad_accum": 1,
+    "total_tokens": 2048,
+    "warmup_tokens": 512
+   },
+   "eval": {
+    "batch": 8,
+    "first_tokens": 1024
+   },
+   "device": "cpu"
+  }
+ },
+ "config_overrides": {
+  "train": {
+   "micro_batch": 2
+  },
+  "eval": {
+   "batch": 8
+  },
+  "device": "cpu"
+ }
+}
