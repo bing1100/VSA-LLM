@@ -11,7 +11,7 @@ descriptors of the same microthesaurus.
 
 Items:
 - `eurovoc_probe` (EuroVoc descriptor classification, document level, linear probe): the first
-  1,200 characters of MultiEURLEX documents (probe-train from its train split, probe-test from its
+  `probe_chars` characters (title and opening citations) of MultiEURLEX documents (probe-train from its train split, probe-test from its
   test split) with their gold labels — domains, microthesauri and assigned descriptors (names);
   `split` is `heldout` when an assigned descriptor is held out;
 - `defined_term_cloze` (multiple choice): definitions extracted from the acts ("‘X’ means …"), the
@@ -173,7 +173,7 @@ class LegalTrack(Track):
                 probe.append({
                     "id": f"t6-eurovoc_probe-{len(probe):06d}", "track": "t6", "task": "eurovoc_probe",
                     "split": "heldout" if set(descriptors) & held else "train", "probe_split": source,
-                    "celex_id": r["celex_id"], "text": r["text"][:1200],
+                    "celex_id": r["celex_id"], "text": r["text"][:int(settings["probe_chars"])],
                     "labels": {"domains": sorted(domain_uris.get(f"http://eurovoc.europa.eu/{d}", d) for d in labels.get("level_1", [])),
                                "microthesauri": sorted(mt_labels.get(f"http://eurovoc.europa.eu/{d}", d) for d in labels.get("level_2", [])),
                                "descriptors": sorted(records[d]["label"] for d in descriptors if d in records)},

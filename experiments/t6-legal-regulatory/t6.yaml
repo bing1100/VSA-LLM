@@ -36,7 +36,8 @@ data:
   min_subtokens: 2
   cardinality_docs: 500        # EUR-Lex acts are long (≈ 7,000 characters on average)
 items:
-  probe_train_docs: 3000
-  probe_test_docs: 2000
-  defined_terms: 3000
+  probe_train_docs: 2000
+  probe_test_docs: 1000
+  probe_chars: 600             # title + opening citations; full texts stay in the data root
+  defined_terms: 2000
 cardinality_tokenizers: [HuggingFaceTB/SmolLM2-135M, gpt2, Qwen/Qwen2.5-0.5B]

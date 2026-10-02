@@ -4,7 +4,7 @@ ChEBI as the ontology, IUPAC and trivial names as multi-token aliases, ChEBI ent
 chemistry abstracts as the domain corpus — the purest compositionality test (IUPAC names are
 compositional, functional groups and elements are natural atomics).
 
-## Sources and licences (details and hashes in `~/data/vsa-llm/DATA_SOURCES.md`, section "C7 tracks")
+## Sources and licences (details and hashes in `~/data/vsa-llm/DATA_SOURCES.md`, section "C7 application tracks T3–T6")
 
 - **ChEBI release 255** (2026-09-09), `chebi.obo.gz` from the EBI FTP, CC BY 4.0
   ("ChEBI data is from https://www.ebi.ac.uk/chebi — version 255"). sha256 `c2765eb4599fbcbb…`.

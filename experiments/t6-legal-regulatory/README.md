@@ -3,7 +3,7 @@
 EuroVoc (the EU's multilingual thesaurus) as the ontology, its English preferred and non-preferred
 terms as aliases, English EU legislation (MultiEURLEX) as the corpus.
 
-## Sources and licences (details and hashes in `~/data/vsa-llm/DATA_SOURCES.md`, section 11c)
+## Sources and licences (details and hashes in `~/data/vsa-llm/DATA_SOURCES.md`, section "C7 application tracks T3–T6")
 
 - **EuroVoc 4.24** SKOS core export (Publications Office Cellar, published 2026-07-08; sha256
   `91bdb24e833ba431…`), © European Union, reuse authorised (Commission reuse policy).
@@ -24,7 +24,7 @@ terms as aliases, English EU legislation (MultiEURLEX) as the corpus.
 4. **Synthetic descriptors** (E5.4 "new EuroVoc descriptors"): invented names placed under an existing
    descriptor (`invented`: two invented stems; `headed`: an invented stem + the broader term's head
    word), with broader / top term / microthesaurus / domain / related edges.
-5. **Items**: `eurovoc_probe` (document-level EuroVoc classification, linear probe: the first 1,200
+5. **Items**: `eurovoc_probe` (document-level EuroVoc classification, linear probe: the first 600
    characters of an act with its domains, microthesauri and descriptors; probe-train from MultiEURLEX
    train, probe-test from its test split), `defined_term_cloze` (definitions extracted from the acts,
    "‘X’ means …", true definition opening vs three others; 2 paraphrases), `zeroshot_property` and
