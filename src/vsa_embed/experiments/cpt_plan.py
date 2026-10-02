@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -182,7 +183,7 @@ def queue_jobs(paths: list[Path], stage: str, priority: int, *, root: Path = ROO
         name = f"{stage}-{path.stem}"
         output = root / "runs" / stage / path.stem
         try:
-            add(DEFAULT_DIR, ["python", "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(output)],
+            add(DEFAULT_DIR, [sys.executable, "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(output)],
                 name=name, priority=priority, min_free_gb=20, env={"PYTHONPATH": "src"})
             queued.append(name)
         except FileExistsError:
