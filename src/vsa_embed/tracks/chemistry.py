@@ -20,7 +20,8 @@ charge, branch, and one invented role (`has_role`, marked `fictional_role`), so 
 only be answered from the frame. Substitution keeps membership of the family class, so the class
 facts are chemically right; PubChem could not be searched offline, so a name may exist there.
 
-Items: `class_role_probe` (IUPAC name in a neutral sentence → coarse chemical class and frequent roles;
+Items (chemical entities only; class facts and distractors are superclasses of ≥ 3 entities):
+`class_role_probe` (IUPAC name in a neutral sentence → coarse chemical class and frequent roles;
 linear probe), `property_cloze` (multiple choice over is_a / has_role / has_functional_parent /
 conjugate / parent-hydride / enantiomer facts), `zeroshot_property` and `zeroshot_entailment`.
 """
@@ -249,17 +250,26 @@ class ChemistryTrack(Track):
         heldout_ids = {ontology.concept_names[c] for c in context["holdout_concepts"]}
         frequency = context["concept_frequency"]
 
+        # A "class" filler is a superclass of at least 3 entities: this keeps specific compounds (is_a of
+        # salts and stereoisomers) out of the class facts and distractors.
+        superclass_use = Counter(p for r in records.values() for p in r["is_a"])
+        class_ids = {p for p, n in superclass_use.items() if n >= 3}
+
         def facts(record: dict[str, Any]) -> dict[str, list[str]]:
             out: dict[str, list[str]] = {}
-            if record["is_a"]:
-                out["is_a"] = [names[p] for p in record["is_a"] if p in names]
+            superclasses = [names[p] for p in record["is_a"] if p in names and p in class_ids]
+            if superclasses:
+                out["is_a"] = superclasses
             for rel, target in record["relations"]:
                 if rel in TEMPLATES and target in names:
                     out.setdefault(rel, []).append(_a(names[target]) if rel == "has_role" else names[target])
             return out
 
         concepts = []
+        branches = ontology.metadata["branches"]
         for cid, record in sorted(records.items()):
+            if branches.get(cid) != "chemical entity":     # roles and particles have no compound facts
+                continue
             split = "heldout" if cid in heldout_ids else "train"
             concepts.append({"concept": cid, "surface": record["name"], "split": split, "facts": facts(record),
                              "frequency": frequency.get(cid, 0), "record": record})

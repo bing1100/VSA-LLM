@@ -202,6 +202,7 @@ def build_chebi_ontology(path: Path, *, min_star: int = 3, max_atomics: int = 81
                              {"source": str(path), "entities": len(records), "min_star": min_star, "max_atomics": max_atomics,
                               "max_degree": max_degree, "role_budget": role_budget, "max_alias_chars": max_alias_chars,
                               "fillers_replaced_by_ancestor": replaced, "fillers_dropped": dropped})
+    ontology.metadata["branches"] = {r["id"]: branch(r["id"]) for r in concepts}
     ontology.metadata["labels"] = [r["name"] for r in concepts]
     ontology.metadata["definitions"] = [r.get("definition", "") for r in concepts]
     ontology.metadata["records"] = {r["id"]: r for r in concepts}

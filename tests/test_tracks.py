@@ -146,7 +146,11 @@ def test_feasibility_counts_strata_in_the_evaluation_windows() -> None:
     assert by[2]["feasible"] and recommend_min_subtokens(rows)["min_subtokens"] == 2
     strict = feasibility(evaluation, train, {7, 8}, entry_count=10, thresholds=(1, 2),
                          criteria={**criteria, "min_heldout_entries": 3})
-    assert recommend_min_subtokens(strict) == {"min_subtokens": None, "verdict": "infeasible", "failed_checks": ["heldout_entries"]}
+    assert recommend_min_subtokens(strict) == {"min_subtokens": None, "verdict": "infeasible", "failed_checks": ["heldout_entries"],
+                                               "heldout_locality": {"min_subtokens": 2, "eval_windows": None}}
+    no_rare = feasibility(evaluation, train, {7, 8}, entry_count=10, thresholds=(1, 2),
+                          criteria={**criteria, "min_rare_entries": 5})
+    assert recommend_min_subtokens(no_rare)["heldout_locality"] == {"min_subtokens": 2, "eval_windows": 4}
 
 
 # -- ontology adapters on small fixtures -----------------------------------------------------------
@@ -343,7 +347,7 @@ def test_pubmed_parser_and_md5(tmp_path: Path) -> None:
 
 def test_legal_definitions_and_product_text() -> None:
     text = ("For the purposes of this Regulation: (a) ‘consumer’ means any natural person who is acting for purposes outside "
-            "his trade; (b) 'trader' means any person acting for purposes relating to his business.")
+            "his trade; (b) 'trader' means any person acting for purposes relating to his business. The trader shall comply.")
     assert extract_definitions(text) == [("consumer", "any natural person who is acting for purposes outside his trade"),
                                          ("trader", "any person acting for purposes relating to his business")]
     row = {"product_title": "Lodge <b>Cast Iron</b> Skillet", "product_brand": "Lodge", "product_color": None,
@@ -395,7 +399,7 @@ def test_track_builder_end_to_end_on_a_tiny_glossary(tmp_path: Path) -> None:
     from vsa_embed.experiments.track_corpus import run
     rng = random.Random(0)
     words = "the river city school garden market history music science water light energy family story".split()
-    general = [" ".join(rng.choice(words) for _ in range(120)) + "." for _ in range(80)]
+    general = [" ".join(rng.choice(words) for _ in range(120)) + "." for _ in range(300)]
     pq.write_table(pa.table({"text": general}), tmp_path / "general.parquet")
     config = {
         "experiment": "t5-tiny", "track": "t5", "seed": 3, "tokenizer": "gpt2", "workers": 1, "items_dir": str(tmp_path / "items"),

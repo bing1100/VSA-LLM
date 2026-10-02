@@ -48,6 +48,7 @@ TEMPLATES = {
 }
 DEFINITION = re.compile(r"[‘'\"“]([^’'\"”\n]{2,80})[’'\"”]\s+(?:shall\s+)?means?\s+([^;\n]{20,400})")
 _TOKENS = re.compile(r"\w+|[^\w\s]")
+_SENTENCE_END = re.compile(r"(?<=[a-z0-9)\]])\.\s+(?=[A-Z(])")
 
 
 def _bucket(key: str) -> int:
@@ -65,7 +66,8 @@ def extract_definitions(text: str) -> list[tuple[str, str]]:
     out = []
     for match in DEFINITION.finditer(text):
         term, definition = " ".join(match.group(1).split()), " ".join(match.group(2).split())
-        if any(ch.isalpha() for ch in term) and len(term.split()) <= 8:
+        definition = _SENTENCE_END.split(definition, 1)[0]      # stop at the end of the sentence
+        if any(ch.isalpha() for ch in term) and len(term.split()) <= 8 and len(definition) >= 20:
             out.append((term, definition.rstrip(",. ")))
     return out
 

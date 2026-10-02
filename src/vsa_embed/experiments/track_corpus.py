@@ -106,29 +106,38 @@ def feasibility(eval_corpus: TokenCorpus, train_corpus: TokenCorpus, heldout: se
                 "train_entries": train_entries >= criteria["min_train_entries"],
                 "covered_fraction": criteria["min_covered_fraction"] <= fraction <= criteria["max_covered_fraction"],
             }
+            partial = ("heldout_entries", "heldout_spans", "train_entries", "covered_fraction")
             samples.append({"windows_requested": count, "windows": len(starts), "tokens": tokens,
                             "heldout_entries": len(held_entries), "heldout_spans": held_spans,
                             "rare_entries": len(rare_entries), "rare_spans": rare_spans,
                             "unseen_entries": len(unseen_entries), "unseen_spans": unseen_spans,
                             "linked_entries": len(linked_entries), "spans": spans_total,
-                            "covered_fraction": fraction, "checks": checks, "pass": all(checks.values())})
+                            "covered_fraction": fraction, "checks": checks, "pass": all(checks.values()),
+                            "pass_heldout_locality": all(checks[k] for k in partial)})
         passing = [s for s in samples if s["pass"]]
+        partial_passing = [s for s in samples if s["pass_heldout_locality"]]
         rows.append({"min_subtokens": threshold, "train_entries": train_entries,
                      "train_spans": int(frequency.sum()), "samples": samples,
                      "feasible": bool(passing), "eval_windows_needed": passing[0]["windows"] if passing else None,
+                     "heldout_locality_windows_needed": partial_passing[0]["windows"] if partial_passing else None,
                      "failed_checks": [] if passing else sorted(k for k, v in samples[-1]["checks"].items() if not v)})
     return rows
 
 
 def recommend_min_subtokens(rows: list[dict[str, Any]], default: int = 2) -> dict[str, Any]:
-    """ℓ_min = 2 (the E4 default) if feasible, else ℓ_min = 1 (single-token variant), else infeasible."""
+    """ℓ_min = 2 (the E4 default) if feasible, else ℓ_min = 1 (single-token variant), else infeasible.
+
+    An infeasible track also reports whether the held-out stratum and locality alone are powered
+    (`heldout_locality`: the E4 gate without its seen-rare comparison), which is the author's call."""
     by = {r["min_subtokens"]: r for r in rows}
     for threshold in (default, 1):
         if threshold in by and by[threshold]["feasible"]:
             return {"min_subtokens": threshold, "verdict": "feasible",
                     "eval_windows": by[threshold]["eval_windows_needed"]}
-    return {"min_subtokens": None, "verdict": "infeasible",
-            "failed_checks": by.get(default, rows[0])["failed_checks"]}
+    row = by.get(default, rows[0])
+    return {"min_subtokens": None, "verdict": "infeasible", "failed_checks": row["failed_checks"],
+            "heldout_locality": {"min_subtokens": row["min_subtokens"],
+                                 "eval_windows": row.get("heldout_locality_windows_needed")}}
 
 
 def _verify(paths: list[str], expected: dict[str, str] | None) -> None:
@@ -369,7 +378,10 @@ def render_report(config: dict[str, Any], summary: dict[str, Any], cardinality: 
              f"{summary['holdout']['heldout_entries']:,} entries, sha256 `{summary['holdout']['sha256'][:16]}…`; "
              f"synthetic zero-shot concepts: {summary['synthetic']['kept']:,} (sha256 `{summary['synthetic']['sha256'][:16]}…`).",
              "", f"**Feasibility verdict: {rec['verdict']}**" + (f" at ℓ_min = {rec['min_subtokens']} with "
-             f"{rec['eval_windows']} evaluation windows." if rec["verdict"] == "feasible" else f" (failed: {rec.get('failed_checks')})."),
+             f"{rec['eval_windows']} evaluation windows." if rec["verdict"] == "feasible" else
+             f" (failed: {rec.get('failed_checks')}). Held-out stratum and locality alone at ℓ_min = "
+             f"{rec['heldout_locality']['min_subtokens']}: " + (f"powered with {rec['heldout_locality']['eval_windows']} "
+             "evaluation windows." if rec["heldout_locality"]["eval_windows"] else "not powered.")),
              "", "## Feasibility (domain evaluation windows; criteria in `feasibility.json`)", "",
              "| ℓ_min | windows | held-out entries | held-out spans | rare (1–9) entries | rare spans | unseen entries | unseen spans | covered fraction | train entries | pass |",
              "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|:-:|"]
