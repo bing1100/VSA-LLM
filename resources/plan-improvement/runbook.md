@@ -27,7 +27,8 @@ Then tell the session: *"Follow resources/plan-improvement/runbook.md from the f
 
 - [x] RAM screen: `python scripts/memcheck.py 16 4` → **0 bad words** in 16 GiB × 4 passes (the old machine had 204 at 6 GiB).
 - [x] `vsa-repro` env created; `pip install -e .` (no deps), plus `scipy`, `pytest` and `pyarrow` (C3 reads parquet). WordNet downloaded. `pytest` passes; 15 tests are skipped because the GPT-2 tokenizer isn't cached yet (it is downloaded in Step 2).
-- [ ] Before any long run, re-run `$PY scripts/memcheck.py 20 8` and record the total here. Continue only if it is 0.
+- [x] Before any long run, re-run `$PY scripts/memcheck.py 20 8` and record the total here. Continue only if it is 0.
+  2026-10-02: ran `memcheck.py 16 8` instead (20 GiB needs ≈ 60 GiB with the index and temporaries, the whole of this machine's RAM): **0 bad words** in 16 GiB × 8 passes.
 
 ## Step 1 — E0 reproduction (CPU, single-threaded)
 
@@ -43,12 +44,13 @@ Then tell the session: *"Follow resources/plan-improvement/runbook.md from the f
   ```
 
   Check: `python scripts/compare_runs.py experiments/e0-synthetic-identifiability/runs/e0-development ~/workplace/vsa-repro-runs/e0-development --tolerance 1e-12` prints `MATCH`.
-- [ ] **D0.2 parent-routing** (`runs/d02-parent-routing` and `runs/d02-parent-routing-v2`): read each `manifest.json` for its sha, argv and config, run them the same way, and compare.
+- [x] **D0.2 parent-routing** (`runs/d02-parent-routing` and `runs/d02-parent-routing-v2`): read each `manifest.json` for its sha, argv and config, run them the same way, and compare.
+  2026-10-02: both **MATCH at 1e-12** (metrics.csv 0 of 576 cells, summary.json 0 of 115), at `bf5f535` and `01e8090` respectively (v2's manifest records a dirty tree; it reproduces anyway).
 - If any comparison prints `DIFFER` beyond rounding: stop, write the differing cells into gates.md, and tell the author. G1 rests on these numbers.
 
 ## Step 2 — model and probe data downloads
 
-- [ ] Models into the HF cache:
+- [x] Models into the HF cache (2026-10-02, all four):
 
   ```bash
   for m in gpt2 HuggingFaceTB/SmolLM2-135M HuggingFaceTB/SmolLM2-360M Qwen/Qwen2.5-0.5B; do
@@ -56,7 +58,7 @@ Then tell the session: *"Follow resources/plan-improvement/runbook.md from the f
   ```
 
   Then `$PY -m pytest -q`: the 15 GPT-2 tests now run and should pass.
-- [ ] Probe data under `~/data/vsa-llm/probes/`. The loaders in `src/vsa_embed/evaluation/probes.py` expect this layout; find each official source and check the counts before using it:
+- [x] Probe data under `~/data/vsa-llm/probes/` (2026-10-02; every count matches; sources, sha256 and checks in `~/data/vsa-llm/DATA_SOURCES.md` and `SHA256SUMS`; BLESS from the Wayback copy of the GEMS zip, HyperLex from github.com/cambridgeltl/hyperlex `ccb41619`; MeSH `desc2026.gz` and both FineWeb shards fetched too, shards' sha256 match `c3.yaml`). The loaders in `src/vsa_embed/evaluation/probes.py` expect this layout; find each official source and check the counts before using it:
 
   | Path | Source | Check |
   |---|---|---|
@@ -66,11 +68,12 @@ Then tell the session: *"Follow resources/plan-improvement/runbook.md from the f
   | `rw/rw/rw.txt` | Stanford Rare Words (Luong et al. 2013) | 2,034 pairs |
   | `wsd/WSD_Evaluation_Framework/` | Raganato et al. 2017 (SemCor + ALL), needed for E1 | — |
 
-- [ ] `pip install torchao` into `vsa-repro` (needed for B8 PTQ) and record the version here.
+- [x] `pip install torchao` into `vsa-repro` (needed for B8 PTQ) and record the version here: **torchao 0.18.0** (its Hopper-only `_C_mxfp8` / `_C_cutlass_90a` extensions fail to load on the 3090; harmless).
 
 ## Step 3 — B6 and B8 reproduction (GPU)
 
-- [ ] **B6 host memory** (`b6-host-memory/runs/3090-v1`, commit `2ad45e5`): `$PY src/vsa_embed/experiments/host_memory.py --output ~/workplace/vsa-repro-runs/b6-3090`. This is a hardware measurement, so compare `report.md` against the committed one by eye. Peak memory per host × micro-batch within ±5% and the same pass/fail against 22 GB counts as reproduced.
+- [x] **B6 host memory** (`b6-host-memory/runs/3090-v1`, commit `2ad45e5`): `$PY src/vsa_embed/experiments/host_memory.py --output ~/workplace/vsa-repro-runs/b6-3090`. This is a hardware measurement, so compare `report.md` against the committed one by eye. Peak memory per host × micro-batch within ±5% and the same pass/fail against 22 GB counts as reproduced.
+  2026-10-02: **reproduced** — peak memory identical in all 19 rows (the SmolLM2-360M micro-batch-16 row is `nan` in both), tokens/s within 1%. The recorded commit `2ad45e5` (dirty tree) crashes with transformers 4.54 (`GPT2LMHeadModel(..., attn_implementation=…)`); the fix landed later, so this ran at HEAD `724219a`.
 - [ ] **B8 probes** (`b8-probe-validation/runs/v1`, commit `e2078a4`): `$PY src/vsa_embed/experiments/b8_validation.py --output ~/workplace/vsa-repro-runs/b8-v1`. Compare the probe columns only; v1's quantization columns are superseded (see its NOTE.md). Accept LAMBADA, WiC and Spearman within ±0.005.
 - [ ] **B8 PTQ** (`runs/v1-ptq`, commit `8e83d64`, `--quantization-only`): compare PPL bf16, INT8 and INT4 within ±1%.
 
@@ -78,14 +81,14 @@ Then tell the session: *"Follow resources/plan-improvement/runbook.md from the f
 
 The judge no longer shells out to `claude -p`. `calibrate` writes one request file per (item, call); this session answers them with fresh subagents and writes the verdicts to files; re-running `calibrate` validates and caches the verdicts and writes the results. Requests carry only the prompt, the schema and the response path: no item id, gold label or system name.
 
-- [ ] **4a. Post requests.**
+- [x] **4a. Post requests.**
 
   ```bash
   $PY -m vsa_embed.judge_protocol calibrate --output experiments/c5-judge-calibration/v2
   ```
 
   Expected: `90 requests outstanding … in experiments/c5-judge-calibration/v2/exchange/requests` and exit code 3. That is 30 WordNet items (seed 0, the same items as v1) × 3 calls.
-- [ ] **4b. Judge each request in a fresh subagent.** Calls must stay independent, as separate `claude -p` calls were in v1, so:
+- [x] **4b. Judge each request in a fresh subagent.** Calls must stay independent, as separate `claude -p` calls were in v1, so:
   - Use **one new subagent per request file** (Agent tool, `model: opus`, which is the pinned `claude-opus-5-5`), about 10 in parallel per message.
   - Never answer requests in this main session. Never give one subagent two requests, and never pass on another call's answer.
   - Subagent prompt, verbatim apart from the path:
@@ -93,9 +96,12 @@ The judge no longer shells out to `claude -p`. `calibrate` writes one request fi
     > Read the JSON file `<request path>`. Act as the judge: answer its `prompt` field on its own merits. Then write ONLY a JSON object that conforms to its `schema` field (for example `{"score": 2, "reason": "…"}`) to the path in its `response_path` field. Do not read or list any other file. Reply with the object you wrote.
 
   - Don't open `results.json`, `summary.json` or `cache/` in `v2/` while judging is in progress, and keep subagents away from `experiments/c5-judge-calibration/v1/`.
-- [ ] **4c. Ingest.** Re-run the 4a command. Exit 0 prints the summary. Exit 3 lists what is still outstanding: each remaining request's `last_error` says whether it is `pending` or why its response was rejected (`invalid response: …`). Re-judge those with new subagents (4b) and re-run until it exits 0.
-- [ ] **4d. Check against v1** (accuracy 1.0, i.e. 30/30; Fleiss κ 0.81). Accuracy is binary: majority ≥ 2 counts as related, gold 3 is related and gold 0 is not. Pass if accuracy ≥ 0.90 (≥ 27/30) and κ ≥ 0.6. Otherwise, record the disagreeing items in gates.md and tell the author before D5.3 or D7.1 use the judge.
-- [ ] **4e. Commit** `v2/results.json`, `summary.json`, `manifest.json`, `resolved_config.yaml` and `cache/`. The cache lets the study be replayed and lets the later clinician study rate identical items. Don't commit `exchange/`: answered requests are deleted and the responses duplicate the cache. In gates.md, note the harness change: v1 used lean `claude -p --tools ""`, while v2 uses Claude Code subagents with the default system prompt. Agreement numbers are therefore comparable, but individual verdicts are not.
+- [x] **4c. Ingest.** Re-run the 4a command. Exit 0 prints the summary. Exit 3 lists what is still outstanding: each remaining request's `last_error` says whether it is `pending` or why its response was rejected (`invalid response: …`). Re-judge those with new subagents (4b) and re-run until it exits 0.
+  2026-10-02: 90 subagents, all responses valid on the first pass; exit 0.
+- [x] **4d. Check against v1** (accuracy 1.0, i.e. 30/30; Fleiss κ 0.81). Accuracy is binary: majority ≥ 2 counts as related, gold 3 is related and gold 0 is not. Pass if accuracy ≥ 0.90 (≥ 27/30) and κ ≥ 0.6. Otherwise, record the disagreeing items in gates.md and tell the author before D5.3 or D7.1 use the judge.
+  2026-10-02: **PASS — accuracy 1.0 (30/30), Fleiss κ 0.926** (v1: 1.0, 0.812).
+- [x] **4e. Commit** `v2/results.json`, `summary.json`, `manifest.json`, `resolved_config.yaml` and `cache/`. The cache lets the study be replayed and lets the later clinician study rate identical items. Don't commit `exchange/`: answered requests are deleted and the responses duplicate the cache. In gates.md, note the harness change: v1 used lean `claude -p --tools ""`, while v2 uses Claude Code subagents with the default system prompt. Agreement numbers are therefore comparable, but individual verdicts are not.
+  2026-10-02: committed in `724219a`; `exchange/` is git-ignored.
 
 Other judge studies (`edge_explanation`, `split_card`, `authored_edge` in D5.3 and D7.1) use the same loop: build a `JudgeClient(..., exchange_dir=<run>/exchange)`, run the study, answer the requests as in 4b, and re-run.
 
