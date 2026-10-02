@@ -260,8 +260,8 @@ def test_full_suite_is_deterministic_and_reports_heldout_subsets(setup, tmp_path
                  "--output", str(output)])
         outputs.append(output)
     first, second = (json.loads(o.read_text()) for o in outputs)
-    assert first["summary"] == second["summary"] and first["probes"] == {**second["probes"], **{
-        k: {**v, "seconds": first["probes"][k]["seconds"]} for k, v in second["probes"].items()}}
+    untimed = lambda doc: {name: {k: v for k, v in result.items() if k != "seconds"} for name, result in doc["probes"].items()}
+    assert first["summary"] == second["summary"] and untimed(first) == untimed(second)
     assert cp.items_path(outputs[0]).read_bytes() == cp.items_path(outputs[1]).read_bytes()
     assert set(first["probes"]) == set(cp.PROBES)
     assert first["model"]["alias_table"]["checks"]["digest"] is True
@@ -289,9 +289,13 @@ def test_paired_comparison_between_runs_with_identical_items(setup, tmp_path: Pa
     entry = diff["tables"]["hyperlex"]["cosine_spearman"]["all"]
     assert entry["ci_low"] <= entry["difference"] <= entry["ci_high"]
     assert "heldout" in diff["tables"]["bless"]["prompt_auc"] and "heldout" in diff["tables"]["lambada"]["accuracy"]
+    settings = json.loads(outputs["compose"].read_text())["settings"]
     other = tmp_path / "other" / "probes.json"
-    cp.write_outputs(other, {}, {"card660": {"id": [0], "cosine": [0.1], "gold": [1.0], "status": [None]}}, {})
+    cp.write_outputs(other, {}, {"card660": {"id": [0], "cosine": [0.1], "gold": [1.0], "status": [None]}}, {"settings": settings})
     with pytest.raises(ValueError, match="same items"):
+        cp.compare_outputs(outputs["compose"], other)
+    cp.write_outputs(other, {}, {}, {"settings": {**settings, "wsd_train_cap": 20}})
+    with pytest.raises(ValueError, match="settings"):
         cp.compare_outputs(outputs["compose"], other)
 
 

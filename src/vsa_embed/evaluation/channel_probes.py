@@ -1006,12 +1006,17 @@ def paired_bootstrap_metric(kind: str, columns_a: Sequence[Sequence[Any]], colum
             "ci_high": float(np.quantile(diffs, 0.975)) if diffs.size else None, "n": n}
 
 
-def compare_outputs(output_a: Path, output_b: Path, *, resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
+def compare_outputs(output_a: Path, output_b: Path, *, resamples: int = 2000, seed: int = 0,
+                    allow_different_settings: bool = False) -> dict[str, Any]:
     """Paired comparison of two probe outputs over identical items: A − B per metric and subset.
 
-    Subsets use A's link statuses (B's when A has none, e.g. an untouched host vs a channel run);
-    if both have statuses and they differ, only the full item set is compared.
+    Both outputs must come from the same probe settings (items, splits, caps, batch size) and have
+    the same item ids. Subsets use A's link statuses (B's when A has none, e.g. an untouched host vs
+    a channel run); if both have statuses and they differ, only the full item set is compared.
     """
+    settings_a, settings_b = (json.loads(Path(o).read_text()).get("settings") for o in (output_a, output_b))
+    if settings_a != settings_b and not allow_different_settings:
+        raise ValueError("the two outputs were produced with different probe settings")
     a, b = load_items(output_a), load_items(output_b)
     comparison: dict[str, Any] = {"a": str(output_a), "b": str(output_b), "resamples": resamples, "seed": seed, "tables": {}}
     for name in sorted(set(a) & set(b) & set(METRICS)):
@@ -1088,9 +1093,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--holdout-names", type=Path)
     parser.add_argument("--resamples", type=int, default=2000); parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--allow-different-settings", action="store_true", help="--compare outputs of different settings")
     args = parser.parse_args(argv)
     if args.compare:
-        comparison = compare_outputs(*args.compare, resamples=args.resamples, seed=args.seed)
+        comparison = compare_outputs(*args.compare, resamples=args.resamples, seed=args.seed,
+                                     allow_different_settings=args.allow_different_settings)
         text = json.dumps(_native(comparison), indent=2) + "\n"
         if args.output:
             args.output.write_text(text)
