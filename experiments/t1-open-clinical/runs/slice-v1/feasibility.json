@@ -1,0 +1,305 @@
+{
+  "criteria": {
+    "split": "eval-pubmed",
+    "heldout_min_entries_5plus": 300,
+    "heldout_min_occurrences": 2000,
+    "rare_min_entries": 300,
+    "rare_min_occurrences": 2000,
+    "trainer_windows": 1024,
+    "window_length": 1024
+  },
+  "by_tokenizer": {
+    "gpt2": [
+      {
+        "min_subtokens": 1,
+        "frequency_source": "slice (3,000,995 of 300,000,000 tokens)",
+        "split": {
+          "tokens_considered": 5616075,
+          "linked_spans": 568802,
+          "heldout_occurrences": 27757,
+          "heldout_entries_linked": 1056,
+          "heldout_entries_5plus": 671,
+          "rare_occurrences": 50871,
+          "rare_entries_linked": 5215,
+          "rare_entries_5plus": 3157
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 104840,
+          "heldout_occurrences": 5122,
+          "heldout_entries_linked": 653,
+          "heldout_entries_5plus": 223,
+          "rare_occurrences": 9521,
+          "rare_entries_linked": 2996,
+          "rare_entries_5plus": 628
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "held-out stratum feasible; rare stratum pending the full build",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 5483,
+        "eval_windows_needed": 2048
+      },
+      {
+        "min_subtokens": 2,
+        "frequency_source": "slice (3,000,995 of 300,000,000 tokens)",
+        "split": {
+          "tokens_considered": 5616075,
+          "linked_spans": 237883,
+          "heldout_occurrences": 18386,
+          "heldout_entries_linked": 1045,
+          "heldout_entries_5plus": 645,
+          "rare_occurrences": 54416,
+          "rare_entries_linked": 5621,
+          "rare_entries_5plus": 3378
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 43882,
+          "heldout_occurrences": 3404,
+          "heldout_entries_linked": 627,
+          "heldout_entries_5plus": 181,
+          "rare_occurrences": 10095,
+          "rare_entries_linked": 3223,
+          "rare_entries_5plus": 660
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "held-out stratum feasible; rare stratum pending the full build",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 5483,
+        "eval_windows_needed": 2048
+      },
+      {
+        "min_subtokens": 3,
+        "frequency_source": "slice (3,000,995 of 300,000,000 tokens)",
+        "split": {
+          "tokens_considered": 5616075,
+          "linked_spans": 120572,
+          "heldout_occurrences": 9503,
+          "heldout_entries_linked": 857,
+          "heldout_entries_5plus": 431,
+          "rare_occurrences": 38104,
+          "rare_entries_linked": 4249,
+          "rare_entries_5plus": 2450
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 22217,
+          "heldout_occurrences": 1813,
+          "heldout_entries_linked": 463,
+          "heldout_entries_5plus": 113,
+          "rare_occurrences": 7094,
+          "rare_entries_linked": 2402,
+          "rare_entries_5plus": 432
+        },
+        "checks": {
+          "heldout_entries_5plus": true,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "held-out stratum feasible; rare stratum pending the full build",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 5483,
+        "eval_windows_needed": 3072
+      },
+      {
+        "min_subtokens": 4,
+        "frequency_source": "slice (3,000,995 of 300,000,000 tokens)",
+        "split": {
+          "tokens_considered": 5616075,
+          "linked_spans": 60157,
+          "heldout_occurrences": 5691,
+          "heldout_entries_linked": 599,
+          "heldout_entries_5plus": 284,
+          "rare_occurrences": 21200,
+          "rare_entries_linked": 2630,
+          "rare_entries_5plus": 1429
+        },
+        "trainer_windows": {
+          "windows": 1024,
+          "length": 1024,
+          "tokens_considered": 1048576,
+          "linked_spans": 11187,
+          "heldout_occurrences": 1132,
+          "heldout_entries_linked": 313,
+          "heldout_entries_5plus": 68,
+          "rare_occurrences": 3875,
+          "rare_entries_linked": 1446,
+          "rare_entries_5plus": 215
+        },
+        "checks": {
+          "heldout_entries_5plus": false,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "infeasible (held-out stratum)",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 5483,
+        "eval_windows_needed": null
+      }
+    ],
+    "HuggingFaceTB/SmolLM2-360M": [
+      {
+        "min_subtokens": 1,
+        "frequency_source": "slice (1,500,005 of 130,000,000 tokens)",
+        "split": {
+          "tokens_considered": 752566,
+          "linked_spans": 74152,
+          "heldout_occurrences": 3702,
+          "heldout_entries_linked": 531,
+          "heldout_entries_5plus": 172,
+          "rare_occurrences": 9795,
+          "rare_entries_linked": 2568,
+          "rare_entries_5plus": 724
+        },
+        "trainer_windows": {
+          "windows": 733,
+          "length": 1024,
+          "tokens_considered": 750592,
+          "linked_spans": 73942,
+          "heldout_occurrences": 3692,
+          "heldout_entries_linked": 531,
+          "heldout_entries_5plus": 171,
+          "rare_occurrences": 9748,
+          "rare_entries_linked": 2565,
+          "rare_entries_5plus": 722
+        },
+        "checks": {
+          "heldout_entries_5plus": false,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "infeasible (held-out stratum)",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 733,
+        "eval_windows_needed": null
+      },
+      {
+        "min_subtokens": 2,
+        "frequency_source": "slice (1,500,005 of 130,000,000 tokens)",
+        "split": {
+          "tokens_considered": 752566,
+          "linked_spans": 27083,
+          "heldout_occurrences": 2238,
+          "heldout_entries_linked": 489,
+          "heldout_entries_5plus": 132,
+          "rare_occurrences": 10006,
+          "rare_entries_linked": 2765,
+          "rare_entries_5plus": 709
+        },
+        "trainer_windows": {
+          "windows": 733,
+          "length": 1024,
+          "tokens_considered": 750592,
+          "linked_spans": 26996,
+          "heldout_occurrences": 2229,
+          "heldout_entries_linked": 489,
+          "heldout_entries_5plus": 131,
+          "rare_occurrences": 9963,
+          "rare_entries_linked": 2761,
+          "rare_entries_5plus": 707
+        },
+        "checks": {
+          "heldout_entries_5plus": false,
+          "heldout_occurrences": true,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "infeasible (held-out stratum)",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 733,
+        "eval_windows_needed": null
+      },
+      {
+        "min_subtokens": 3,
+        "frequency_source": "slice (1,500,005 of 130,000,000 tokens)",
+        "split": {
+          "tokens_considered": 752566,
+          "linked_spans": 11424,
+          "heldout_occurrences": 911,
+          "heldout_entries_linked": 301,
+          "heldout_entries_5plus": 58,
+          "rare_occurrences": 4810,
+          "rare_entries_linked": 1461,
+          "rare_entries_5plus": 337
+        },
+        "trainer_windows": {
+          "windows": 733,
+          "length": 1024,
+          "tokens_considered": 750592,
+          "linked_spans": 11380,
+          "heldout_occurrences": 909,
+          "heldout_entries_linked": 301,
+          "heldout_entries_5plus": 58,
+          "rare_occurrences": 4782,
+          "rare_entries_linked": 1458,
+          "rare_entries_5plus": 335
+        },
+        "checks": {
+          "heldout_entries_5plus": false,
+          "heldout_occurrences": false,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "infeasible (held-out stratum)",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 733,
+        "eval_windows_needed": null
+      },
+      {
+        "min_subtokens": 4,
+        "frequency_source": "slice (1,500,005 of 130,000,000 tokens)",
+        "split": {
+          "tokens_considered": 752566,
+          "linked_spans": 5329,
+          "heldout_occurrences": 518,
+          "heldout_entries_linked": 194,
+          "heldout_entries_5plus": 24,
+          "rare_occurrences": 2130,
+          "rare_entries_linked": 701,
+          "rare_entries_5plus": 136
+        },
+        "trainer_windows": {
+          "windows": 733,
+          "length": 1024,
+          "tokens_considered": 750592,
+          "linked_spans": 5306,
+          "heldout_occurrences": 517,
+          "heldout_entries_linked": 193,
+          "heldout_entries_5plus": 24,
+          "rare_occurrences": 2117,
+          "rare_entries_linked": 699,
+          "rare_entries_5plus": 135
+        },
+        "checks": {
+          "heldout_entries_5plus": false,
+          "heldout_occurrences": false,
+          "rare_entries_linked": true,
+          "rare_occurrences": true
+        },
+        "verdict": "infeasible (held-out stratum)",
+        "trainer_windows_verdict": "infeasible (held-out stratum)",
+        "windows_for_whole_split": 733,
+        "eval_windows_needed": null
+      }
+    ]
+  }
+}
