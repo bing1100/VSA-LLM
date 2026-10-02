@@ -1,0 +1,37 @@
+{
+  "schema": "e5-zeroshot-items/1",
+  "scenario": "c3_heldout",
+  "contamination_free": false,
+  "description": "C3 held-out WordNet concepts with their real aliases (from-scratch models only)",
+  "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/ontology.pt",
+  "ontology_alias_sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+  "alias_table": {
+    "source": "wordnet",
+    "holdout_names": "experiments/c3-general-corpus/runs/v1/holdout_concepts.txt",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 147306,
+    "sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15"
+  },
+  "tokenizer": "gpt2",
+  "min_subtokens": 2,
+  "seed": 0,
+  "max_concepts": 400,
+  "distractors": 4,
+  "definitions": "wordnet",
+  "corpus_tests": true,
+  "synthetic_aliases": false,
+  "null_surface": "thing",
+  "checks": {},
+  "selection": "held-out single-concept noun/verb entries whose shortest alias has \u2265 \u2113_min subtokens; seeded uniform sample (identical for c3_heldout and c3_synthetic at equal seed and size)",
+  "counts": {
+    "concepts": 400,
+    "items": 1735,
+    "property": 967,
+    "entailment": 768
+  }
+}
