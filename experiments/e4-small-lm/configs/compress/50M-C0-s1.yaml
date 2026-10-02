@@ -1,0 +1,56 @@
+# E4.5 (D4.3): equal-bytes compression of the linked single-token rows of a trained 50M model,
+# reconstruction fit only (no LM finetune).
+#
+#   PYTHONPATH=src python -m vsa_embed.experiments.e4_compress \
+#       --config experiments/e4-small-lm/configs/compress/50M-C0-s1.yaml \
+#       --output experiments/e4-small-lm/runs/e4.5-compress-50M-C0-s1-v1
+#
+# Source: the D4.8 C0 baseline (50M × 300M tokens, seed 1); any other 50M run can be passed with
+# --run. R on C3: ≈ 20.7k tokens (12.6k entries; 35% of eval tokens); dense FP16 bytes of R ≈ 20.2 MiB.
+# The six composed points set the budgets (≈ 1.1–9.3 MiB); each baseline family is sized to every
+# budget. Measured fit speed at this size: composed ≈ 0.1 s/step (2000 steps ≈ 3.5 min, < 0.7 GiB),
+# TT / QR / hash embeddings ≈ 0.01 s/step, INT / ALBERT / hashing closed form. Planned GPU time
+# ≈ 45–60 min (≈ 46 points; 1M-token evaluation each).
+run: experiments/e4-small-lm/runs/baselines/50M-C0-s1
+device: cuda
+seed: 0
+rows:
+  link_corpus: ~/data/vsa-llm/c3/wordnet-gpt2-v1/train-l1
+  link_tokens: 300000000
+  include_heldout: false
+  min_link_rate: 0.5
+  min_links: 1
+  frequency_corpus: ~/data/vsa-llm/c3/wordnet-gpt2-v1/train-l1
+  frequency_tokens: 300000000
+  bins_per_million: [5, 100]
+eval:
+  windows: null          # the run's own evaluation windows (1024 × 1024 tokens)
+  batch: null
+group_size: 64
+fit:
+  steps: 2000
+  lr: 0.003
+  weighting: uniform
+  batch_rows: 8192       # row mini-batches for the gradient fits (bounds TT / hash-embedding memory)
+finetune:
+  tokens: 0
+composed:
+  - {dimension: 64, delta_bits: 0}
+  - {dimension: 64, delta_bits: 2}
+  - {dimension: 64, delta_bits: 4}
+  - {dimension: 256, delta_bits: 0}
+  - {dimension: 256, delta_bits: 2}
+  - {dimension: 256, delta_bits: 4}
+baselines:
+  int: {mixed: true}
+  albert: {}
+  qr: {operation: mult}
+  hashing: {}
+  hash_embedding: {hashes: 2}
+  tt: {}
+points:
+  - {method: int, bits: 2}
+  - {method: int, bits: 3}
+  - {method: int, bits: 4}
+  - {method: int, bits: 8}
+resamples: 10000

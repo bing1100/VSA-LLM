@@ -1,0 +1,46 @@
+# E4.5 (D4.3): as 50M-C0-s1.yaml, plus a short LM finetune of the replaced table alone (10M tokens,
+# transformer and all other rows frozen; quantized storage trained with straight-through rounding).
+# Every point is evaluated before (`<name>`) and after (`<name>+ft`) the finetune; equal-bytes
+# comparisons pair finetuned points with the finetuned composed point.
+#
+#   PYTHONPATH=src python -m vsa_embed.experiments.e4_compress \
+#       --config experiments/e4-small-lm/configs/compress/50M-C0-s1-finetune.yaml \
+#       --output experiments/e4-small-lm/runs/e4.5-compress-50M-C0-s1-ft-v1
+#
+# Planned GPU time ≈ 60–75 min (2 composed points + 6 baseline families × 2 budgets = 14 points, each
+# fitted, evaluated, finetuned on 10M tokens (≈ 2–3 min at 50M) and evaluated again).
+run: experiments/e4-small-lm/runs/baselines/50M-C0-s1
+device: cuda
+seed: 0
+rows:
+  link_corpus: ~/data/vsa-llm/c3/wordnet-gpt2-v1/train-l1
+  link_tokens: 300000000
+  include_heldout: false
+  min_link_rate: 0.5
+  min_links: 1
+  frequency_corpus: ~/data/vsa-llm/c3/wordnet-gpt2-v1/train-l1
+  frequency_tokens: 300000000
+  bins_per_million: [5, 100]
+group_size: 64
+fit:
+  steps: 2000
+  lr: 0.003
+  batch_rows: 8192
+finetune:
+  tokens: 10000000
+  lr: 0.001
+  micro_batch: 8
+  seed: 4321
+  methods: all
+composed:
+  - {dimension: 64, delta_bits: 2}
+  - {dimension: 64, delta_bits: 4}
+baselines:
+  int: {mixed: true}
+  albert: {}
+  qr: {operation: mult}
+  hashing: {}
+  hash_embedding: {hashes: 2}
+  tt: {}
+points: []
+resamples: 10000
