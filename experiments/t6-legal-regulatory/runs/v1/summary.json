@@ -1,0 +1,167 @@
+{
+  "track": "t6",
+  "documents": {
+    "eval": {
+      "documents": 5000,
+      "chars": 58601463
+    },
+    "train": {
+      "documents": 60000,
+      "chars": 427423014
+    }
+  },
+  "ontology": {
+    "source": "/home/bhux/data/vsa-llm/tracks/t6-legal/raw/eurovoc_skos_core.zip",
+    "language": "en",
+    "descriptors": 7515,
+    "microthesauri": 127,
+    "domains": 21,
+    "max_atomics": 8192,
+    "max_degree": 16,
+    "concepts": 7815,
+    "atomics": 5120,
+    "relations": 5,
+    "aliases": 17673,
+    "entries": 7841
+  },
+  "holdout": {
+    "concepts": 186,
+    "heldout_entries": 189,
+    "eligible_entries": 1847,
+    "method": "presample",
+    "sha256": "8148fa06fe76929fb18a3d6bed7694992a671704cd7b774aa23aa135a634d75d"
+  },
+  "synthetic": {
+    "candidates": 300,
+    "kept": 300,
+    "sha256": "6f9243110d1c27ceb511c5de81383308944b4a770f6b46d2c8d1d2170a0cdbcd",
+    "entries": 300,
+    "dropped_for_text_hits": 0
+  },
+  "eval_corpus": {
+    "tokens": 3003524,
+    "documents": 1235,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "3bd8465cfc97c338b10b5795952959963a349945deac788008aeba18bc13d526",
+    "boundary": "prefix",
+    "spans": 210943,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "request": {
+      "source": "domain eval",
+      "max_tokens": 3000000
+    }
+  },
+  "eval_general_corpus": {
+    "tokens": 2211513,
+    "documents": 2000,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "3bd8465cfc97c338b10b5795952959963a349945deac788008aeba18bc13d526",
+    "boundary": "prefix",
+    "spans": 130819,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "request": {
+      "source": "general eval",
+      "shards": [
+        "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet"
+      ],
+      "skip": 0,
+      "documents": 2000
+    }
+  },
+  "train_corpus": {
+    "tokens": 100000476,
+    "documents": 60374,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "68003ea0d7d42b8a1943fd6f5b9e3091eb77560ff589e481c5b57de09cc09eec",
+    "boundary": "prefix",
+    "spans": 6222758,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "parts": [
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t6-legal/v1/train-domain",
+        "tokens": 99633919,
+        "documents": 60000
+      },
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t6-legal/v1/train-general",
+        "tokens": 366557,
+        "documents": 374
+      }
+    ],
+    "mix": {
+      "domain_tokens": 99633919,
+      "general_tokens": 366557,
+      "domain_fraction": 0.9963344474480301
+    }
+  },
+  "mix": {
+    "domain_tokens": 99633919,
+    "general_tokens": 366557,
+    "domain_fraction": 0.9963344474480301
+  },
+  "general_text_spans_by_min_subtokens": {
+    "1": 130819,
+    "2": 15793,
+    "3": 2414,
+    "4": 482
+  },
+  "feasibility": {
+    "min_subtokens": null,
+    "verdict": "infeasible",
+    "failed_checks": [
+      "rare_spans"
+    ],
+    "heldout_locality": {
+      "min_subtokens": 2,
+      "eval_windows": 256
+    }
+  },
+  "items": {
+    "synthetic_concepts.jsonl": {
+      "rows": 300,
+      "splits": {
+        "synthetic": 300
+      }
+    },
+    "defined_term_cloze.jsonl": {
+      "rows": 4000,
+      "splits": {
+        "heldout": 96,
+        "train": 1494,
+        "unlinked": 2410
+      }
+    },
+    "eurovoc_probe.jsonl": {
+      "rows": 3000,
+      "splits": {
+        "heldout": 1014,
+        "train": 1986
+      }
+    },
+    "zeroshot_entailment.jsonl": {
+      "rows": 2872,
+      "splits": {
+        "heldout": 1072,
+        "synthetic": 1800
+      }
+    },
+    "zeroshot_property.jsonl": {
+      "rows": 4308,
+      "splits": {
+        "heldout": 1608,
+        "synthetic": 2700
+      }
+    }
+  },
+  "data_root": "/home/bhux/data/vsa-llm/tracks/t6-legal/v1",
+  "ontology_sha256": "052458ffd0cc3fa5f78c8f38c0b4977ebdf7e3561bb9c91005622c26e38cbecf"
+}

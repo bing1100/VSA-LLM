@@ -1,0 +1,43 @@
+# T6 legal / regulatory (E8, task C7): EuroVoc 4.24 (SKOS core, English labels) linked into the English
+# MultiEURLEX acts (train + dev for training, test for evaluation), filled to 100M tokens with
+# FineWeb-Edu general text if needed; SmolLM2 tokenizer (continued pretraining of SmolLM2-135M). Build:
+#   PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
+#     --config experiments/t6-legal-regulatory/t6.yaml --output experiments/t6-legal-regulatory/runs/v1
+experiment: t6-legal-regulatory
+track: t6
+seed: 20261006
+tokenizer: HuggingFaceTB/SmolLM2-135M
+workers: 3
+items_dir: experiments/t6-legal-regulatory/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t6-legal/v1
+  general_shards:
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+legal:
+  eurovoc: ~/data/vsa-llm/tracks/t6-legal/raw/eurovoc_skos_core.zip          # sha256 91bdb24e833ba431…
+  multi_eurlex: ~/data/vsa-llm/tracks/t6-legal/raw/multi_eurlex_en           # from archive sha256 3a2195bc01c7aea0…
+synthetic:
+  count: 300                   # 150 invented, 150 headed
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_tokens: 3000000
+  contamination_docs: 2000
+  presample_tokens: 5000000
+  holdout_fraction: 0.10
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 2000
+  train_domain_tokens: 100000000
+  train_total_tokens: 100000000
+  min_subtokens: 2
+  cardinality_docs: 500        # EUR-Lex acts are long (≈ 7,000 characters on average)
+items:
+  probe_train_docs: 2000
+  probe_test_docs: 1000
+  probe_chars: 600             # title + opening citations; full texts stay in the data root
+  defined_terms: 2000
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-135M, gpt2, Qwen/Qwen2.5-0.5B]

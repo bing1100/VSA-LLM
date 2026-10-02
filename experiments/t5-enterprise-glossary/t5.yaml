@@ -1,0 +1,45 @@
+# T5 enterprise glossaries (E8, task C7): synthetic private glossary + generated internal documents,
+# mixed 50/50 (by tokens) with FineWeb-Edu general text, SmolLM2 tokenizer (continued pretraining of
+# SmolLM2-135M). Build: PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
+#   --config experiments/t5-enterprise-glossary/t5.yaml --output experiments/t5-enterprise-glossary/runs/v1
+experiment: t5-enterprise-glossary
+track: t5
+seed: 20261005
+tokenizer: HuggingFaceTB/SmolLM2-135M
+workers: 3
+items_dir: experiments/t5-enterprise-glossary/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t5-glossary/v1
+  general_shards:
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+glossary:
+  terms: 4000                  # 3,640 training + 360 held-out terms (10%, stratified by Zipf rank)
+  zero_shot: 200               # new terms defined only by frames (E5.4), in no document
+  heldout_fraction: 0.10
+  zipf: 1.5                    # mention-rate exponent over a random rank order (1.5 gives 693 rare, 1,979 mid, 866 frequent, 102 unseen training terms)
+  eval_uniform_focus: 0.5      # half of the evaluation documents' focus terms uniform over terms (powers the tail strata)
+  acronym_fraction: 0.3
+  train_chars: 180000000       # ≈ 50M SmolLM2 tokens (3.55 chars/token)
+  eval_chars: 11000000         # ≈ 3M tokens
+  forbidden_general_docs: 20000
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_tokens: 3000000
+  contamination_docs: 2000
+  presample_tokens: 0          # unused: the holdout is fixed by the generator
+  holdout_fraction: 0.10
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 2000
+  train_domain_tokens: 50000000
+  train_total_tokens: 100000000
+  min_subtokens: 2
+  cardinality_docs: 2000
+items:
+  train_terms_per_frequency_bin: 200
+  relations_per_term: 3
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-135M, gpt2, Qwen/Qwen2.5-0.5B]
