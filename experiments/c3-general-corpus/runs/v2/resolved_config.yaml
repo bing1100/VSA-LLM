@@ -1,0 +1,29 @@
+experiment: c3-general-corpus
+seed: 20261001
+tokenizer: gpt2
+workers: 6
+paths:
+  data_root: ~/data/vsa-llm/c3/wordnet-gpt2-v1
+  shards:
+  - ~/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet
+  - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  shard_sha256:
+    002_00000.parquet: 547ae182d132c9f0
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_docs: 5000
+  presample_docs: 20000
+  holdout_fraction: 0.1
+  holdout_min_count: 5
+  min_subtokens: 2
+  train_tokens: 1100000000
+  train_min_subtokens: 2
+  l1_slice_tokens: 300000000
+  cardinality_docs: 2000
+cardinality_tokenizers:
+- gpt2
+- HuggingFaceTB/SmolLM2-135M
+- Qwen/Qwen2.5-0.5B
