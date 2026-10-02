@@ -8,8 +8,9 @@ Stages (priority 60; jobs of a stage are queued in dependency order, the queue r
   hosts (the first runs `link` if it has not run), OLLM-style direct prompting by the three hosts.
   CPU / LLM steps the orchestrator runs afterwards are listed under `then` (Hearst, random frames,
   the Claude teacher, quality, judge items, judge).
-- `d72` — D7.2: EntiGraph-style generation, round-0 channel × 3 seeds, verification (self, teacher) ×
-  3 seeds, then 7 conditions × 3 seeds. Refuses to queue while the self or teacher proposals are
+- `d72` — D7.2: synthetic-text generation (EntiGraph-style, SPA/QA, unstructured notes), round-0 channel
+  × 3 seeds, verification (self, teacher, notes) × 3 seeds, then 10 conditions × 3 seeds (gold, self,
+  selfnv, teacher, random, cm, entigraph, notes, spa, verbal). Refuses to queue while the self or teacher proposals are
   missing (`--no-teacher` drops the teacher condition).
 - `d73` — D7.3: the 50M cross-authoring runs (none, curated, authored × 3 seeds); `cross-prepare`
   (CPU, builds the GPT-2 corpora) must have run.
@@ -28,7 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from vsa_embed.experiments.e7_authoring import HOSTS, _json, load_track
-from vsa_embed.experiments.e7_round import CONDITIONS, CROSS_CONDITIONS, round_settings
+from vsa_embed.experiments.e7_round import CONDITIONS, CROSS_CONDITIONS, OPTIONAL_CONDITIONS, round_settings
 
 PRIORITY = 60
 TRAIN = {"SmolLM2-135M": 36_000, "SmolLM2-360M": 18_500, "Qwen2.5-0.5B": 16_000, "50M": 70_000}   # tokens/s (C4)
@@ -64,19 +65,29 @@ def estimates(run: Path, *, teacher: bool = True) -> dict[str, dict[str, float]]
     discovery_tokens = 1.33 * read
     authoring_tokens = candidates * float(authoring["contexts"]) * float(authoring["samples"]) * (PROMPT_TOKENS + 40)
     extra = (discovery_tokens + authoring_tokens + verify_tokens) / 2          # 2N per token / 4N per training token
-    entigraph = rounds["entigraph"]
-    out["entigraph"] = {"generate": candidates * entigraph["per_entity"] * entigraph["max_new_tokens"] / GENERATION[entigraph["writer"]] / 3600}
+    entigraph, notes, spa = rounds["entigraph"], rounds["notes"], rounds["spa"]
+    writer = lambda section: section.get("writer") or track["consumer"]
+    out["entigraph"] = {"generate": candidates * entigraph["per_entity"] * entigraph["max_new_tokens"] / GENERATION[writer(entigraph)] / 3600}
+    note_count = candidates * float(authoring["contexts"]) * float(notes["samples"])
+    out["notes"] = {"generate": (note_count * PROMPT_TOKENS / _forward(writer(notes))
+                                 + note_count * notes["max_new_tokens"] / GENERATION[writer(notes)]) / 3600,
+                    "verify_per_seed": (note_count + candidates) * float(authoring["max_validation"])
+                    * (float(verification["window"]) + notes["max_new_tokens"] + 8) / _forward(host) / 3600}
+    out["spa"] = {"generate": (spa["documents"] * PROMPT_TOKENS / _forward(writer(spa))
+                               + spa["documents"] * spa["max_new_tokens"] / GENERATION[writer(spa)]) / 3600}
     out["base"] = {"per_seed": (float(rounds["base_tokens"]) / TRAIN[host] + evals) / 3600}
     out["verify"] = {"per_seed_author": verify_tokens / _forward(host) / 3600}
     round_tokens = float(rounds["round_tokens"])
-    out["train"] = {c: ((round_tokens + (extra if c in ("cm", "entigraph") else 0)) / TRAIN[host] + evals) / 3600 for c in CONDITIONS}
+    matched = ("cm", "entigraph", "notes", "spa", "verbal")
+    out["train"] = {c: ((round_tokens + (extra if c in matched else 0)) / TRAIN[host] + evals) / 3600 for c in CONDITIONS}
     cross = rounds["cross"]
     out["cross"] = {"per_run": (float(cross["train_tokens"]) / TRAIN["50M"] + 7 * 4e6 / (2 * TRAIN["50M"])) / 3600}
     out["compute_matched_extra_tokens"] = {"estimate": extra}
     return out
 
 
-def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True) -> tuple[list[dict[str, Any]], list[str]]:
+def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True,
+               extra: tuple[str, ...] = ()) -> tuple[list[dict[str, Any]], list[str]]:
     """(jobs, follow-up commands) of one stage; a job is {name, command, gpu_hours}."""
     track = load_track(run)
     est = estimates(run, teacher=teacher)
@@ -110,9 +121,10 @@ def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True)
                    if not (Path(run) / p).exists()]
         if missing:
             raise FileNotFoundError(f"D7.2 needs {missing} first (D7.1); pass --no-teacher to drop the teacher condition")
-        conditions = [c for c in CONDITIONS if teacher or c != "teacher"]
-        jobs.append({"name": f"e7-{tag}-entigraph", "gpu_hours": est["entigraph"]["generate"],
-                     "command": rounds + ["entigraph", "--run", str(run)]})
+        conditions = [c for c in CONDITIONS if teacher or c != "teacher"] + [c for c in extra if c in OPTIONAL_CONDITIONS]
+        for step in ("entigraph", "spa", "notes"):
+            jobs.append({"name": f"e7-{tag}-{step}", "gpu_hours": est[step]["generate"],
+                         "command": rounds + [step, "--run", str(run)]})
         for seed in seeds:
             jobs.append({"name": f"e7-{tag}-base-s{seed}", "gpu_hours": est["base"]["per_seed"],
                          "command": rounds + ["base", "--run", str(run), "--seed", str(seed)]})
@@ -120,9 +132,11 @@ def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True)
             for author in [consumer] + (["teacher"] if teacher else []):
                 jobs.append({"name": f"e7-{tag}-verify-{author}-s{seed}", "gpu_hours": est["verify"]["per_seed_author"],
                              "command": rounds + ["verify", "--run", str(run), "--seed", str(seed), "--author", author]})
+            jobs.append({"name": f"e7-{tag}-verify-notes-s{seed}", "gpu_hours": est["notes"]["verify_per_seed"],
+                         "command": rounds + ["verify-notes", "--run", str(run), "--seed", str(seed)]})
         for seed in seeds:
             for condition in conditions:
-                jobs.append({"name": f"e7-{tag}-round1-{condition}-s{seed}", "gpu_hours": est["train"][condition],
+                jobs.append({"name": f"e7-{tag}-round1-{condition}-s{seed}", "gpu_hours": est["train"].get(condition, est["train"]["self"]),
                              "command": rounds + ["train", "--run", str(run), "--seed", str(seed), "--condition", condition]})
         then = [f"PYTHONPATH=src {sys.executable} -m vsa_embed.experiments.e7_report --run {run}"]
     elif stage == "d73":
@@ -157,12 +171,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--stage", required=True, choices=["d71", "d72", "d73"])
     parser.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3])
     parser.add_argument("--no-teacher", action="store_true")
+    parser.add_argument("--extra-conditions", nargs="*", default=[], help=f"optional D7.2 conditions: {OPTIONAL_CONDITIONS}")
     parser.add_argument("--queue", action="store_true"); parser.add_argument("--priority", type=int, default=PRIORITY)
     args = parser.parse_args(argv)
     if args.no_teacher and args.stage == "d72":
         from vsa_embed.experiments.e7_round import update_round_settings
         update_round_settings(args.run, {"teacher_condition": False})
-    jobs, then = stage_jobs(args.run, args.stage, seeds=args.seeds, teacher=not args.no_teacher)
+    jobs, then = stage_jobs(args.run, args.stage, seeds=args.seeds, teacher=not args.no_teacher, extra=tuple(args.extra_conditions))
     total = sum(j["gpu_hours"] for j in jobs)
     plan = {"stage": args.stage, "jobs": jobs, "gpu_hours": total, "then": then, "priority": args.priority,
             "assumptions": {"train_tokens_per_s": TRAIN, "generation_tokens_per_s": GENERATION}}

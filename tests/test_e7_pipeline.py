@@ -69,6 +69,14 @@ def scripted_generate(model, tokenizer, prompts, device, *, samples, temperature
         if prompt.rstrip().endswith("Facts:"):
             out.append(["zorblax engine | is_a | machine\nacetaminophen | is_a | machine\nphotosynthesis | part_of | city"])
             continue
+        if prompt.rstrip().endswith("Q:"):
+            out.append([" What fails on farms?\nA: The zorblax engine.\nQ: What is a quintar valve?\nA: A kind of machine."])
+            continue
+        note_of = re.findall(r'Notes on "([^"]+)":$', prompt.rstrip())
+        if note_of:
+            text = f" {note_of[0].capitalize()} is a machine that farmers repair, according to the text above."
+            out.append([text] * (samples if temperature > 0 else 1))
+            continue
         if prompt.rstrip().endswith("Paragraph:"):
             out.append(["The zorblax engine is a machine used on farms; it drives the quintar valve and the river pumps.\n\nMore."])
             continue
@@ -171,14 +179,17 @@ def e7(tmp_path_factory) -> dict:
         e7_authoring.judge_items(run, per_author=5, calibration=4)
         judged = e7_authoring.judge(run, fake=judge_runner)
         e7_round.entigraph(run, device=cpu, model=model, tokenizer=tokenizer)
-        for condition in e7_round.CONDITIONS:
+        e7_round.spa(run, device=cpu, model=model, tokenizer=tokenizer)
+        e7_round.notes(run, device=cpu, model=model, tokenizer=tokenizer)
+        notes_verified = e7_round.verify_notes(run, 1, device=cpu)
+        for condition in e7_round.CONDITIONS + e7_round.OPTIONAL_CONDITIONS:
             e7_round.train_condition(run, 1, condition)
         e7_round.cross_prepare(run)
         for condition in e7_round.CROSS_CONDITIONS:
             e7_round.cross_train(run, 1, condition)
         report = e7_report.write_report(run, resamples=200)
         yield {"root": root, "run": run, "track": track, "summary": summary, "quality": quality, "judged": judged,
-               "verified": verified, "report": report, "patch": patch}
+               "verified": verified, "notes": notes_verified, "report": report, "patch": patch}
     finally:
         patch.undo()
 
@@ -288,8 +299,30 @@ def test_compute_matched_control_adds_the_authoring_flops_as_tokens(e7) -> None:
     assert cm["total_tokens"] == ROUND["round_tokens"] + cm["extra_tokens"]
     run = e7["run"] / "train"
     config = lambda c: __import__("yaml").safe_load((run / f"tiny-{c}-s1" / "resolved_config.yaml").read_text())
-    assert config("cm")["train"]["total_tokens"] == config("entigraph")["train"]["total_tokens"] == cm["total_tokens"]
-    assert config("self")["train"]["total_tokens"] == ROUND["round_tokens"]
+    for condition in ("cm", "entigraph", "notes", "spa", "verbal"):
+        assert config(condition)["train"]["total_tokens"] == cm["total_tokens"]          # text controls at matched tokens
+    assert config("self")["train"]["total_tokens"] == config("selfrand")["train"]["total_tokens"] == ROUND["round_tokens"]
+    budget = json.loads((data / "notes" / "materialized.json").read_text())["text_budget"]
+    assert {e["stage"] for e in budget["ledger"]} == {"discovery", "notes", "verification"} and budget["side_flops"] > 0
+    assert json.loads((data / "verbal" / "materialized.json").read_text())["text_budget"]["side_flops"] == pytest.approx(flops)
+
+
+def test_text_controls_carry_their_synthetic_text_and_no_new_frames(e7) -> None:
+    data = Path(e7["track"]["data_root"]) / "round1"
+    entry_base = e7["track"]["entry_count"]
+    notes = e7["notes"]
+    assert notes["notes"] > 0 and 0 <= notes["kept"] <= notes["notes"] and len(notes["records"]) == notes["notes"]
+    assert all(r["accepted"] == (r["low"] > 0) for r in notes["records"])
+    verbal = json.loads((e7["run"] / "round1" / "s1" / "verbal.json").read_text())
+    cards = [json.loads(line) for line in (e7["run"] / "round1" / "s1" / "cards-tiny.jsonl").read_text().splitlines()]
+    assert verbal["sentences"] == sum(c["accepted"] for c in cards)
+    for condition in ("entigraph", "spa", "verbal") + (("notes",) if notes["kept"] else ()):
+        info = json.loads((data / "s1" / condition / "materialized.json").read_text())
+        assert info["synthetic"] and info["mix"][-1]["repeats"] >= 1 and info["entries_with_new_frames"] == 0
+        spans = TokenCorpus.open(data / "s1" / condition / "train").spans
+        assert int((spans["entry"] >= entry_base).sum()) == 0
+    selfrand = json.loads((data / "s1" / "selfrand" / "materialized.json").read_text())
+    assert selfrand["selfrand"]["accepted_edges"] == sum(len(f) for f in e7["verified"]["tiny"]["accepted"].values())
 
 
 def test_round_runs_share_reference_strata_and_report(e7) -> None:
@@ -309,6 +342,19 @@ def test_round_runs_share_reference_strata_and_report(e7) -> None:
     assert "D7.1 authoring quality" in text and "Compute-matched control" in text and "D7.3 cross-authoring" in text
 
 
+def test_command_lines_reuse_finished_steps(e7, capsys) -> None:
+    run = str(e7["run"])
+    assert e7_authoring.main(["quality", "--run", run, "--device", "cpu"]) == 0
+    assert e7_authoring.main(["train", "--run", run, "--device", "cpu", "--seed", "1", "--condition", "self"]) == 0
+    assert "finished" in capsys.readouterr().out
+    assert e7_round.main(["verify", "--run", run, "--seed", "1", "--author", "teacher", "--device", "cpu"]) == 0
+    assert e7_plan.main(["--run", run, "--stage", "d73", "--seeds", "1"]) == 0
+    plan = json.loads((e7["run"] / "plan" / "d73.json").read_text())
+    assert plan["priority"] == 60 and len(plan["jobs"]) == 3 and plan["gpu_hours"] > 0
+    assert e7_round.main(["materialize", "--run", run, "--seed", "1", "--condition", "cm", "--set", '{"note": "x"}']) == 0
+    assert json.loads((e7["run"] / "round.json").read_text())["note"] == "x"
+
+
 def test_plan_lists_and_queues_every_stage(e7, tmp_path: Path) -> None:
     run = e7["run"]
     for stage in ("d71", "d72", "d73"):
@@ -318,7 +364,7 @@ def test_plan_lists_and_queues_every_stage(e7, tmp_path: Path) -> None:
             names = [j["name"] for j in jobs]
             assert names.index(f"e7-{run.name}-base-s1") < names.index(f"e7-{run.name}-verify-teacher-s1") \
                 < names.index(f"e7-{run.name}-round1-self-s1")
-            assert len([n for n in names if "-round1-" in n]) == 21
+            assert len([n for n in names if "-round1-" in n]) == 30 and f"e7-{run.name}-verify-notes-s3" in names
     jobs, _ = e7_plan.stage_jobs(run, "d73", seeds=[1, 2, 3])
     queued = e7_plan.queue(jobs, queue_dir=tmp_path / "jobs")
     record = json.loads((tmp_path / "jobs" / f"{queued[0]}.json").read_text())

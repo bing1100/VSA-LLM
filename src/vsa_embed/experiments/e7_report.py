@@ -31,8 +31,27 @@ import numpy as np
 
 from vsa_embed.experiments.e7_authoring import _default, _devtools_gold_edges, _json, gold, gold_edge_sets, load_track, visible
 
-COMPARISONS = [("self", "cm"), ("self", "random"), ("self", "entigraph"), ("self", "selfnv"), ("teacher", "cm"),
-               ("gold", "cm"), ("entigraph", "cm"), ("selfnv", "cm"), ("random", "cm"), ("teacher", "self")]
+COMPARISONS = [("self", "cm"), ("self", "random"), ("self", "entigraph"), ("self", "notes"), ("self", "spa"), ("self", "verbal"),
+               ("self", "selfnv"), ("self", "selfrand"), ("teacher", "cm"), ("gold", "cm"), ("entigraph", "cm"), ("notes", "cm"),
+               ("spa", "cm"), ("verbal", "cm"), ("selfnv", "cm"), ("random", "cm"), ("teacher", "self")]
+# H-G defensibility after the 2025–26 literature re-check (manuscript/related-work-recheck-2026-10.md): beyond the
+# pre-registered G5 items, self → self should also beat the synthetic-text controls (structure + channel vs text).
+TEXT_CONTROLS = ("entigraph", "notes", "spa", "verbal")
+RELATED = [
+    "Evontree — Tu et al., *Evontree: Ontology Rule-Guided Self-Evolution of Large Language Models*, arXiv:2510.26683 "
+    "(self-authored ontology knowledge, rule-verified, fed back by self-distillation).",
+    "Montessori-Instruct — Li, Yu & Xiong, ICLR 2025, arXiv:2410.14208; OptimSyn — Fan et al., arXiv:2604.00536 "
+    "(synthetic data scored by its first-order effect on held-out loss; cf. TracIn, LESS, In-Run Data Shapley arXiv:2406.11011).",
+    "GraphGen — Chen et al., arXiv:2505.20416; Synthesize-on-Graph (SoG) — Ma et al., arXiv:2505.00979 "
+    "(KG- and loss-targeted synthetic data for training).",
+    "Active Reading — Lin et al., *Learning Facts at Scale with Active Reading*, arXiv:2508.09494 (ICLR 2026); "
+    "SEAL — Zweiger et al., *Self-Adapting Language Models*, NeurIPS 2025, arXiv:2506.10943 "
+    "(a model's own study data / self-edits beat frontier-teacher data) → the `notes` control.",
+    "SPA — Tang et al., *SPA: A Simple but Tough-to-Beat Baseline for Knowledge Injection*, arXiv:2603.22213 → the `spa` control.",
+    "The `verbal` control gives the same verified edges as text (no channel), isolating the channel.",
+    "Collapse: Kazdan et al., ICML 2025 (*Collapse or Thrive*); Yi et al., arXiv:2510.16657 (verifier-guided retraining "
+    "converges to the verifier's knowledge centre) — report gains per round and audit on data disjoint from validation.",
+]
 STRATA = ["ref_authored_new_self", "ref_masked", "ref_authored_new_teacher", "ref_authored_masked_self", "ref_new_all",
           "ref_base_after", "ref_unlinked", "all"]
 PRIMARY = ("ref_authored_new_self", "ref_masked")
@@ -89,6 +108,8 @@ def edge_precision(run: Path, track: dict[str, Any]) -> dict[str, Any]:
             lemmas_of[atom].add(key)
     out: dict[str, Any] = {}
     for path in sorted((run / "round1").glob("s*/verify-*.json")):
+        if path.name == "verify-notes.json":
+            continue
         verified = json.loads(path.read_text())
         base_atoms = int(verified["atomic_count"])
         author = verified["author"]
@@ -130,7 +151,7 @@ def edge_precision(run: Path, track: dict[str, Any]) -> dict[str, Any]:
 def compute_table(run: Path) -> list[dict[str, Any]]:
     rows = []
     for path in sorted(list((run / "discovery").glob("*.json")) + list((run / "proposals").glob("*.json")) +
-                       list((run / "round1").glob("s*/verify-*.json")) + list((run / "round1").glob("entigraph.json"))):
+                       list((run / "round1").glob("s*/verify-*.json")) + list((run / "round1").glob("*.json"))):
         data = json.loads(path.read_text())
         for entry in data.get("ledger", []):
             rows.append({"source": str(path.relative_to(run)), **entry})
@@ -154,6 +175,7 @@ def gate(gaps: list[dict[str, Any]], precision: dict[str, Any], consumer: str) -
         locality["relative_ci_high"] <= LOCALITY_MARGIN)
     difference = (precision.get(consumer) or {}).get("verified_minus_unverified")
     items["verification_improves_precision"] = None if difference is None else bool(difference["ci_low"] > 0)
+    items["h_g_controls"] = {f"self_beats_{c}": {s: better(find("self", c, s)) for s in PRIMARY} for c in TEXT_CONTROLS}
     items["seeds"] = sorted({s for g in gaps if g["treatment"] == "self" for s in g.get("seeds", [])})
     return items
 
@@ -235,6 +257,18 @@ def render(summary: dict[str, Any]) -> str:
     for row in summary.get("compute_matched", []):
         lines.append(f"\nCompute-matched control, seed {row['seed']}: {row['round_tokens']:,} + {row['extra_tokens']:,} = "
                      f"{row['total_tokens']:,} training tokens (stages {', '.join(row['stages'] or [])}).")
+    if summary.get("notes_verification"):
+        lines += ["", "Unstructured notes through the same utility filter (`notes` control):", "",
+                  "| seed | notes | kept | tokens | median U |", "|---|---:|---:|---:|---:|"]
+        for row in summary["notes_verification"]:
+            lines.append(f"| {row['seed']} | {row['notes']} | {row['kept']} | {row['tokens']:,} | {_fmt(row['median_accepted_utility'])} |")
+    if summary.get("text_budgets"):
+        lines += ["", "Training tokens of the compute-matched and synthetic-text controls (side PFLOP = discovery, "
+                      "authoring, generation and verification they used):", "",
+                  "| seed | condition | training tokens | side PFLOP | synthetic share |", "|---|---|---:|---:|---:|"]
+        for row in summary["text_budgets"]:
+            lines.append(f"| {row['seed']} | {row['condition']} | {row['training_tokens']:,} | {row['side_flops'] / 1e15:.3f} | "
+                         f"{_fmt(row['synthetic_share'], 2)} |")
     cards = summary.get("cards") or []
     if cards:
         lines += ["", "## Authoring cards (accepted, highest utility)", "", "| seed | author | concept | edge | U [lower] | n |",
@@ -250,6 +284,10 @@ def render(summary: dict[str, Any]) -> str:
             rel = "—" if g.get("relative") is None else f"{100 * g['relative']:+.2f}%"
             lines.append(f"| {g['stratum']} | {g['treatment']} − {g['control']} | {g['delta']:+.4f} [{_fmt(g.get('ci_low'))}, "
                          f"{_fmt(g.get('ci_high'))}] | {rel} | {_fmt(g.get('p_holm'), 3)} |")
+    lines += ["", "## Related work this round must be read against", "",
+              "Self-improvement from self-authored knowledge is not new in general; the E7 claim is the narrowed one of "
+              "the 2025–26 re-check (typed frames, held-out-utility verification, non-textual channel, against the "
+              "controls below).", ""] + [f"- {entry}" for entry in RELATED]
     return "\n".join(lines) + "\n"
 
 
@@ -264,7 +302,20 @@ def write_report(run: Path, output: Path | None = None, *, resamples: int = 10_0
     if (run / "judge" / "results.json").exists():
         summary["judge"] = json.loads((run / "judge" / "results.json").read_text())["summary"]
     summary["verification"] = [{"seed": int(p.parent.name[1:]), "author": json.loads(p.read_text())["author"],
-                                "summary": json.loads(p.read_text())["summary"]} for p in sorted((run / "round1").glob("s*/verify-*.json"))]
+                                "summary": json.loads(p.read_text())["summary"]} for p in sorted((run / "round1").glob("s*/verify-*.json"))
+                               if p.name != "verify-notes.json"]
+    summary["notes_verification"] = [{"seed": int(p.parent.name[1:]), **{k: json.loads(p.read_text())[k] for k in
+                                      ("notes", "kept", "tokens", "median_accepted_utility")}}
+                                     for p in sorted((run / "round1").glob("s*/verify-notes.json"))]
+    summary["text_budgets"] = []
+    for path in sorted((Path(track["data_root"]).expanduser() / "round1").glob("s*/*/materialized.json")):
+        info = json.loads(path.read_text())
+        if "text_budget" in info or info["condition"] == "cm":
+            budget = info.get("text_budget") or {"total_tokens": info["compute_matched"]["total_tokens"],
+                                                 "side_flops": info["compute_matched"]["flops"]}
+            summary["text_budgets"].append({"seed": info["seed"], "condition": info["condition"],
+                                            "training_tokens": budget["total_tokens"], "side_flops": budget["side_flops"],
+                                            "synthetic_share": info.get("synthetic_share")})
     summary["edge_precision"] = edge_precision(run, track) if summary["verification"] else {}
     cards = []
     for path in sorted((run / "round1").glob("s*/cards-*.jsonl")):

@@ -15,12 +15,26 @@ Commands (each idempotent; `--resume` continues an interrupted training run):
   from the authoring documents. Writes accepted frames, authoring cards and the compute ledger.
 - `entigraph` — EntiGraph-style synthetic text: the writer host relates each candidate to another
   entity of a D_read document it occurs in (small, documented budget).
+- `notes` / `verify-notes --seed S` — self-authored *unstructured* notes (Active Reading / SEAL-style,
+  no RL): the consumer host writes a free-text note about each candidate from each authoring context;
+  a note is kept when its held-out utility has a bootstrap lower bound > 0, measured in context on
+  the same validation windows as the frames (the note replaces the most distant context tokens of the
+  window; ≥ `verification.window` real tokens stay), with the round-0 model of seed S.
+- `spa` — SPA / synthetic-QA study material: the consumer host writes question–answer pairs about D_read
+  passages (self-generated, unverified).
 - `train --seed S --condition C` — materializes C (ontology, linked train/test views, initial state =
   the round-0 channel, with new atoms appended) and trains on D_read + general replay:
   `gold` (masked concepts get their curated frames), `self` (verified self-authored frames), `selfnv`
   (self-consistency only), `teacher`, `random` (self's accepted entries, same degrees, random edges),
   `cm` (no new frames; round tokens + the FLOPs of discovery + authoring + verification as extra
-  tokens), `entigraph` (no new frames; D_read + replay + synthetic text, same tokens as `cm`).
+  tokens), and the text controls — no new frames, D_read + replay + their synthetic text at a fixed
+  share of the training windows, the same training tokens as `cm` (`text.budget: tokens`; with
+  `compute`, each subtracts its own generation/verification FLOPs so total compute equals `self`'s):
+  `entigraph`, `notes` (verified unstructured notes), `spa` (synthetic QA), `verbal` (the same verified
+  edges as `self`, rendered as sentences — "X is a kind of Y." — so the knowledge reaches the model as
+  text, not through the channel). Optional: `selfrand` (self's proposals accepted at random at the
+  verified rate; what utility verification buys). With a frozen host the text controls can only
+  train the channel's shared parameters; a LoRA host (`host_mode: lora`) lets them change the host.
   Every run of seed S evaluates the same test windows with the same reference strata
   (`eval.reference_strata`): masked concepts, authored-only concepts per author, unlinked text.
 - `cross-prepare`, `cross-train --seed S --condition none|curated|authored` — E7.3: a from-scratch 50M
@@ -55,8 +69,19 @@ from vsa_embed.experiments.e7_authoring import (
     read_texts, resolver_for, visible,
 )
 
-CONDITIONS = ("gold", "self", "selfnv", "teacher", "random", "cm", "entigraph")
+CONDITIONS = ("gold", "self", "selfnv", "teacher", "random", "cm", "entigraph", "notes", "spa", "verbal")
+OPTIONAL_CONDITIONS = ("selfrand",)
+TEXT_CONDITIONS = ("entigraph", "notes", "spa", "verbal")     # no new frames; synthetic text in the training mix
 CROSS_CONDITIONS = ("none", "curated", "authored")
+VERBAL_TEMPLATES = {
+    "is_a": "{x} is a kind of {y}.", "instance_of": "{x} is an instance of {y}.", "has_part": "{x} has {y} as a part.",
+    "part_of": "{x} is part of {y}.", "has_member": "{x} has {y} as a member.", "member_of": "{x} is a member of {y}.",
+    "made_of": "{x} is made of {y}.", "substance_of": "{x} is a substance of {y}.", "attribute": "{x} is {y}.",
+    "similar_to": "{x} is similar to {y}.", "domain": "{x} belongs to the field of {y}.", "entails": "{x} entails {y}.",
+    "causes": "{x} causes {y}.", "opposite_of": "{x} is the opposite of {y}.",
+    "kind": "{x} is a {y}.", "belongs_to": "{x} belongs to {y}.", "returns": "{x} returns {y}.", "takes": "{x} takes a {y}.",
+    "raises": "{x} raises {y}.", "calls": "{x} calls {y}.", "inherits": "{x} inherits from {y}.", "category": "{x} is used for {y}.",
+}
 ROUND_DEFAULTS: dict[str, Any] = {
     "host": "SmolLM2-360M", "host_mode": "frozen", "channel_condition": "C5", "operator": "hrr", "key_dimension": 8,
     "channel_dimension": 256, "base_tokens": 50_000_000, "round_tokens": 25_000_000, "sequences_per_step": 128,
@@ -69,11 +94,17 @@ ROUND_DEFAULTS: dict[str, Any] = {
     "teacher_condition": True,
     "entigraph": {"writer": "SmolLM2-360M", "per_entity": 4, "max_new_tokens": 192, "temperature": 0.7, "top_p": 0.95,
                   "batch": 16, "share": 0.1, "context_chars": 600},
+    "notes": {"writer": None, "samples": 1, "temperature": 0.7, "top_p": 0.95, "max_new_tokens": 64, "batch": 16,
+              "share": 0.1},
+    "spa": {"writer": None, "documents": 2000, "passage_chars": 1200, "max_new_tokens": 160, "temperature": 0.7,
+            "top_p": 0.95, "batch": 16, "share": 0.1},
+    "verbal": {"share": 0.02},
+    "text": {"budget": "tokens"},          # tokens: same training tokens as cm; compute: minus own generation/verification FLOPs
     "eval": {"first_fraction": 0.5},
     "cross": {"seed": 1, "condition": "self", "train_tokens": 300_000_000, "run_tokens": None, "size": "50M", "channel_condition": "C5",
               "seeds": [1, 2, 3], "workers": 4},
 }
-AUTHOR = {"self": "consumer", "selfnv": "consumer", "teacher": "teacher", "random": "consumer"}
+AUTHOR = {"self": "consumer", "selfnv": "consumer", "teacher": "teacher", "random": "consumer", "selfrand": "consumer"}
 
 
 def round_settings(run: Path) -> dict[str, Any]:
@@ -463,12 +494,34 @@ def verify(run: Path, seed: int, name: str, *, device: torch.device) -> dict[str
 
 
 # ---------------------------------------------------------------------------------------------
-# EntiGraph-style synthetic text
+# Synthetic-text controls: EntiGraph-style, verified notes, SPA / synthetic QA, verbalized edges
+
+def text_root(track: dict[str, Any], name: str) -> Path:
+    return round_root(track) / "text" / name
+
+
+def _writer(track: dict[str, Any], section: dict[str, Any]) -> str:
+    return section.get("writer") or track["consumer"]
+
+
+def _build_synthetic(track: dict[str, Any], name: str, texts: Sequence[str]) -> dict[str, Any]:
+    """Tokenize and scan synthetic texts with the reading corpus's alias strings (so they concatenate)."""
+    from transformers import AutoTokenizer
+    from vsa_embed.data.match_corpus import build_match_corpus
+    read = MatchCorpus.open(data_root(track) / "match" / "read")
+    tokenizer = AutoTokenizer.from_pretrained(read.manifest["tokenizer"], local_files_only=True)
+    if not texts:
+        raise ValueError(f"no synthetic text for {name}")
+    return build_match_corpus(list(texts), text_root(track, name) / "synthetic", tokenizer_name=read.manifest["tokenizer"],
+                              strings=read.strings, eos_id=int(read.manifest["eos_id"]), max_tokens=10**12,
+                              min_subtokens=int(read.manifest["min_subtokens"]), vocab_size=len(tokenizer),
+                              workers=int(track["settings"]["corpora"]["workers"]), keep_texts=True,
+                              extra_manifest={"synthetic": name})
+
 
 def entigraph(run: Path, *, device: torch.device, model: Any = None,
               tokenizer: Any = None) -> dict[str, Any]:
     from vsa_embed.authoring_baselines import entigraph_prompt
-    from vsa_embed.data.match_corpus import build_match_corpus
     from vsa_embed.experiments.e7_authoring import generate_samples
     track = load_track(run)
     out = Path(run) / "round1" / "entigraph.json"
@@ -505,8 +558,9 @@ def entigraph(run: Path, *, device: torch.device, model: Any = None,
             prompts.append(entigraph_prompt(name, other, context))
             pairs.append((name, other, document))
             used[name] += 1
+    writer = _writer(track, settings)
     if model is None:
-        model, tokenizer = load_host(settings["writer"], device)
+        model, tokenizer = load_host(writer, device)
     started = time.monotonic()
     completions, prompt_tokens, generated = generate_samples(
         model, tokenizer, prompts, device, samples=1, temperature=float(settings["temperature"]), top_p=float(settings["top_p"]),
@@ -515,41 +569,213 @@ def entigraph(run: Path, *, device: torch.device, model: Any = None,
     synthetic = [t for t in synthetic if len(t.split()) >= 8]
     ledger = ComputeLedger()
     ledger.add("entigraph", parameters=parameter_count(model), prompt_tokens=prompt_tokens, generated_tokens=generated,
-               seconds=time.monotonic() - started, note=settings["writer"])
-    root = round_root(track) / "entigraph"
-    manifest = build_match_corpus(synthetic, root / "synthetic", tokenizer_name=read.manifest["tokenizer"], strings=read.strings,
-                                  eos_id=int(read.manifest["eos_id"]), max_tokens=10**12,
-                                  min_subtokens=int(read.manifest["min_subtokens"]), vocab_size=len(tokenizer),
-                                  workers=int(track["settings"]["corpora"]["workers"]), keep_texts=True)
-    result = {"writer": settings["writer"], "settings": settings, "pairs": len(pairs), "documents": len(synthetic),
+               seconds=time.monotonic() - started, note=writer)
+    manifest = _build_synthetic(track, "entigraph", synthetic)
+    result = {"writer": writer, "settings": settings, "pairs": len(pairs), "documents": len(synthetic),
               "tokens": manifest["tokens"], "ledger": ledger.to_json(),
               "examples": [{"pair": pairs[i][:2], "text": synthetic[i]} for i in range(min(5, len(synthetic)))]}
     _json(out, result)
     return result
 
 
+def note_prompt(surface: str, context: str, demonstrations: Sequence[dict[str, Any]]) -> str:
+    """Few-shot prompt for an unstructured note about one concept (the host continues after the colon)."""
+    blocks = ["Each example quotes a text and gives short notes that explain a concept from it."]
+    for demo in demonstrations:
+        if demo.get("note"):
+            blocks.append(f"Text: {' '.join(demo['context'].split())}\nNotes on \"{demo['surface']}\": {demo['note']}")
+    blocks.append(f"Text: {' '.join(context.split())}\nNotes on \"{surface}\":")
+    return "\n\n".join(blocks)
+
+
+def notes(run: Path, *, device: torch.device, model: Any = None, tokenizer: Any = None) -> dict[str, Any]:
+    """Self-authored unstructured notes: one prompt per authoring context, `samples` notes each."""
+    from vsa_embed.experiments.e7_authoring import authoring_contexts, generate_samples
+    track = load_track(run)
+    out = Path(run) / "round1" / "notes.json"
+    if out.exists():
+        return json.loads(out.read_text())
+    settings = round_settings(run)["notes"]
+    aset = _authoring_set(run)
+    contexts = authoring_contexts(track, aset, read_texts(track))
+    surfaces = {item["index"]: item["surface"] for item in aset["candidates"]}
+    prompts, owners = [], []
+    for k, items in contexts.items():
+        for document, context in items:
+            prompts.append(note_prompt(surfaces[k], context, track["demonstrations"]))
+            owners.append((k, document))
+    writer = _writer(track, settings)
+    if model is None:
+        model, tokenizer = load_host(writer, device)
+    started = time.monotonic()
+    completions, prompt_tokens, generated = generate_samples(
+        model, tokenizer, prompts, device, samples=int(settings["samples"]), temperature=float(settings["temperature"]),
+        top_p=float(settings["top_p"]), max_new_tokens=int(settings["max_new_tokens"]), batch=int(settings["batch"]),
+        seed=stable_seed(track["seed"], "notes") % 2**31)
+    by_candidate: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    for (k, document), samples in zip(owners, completions):
+        for sample in samples:
+            text = " ".join(sample.split("\n\n")[0].split("\nText:")[0].split())
+            if len(text.split()) >= 5 and text not in {n["text"] for n in by_candidate[k]}:
+                by_candidate[k].append({"text": text, "document": document})
+    ledger = ComputeLedger()
+    ledger.add("notes", parameters=parameter_count(model), prompt_tokens=prompt_tokens, generated_tokens=generated,
+               seconds=time.monotonic() - started, note=writer)
+    result = {"writer": writer, "settings": settings, "ledger": ledger.to_json(),
+              "notes": {str(k): v for k, v in sorted(by_candidate.items())},
+              "count": sum(len(v) for v in by_candidate.values())}
+    _json(out, result)
+    return result
+
+
+def verify_notes(run: Path, seed: int, *, device: torch.device) -> dict[str, Any]:
+    """Keep notes whose in-context held-out utility has a bootstrap lower bound > 0 (round-0 model of `seed`)."""
+    from transformers import AutoTokenizer
+    from vsa_embed.authoring import bootstrap_lower, window_losses
+    from vsa_embed.training.lm import load_final
+    track = load_track(run)
+    out = Path(run) / "round1" / f"s{seed}" / "verify-notes.json"
+    if out.exists():
+        return json.loads(out.read_text())
+    settings = round_settings(run)
+    checks = settings["verification"]
+    written = json.loads((Path(run) / "round1" / "notes.json").read_text())
+    aset = _authoring_set(run)
+    room = int(settings["notes"]["max_new_tokens"]) + 8
+    windows = validation_windows(track, aset, window=int(checks["window"]) + room, after=int(checks["after"]))
+    tokenizer = AutoTokenizer.from_pretrained(track["tokenizer"], local_files_only=True)
+    lm = load_final(run_dir(run, settings, "base", seed) / "final.pt", device)
+    flat_plain = [(k, w) for k, ws in windows.items() if len(ws) >= int(checks["min_validation"]) for w in ws]
+    plain, forwarded = window_losses(lm, [w for _, w in flat_plain], [None] * len(flat_plain), device,
+                                     after=int(checks["after"]), batch=int(checks["batch"]))
+    without: dict[int, list[float]] = defaultdict(list)
+    for (k, _), value in zip(flat_plain, plain):
+        without[k].append(float(value))
+    trials, owners = [], []
+    for key, items in written["notes"].items():
+        k = int(key)
+        if k not in without:
+            continue
+        for n, note in enumerate(items):
+            ids = np.asarray(tokenizer(note["text"] + "\n\n", add_special_tokens=False)["input_ids"][:room], dtype=np.int64)
+            for w in windows[k]:
+                # the note replaces the most distant context tokens; spans that started there are dropped
+                keep = w.spans["start"] >= ids.size
+                spans = {name: value[keep] for name, value in w.spans.items()}
+                trials.append(ValidationWindow(np.concatenate([ids, w.ids[ids.size:]]), spans, k, w.start, w.end, w.document))
+            owners.append((k, n, len(windows[k])))
+    with_note, more = window_losses(lm, trials, [None] * len(trials), device, after=int(checks["after"]), batch=int(checks["batch"]))
+    forwarded += more
+    kept, records, position = [], [], 0
+    for k, n, count in owners:
+        deltas = np.asarray(without[k]) - with_note[position:position + count]
+        position += count
+        low = bootstrap_lower(deltas.tolist(), resamples=int(checks["resamples"]), seed=stable_seed(seed, "notes", k, n) % 2**31,
+                              quantile=float(checks["quantile"]))
+        accepted = bool(low > 0)
+        records.append({"candidate": k, "note": n, "mean": float(deltas.mean()), "low": float(low), "n": int(deltas.size),
+                        "accepted": accepted})
+        if accepted:
+            kept.append(written["notes"][str(k)][n]["text"])
+    ledger = ComputeLedger()
+    ledger.add("verification", parameters=parameter_count(lm.model), forward_tokens=forwarded, note=f"notes s{seed}")
+    manifest = _build_synthetic(track, f"notes-s{seed}", kept) if kept else None
+    utilities = [r["mean"] for r in records if r["accepted"]]
+    result = {"seed": seed, "records": records, "kept": len(kept), "notes": len(records), "ledger": ledger.to_json(),
+              "tokens": manifest["tokens"] if manifest else 0,
+              "median_accepted_utility": float(np.median(utilities)) if utilities else None,
+              "examples": kept[:5]}
+    _json(out, result)
+    return result
+
+
+def spa(run: Path, *, device: torch.device, model: Any = None, tokenizer: Any = None) -> dict[str, Any]:
+    """SPA / synthetic-QA study material: the consumer host writes question–answer pairs about D_read passages."""
+    from vsa_embed.experiments.e7_authoring import QA_DEMO, generate_samples
+    track = load_track(run)
+    out = Path(run) / "round1" / "spa.json"
+    if out.exists():
+        return json.loads(out.read_text())
+    settings = round_settings(run)["spa"]
+    texts = read_texts(track)
+    rng = random.Random(stable_seed(track["seed"], "spa"))
+    documents = sorted(rng.sample(range(len(texts)), k=min(int(settings["documents"]), len(texts))))
+    demo = f"Text: {QA_DEMO['context']}\nQuestions and answers about this text:\n{QA_DEMO['qa']}"
+    prompts = [f"{demo}\n\nText: {excerpt(texts[d], 0, 0, chars=2 * int(settings['passage_chars']))}\n"
+               f"Questions and answers about this text:\nQ:" for d in documents]
+    writer = _writer(track, settings)
+    if model is None:
+        model, tokenizer = load_host(writer, device)
+    started = time.monotonic()
+    completions, prompt_tokens, generated = generate_samples(
+        model, tokenizer, prompts, device, samples=1, temperature=float(settings["temperature"]), top_p=float(settings["top_p"]),
+        max_new_tokens=int(settings["max_new_tokens"]), batch=int(settings["batch"]), seed=stable_seed(track["seed"], "spa") % 2**31)
+    synthetic = []
+    for (completion,) in completions:
+        text = "Q:" + completion.split("\n\n")[0].split("\nText:")[0]
+        if "A:" in text:
+            synthetic.append(text.strip())
+    ledger = ComputeLedger()
+    ledger.add("spa", parameters=parameter_count(model), prompt_tokens=prompt_tokens, generated_tokens=generated,
+               seconds=time.monotonic() - started, note=writer)
+    manifest = _build_synthetic(track, "spa", synthetic)
+    result = {"writer": writer, "settings": settings, "documents": len(documents), "texts": len(synthetic),
+              "tokens": manifest["tokens"], "ledger": ledger.to_json(), "examples": synthetic[:3]}
+    _json(out, result)
+    return result
+
+
+def verbal(run: Path, seed: int) -> dict[str, Any]:
+    """The verified edges of `self` at seed S rendered as sentences (one document per concept)."""
+    track = load_track(run)
+    out = Path(run) / "round1" / f"s{seed}" / "verbal.json"
+    if out.exists():
+        return json.loads(out.read_text())
+    cards = [json.loads(line) for line in (Path(run) / "round1" / f"s{seed}" / f"cards-{track['consumer']}.jsonl").read_text().splitlines()
+             if line.strip()]
+    by_concept: dict[str, list[str]] = defaultdict(list)
+    for card in cards:
+        if card["accepted"]:
+            template = VERBAL_TEMPLATES.get(card["relation"], "{x} " + card["relation"].replace("_", " ") + " {y}.")
+            sentence = template.format(x=card["surface"], y=card["filler"])
+            by_concept[card["surface"]].append(sentence[0].upper() + sentence[1:])
+    texts = [" ".join(sentences) for _, sentences in sorted(by_concept.items())]
+    manifest = _build_synthetic(track, f"verbal-s{seed}", texts) if texts else None
+    result = {"seed": seed, "concepts": len(texts), "sentences": sum(len(s) for s in by_concept.values()),
+              "tokens": manifest["tokens"] if manifest else 0, "examples": texts[:5]}
+    _json(out, result)
+    return result
+
+
+def synthetic_name(condition: str, seed: int) -> str:
+    return {"entigraph": "entigraph", "spa": "spa", "notes": f"notes-s{seed}", "verbal": f"verbal-s{seed}"}[condition]
+
+
 # ---------------------------------------------------------------------------------------------
 # conditions
 
-def _mix(track: dict[str, Any], *, synthetic_share: float | None = None) -> MatchCorpus:
-    """D_read + general replay (+ repeated synthetic text for EntiGraph) as one match corpus."""
-    root = round_root(track)
+def _mix(track: dict[str, Any], *, synthetic: str | None = None, share: float | None = None) -> MatchCorpus:
+    """D_read + general replay (+ a synthetic-text corpus repeated to `share` of the tokens) as one match corpus."""
     read = MatchCorpus.open(data_root(track) / "match" / "read")
     replay = MatchCorpus.open(data_root(track) / "match" / "replay")
-    if synthetic_share is None:
-        path = root / "mix"
+    if synthetic is None:
+        path = round_root(track) / "mix"
         if not (path / "manifest.json").exists():
             concatenate([(read, read.documents.size, 1), (replay, replay.documents.size, 1)], path)
         return MatchCorpus.open(path)
-    path = root / "entigraph" / "mix"
+    path = text_root(track, synthetic) / "mix"
     if not (path / "manifest.json").exists():
-        synthetic = MatchCorpus.open(root / "entigraph" / "synthetic")
+        corpus = MatchCorpus.open(text_root(track, synthetic) / "synthetic")
         base = len(read) + len(replay)
-        repeats = max(1, round(synthetic_share * base / ((1 - synthetic_share) * max(1, len(synthetic)))))
+        repeats = max(1, round(share * base / ((1 - share) * max(1, len(corpus)))))
         concatenate([(read, read.documents.size, 1), (replay, replay.documents.size, 1),
-                     (synthetic, synthetic.documents.size, repeats)], path,
-                     extra_manifest={"synthetic_share": synthetic_share, "synthetic_repeats": repeats})
+                     (corpus, corpus.documents.size, repeats)], path,
+                     extra_manifest={"synthetic": synthetic, "synthetic_share": share, "synthetic_repeats": repeats})
     return MatchCorpus.open(path)
+
+
+def _ledger_of(path: Path) -> ComputeLedger:
+    return ComputeLedger.from_json(json.loads(path.read_text())["ledger"]) if path.exists() else ComputeLedger()
 
 
 def compute_matched(run: Path, seed: int, settings: dict[str, Any]) -> dict[str, Any]:
@@ -558,8 +784,8 @@ def compute_matched(run: Path, seed: int, settings: dict[str, Any]) -> dict[str,
     track = load_track(run)
     consumer = track["consumer"]
     ledger = ComputeLedger()
-    ledger.extend(ComputeLedger.from_json(json.loads((Path(run) / "discovery" / f"{consumer}.json").read_text())["ledger"]))
-    ledger.extend(ComputeLedger.from_json(json.loads((Path(run) / "proposals" / f"{consumer}.json").read_text())["ledger"]))
+    ledger.extend(_ledger_of(Path(run) / "discovery" / f"{consumer}.json"))
+    ledger.extend(_ledger_of(Path(run) / "proposals" / f"{consumer}.json"))
     verified = _verification(run, seed, consumer)
     if verified is None:
         raise FileNotFoundError(f"verify --seed {seed} --author {consumer} must run before the compute-matched control")
@@ -572,7 +798,37 @@ def compute_matched(run: Path, seed: int, settings: dict[str, Any]) -> dict[str,
     result = compute_matched_tokens(int(settings["round_tokens"]), ledger, parameters=parameters, host_mode=settings["host_mode"],
                                     stages=settings["cm_stages"], trainable=trainable)
     result["ledger"] = ledger.to_json()
+    result["parameters"], result["trainable"] = parameters, trainable
     return result
+
+
+def text_budget(run: Path, seed: int, condition: str, settings: dict[str, Any], matched: dict[str, Any]) -> dict[str, Any]:
+    """Training tokens of a synthetic-text control and the compute it spent outside training.
+
+    `text.budget: tokens` (default): the compute-matched control's tokens. `compute`: those minus the
+    condition's own generation/verification FLOPs (and the discovery/authoring it reuses), so that its
+    total compute equals `self`'s (`verbal` reuses the whole self pipeline and gets the round tokens)."""
+    track = load_track(run)
+    consumer = track["consumer"]
+    side = ComputeLedger()
+    if condition in ("entigraph", "notes"):
+        side.extend(_ledger_of(Path(run) / "discovery" / f"{consumer}.json"))
+    if condition == "entigraph":
+        side.extend(_ledger_of(Path(run) / "round1" / "entigraph.json"))
+    elif condition == "notes":
+        side.extend(_ledger_of(Path(run) / "round1" / "notes.json"))
+        side.extend(_ledger_of(Path(run) / "round1" / f"s{seed}" / "verify-notes.json"))
+    elif condition == "spa":
+        side.extend(_ledger_of(Path(run) / "round1" / "spa.json"))
+    elif condition == "verbal":
+        side = ComputeLedger.from_json(matched["ledger"])
+    per_token = matched["flops_per_training_token"]
+    if settings["text"]["budget"] == "compute":
+        total = max(int(settings["round_tokens"]) // 10, int(matched["total_tokens"] - math.ceil(side.flops() / per_token)))
+    else:
+        total = int(matched["total_tokens"])
+    return {"budget": settings["text"]["budget"], "total_tokens": total, "side_flops": side.flops(),
+            "training_flops": total * per_token, "total_flops": side.flops() + total * per_token, "ledger": side.to_json()}
 
 
 def materialize(run: Path, seed: int, condition: str) -> dict[str, Any]:
@@ -598,18 +854,19 @@ def materialize(run: Path, seed: int, condition: str) -> dict[str, Any]:
     new_names: list[str] = []
     new_vectors = torch.zeros(0, final["model"]["channel.composer.atomics"].shape[1])
     info: dict[str, Any] = {"condition": condition, "seed": seed}
+    synthetic = None
     if condition == "gold":
         hidden = gold(track)
         masked = {a: int(e) for a, e in hidden["masked_strings"].items()}
         frames = {int(e): [tuple(edge) for edge in data["frame_ids"]] for e, data in hidden["entries"].items()}
-    elif condition in ("self", "selfnv", "teacher", "random"):
+    elif condition in ("self", "selfnv", "teacher", "random", "selfrand"):
         name = author_name(track, condition)
         if condition == "teacher" and not settings["teacher_verified"]:
             raise ValueError("unverified teacher frames are not a planned condition")
         verified = _verification(run, seed, name)
         if verified is None:
             raise FileNotFoundError(f"verify --seed {seed} --author {name} must run before {condition}")
-        chosen = verified["noverify"] if condition == "selfnv" else verified["accepted"]
+        chosen = verified["noverify"] if condition in ("selfnv", "selfrand") else verified["accepted"]
         if condition == "random":
             relation_pool = [r for frame in chosen.values() for r, _ in frame]
             atoms = sorted({a for atoms in view["lexicon"].values() for a in atoms})
@@ -627,7 +884,18 @@ def materialize(run: Path, seed: int, condition: str) -> dict[str, Any]:
             chosen = randomized
             info["random"] = {"relations_from": "self-accepted edges of this seed", "fillers": "uniform over dictionary synsets",
                               "degrees": "equal to the self-accepted frames"}
-        else:
+        if condition == "selfrand":
+            # the proposals of `selfnv`, accepted at random at the verified acceptance count
+            pool = [(k, tuple(edge)) for k, frame in sorted(chosen.items()) for edge in frame]
+            target = sum(len(frame) for frame in verified["accepted"].values())
+            picked = set(random.Random(stable_seed(seed, "selfrand")).sample(range(len(pool)), k=min(target, len(pool))))
+            subset: dict[str, list[tuple[int, int]]] = defaultdict(list)
+            for i, (k, edge) in enumerate(pool):
+                if i in picked:
+                    subset[k].append(edge)
+            chosen = dict(subset)
+            info["selfrand"] = {"accepted_edges": target, "pool": len(pool)}
+        if condition != "random":
             atoms_file = torch.load(Path(run) / "round1" / f"s{seed}" / f"new_atoms-{name}.pt", weights_only=False)
             new_names, new_vectors = list(atoms_file["names"]), atoms_file["vectors"]
             if int(verified["atomic_count"]) != atomic_count:
@@ -638,13 +906,21 @@ def materialize(run: Path, seed: int, condition: str) -> dict[str, Any]:
                 frames[entry_of[int(k)]] = list(dict.fromkeys(frame))
                 candidates[surfaces[int(k)]] = entry_of[int(k)]
         info["author"] = name
-    elif condition not in ("cm", "entigraph"):
+    elif condition in TEXT_CONDITIONS:
+        synthetic = synthetic_name(condition, seed)
+        if condition == "verbal":
+            verbal(run, seed)
+        if not (text_root(track, synthetic) / "synthetic" / "manifest.json").exists():
+            step = {"entigraph": "entigraph", "spa": "spa", "notes": f"notes, then verify-notes --seed {seed}",
+                    "verbal": f"verify --seed {seed} (self has no accepted edges?)"}[condition]
+            raise FileNotFoundError(f"{condition} needs its synthetic text first: run `{step}`")
+    elif condition != "cm":
         raise ValueError(f"unknown condition {condition!r}")
     schedule = replace_frames(schedule, frames)
     total = int(base["entry_count"])
     active = set(view["base"].values()) | set(frames)
-    synthetic_share = float(settings["entigraph"]["share"]) if condition == "entigraph" else None
-    mix = _mix(track, synthetic_share=synthetic_share)
+    share = float(settings[condition]["share"]) if synthetic else None
+    mix = _mix(track, synthetic=synthetic, share=share)
     test = MatchCorpus.open(data_root(track) / "match" / "test")
     confidence = confidence_of(view, total)
     root.mkdir(parents=True, exist_ok=True)
@@ -672,12 +948,23 @@ def materialize(run: Path, seed: int, condition: str) -> dict[str, Any]:
     torch.save({"model": state, "trainable_only": bool(final.get("trainable_only", False)), "source": str(run_dir(run, settings, "base", seed))},
                root / "init_state.pt")
     info.update(entries_with_new_frames=len(frames), linked_candidates=len(candidates), new_atoms=len(new_names),
-                train_spans=int(spans["entry"].size), train_tokens_available=len(mix), synthetic_share=synthetic_share)
-    if condition in ("cm", "entigraph"):
+                train_spans=int(spans["entry"].size), train_tokens_available=len(mix), synthetic=synthetic,
+                synthetic_share=share, mix=mix.manifest.get("sources"))
+    if condition == "cm" or synthetic:
         info["compute_matched"] = compute_matched(run, seed, settings)
+    if synthetic:
+        info["text_budget"] = text_budget(run, seed, condition, settings, info["compute_matched"])
     write_reference(run, seed)
     _json(done, info)
     return info
+
+
+def training_tokens(info: dict[str, Any], settings: dict[str, Any]) -> int:
+    if "text_budget" in info:
+        return int(info["text_budget"]["total_tokens"])
+    if info["condition"] == "cm":
+        return int(info["compute_matched"]["total_tokens"])
+    return int(settings["round_tokens"])
 
 
 def train_condition(run: Path, seed: int, condition: str, *, resume: bool = False) -> dict[str, Any]:
@@ -685,10 +972,10 @@ def train_condition(run: Path, seed: int, condition: str, *, resume: bool = Fals
     settings = round_settings(run)
     info = materialize(run, seed, condition)
     root = round_root(track) / f"s{seed}" / condition
-    total = int(info["compute_matched"]["total_tokens"]) if condition in ("cm", "entigraph") else int(settings["round_tokens"])
     config = train_config(settings, condition=condition, seed=seed, ontology=root / "ontology.pt", train=root / "train",
-                          test=root / "test", reference=round_root(track) / f"s{seed}" / "reference.npz", total_tokens=total,
-                          init_from=root / "init_state.pt", experiment=f"e7-round1-{_slug(settings['host'])}-{condition}-s{seed}")
+                          test=root / "test", reference=round_root(track) / f"s{seed}" / "reference.npz",
+                          total_tokens=training_tokens(info, settings), init_from=root / "init_state.pt",
+                          experiment=f"e7-round1-{_slug(settings['host'])}-{condition}-s{seed}")
     return _train(config, run_dir(run, settings, condition, seed), resume)
 
 
@@ -816,8 +1103,8 @@ def cross_train(run: Path, seed: int, condition: str, *, resume: bool = False) -
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("command", choices=["base", "verify", "entigraph", "materialize", "train", "cross-prepare", "cross-train",
-                                            "plan", "report"])
+    parser.add_argument("command", choices=["base", "verify", "entigraph", "notes", "verify-notes", "spa", "verbal", "materialize",
+                                            "train", "cross-prepare", "cross-train", "plan", "report"])
     parser.add_argument("--run", type=Path, required=True)
     parser.add_argument("--seed", type=int, default=1); parser.add_argument("--condition", default=None)
     parser.add_argument("--author", default=None); parser.add_argument("--device", default="cuda")
@@ -836,6 +1123,17 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "entigraph":
         result = entigraph(args.run, device=device)
         print(json.dumps({k: result[k] for k in ("pairs", "documents", "tokens")}))
+    elif args.command == "notes":
+        print(json.dumps({"notes": notes(args.run, device=device)["count"]}))
+    elif args.command == "verify-notes":
+        result = verify_notes(args.run, args.seed, device=device)
+        print(json.dumps({k: result[k] for k in ("notes", "kept", "tokens", "median_accepted_utility")}))
+    elif args.command == "spa":
+        result = spa(args.run, device=device)
+        print(json.dumps({k: result[k] for k in ("documents", "texts", "tokens")}))
+    elif args.command == "verbal":
+        result = verbal(args.run, args.seed)
+        print(json.dumps({k: result[k] for k in ("concepts", "sentences", "tokens")}))
     elif args.command == "materialize":
         print(json.dumps(materialize(args.run, args.seed, args.condition), indent=1, default=_default)[:3000])
     elif args.command == "train":

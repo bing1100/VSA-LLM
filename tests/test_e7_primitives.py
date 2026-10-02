@@ -164,6 +164,23 @@ def test_prompt_pooling_and_self_consistency() -> None:
     assert [(e["relation"], e["filler"]) for e in kept] == [("is_a", "machine")]
 
 
+def test_generate_samples_pads_left_without_a_pad_token() -> None:
+    from vsa_embed.experiments.e7_authoring import generate_samples
+    tok = transformers.AutoTokenizer.from_pretrained("gpt2", local_files_only=True)      # defines no pad token
+    assert tok.pad_token is None
+    prompts = ["Text: a zorblax engine.\nConcept: zorblax engine\n", "Short.\n", "A third, longer prompt about engines.\n"]
+    sampled, prompt_tokens, generated = generate_samples(tiny_lm(), tok, prompts, torch.device("cpu"), samples=2, temperature=0.7,
+                                                         top_p=0.9, max_new_tokens=5, batch=2, seed=0)
+    assert [len(s) for s in sampled] == [2, 2, 2] and all(isinstance(x, str) for s in sampled for x in s)
+    assert prompt_tokens > 0 and 0 < generated <= 3 * 2 * 5
+    greedy, _, _ = generate_samples(tiny_lm(), tok, prompts, torch.device("cpu"), samples=3, temperature=0.0, top_p=1.0,
+                                    max_new_tokens=5, batch=3, seed=0)
+    assert [len(s) for s in greedy] == [1, 1, 1]
+    alone, _, _ = generate_samples(tiny_lm(), tok, prompts[:1], torch.device("cpu"), samples=1, temperature=0.0, top_p=1.0,
+                                   max_new_tokens=5, batch=1, seed=0)
+    assert alone[0] == greedy[0]                       # left padding does not change a greedy completion
+
+
 def test_compute_matched_tokens_convert_flops_to_training_tokens() -> None:
     ledger = ComputeLedger()
     ledger.add("discovery", parameters=1e6, forward_tokens=1000)

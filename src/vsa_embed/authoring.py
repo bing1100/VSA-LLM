@@ -259,8 +259,9 @@ def span_occurrences(text: str, *, max_words: int = 3, pattern: re.Pattern = WOR
     stopword: `(normalized key, char start, char end)`."""
     words = list(pattern.finditer(text))
     lowered = [w.group().lower() for w in words]
+    ragged = [w.startswith("-") or w.endswith("-") for w in lowered]       # "k-", "-based": not a span edge
     for i in range(len(words)):
-        if lowered[i] in stopwords:
+        if lowered[i] in stopwords or ragged[i]:
             continue
         for n in range(1, max_words + 1):
             j = i + n - 1
@@ -268,7 +269,7 @@ def span_occurrences(text: str, *, max_words: int = 3, pattern: re.Pattern = WOR
                 break
             if n > 1 and text[words[j - 1].end():words[j].start()] != " ":
                 break
-            if lowered[j] in stopwords:
+            if lowered[j] in stopwords or ragged[j]:
                 continue
             yield normalize_key(text[words[i].start():words[j].end()]), words[i].start(), words[j].end()
 
@@ -431,14 +432,20 @@ def cut_completion(text: str) -> str:
     return text
 
 
-def pool_proposals(completions: Sequence[Sequence[str]], relations: Sequence[str]) -> tuple[Counter, int]:
-    """Votes per (relation, filler) — at most one per sample — over contexts × samples, and the sample count."""
+def pool_proposals(completions: Sequence[Sequence[str]], relations: Sequence[str], *,
+                   canonical: Callable[[str], str] | None = None) -> tuple[Counter, int]:
+    """Votes per (relation, filler) — at most one per sample — over contexts × samples, and the sample
+    count. `canonical` (optional) maps fillers to one form first (e.g. plural → dictionary lemma), so
+    variants of one filler pool their votes."""
     votes: Counter = Counter()
     samples = 0
     for per_context in completions:
         for completion in per_context:
             samples += 1
-            votes.update(set(parse_proposals(cut_completion(completion), relations)))
+            edges = parse_proposals(cut_completion(completion), relations)
+            if canonical is not None:
+                edges = [(relation, canonical(filler)) for relation, filler in edges]
+            votes.update(set(edges))
     return votes, samples
 
 

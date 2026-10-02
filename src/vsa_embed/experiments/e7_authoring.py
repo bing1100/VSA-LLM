@@ -93,23 +93,37 @@ HEARST_MAPS = {"general": {"is_a": "is_a", "part_of": "part_of", "has_part": "ha
 # Hand-written demonstrations; `prepare` keeps the first two whose surface is not a masked alias.
 WORDNET_DEMOS = [
     {"surface": "golden retriever", "context": "Our golden retriever loves to swim and fetch sticks in the lake.",
-     "edges": [("is_a", "dog")]},
+     "edges": [("is_a", "dog")],
+     "note": "A golden retriever is a breed of dog that was bred to retrieve shot birds. Golden retrievers are friendly, "
+             "love water and are often kept as family pets or guide dogs."},
     {"surface": "carburetor", "context": "The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.",
-     "edges": [("is_a", "device"), ("part_of", "engine")]},
+     "edges": [("is_a", "device"), ("part_of", "engine")],
+     "note": "A carburetor is a device in an internal combustion engine that mixes air with fuel before the mixture "
+             "enters the cylinders. Most modern cars use fuel injection instead."},
     {"surface": "granite", "context": "The old bridge was built from blocks of grey granite cut in a nearby quarry.",
-     "edges": [("is_a", "rock")]},
+     "edges": [("is_a", "rock")],
+     "note": "Granite is a hard igneous rock made mostly of quartz and feldspar. It is quarried as a building stone."},
     {"surface": "violinist", "context": "The violinist tuned her instrument before the orchestra began to play.",
-     "edges": [("is_a", "musician"), ("member_of", "orchestra")]},
+     "edges": [("is_a", "musician"), ("member_of", "orchestra")],
+     "note": "A violinist is a musician who plays the violin, often as a member of an orchestra or a string quartet."},
     {"surface": "photosynthesis", "context": "Through photosynthesis, plants turn sunlight, water and carbon dioxide into sugar.",
-     "edges": [("is_a", "process"), ("domain", "biology")]},
+     "edges": [("is_a", "process"), ("domain", "biology")],
+     "note": "Photosynthesis is the process by which plants and algae use light energy to make sugar from water and carbon "
+             "dioxide, releasing oxygen."},
 ]
 DEVTOOLS_DEMOS = [
     {"surface": "plorv_quandle", "context": "API reference. `plorv_quandle` is a function in the `zestin` module for parsing work. "
                                             "It takes str and returns dict. It raises KrumbleError on invalid input.",
-     "edges": [("kind", "function"), ("belongs_to", "zestin"), ("returns", "dict"), ("takes", "str"), ("raises", "krumbleerror")]},
+     "edges": [("kind", "function"), ("belongs_to", "zestin"), ("returns", "dict"), ("takes", "str"), ("raises", "krumbleerror")],
+     "note": "plorv_quandle is a parsing function in the zestin module. Call it with a str; it returns a dict and raises "
+             "KrumbleError when the input is invalid."},
     {"surface": "VashMorrel", "context": "`VashMorrel` is a class in the `quindo` module used for caching.",
-     "edges": [("kind", "class"), ("belongs_to", "quindo"), ("category", "caching")]},
+     "edges": [("kind", "class"), ("belongs_to", "quindo"), ("category", "caching")],
+     "note": "VashMorrel is a caching class defined in the quindo module."},
 ]
+QA_DEMO = {"context": "The old bridge was built from blocks of grey granite cut in a nearby quarry in 1850.",
+           "qa": "Q: What was the old bridge built from?\nA: Blocks of grey granite.\nQ: Where was the granite cut?\n"
+                 "A: In a nearby quarry.\nQ: When was the bridge built?\nA: In 1850."}
 DEFAULTS: dict[str, Any] = {
     "seed": 20261002,
     "mask": {"fraction": 0.2, "min_count": 1},
@@ -230,6 +244,14 @@ class FillerResolver:
     def __call__(self, filler: str) -> int | None:
         found = self.candidates(filler)
         return found[0] if found else None
+
+
+def canonical_filler(resolver: FillerResolver) -> Callable[[str], str]:
+    """Filler → the first of its variants that names a dictionary atom (`vesicles` → `vesicle`), else itself."""
+    def canonical(filler: str) -> str:
+        variants = resolver.variants(filler)
+        return next((v for v in variants if v in resolver.lexicon), variants[0] if variants else filler)
+    return canonical
 
 
 def resolver_for(track: dict[str, Any], view: dict[str, Any]) -> FillerResolver:
@@ -688,7 +710,9 @@ def generate_samples(model: Any, tokenizer: Any, prompts: Sequence[str], device:
     """`samples` completions per prompt (greedy when temperature is 0); returns them with the prompt
     tokens (counted once per sample) and generated tokens."""
     tokenizer.padding_side = "left"
-    pad = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id
+    if tokenizer.pad_token is None:              # SmolLM2 and GPT-2 define none; left-padding with EOS is masked out
+        tokenizer.pad_token = tokenizer.eos_token
+    pad = tokenizer.pad_token_id
     out: list[list[str]] = []
     prompt_tokens = generated = 0
     order = sorted(range(len(prompts)), key=lambda i: len(prompts[i]))
@@ -756,9 +780,10 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
             grouped: dict[int, list[list[str]]] = defaultdict(list)
             for (k, _), samples in zip(owners, completions):
                 grouped[k].append(samples)
+            canonical = canonical_filler(resolver_for(track, visible(track)))
             candidates = {}
             for k in surfaces:
-                votes, samples = pool_proposals(grouped.get(k, []), relations)
+                votes, samples = pool_proposals(grouped.get(k, []), relations, canonical=canonical)
                 candidates[surfaces[k]] = _proposal_record(votes, samples, [d for d, _ in contexts[k]])
             ledger.add("authoring", parameters=parameter_count(model), prompt_tokens=prompt_tokens, generated_tokens=generated,
                        seconds=time.monotonic() - started, note=host)
@@ -777,11 +802,12 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
             items = items[:int(limit)] if limit else items
             answers = teacher.author(items, batch=int(teacher_settings["batch"]))
             candidates = {}
+            canonical = canonical_filler(resolver_for(track, visible(track)))
             for k in sorted(surfaces):
                 answer = answers.get(f"c{k}")
                 if answer is None:
                     continue
-                votes = Counter({edge: 1 for edge in answer["edges"]})
+                votes = Counter({(r, canonical(f)): 1 for r, f in answer["edges"]})
                 record = _proposal_record(votes, 1, [d for d, _ in contexts[k]])
                 if answer.get("error"):
                     record["error"] = answer["error"]
@@ -792,6 +818,7 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
         elif name == "hearst":
             from vsa_embed.authoring_baselines import hearst_extract
             resolve = resolver_for(track, visible(track))
+            canonical = canonical_filler(resolve)
             mapping = track["hearst_map"]
             lookup = {surfaces[k]: k for k in surfaces}
             identifier = track["pattern"] == "identifier"
@@ -801,7 +828,7 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
                 text = text.replace("`", "") if identifier else text
                 for concept, relation, filler in hearst_extract(text, lookup, resolve, normalize_key=key):
                     if relation in mapping:
-                        votes[concept][(mapping[relation], filler)] += 1
+                        votes[concept][(mapping[relation], canonical(filler))] += 1
             candidates = {surfaces[k]: _proposal_record(votes.get(surfaces[k], Counter()),
                                                         sum(votes.get(surfaces[k], Counter()).values()), [])
                           for k in sorted(surfaces)}
@@ -847,6 +874,7 @@ def _direct(run: Path, track: dict[str, Any], host: str, texts: Sequence[str], d
                                                              batch=int(settings["batch"]), seed=int(track["seed"]))
     view = visible(track)
     exclude = set(view["base"]) | set(view["excluded"])
+    canonical = canonical_filler(resolver_for(track, view))
     key = _span_settings(track)["normalize_key"]
     votes: dict[str, Counter] = defaultdict(Counter)
     docs_of: dict[str, set[int]] = defaultdict(set)
@@ -854,7 +882,7 @@ def _direct(run: Path, track: dict[str, Any], host: str, texts: Sequence[str], d
         for concept, relation, filler in parse_direct(completion, relations):
             concept = key(concept)
             if concept and concept not in exclude:
-                votes[concept][(relation, filler)] += 1
+                votes[concept][(relation, canonical(filler))] += 1
                 docs_of[concept].add(document)
     ledger.add("direct", parameters=parameter_count(model), prompt_tokens=prompt_tokens, generated_tokens=generated, note=host)
     candidates = {c: _proposal_record(v, len(docs_of[c]), sorted(docs_of[c])) for c, v in sorted(votes.items())}

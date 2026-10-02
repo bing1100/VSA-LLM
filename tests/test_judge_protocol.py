@@ -8,7 +8,7 @@ from vsa_embed.judging import JudgeClient
 
 def test_every_study_has_two_paraphrases_that_format() -> None:
     fields = {"concept": "bank", "items": "river, shore", "sentence": "We sat on the bank.", "group_a": "x",
-              "group_b": "y", "relation": "hypernym", "filler": "slope"}
+              "group_b": "y", "relation": "hypernym", "filler": "slope", "context": "We sat on the bank of the river."}
     for study in STUDIES:
         prompts = build_prompts(study, fields)
         assert len(prompts) == 2 and all("bank" in p for p in prompts)
