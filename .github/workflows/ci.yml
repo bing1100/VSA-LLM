@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    name: pytest (CPU, Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # CPU only, no network: tests that need cached Hugging Face models (GPT-2 tokenizer) or
+      # NLTK WordNet data must skip cleanly when they are absent, as they are on this runner.
+      CUDA_VISIBLE_DEVICES: ""
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      OMP_NUM_THREADS: "2"
+      MKL_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install CPU PyTorch
+        # The default Linux wheel pulls ~2.5 GB of CUDA libraries; the suite never uses a GPU.
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install the package with test and research dependencies
+        # `dev` = pytest; `research` = nltk, transformers, safetensors, scipy (imported at module
+        # level by several experiment runners that the tests exercise).
+        run: pip install -e ".[dev,research]"
+
+      - name: Environment
+        run: python -c "import sys, torch, transformers, nltk; print(sys.version); print('torch', torch.__version__, 'cuda', torch.cuda.is_available()); print('transformers', transformers.__version__, 'nltk', nltk.__version__)"
+
+      - name: Run the test suite
+        # -rs lists every skip with its reason, so a skipped model or data test is visible in the log.
+        run: python -m pytest -q -rs
