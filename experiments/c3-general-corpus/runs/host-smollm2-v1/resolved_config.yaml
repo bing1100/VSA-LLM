@@ -1,0 +1,28 @@
+host: smollm2
+tokenizer: HuggingFaceTB/SmolLM2-135M
+models:
+- HuggingFaceTB/SmolLM2-135M
+- HuggingFaceTB/SmolLM2-360M
+c3_run: experiments/c3-general-corpus/runs/v2
+workers: 6
+paths:
+  data_root: /home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1
+data:
+  train_tokens: 130000000
+  min_subtokens: 2
+  eval_min_subtokens: 1
+verify:
+  require_c3_record: true
+experiment: c3-host-corpus
+c3:
+  run: experiments/c3-general-corpus/runs/v2
+  config_sha256: a4a08333a1990eeb5ba686b1f9af7e11da18dcc5bdf0da81613032a2b00c2543
+  seed: 20261001
+  shards:
+  - ~/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet
+  - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  eval_docs: 5000
+  ontology:
+    max_atomics: 8192
+    max_degree: 16
+  cardinality_docs: 2000

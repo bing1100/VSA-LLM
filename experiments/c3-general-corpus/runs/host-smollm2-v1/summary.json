@@ -1,0 +1,116 @@
+{
+  "host": "smollm2",
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "tokenizer_sha256": "2225e8fb36485529d3c826106f8bec359b719a6bcc3f5d6314a834c7be153905",
+  "vocab_size": 49152,
+  "token_dtype": "uint16",
+  "normalization": null,
+  "models": {
+    "HuggingFaceTB/SmolLM2-135M": 49152,
+    "HuggingFaceTB/SmolLM2-360M": 49152
+  },
+  "verification": {
+    "holdout_sha256": {
+      "value": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+      "verified_against": [
+        "c3 ontology.pt",
+        "c3 summary.json"
+      ]
+    },
+    "alias_table_sha256": {
+      "value": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+      "verified_against": [
+        "c3 ontology.pt",
+        "c3 summary.json",
+        "c3 eval/manifest.json"
+      ]
+    },
+    "train_alias_table_sha256": {
+      "value": "08a0d3ddda273fa0b60cc9d80f6facae75c37769b9c7dee3d2386518b64f1226",
+      "verified_against": [
+        "c3 summary.json",
+        "c3 train/manifest.json"
+      ]
+    },
+    "ontology_pt": {
+      "identical": [
+        "atomic_names",
+        "concept_names",
+        "entry_concepts",
+        "frames",
+        "heldout_entries",
+        "relation_names"
+      ],
+      "c3_ontology_sha256": "f33b9cb6feffe2607c55eb6a8a81ad2e1d3f37b794a1d4ffc896654c2583242d"
+    }
+  },
+  "holdout": {
+    "concepts": 4105,
+    "heldout_entries": 5900,
+    "sha256": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+    "heldout_spans_in_eval": 578722,
+    "heldout_spans_in_train": 0
+  },
+  "eval_documents": {
+    "host": 5000,
+    "c3": 5000,
+    "host_skipped": 0,
+    "c3_skipped": 0,
+    "same_documents": true
+  },
+  "train_corpus": {
+    "tokens": 130000011,
+    "documents": 123138,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "08a0d3ddda273fa0b60cc9d80f6facae75c37769b9c7dee3d2386518b64f1226",
+    "boundary": "prefix",
+    "spans": 6898568,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "host": "smollm2",
+    "tokenizer_sha256": "2225e8fb36485529d3c826106f8bec359b719a6bcc3f5d6314a834c7be153905",
+    "vocab_size": 49152,
+    "models": [
+      "HuggingFaceTB/SmolLM2-135M",
+      "HuggingFaceTB/SmolLM2-360M"
+    ],
+    "c3_run": "experiments/c3-general-corpus/runs/v2",
+    "holdout_sha256": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+    "split": "train",
+    "min_subtokens_stored": 2
+  },
+  "eval_corpus": {
+    "tokens": 4998786,
+    "documents": 5000,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+    "boundary": "prefix",
+    "spans": 2559946,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "host": "smollm2",
+    "tokenizer_sha256": "2225e8fb36485529d3c826106f8bec359b719a6bcc3f5d6314a834c7be153905",
+    "vocab_size": 49152,
+    "models": [
+      "HuggingFaceTB/SmolLM2-135M",
+      "HuggingFaceTB/SmolLM2-360M"
+    ],
+    "c3_run": "experiments/c3-general-corpus/runs/v2",
+    "holdout_sha256": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+    "split": "eval"
+  },
+  "linked_entries_in_train_at_min_subtokens": 75051,
+  "data_root": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1",
+  "disk_bytes": 462242888,
+  "timings": {
+    "tables_s": 8.520976255182177,
+    "eval_s": 11.120877573033795,
+    "train_s": 92.99408790306188,
+    "cardinality_s": 12.950687991920859
+  },
+  "ontology_sha256": "8be0a15d2d9e3232ea5627b6c469ec0dc70bfd6bacff5636fbc6f2eb84b3be2e"
+}

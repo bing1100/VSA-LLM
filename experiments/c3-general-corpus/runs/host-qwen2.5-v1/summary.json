@@ -1,0 +1,115 @@
+{
+  "host": "qwen2.5",
+  "tokenizer": "Qwen/Qwen2.5-0.5B",
+  "tokenizer_sha256": "f884026e05f6dfffe68b72d580b588006d98b3bc0a128bb1ac425c76f7fc438c",
+  "vocab_size": 151665,
+  "token_dtype": "uint32",
+  "normalization": "NFC",
+  "models": {
+    "Qwen/Qwen2.5-0.5B": 151936
+  },
+  "verification": {
+    "holdout_sha256": {
+      "value": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+      "verified_against": [
+        "c3 ontology.pt",
+        "c3 summary.json"
+      ]
+    },
+    "alias_table_sha256": {
+      "value": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+      "verified_against": [
+        "c3 ontology.pt",
+        "c3 summary.json",
+        "c3 eval/manifest.json"
+      ]
+    },
+    "train_alias_table_sha256": {
+      "value": "08a0d3ddda273fa0b60cc9d80f6facae75c37769b9c7dee3d2386518b64f1226",
+      "verified_against": [
+        "c3 summary.json",
+        "c3 train/manifest.json"
+      ]
+    },
+    "ontology_pt": {
+      "identical": [
+        "atomic_names",
+        "concept_names",
+        "entry_concepts",
+        "frames",
+        "heldout_entries",
+        "relation_names"
+      ],
+      "c3_ontology_sha256": "f33b9cb6feffe2607c55eb6a8a81ad2e1d3f37b794a1d4ffc896654c2583242d"
+    }
+  },
+  "holdout": {
+    "concepts": 4105,
+    "heldout_entries": 5900,
+    "sha256": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+    "heldout_spans_in_eval": 581929,
+    "heldout_spans_in_train": 0
+  },
+  "eval_documents": {
+    "host": 5000,
+    "c3": 5000,
+    "host_skipped": 0,
+    "c3_skipped": 0,
+    "same_documents": true
+  },
+  "train_corpus": {
+    "tokens": 130000450,
+    "documents": 125523,
+    "dtype": "uint32",
+    "tokenizer": "Qwen/Qwen2.5-0.5B",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "08a0d3ddda273fa0b60cc9d80f6facae75c37769b9c7dee3d2386518b64f1226",
+    "boundary": "prefix",
+    "spans": 7503118,
+    "eos_id": 151643,
+    "skipped_documents": 0,
+    "normalization": "NFC",
+    "host": "qwen2.5",
+    "tokenizer_sha256": "f884026e05f6dfffe68b72d580b588006d98b3bc0a128bb1ac425c76f7fc438c",
+    "vocab_size": 151665,
+    "models": [
+      "Qwen/Qwen2.5-0.5B"
+    ],
+    "c3_run": "experiments/c3-general-corpus/runs/v2",
+    "holdout_sha256": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+    "split": "train",
+    "min_subtokens_stored": 2
+  },
+  "eval_corpus": {
+    "tokens": 4895335,
+    "documents": 5000,
+    "dtype": "uint32",
+    "tokenizer": "Qwen/Qwen2.5-0.5B",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+    "boundary": "prefix",
+    "spans": 2576278,
+    "eos_id": 151643,
+    "skipped_documents": 0,
+    "normalization": "NFC",
+    "host": "qwen2.5",
+    "tokenizer_sha256": "f884026e05f6dfffe68b72d580b588006d98b3bc0a128bb1ac425c76f7fc438c",
+    "vocab_size": 151665,
+    "models": [
+      "Qwen/Qwen2.5-0.5B"
+    ],
+    "c3_run": "experiments/c3-general-corpus/runs/v2",
+    "holdout_sha256": "7f2462ed8f6eae9b37de050d7f535a9c9908dcc572ea68481c6526c4f6b73ced",
+    "split": "eval"
+  },
+  "linked_entries_in_train_at_min_subtokens": 75080,
+  "data_root": "/home/bhux/data/vsa-llm/c3/wordnet-qwen2.5-v1",
+  "disk_bytes": 743626752,
+  "timings": {
+    "tables_s": 10.033478426979855,
+    "eval_s": 14.698865914018825,
+    "train_s": 151.83138022595085,
+    "cardinality_s": 19.71548230201006
+  },
+  "ontology_sha256": "69838e0f854ac701d997962858182f59bc8bb61b770ebbef557f3ae900564eb6"
+}
