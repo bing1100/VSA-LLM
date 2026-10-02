@@ -44,6 +44,7 @@ devtools:
   forbidden_general_docs: 20000
 real_libraries:
   snapshot_dir: ~/data/vsa-llm/tracks/t2-devtools/real-v1
+  snapshot_sha256: 553d89cdc3a8101eecd47fffc93b36c12e28a5a578a0a74799a8fb4c8cb89fea   # 43,662 symbols, 44,880 units (2026-10-02)
   raw_dir: ~/data/vsa-llm/tracks/t2-devtools/raw
   python_packages: [numpy, scipy, pandas, torch, transformers, sympy, networkx, matplotlib, nltk, requests, jinja2,
                     click, huggingface_hub, PIL, pygments, mpmath, joblib, dateutil, yaml]
@@ -65,6 +66,7 @@ data:
   eval_tokens: 6000000
   contamination_docs: 2000
   presample_tokens: 0          # unused: the holdout is fixed by the track
+  expected_holdout_sha256: 75ee2217be97bd9d5a0f3a86d9bd045c1fd13f348101e2e6d4a5335c185cea72   # frozen 2026-10-02 by --stage freeze, before any build (899 private + 179 real held-out symbols)
   holdout_fraction: 0.10
   holdout_min_count: 5
   general_skip_docs: 0
