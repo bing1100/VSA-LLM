@@ -1,4 +1,8 @@
-"""PubMed baseline XML (gzipped) → abstracts with their chemical lists (read-only streaming parser)."""
+"""PubMed baseline XML (gzipped) → abstracts with their chemical lists, for the T4 chemistry corpus.
+
+A small read-only streaming parser over NLM baseline files (WP-T1 has its own extractor for T1-open);
+files are verified against NCBI's `.md5` companions before use.
+"""
 
 from __future__ import annotations
 

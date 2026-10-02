@@ -13,9 +13,12 @@ Concept = taxonomy category (`gpt:<id>`). Frame edges, in priority order (at mos
 Fillers: category atoms for every category used as a filler, plus token, depth and attribute atoms,
 bounded by `max_atomics` (least-used attributes and tokens are dropped first).
 
-Aliases: the category name, its parts split on "&" / "," / " and " ("Skillets & Frying Pans" →
-"skillets", "frying pans"), singular forms of each, and the names of the finer Shopify categories
-mapped onto it ("Bird Cage Water Dishes" → "Bird Cage Food & Water Dishes"). Single generic words
+Aliases: the category name; below level 2, its parts split on "&" / "," / " and " ("Skillets & Frying
+Pans" → "Skillets", "Frying Pans"; a one-word modifier part takes the head noun: "Liquid & Frozen Eggs" →
+"Liquid Eggs"); the multi-word names of the finer Shopify categories mapped onto it ("Bird Cage Water
+Dishes" → "Bird Cage Food & Water Dishes"); and singular forms of multi-word aliases ("Frying Pan").
+Single-word singulars ("Oranges" → "orange") and single-word Shopify names ("Cotton") are not added —
+they are mostly colours, materials or other words with a general meaning. Single generic words
 ("accessories", "supplies", "parts", …) and aliases shared by more than `max_alias_senses` categories
 are dropped: they carry no category information.
 """
@@ -60,6 +63,24 @@ def name_parts(name: str) -> list[str]:
     """"Skillets & Frying Pans" → ["Skillets", "Frying Pans"]."""
     parts = re.split(r"\s*(?:&|,|\band\b)\s*", name)
     return [p.strip() for p in parts if p.strip()]
+
+
+def alias_forms(name: str, depth: int) -> set[str]:
+    """The name and, below level 2, its "&"/"," parts. A one-word part that is not a plural noun
+    modifies the last part's head ("Liquid & Frozen Eggs" → "Liquid Eggs", "Frozen Eggs"); a plural
+    one stands alone ("Skillets & Frying Pans" → "Skillets", "Frying Pans")."""
+    forms = {name}
+    parts = name_parts(name)
+    if depth <= 2 or len(parts) < 2:
+        return forms
+    head = parts[-1].split()[-1]
+    for part in parts:
+        words = part.split()
+        if len(words) == 1 and part is not parts[-1] and not part.lower().endswith("s") and len(parts[-1].split()) > 1:
+            forms.add(f"{part} {head}")
+        else:
+            forms.add(part)
+    return forms
 
 
 def tokens(name: str) -> list[str]:
@@ -138,11 +159,8 @@ def build_google_product_ontology(path: Path, *, shopify_categories: Path | None
             for t in tokens(ancestor):
                 push("path_token", f"token:{t}")
         frames.append(frame); names.append(f"gpt:{ident}")
-        surfaces = {p[-1]}
-        for part in name_parts(p[-1]):
-            surfaces.add(part)
-        surfaces |= shopify_names.get(" > ".join(p), set())
-        surfaces |= {singular_phrase(s) for s in list(surfaces)}
+        surfaces = alias_forms(p[-1], len(p)) | {n for n in shopify_names.get(" > ".join(p), set()) if " " in n}
+        surfaces |= {singular_phrase(s) for s in list(surfaces) if " " in s}
         alias_sets.append({s for s in surfaces if not (s.lower() in GENERIC or s.lower() in STOP or len(s) < 3)})
     senses: Counter[str] = Counter(a.lower() for aliases in alias_sets for a in aliases)
     aliases = [(a, i) for i, s in enumerate(alias_sets) for a in sorted(s) if senses[a.lower()] <= max_alias_senses]

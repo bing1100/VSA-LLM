@@ -36,7 +36,8 @@ import torch
 import yaml
 from transformers import AutoTokenizer
 
-from vsa_embed.data.corpus import TokenCorpus, build_corpus, concat_corpora, eval_windows
+from vsa_embed.data.concat import concat_corpora
+from vsa_embed.data.corpus import TokenCorpus, build_corpus, eval_windows
 from vsa_embed.experiments.c3_corpus import choose_holdout, iter_texts
 from vsa_embed.provenance import prepare_output_dir, write_run_metadata
 from vsa_embed.span_channel import LINKER_VERSION, AliasTable, alias_subtoken_lengths, cardinality_report
@@ -151,6 +152,17 @@ def _take(texts: Iterator[str], limit: int) -> list[str]:
     return out
 
 
+def build_part(texts: Iterator[str], out_dir: Path, *, table: AliasTable, max_tokens: int, request: dict[str, Any],
+               **build: Any) -> dict[str, Any]:
+    """`build_corpus` with resumption only if the earlier build had the same request (sources and
+    token budget) as well as the same alias table; otherwise the directory is rebuilt."""
+    manifest_path = out_dir / "manifest.json"
+    if manifest_path.exists() and json.loads(manifest_path.read_text()).get("request") != request:
+        manifest_path.unlink()
+    return build_corpus(texts, out_dir, table=table, max_tokens=max_tokens, extra_manifest={"request": request},
+                        reuse=True, **build)
+
+
 def _metadata_scalars(metadata: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in metadata.items() if isinstance(v, (str, int, float, bool)) or v is None}
 
@@ -215,8 +227,9 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     fixed = track.fixed_holdout(ontology)
     if fixed is None:
         presample_dir = data_root / "presample"
-        build_corpus(track.documents("train"), presample_dir, tokenizer_name=tokenizer_name, table=base_table, eos_id=eos,
-                     max_tokens=int(data["presample_tokens"]), workers=workers, vocab_size=vocab_size, reuse=True)
+        build_part(track.documents("train"), presample_dir, table=base_table, max_tokens=int(data["presample_tokens"]),
+                   request={"source": "domain train presample", "max_tokens": int(data["presample_tokens"])},
+                   tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size)
         counts = Counter(TokenCorpus.open(presample_dir).spans["entry"].tolist())
         synthetic_entries_base = {base_table.alias_to_entry[a.lower()] for c in synthetic for a in c.aliases
                                   if a.lower() in base_table.alias_to_entry}
@@ -242,19 +255,25 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     real_heldout_entries = sorted(set(heldout_entries) - set(synthetic_entries))
 
     # 4. corpora.
-    build = dict(tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size, reuse=True)
-    eval_manifest = build_corpus(track.documents("eval"), data_root / "eval", table=full, max_tokens=int(data["eval_tokens"]), **build)
+    build = dict(tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size)
+    eval_manifest = build_part(track.documents("eval"), data_root / "eval", table=full, max_tokens=int(data["eval_tokens"]),
+                               request={"source": "domain eval", "max_tokens": int(data["eval_tokens"])}, **build)
     general_skip, general_eval_docs = int(data["general_skip_docs"]), int(data["general_eval_docs"])
-    eval_general_manifest = build_corpus(iter_texts(general, skip=general_skip, limit=general_eval_docs), data_root / "eval-general",
-                                         table=full, max_tokens=10**12, **build)
-    domain_manifest = build_corpus(track.documents("train"), data_root / "train-domain", table=train_table,
-                                   max_tokens=int(data["train_domain_tokens"]), **build)
+    eval_general_manifest = build_part(iter_texts(general, skip=general_skip, limit=general_eval_docs), data_root / "eval-general",
+                                       table=full, max_tokens=10**12,
+                                       request={"source": "general eval", "shards": general, "skip": general_skip,
+                                                "documents": general_eval_docs}, **build)
+    domain_manifest = build_part(track.documents("train"), data_root / "train-domain", table=train_table,
+                                 max_tokens=int(data["train_domain_tokens"]),
+                                 request={"source": "domain train", "max_tokens": int(data["train_domain_tokens"])}, **build)
     general_tokens = max(0, int(data["train_total_tokens"]) - domain_manifest["tokens"])
     parts = [data_root / "train-domain"]
     general_manifest = None
     if general_tokens > 0:
-        general_manifest = build_corpus(iter_texts(general, skip=general_skip + general_eval_docs), data_root / "train-general",
-                                        table=train_table, max_tokens=general_tokens, **build)
+        general_manifest = build_part(iter_texts(general, skip=general_skip + general_eval_docs), data_root / "train-general",
+                                      table=train_table, max_tokens=general_tokens,
+                                      request={"source": "general train", "shards": general, "skip": general_skip + general_eval_docs,
+                                               "max_tokens": general_tokens}, **build)
         parts.append(data_root / "train-general")
     mix = {"domain_tokens": domain_manifest["tokens"], "general_tokens": general_manifest["tokens"] if general_manifest else 0}
     mix["domain_fraction"] = mix["domain_tokens"] / max(1, mix["domain_tokens"] + mix["general_tokens"])

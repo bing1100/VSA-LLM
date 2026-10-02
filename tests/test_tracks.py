@@ -16,7 +16,7 @@ from vsa_embed.experiments.track_corpus import FEASIBILITY, add_synthetic, feasi
 from vsa_embed.ontologies.chebi import build_chebi_ontology, formula_elements, keep_alias, parse_obo
 from vsa_embed.ontologies.eurovoc import build_eurovoc_ontology, domain_name, mt_name
 from vsa_embed.ontologies.glossary import build_glossary_ontology
-from vsa_embed.ontologies.google_product import build_google_product_ontology, name_parts, singular
+from vsa_embed.ontologies.google_product import alias_forms, build_google_product_ontology, name_parts, singular
 from vsa_embed.span_channel import AliasTable
 from vsa_embed.tracks.common import (RelationTemplates, SyntheticConcept, choice_items, entailment_items, mention_item,
                                      occurrences, write_jsonl)
@@ -250,6 +250,8 @@ def test_google_product_adapter_frames_aliases_and_shopify_attributes(tmp_path: 
                                       "⇒ Home & Garden > Kitchen & Dining > Cookware > Skillets & Frying Pans\n\n"
                                       "→ Home & Garden > Kitchen & Dining > Cookware > Woks\n⇒ Home & Garden > Kitchen & Dining > Cookware > Woks\n")
     assert name_parts("Skillets & Frying Pans") == ["Skillets", "Frying Pans"] and singular("dishes") == "dish"
+    assert alias_forms("Liquid & Frozen Eggs", 5) == {"Liquid & Frozen Eggs", "Liquid Eggs", "Frozen Eggs"}
+    assert alias_forms("Baby & Toddler", 1) == {"Baby & Toddler"}
     onto = build_google_product_ontology(tmp_path / "tax.txt", shopify_categories=tmp_path / "cat.json",
                                          shopify_mapping=tmp_path / "map.txt")
     i = onto.concept_index["gpt:4"]
@@ -257,7 +259,8 @@ def test_google_product_adapter_frames_aliases_and_shopify_attributes(tmp_path: 
     assert {("parent", "category:3"), ("top_category", "category:1"), ("second_category", "category:2"), ("depth", "depth:4"),
             ("name_token", "token:skillet"), ("has_attribute", "attribute:Material"), ("path_token", "token:cookware")} <= edges
     aliases = {a for a, c in onto.alias_pairs if c == i}
-    assert {"Skillets & Frying Pans", "Skillets", "Frying Pans", "Frying Pan", "Skillet", "Grill Pans", "Grill Pan"} <= aliases
+    assert {"Skillets & Frying Pans", "Skillets", "Frying Pans", "Frying Pan", "Grill Pans", "Grill Pan"} <= aliases
+    assert "Skillet" not in aliases                                              # no single-word singulars
     assert not any(a.lower() == "accessories" for a, _ in onto.alias_pairs)      # generic single words dropped
     assert onto.metadata["attributes"]["gpt:6"] == ["Color", "Material"]
 
@@ -320,7 +323,7 @@ def test_eurovoc_adapter_reads_skos_hierarchy_microthesauri_and_domains(tmp_path
 
 
 def test_pubmed_parser_and_md5(tmp_path: Path) -> None:
-    from vsa_embed.data.pubmed import iter_abstracts, verify_md5
+    from vsa_embed.data.pubmed_abstracts import iter_abstracts, verify_md5
     xml = ("<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>1</PMID><Article><ArticleTitle>Aspirin <i>in vivo</i>"
            "</ArticleTitle><Abstract><AbstractText Label='A'>First part.</AbstractText><AbstractText>Second.</AbstractText>"
            "</Abstract><Language>eng</Language></Article><ChemicalList><Chemical><NameOfSubstance UI='D1'>Aspirin"
@@ -348,7 +351,7 @@ def test_legal_definitions_and_product_text() -> None:
     assert product_text(row) == "Lodge Cast Iron Skillet\nBrand: Lodge\n- Pre-seasoned\n- Oven safe\nGreat & durable pan"
 
 
-# -- the builder end to end (T5, tiny) -------------------------------------------------------------
+# -- corpus concatenation and the builder end to end (T5, tiny) -------------------------------------
 
 def _tokenizer_available(name: str) -> bool:
     try:
@@ -357,6 +360,31 @@ def _tokenizer_available(name: str) -> bool:
         return True
     except (OSError, ImportError):
         return False
+
+
+@pytest.mark.skipif(not _tokenizer_available("gpt2"), reason="gpt2 tokenizer not cached")
+def test_concat_corpora_shifts_spans_and_keeps_the_exact_mix(tmp_path: Path) -> None:
+    from vsa_embed.data.concat import concat_corpora
+    from vsa_embed.data.corpus import build_corpus
+    table = AliasTable.from_pairs([("hydroxychloroquine", 0), ("new york", 1)])
+    common = dict(tokenizer_name="gpt2", table=table, eos_id=50256, max_tokens=10_000, batch_texts=4, workers=1)
+    a = build_corpus(["Hydroxychloroquine is a drug."] * 3, tmp_path / "a", **common)
+    b = build_corpus(["They moved to New York."] * 2, tmp_path / "b", **common)
+    joined = concat_corpora([tmp_path / "a", tmp_path / "b"], tmp_path / "ab", extra_manifest={"mix": "x"})
+    corpus = TokenCorpus.open(tmp_path / "ab")
+    assert joined["tokens"] == a["tokens"] + b["tokens"] == len(corpus) and joined["spans"] == a["spans"] + b["spans"]
+    assert [p["tokens"] for p in joined["parts"]] == [a["tokens"], b["tokens"]] and joined["mix"] == "x"
+    assert np.all(np.diff(corpus.spans["inject"]) >= 0)
+    first_b = TokenCorpus.open(tmp_path / "b")
+    assert np.array_equal(corpus.spans["start"][-b["spans"]:], first_b.spans["start"] + a["tokens"])
+    assert np.array_equal(np.asarray(corpus.tokens[a["tokens"]:]), np.asarray(first_b.tokens))
+    assert concat_corpora([tmp_path / "a", tmp_path / "b"], tmp_path / "ab", reuse=True) == joined
+    rebuilt = concat_corpora([tmp_path / "a"], tmp_path / "ab", reuse=True)       # parts changed: rebuilt
+    assert rebuilt["tokens"] == a["tokens"] and len(TokenCorpus.open(tmp_path / "ab")) == a["tokens"]
+    other = AliasTable.from_pairs([("new york", 0)])
+    build_corpus(["x"], tmp_path / "c", **{**common, "table": other})
+    with pytest.raises(ValueError):
+        concat_corpora([tmp_path / "a", tmp_path / "c"], tmp_path / "bad")
 
 
 @pytest.mark.skipif(not _tokenizer_available("gpt2"), reason="gpt2 tokenizer not cached")
@@ -407,3 +435,47 @@ def test_track_builder_end_to_end_on_a_tiny_glossary(tmp_path: Path) -> None:
     names = (tmp_path / "items" / "holdout_concepts.txt").read_text().split("\n")[:-1]
     assert hashlib.sha256("\n".join(sorted(names)).encode()).hexdigest() == record["holdout_sha256"]
     assert summary["feasibility"]["verdict"] in {"feasible", "infeasible"}
+
+
+# -- synthetic zero-shot concepts of the natural-text tracks --------------------------------------
+
+def test_synthetic_compounds_products_and_descriptors_are_new_and_resolvable(tmp_path: Path) -> None:
+    from vsa_embed.tracks.chemistry import ChemistryTrack
+    from vsa_embed.tracks.legal import LegalTrack
+    from vsa_embed.tracks.product import ProductTrack
+    with gzip.open(tmp_path / "chebi.obo.gz", "wt") as handle:
+        handle.write(OBO)
+    chem = ChemistryTrack({"seed": 1, "chebi": {"obo": str(tmp_path / "chebi.obo.gz"), "min_star": 3, "role_budget": 8,
+                                                "max_alias_chars": 120},
+                           "ontology": {"max_atomics": 64, "max_degree": 24}, "synthetic": {"count": 6, "max_substituents": 2}},
+                          tmp_path / "t4")
+    onto = chem.ontology()
+    compounds = chem.synthetic(onto, set())
+    assert compounds and all(c.name.endswith("benzoic acid") for c in compounds)
+    assert not {c.name.lower() for c in compounds} & onto.metadata["all_surface_forms"]
+    for c in compounds:
+        assert ("is_a", "chebi:CHEBI:10") in c.frame and ("has_functional_parent", "chebi:CHEBI:20") in c.frame
+        assert c.meta["fictional_role"] and c.facts["has_role"] == ["a food preservative"]
+        if len(c.meta["substituents"]) == 1:
+            assert int(c.name.split("-")[0]) in (2, 3, 4)          # lowest locants on the symmetric ring
+    add_synthetic(onto, compounds)
+
+    (tmp_path / "tax.txt").write_text(TAXONOMY)
+    product = ProductTrack({"seed": 2, "product": {"taxonomy": str(tmp_path / "tax.txt"), "max_alias_senses": 8},
+                            "ontology": {"max_atomics": 8192, "max_degree": 16}, "synthetic": {"count": 9}}, tmp_path / "t3")
+    product._ontology_cache = build_google_product_ontology(tmp_path / "tax.txt")
+    onto = product.ontology()
+    items = product.synthetic(onto, {"skillet"})
+    assert {c.meta["kind"] for c in items} == {"type_invented", "type_headed", "sku"}
+    assert all(c.frame[0][0] == "parent" and c.facts["top_category"] == ["Home & Garden"] for c in items)
+    add_synthetic(onto, items)
+
+    with zipfile.ZipFile(tmp_path / "ev.zip", "w") as archive:
+        archive.writestr("eurovoc_in_skos_core_concepts.rdf", RDF)
+    legal = LegalTrack({"seed": 3, "legal": {"eurovoc": str(tmp_path / "ev.zip")}, "ontology": {"max_atomics": 8192, "max_degree": 16},
+                        "synthetic": {"count": 4}}, tmp_path / "t6")
+    onto = legal.ontology()
+    descriptors = legal.synthetic(onto, set())
+    assert len(descriptors) == 4 and all(d.facts["domain"] == ["agri-foodstuffs"] for d in descriptors)
+    assert all(("microthesaurus", "mt:6011") in d.frame for d in descriptors)
+    add_synthetic(onto, descriptors)

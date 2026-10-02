@@ -17,9 +17,9 @@ Items:
   title links exactly one category through a multi-character alias; labels are that category's
   level-1 and level-2 ancestors (distant supervision through the linker, so the label is the link's
   category, not a curated product label — ESCI has none);
-- `relevance_probe` (query–product relevance, linear probe): ESCI US "small version" judgements
-  (E/S/C/I), stratified samples of ESCI's own train and test splits, flagged by whether the product
-  title links a held-out category;
+- `relevance_probe` (query–product relevance, linear probe on "Query: {query}\nProduct: {title}"): ESCI
+  US "small version" judgements (E/S/C/I), random samples of ESCI's own train and test splits, flagged
+  by whether the product title links a held-out category;
 - `zeroshot_property`, `zeroshot_entailment`: frame facts of synthetic and held-out categories.
 """
 
@@ -271,7 +271,7 @@ class ProductTrack(Track):
             relevance.append({"id": f"t3-relevance_probe-{len(relevance):06d}", "track": "t3", "task": "relevance_probe",
                               "split": split, "esci_split": row.split, "query_id": int(row.query_id),
                               "query": row.query.strip(), "product_id": row.product_id, "product_title": title,
-                              "text": f"Query: {row.query.strip()}\nProduct: {title}", "label": row.esci_label,
+                              "label": row.esci_label,
                               "linked_concepts": sorted(concepts)})
 
         # 3. zero-shot frame facts (synthetic and held-out categories).

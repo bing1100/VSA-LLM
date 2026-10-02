@@ -35,7 +35,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from ..data.pubmed import iter_abstracts, verify_md5
+from ..data.pubmed_abstracts import iter_abstracts, verify_md5
 from ..ontologies.chebi import build_chebi_ontology, formula_elements
 from ..ontologies.wordnet import FrameOntology
 from ..span_channel import AliasTable, CausalLinker
