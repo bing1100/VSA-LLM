@@ -1,0 +1,167 @@
+{
+  "track": "t3",
+  "documents": {
+    "eval": {
+      "documents": 24336,
+      "chars": 27556868
+    },
+    "train": {
+      "documents": 387946,
+      "chars": 440002958
+    },
+    "us_products": 1215854,
+    "eval_percent": 2,
+    "max_train_chars": 440000000
+  },
+  "ontology": {
+    "source": "/home/bhux/data/vsa-llm/tracks/t3-product/raw/google-taxonomy-with-ids.en-US.txt",
+    "categories": 5595,
+    "max_atomics": 8192,
+    "max_degree": 16,
+    "max_alias_senses": 8,
+    "shopify": true,
+    "dropped_generic_aliases": 3,
+    "concepts": 5895,
+    "atomics": 8192,
+    "relations": 7,
+    "aliases": 28894,
+    "entries": 6151
+  },
+  "holdout": {
+    "concepts": 182,
+    "heldout_entries": 225,
+    "eligible_entries": 1662,
+    "method": "presample",
+    "sha256": "df7acfde37571d70c0e8cdc269b5918d6d7d82dd809c6ef627dc20676645dc62"
+  },
+  "synthetic": {
+    "candidates": 300,
+    "kept": 300,
+    "sha256": "3f0e64f04acf60f4bcb0cb712d987753120720e6773863522d4e85c67b784c92",
+    "entries": 300,
+    "dropped_for_text_hits": 0
+  },
+  "eval_corpus": {
+    "tokens": 3000190,
+    "documents": 10015,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "9f74c89b812db944f79411c24a375d875fa56fd4166b582ca3b9a136fe3626ce",
+    "boundary": "prefix",
+    "spans": 100222,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "request": {
+      "source": "domain eval",
+      "max_tokens": 3000000
+    }
+  },
+  "eval_general_corpus": {
+    "tokens": 2211513,
+    "documents": 2000,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "9f74c89b812db944f79411c24a375d875fa56fd4166b582ca3b9a136fe3626ce",
+    "boundary": "prefix",
+    "spans": 27561,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "request": {
+      "source": "general eval",
+      "shards": [
+        "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet"
+      ],
+      "skip": 0,
+      "documents": 2000
+    }
+  },
+  "train_corpus": {
+    "tokens": 100000369,
+    "documents": 335647,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "6109ed27864ec8c690bc8491cffbd8fdf903caab0658a58c555a8d6e04df02b0",
+    "boundary": "prefix",
+    "spans": 2849272,
+    "eos_id": 0,
+    "skipped_documents": 3,
+    "parts": [
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t3-product/v1/train-domain",
+        "tokens": 100000369,
+        "documents": 335647
+      }
+    ],
+    "mix": {
+      "domain_tokens": 100000369,
+      "general_tokens": 0,
+      "domain_fraction": 1.0
+    }
+  },
+  "mix": {
+    "domain_tokens": 100000369,
+    "general_tokens": 0,
+    "domain_fraction": 1.0
+  },
+  "general_text_spans_by_min_subtokens": {
+    "1": 27561,
+    "2": 2969,
+    "3": 322,
+    "4": 40
+  },
+  "feasibility": {
+    "min_subtokens": null,
+    "verdict": "infeasible",
+    "failed_checks": [
+      "rare_entries",
+      "rare_spans"
+    ],
+    "heldout_locality": {
+      "min_subtokens": 2,
+      "eval_windows": 1024
+    }
+  },
+  "items": {
+    "synthetic_concepts.jsonl": {
+      "rows": 300,
+      "splits": {
+        "synthetic": 300
+      }
+    },
+    "category_probe.jsonl": {
+      "rows": 4864,
+      "splits": {
+        "heldout": 564,
+        "synthetic": 300,
+        "train": 4000
+      }
+    },
+    "relevance_probe.jsonl": {
+      "rows": 12000,
+      "splits": {
+        "heldout": 982,
+        "train": 5661,
+        "unlinked": 5357
+      }
+    },
+    "zeroshot_entailment.jsonl": {
+      "rows": 2892,
+      "splits": {
+        "heldout": 1092,
+        "synthetic": 1800
+      }
+    },
+    "zeroshot_property.jsonl": {
+      "rows": 4338,
+      "splits": {
+        "heldout": 1638,
+        "synthetic": 2700
+      }
+    }
+  },
+  "data_root": "/home/bhux/data/vsa-llm/tracks/t3-product/v1",
+  "ontology_sha256": "3f6e29fdad7de15ff835a5f07ec349ca37fede0d9e79b55ee5e6de6bc9d702f2"
+}

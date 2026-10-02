@@ -25,12 +25,26 @@ terms as aliases, English EU legislation (MultiEURLEX) as the corpus.
    descriptor (`invented`: two invented stems; `headed`: an invented stem + the broader term's head
    word), with broader / top term / microthesaurus / domain / related edges.
 5. **Items**: `eurovoc_probe` (document-level EuroVoc classification, linear probe: the first 600
-   characters of an act with its domains, microthesauri and descriptors; probe-train from MultiEURLEX
-   train, probe-test from its test split), `defined_term_cloze` (definitions extracted from the acts,
+   characters of an act with its domains, microthesauri and descriptors; 2,000 probe-train acts from
+   MultiEURLEX train, 1,000 probe-test acts from its test split), `defined_term_cloze` (definitions extracted from the acts,
    "‘X’ means …", true definition opening vs three others; 2 paraphrases), `zeroshot_property` and
    `zeroshot_entailment` (broader / microthesaurus / domain of synthetic and held-out descriptors).
 
-Results (cardinality, feasibility verdict, item counts): `runs/v1/report.md`.
+## Results (`runs/v1/report.md`)
+
+- Training stream 100.0M SmolLM2 tokens (99.6M EUR-Lex + 0.4M FineWeb-Edu fill); domain evaluation 3.0M
+  tokens of the test acts; general-text locality set 2.2M tokens.
+- Holdout: 10% of the 1,847 eligible entries → 186 descriptors, 189 entries (sha256 `8148fa06fe76929f…`);
+  300 synthetic descriptors (sha256 `6f9243110d1c27ce…`).
+- Cardinality (SmolLM2, 500 evaluation acts): ℓ_min = 2 links 1,602 distinct entries, 27,576 spans,
+  6.2% of tokens, 10.4 distinct entries per 1,024 tokens.
+- **Feasibility: infeasible under the fixed criterion** — the seen-rare stratum is nearly empty
+  (18 entries / 31 spans in 256 windows, 65 / 114 in 1,024 at ℓ_min = 2): 100M tokens of EU law link
+  almost every EuroVoc term that the test acts use ≥ 10 times. The held-out stratum and locality
+  alone are powered at ℓ_min = 2 with the default 256 windows (59 held-out entries, 1,314 spans).
+- Items: `eurovoc_probe` 3,000 (1,014 with a held-out descriptor), `defined_term_cloze` 4,000 rows
+  (2,000 terms × 2 paraphrases; 96 held-out-linked, 1,494 training-linked, 2,410 unlinked),
+  `zeroshot_property` 4,308, `zeroshot_entailment` 2,872.
 
 ## Build
 
@@ -38,3 +52,5 @@ Results (cardinality, feasibility verdict, item counts): `runs/v1/report.md`.
 PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
   --config experiments/t6-legal-regulatory/t6.yaml --output experiments/t6-legal-regulatory/runs/v1
 ```
+
+≈ 7 min from scratch with 3 tokenizer workers, 2.3 GB peak RSS. Outputs in `~/data/vsa-llm/tracks/t6-legal/v1/`.

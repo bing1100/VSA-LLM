@@ -18,7 +18,7 @@ glossary:
   terms: 4000                  # 3,640 training + 360 held-out terms (10%, stratified by Zipf rank)
   zero_shot: 200               # new terms defined only by frames (E5.4), in no document
   heldout_fraction: 0.10
-  zipf: 1.5                    # mention-rate exponent over a random rank order (1.5: ≈ 850 rare, 1,800 mid, 770 frequent training terms)
+  zipf: 1.5                    # mention-rate exponent over a random rank order (1.5 gives 693 rare, 1,979 mid, 866 frequent, 102 unseen training terms)
   eval_uniform_focus: 0.5      # half of the evaluation documents' focus terms uniform over terms (powers the tail strata)
   acronym_fraction: 0.3
   train_chars: 180000000       # ≈ 50M SmolLM2 tokens (3.55 chars/token)

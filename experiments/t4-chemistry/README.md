@@ -47,8 +47,9 @@ compositional, functional groups and elements are natural atomics).
    held-out entries / 1,202 spans, 784 rare entries / 1,048 spans, covered fraction 0.15); ℓ_min = 3
    needs 512 windows, ℓ_min = 4 needs 1,024.
 6. **Items**: `class_role_probe` (IUPAC name in a neutral sentence → frequent direct classes and
-   roles; linear probe; 1,060 train / 136 held-out / 299 synthetic), `property_cloze` (multiple choice
-   over is_a / has_role / functional parent / conjugate / parent hydride / enantiomer; 2 paraphrases),
+   roles; linear probe; 1,069 train / 136 held-out / 299 synthetic), `property_cloze` (multiple choice
+   over is_a / has_role / functional parent / conjugate / parent hydride / enantiomer; 2 paraphrases;
+   chemical entities only, class facts and distractors restricted to superclasses of ≥ 3 entities),
    `zeroshot_property` (3 paraphrases) and `zeroshot_entailment` on synthetic and held-out compounds.
 
 ## Build
@@ -58,5 +59,5 @@ PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
   --config experiments/t4-chemistry/t4.yaml --output experiments/t4-chemistry/runs/v1
 ```
 
-≈ 7 min with 3 tokenizer workers, 3.0 GB peak RSS (main process; each worker holds a ≈ 0.6 GB linker).
+≈ 7 min from scratch (2 min when the corpora are reused) with 3 tokenizer workers, 3.0 GB peak RSS (main process; each worker holds a ≈ 0.6 GB linker).
 Outputs in `~/data/vsa-llm/tracks/t4-chemistry/v1/`.

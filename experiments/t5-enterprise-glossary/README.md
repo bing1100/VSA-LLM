@@ -22,8 +22,8 @@ licence); the general-text half of the training stream is FineWeb-Edu (ODC-By), 
 2. **Corpus.** Wiki/glossary pages, memos, tickets, meeting notes, incident reports, release notes,
    onboarding guides, chat threads and FAQs stating the frame facts in varied templates plus generic
    office prose. Mention rates follow a Zipf law (exponent 1.5 over a random rank order), tuned so the
-   training stream has a rare tail (≈ 850 training terms with 1–9 mentions, 1,800 with 10–99, 770 with
-   ≥ 100). Training stream: 47.1M domain + 52.9M FineWeb-Edu = 100.0M SmolLM2 tokens (domain fraction
+   training stream has a rare tail (of the 3,640 training terms, 693 are linked 1–9 times, 1,979
+   10–99 times, 866 ≥ 100 times and 102 never, at ℓ ≥ 2). Training stream: 47.1M domain + 52.9M FineWeb-Edu = 100.0M SmolLM2 tokens (domain fraction
    0.47). Evaluation documents (3.0M tokens) draw half of their focus terms uniformly over terms, which
    over-samples the tail so the held-out and rare strata are powered; strata are always reported
    separately.

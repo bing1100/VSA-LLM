@@ -1,0 +1,217 @@
+{
+  "track": "t4",
+  "documents": {
+    "pubmed_files": {
+      "pubmed26n1315.xml.gz": {
+        "abstracts": 26349,
+        "kept": 10592
+      },
+      "pubmed26n1316.xml.gz": {
+        "abstracts": 25876,
+        "kept": 10611
+      },
+      "pubmed26n1317.xml.gz": {
+        "abstracts": 26268,
+        "kept": 10651
+      },
+      "pubmed26n1318.xml.gz": {
+        "abstracts": 26141,
+        "kept": 9743
+      },
+      "pubmed26n1319.xml.gz": {
+        "abstracts": 26853,
+        "kept": 10861
+      },
+      "pubmed26n1320.xml.gz": {
+        "abstracts": 25768,
+        "kept": 10359
+      },
+      "pubmed26n1321.xml.gz": {
+        "abstracts": 26699,
+        "kept": 10107
+      },
+      "pubmed26n1322.xml.gz": {
+        "abstracts": 26143,
+        "kept": 10181
+      },
+      "pubmed26n1323.xml.gz": {
+        "abstracts": 26610,
+        "kept": 9637
+      },
+      "pubmed26n1324.xml.gz": {
+        "abstracts": 26713,
+        "kept": 10497
+      },
+      "pubmed26n1325.xml.gz": {
+        "abstracts": 25860,
+        "kept": 9308
+      },
+      "pubmed26n1326.xml.gz": {
+        "abstracts": 25863,
+        "kept": 9642
+      }
+    },
+    "eval": {
+      "documents": 8769,
+      "chars": 8069114,
+      "chebi_entries": 5068,
+      "pubmed_abstracts": 3701
+    },
+    "train": {
+      "documents": 164680,
+      "chars": 221104853,
+      "chebi_entries": 46192,
+      "pubmed_abstracts": 118488
+    }
+  },
+  "ontology": {
+    "source": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/raw/chebi-255.obo.gz",
+    "entities": 218533,
+    "min_star": 3,
+    "max_atomics": 8192,
+    "max_degree": 24,
+    "role_budget": 8,
+    "max_alias_chars": 120,
+    "fillers_replaced_by_ancestor": 35804,
+    "fillers_dropped": 0,
+    "concepts": 62418,
+    "atomics": 8192,
+    "relations": 13,
+    "aliases": 252825,
+    "entries": 67545
+  },
+  "holdout": {
+    "concepts": 429,
+    "heldout_entries": 551,
+    "eligible_entries": 3641,
+    "method": "presample",
+    "sha256": "b58e504f8b060726a6c5b910e494f473ff469b0dabcdbcb22b7c9ea04f39861b"
+  },
+  "synthetic": {
+    "candidates": 300,
+    "kept": 299,
+    "sha256": "629b185b544e1bdf6fe48f66bfee4419e52df442607ade913e977ef1e3e79985",
+    "entries": 299,
+    "dropped_for_text_hits": 1
+  },
+  "eval_corpus": {
+    "tokens": 1971306,
+    "documents": 8769,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a",
+    "boundary": "prefix",
+    "spans": 110518,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "request": {
+      "source": "domain eval",
+      "max_tokens": 3000000
+    }
+  },
+  "eval_general_corpus": {
+    "tokens": 2211513,
+    "documents": 2000,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a",
+    "boundary": "prefix",
+    "spans": 18238,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "request": {
+      "source": "general eval",
+      "shards": [
+        "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet"
+      ],
+      "skip": 0,
+      "documents": 2000
+    }
+  },
+  "train_corpus": {
+    "tokens": 100000929,
+    "documents": 211019,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "819c4623aba59719d6a68269115774ca1d4ddcd37ddf452d8e3ecce2045b6404",
+    "boundary": "prefix",
+    "spans": 2061497,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "parts": [
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/train-domain",
+        "tokens": 50518619,
+        "documents": 164680
+      },
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/train-general",
+        "tokens": 49482310,
+        "documents": 46339
+      }
+    ],
+    "mix": {
+      "domain_tokens": 50518619,
+      "general_tokens": 49482310,
+      "domain_fraction": 0.5051814968638941
+    }
+  },
+  "mix": {
+    "domain_tokens": 50518619,
+    "general_tokens": 49482310,
+    "domain_fraction": 0.5051814968638941
+  },
+  "general_text_spans_by_min_subtokens": {
+    "1": 18238,
+    "2": 3066,
+    "3": 1144,
+    "4": 407
+  },
+  "feasibility": {
+    "min_subtokens": 2,
+    "verdict": "feasible",
+    "eval_windows": 256
+  },
+  "items": {
+    "synthetic_concepts.jsonl": {
+      "rows": 299,
+      "splits": {
+        "synthetic": 299
+      }
+    },
+    "class_role_probe.jsonl": {
+      "rows": 1504,
+      "splits": {
+        "heldout": 136,
+        "synthetic": 299,
+        "train": 1069
+      }
+    },
+    "property_cloze.jsonl": {
+      "rows": 3712,
+      "splits": {
+        "heldout": 1406,
+        "train": 2306
+      }
+    },
+    "zeroshot_entailment.jsonl": {
+      "rows": 2970,
+      "splits": {
+        "heldout": 1176,
+        "synthetic": 1794
+      }
+    },
+    "zeroshot_property.jsonl": {
+      "rows": 4455,
+      "splits": {
+        "heldout": 1764,
+        "synthetic": 2691
+      }
+    }
+  },
+  "data_root": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1",
+  "ontology_sha256": "274539845851980564c4623063ca901cfb4b40b84f260915b2ee3606e916ce8f"
+}
