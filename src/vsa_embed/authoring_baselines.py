@@ -74,25 +74,28 @@ def _subspans(words: list[str], *, from_end: bool) -> Iterable[str]:
             yield " ".join(piece)
 
 
-def _concept_in(phrase: str, candidates: dict[str, Any], *, anchor_end: bool) -> str | None:
+def _concept_in(phrase: str, candidates: dict[str, Any], *, anchor_end: bool,
+                normalize_key: Callable[[str], str] = normalize_alias) -> str | None:
     """The longest candidate among the phrase's 1–3-word sub-spans, nearest the given anchor first
     (the NP slots are up to four words, so determiners and stray words may surround the concept)."""
     words = phrase.split()
     for n in range(min(3, len(words)), 0, -1):
         starts = range(len(words) - n, -1, -1) if anchor_end else range(0, len(words) - n + 1)
         for i in starts:
-            key = normalize_alias(" ".join(words[i:i + n]))
+            key = normalize_key(" ".join(words[i:i + n]))
             if key in candidates:
                 return key
     return None
 
 
-def hearst_extract(text: str, candidates: dict[str, Any], resolve: Callable[[str], Any | None]) -> list[tuple[str, str, str]]:
+def hearst_extract(text: str, candidates: dict[str, Any], resolve: Callable[[str], Any | None], *,
+                   normalize_key: Callable[[str], str] = normalize_alias) -> list[tuple[str, str, str]]:
     """`(candidate, generic relation, filler)` triples found by the patterns in `text`.
 
     The concept side must end with (hyponym/part side before the pattern) or start with (list items
     after it) a candidate surface (normalized keys of `candidates`); the other NP is the longest
-    1–3-word sub-span — nearest the pattern — for which `resolve` returns a filler."""
+    1–3-word sub-span — nearest the pattern — for which `resolve` returns a filler. `normalize_key`
+    maps text to candidate/filler keys (identifier tracks keep underscores)."""
     found: list[tuple[str, str, str]] = []
     for sentence in re.split(r"(?<=[.!?;])\s+", text):
         if len(sentence) > MAX_SENTENCE or not _TRIGGER.search(sentence):
@@ -101,20 +104,21 @@ def hearst_extract(text: str, candidates: dict[str, Any], resolve: Callable[[str
             for match in pattern.finditer(sentence):
                 if concept_group == "list":
                     list_first = match.start("list") < match.start("other")
-                    concepts = [_concept_in(item, candidates, anchor_end=list_first) for item in _split_list(match["list"])]
+                    concepts = [_concept_in(item, candidates, anchor_end=list_first, normalize_key=normalize_key)
+                                for item in _split_list(match["list"])]
                     others = [match["other"]]
                 elif other_group == "list":
-                    concepts = [_concept_in(match["concept"], candidates, anchor_end=True)]
+                    concepts = [_concept_in(match["concept"], candidates, anchor_end=True, normalize_key=normalize_key)]
                     others = _split_list(match["list"])
                 else:
-                    concepts = [_concept_in(match["concept"], candidates, anchor_end=True)]
+                    concepts = [_concept_in(match["concept"], candidates, anchor_end=True, normalize_key=normalize_key)]
                     others = [match["other"]]
                 for concept in filter(None, concepts):
                     for other in others:
                         # the other NP's head is at its end when it precedes the pattern, else at its start
                         before = match.start("other") < match.start(concept_group) if other_group == "other" else False
                         for piece in _subspans(other.split(), from_end=before):
-                            key = normalize_alias(piece)
+                            key = normalize_key(piece)
                             if key != concept and resolve(key) is not None:
                                 found.append((concept, relation, key))
                                 break

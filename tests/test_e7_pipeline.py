@@ -283,7 +283,7 @@ def test_compute_matched_control_adds_the_authoring_flops_as_tokens(e7) -> None:
     data = Path(e7["track"]["data_root"]) / "round1" / "s1"
     cm = json.loads((data / "cm" / "materialized.json").read_text())["compute_matched"]
     flops = sum(e["flops"] for e in cm["ledger"] if e["stage"] in cm["stages"])
-    parameters = max(e["parameters"] for e in cm["ledger"])
+    parameters = next(e["parameters"] for e in cm["ledger"] if e["stage"] == "verification")
     assert cm["extra_tokens"] == int(np.ceil(flops / (4 * parameters)))                 # frozen host: 4N per training token
     assert cm["total_tokens"] == ROUND["round_tokens"] + cm["extra_tokens"]
     run = e7["run"] / "train"

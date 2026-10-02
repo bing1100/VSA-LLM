@@ -234,8 +234,14 @@ class FillerResolver:
 
 def resolver_for(track: dict[str, Any], view: dict[str, Any]) -> FillerResolver:
     if track["kind"] == "devtools":
-        return FillerResolver(view["lexicon"], morphology=False, normalize_key=lambda s: s.strip(" `").lower())
+        return FillerResolver(view["lexicon"], morphology=False, normalize_key=identifier_key)
     return FillerResolver(view["lexicon"])
+
+
+def identifier_key(text: str) -> str:
+    """Key of an identifier-track surface (dev-tools): lowercase, backticks stripped, whitespace → `_`
+    (so a filler that went through `normalize_alias`, which maps `_` to a space, keys back the same)."""
+    return "_".join(text.strip(" `").lower().split())
 
 
 def atom_surface(name: str) -> str:
@@ -275,7 +281,25 @@ def choose_masked(frequency: np.ndarray, entry_concepts: Sequence[Sequence[int]]
     concepts = sorted({c for e in chosen for c in entry_concepts[e]})
     concept_set = set(concepts)
     masked = sorted(e for e, cs in enumerate(entry_concepts) if set(cs) & concept_set and e not in excluded_entries)
-    return {"chosen_entries": sorted(chosen), "concepts": concepts, "masked_entries": masked, "eligible_entries": len(eligible)}
+    return {"chosen_entries": sorted(chosen), "concepts": concepts, "masked_entries": masked, "eligible_entries": len(eligible),
+            "masked_eligible_share": len(set(masked) & set(eligible)) / max(1, len(eligible))}
+
+
+def choose_masked_calibrated(frequency: np.ndarray, entry_concepts: Sequence[Sequence[int]], excluded_entries: set[int], *,
+                             fraction: float, min_count: int, seed: int, iterations: int = 8) -> dict[str, Any]:
+    """`choose_masked` with the draw fraction adjusted so that, after the cascade through shared
+    concepts, `fraction` of the eligible entries are masked (WordNet's union entries otherwise inflate
+    a 20% draw to about a third). Deterministic for a seed; the last draw not above the target wins."""
+    draw, best = fraction, None
+    for _ in range(iterations):
+        result = choose_masked(frequency, entry_concepts, excluded_entries, fraction=draw, min_count=min_count, seed=seed)
+        share = result["masked_eligible_share"]
+        if share <= fraction + 0.005 and (best is None or share > best["masked_eligible_share"]):
+            best = {**result, "draw_fraction": draw}
+        if abs(share - fraction) <= 0.005 or share == 0:
+            break
+        draw = draw * fraction / share
+    return best if best is not None else {**result, "draw_fraction": draw}
 
 
 def wordnet_lexicon(atomic_names: Sequence[str]) -> dict[str, list[int]]:
@@ -327,7 +351,7 @@ def prepare_general(config: dict[str, Any], run: Path) -> dict[str, Any]:
         raise ValueError("the rebuilt C3 alias table differs from the host corpus's")
     heldout = set(int(e) for e in host["heldout_entries"])
     frequency = np.asarray(host["train_frequency"])
-    mask = choose_masked(frequency, full.entry_concepts, heldout, fraction=float(config["mask"]["fraction"]),
+    mask = choose_masked_calibrated(frequency, full.entry_concepts, heldout, fraction=float(config["mask"]["fraction"]),
                          min_count=int(config["mask"]["min_count"]), seed=int(config["seed"]))
     masked = set(mask["masked_entries"])
     names = sorted(ontology.concept_names[c] for e in mask["masked_entries"] for c in full.entry_concepts[e])
@@ -392,7 +416,8 @@ def prepare_general(config: dict[str, Any], run: Path) -> dict[str, Any]:
              "settings": config, "masked_sha256": digest, "c3_run": str(c3_run), "host_root": config["host_root"],
              "documents": {k: [m["first_document"], m["last_document"]] for k, m in manifests.items()}}
     summary = {"masked": {"concepts": len(names), "entries": len(masked), "chosen_entries": len(mask["chosen_entries"]),
-                          "eligible_entries": mask["eligible_entries"], "aliases": len(masked_aliases), "sha256": digest},
+                          "eligible_entries": mask["eligible_entries"], "masked_eligible_share": mask["masked_eligible_share"],
+                          "draw_fraction": mask["draw_fraction"], "aliases": len(masked_aliases), "sha256": digest},
                "base": {"aliases": len(base), "entries": len(set(base.values()))}, "excluded_aliases": len(excluded),
                "c3_heldout_entries": len(heldout), "corpora": manifests, "lexicon_keys": len(lexicon),
                "demonstrations": [d["surface"] for d in demos]}
@@ -404,6 +429,8 @@ def prepare_devtools(config: dict[str, Any], run: Path) -> dict[str, Any]:
     source = Path(config["devtools_root"])
     frames = json.loads((source / "frames.json").read_text())
     docs = [json.loads(line)["text"] for line in (source / "train.jsonl").read_text().splitlines() if line.strip()]
+    if config.get("limit_documents"):
+        docs = docs[:int(config["limit_documents"])]          # smoke runs only
     heldout = set(frames["heldout"])
     names = frames["concepts"]
     joined = "\n".join(docs)
@@ -415,7 +442,7 @@ def prepare_devtools(config: dict[str, Any], run: Path) -> dict[str, Any]:
     masked_names = sorted(names[i] for i in chosen)
     digest = hashlib.sha256("\n".join(masked_names).encode()).hexdigest()
     (run / "masked_concepts.txt").write_text("\n".join(masked_names) + "\n")
-    key = lambda s: s.strip(" `").lower()
+    key = identifier_key
     base = {key(names[i]): i for i in range(len(names)) if i not in masked and i not in heldout}
     excluded = sorted(key(names[i]) for i in heldout)
     lexicon: dict[str, list[int]] = defaultdict(list)
@@ -498,7 +525,7 @@ def read_texts(track: dict[str, Any]) -> list[str]:
 
 def _span_settings(track: dict[str, Any]) -> dict[str, Any]:
     if track["pattern"] == "identifier":
-        return {"pattern": IDENTIFIER, "max_words": 1, "normalize_key": lambda s: s.strip(" `").lower(),
+        return {"pattern": IDENTIFIER, "max_words": 1, "normalize_key": identifier_key,
                 "stopwords": STOPWORDS | {"function", "class", "method", "module", "returns", "takes", "raises"}}
     return {"pattern": WORD, "max_words": int(track["max_words"]), "normalize_key": normalize_alias, "stopwords": STOPWORDS}
 
@@ -529,6 +556,8 @@ def discover(run: Path, host: str, *, device: torch.device, overrides: dict[str,
     view = visible(track)
     exclude = set(view["base"]) | set(view["excluded"])
     texts = read_texts(track)
+    if settings.get("limit_texts"):
+        texts = texts[:int(settings["limit_texts"])]               # smoke runs only (recorded in the settings)
     if model is None:
         model, tokenizer = load_host(host, device)
     started = time.monotonic()
@@ -765,9 +794,12 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
             resolve = resolver_for(track, visible(track))
             mapping = track["hearst_map"]
             lookup = {surfaces[k]: k for k in surfaces}
+            identifier = track["pattern"] == "identifier"
+            key = _span_settings(track)["normalize_key"]
             votes: dict[str, Counter] = defaultdict(Counter)
             for text in texts:
-                for concept, relation, filler in hearst_extract(text, lookup, resolve):
+                text = text.replace("`", "") if identifier else text
+                for concept, relation, filler in hearst_extract(text, lookup, resolve, normalize_key=key):
                     if relation in mapping:
                         votes[concept][(mapping[relation], filler)] += 1
             candidates = {surfaces[k]: _proposal_record(votes.get(surfaces[k], Counter()),
@@ -981,7 +1013,7 @@ def _devtools_gold_edges(track: dict[str, Any], gold_data: dict[str, Any], view:
     label_of = {relation: label for label, relation, _ in track["relations"]}
     out = {}
     for entry, info in gold_data["entries"].items():
-        out[int(entry)] = [(label_of[r], {atom.split(":", 1)[1].lower()}) for r, atom in info["frame"] if r in label_of]
+        out[int(entry)] = [(label_of[r], {identifier_key(atom.split(":", 1)[1])}) for r, atom in info["frame"] if r in label_of]
     return out
 
 
@@ -1179,7 +1211,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from vsa_embed.experiments import e7_round
         return e7_round.main([args.command, "--run", str(args.run), "--device", args.device,
-                              *(["--resume"] if args.resume else []), *rest])
+                              *(["--author", args.author] if args.author else []), *(["--resume"] if args.resume else []), *rest])
     return 0
 
 

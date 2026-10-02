@@ -67,7 +67,7 @@ STUDIES: dict[str, dict[str, Any]] = {
         ],
     },
     # E7.1 (WP-E7): authored edges of concepts that may be new (names, phrases), shown with one usage so
-    # the judge grades the sense the author saw. Rubric: experiments/e7-self-authoring/judge_rubric.md.
+    # the judge grades the sense the author saw. Rubric: `e7_authoring.RUBRIC` (written to <run>/judge/rubric.md).
     "authored_edge_in_context": {
         "schema": {"type": "object", "properties": {"verdict": {"type": "string", "enum": ["true", "partly", "false"]},
                                                      "reason": {"type": "string"}}, "required": ["verdict"]},

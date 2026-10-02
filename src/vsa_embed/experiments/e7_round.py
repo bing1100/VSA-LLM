@@ -70,7 +70,7 @@ ROUND_DEFAULTS: dict[str, Any] = {
     "entigraph": {"writer": "SmolLM2-360M", "per_entity": 4, "max_new_tokens": 192, "temperature": 0.7, "top_p": 0.95,
                   "batch": 16, "share": 0.1, "context_chars": 600},
     "eval": {"first_fraction": 0.5},
-    "cross": {"seed": 1, "condition": "self", "train_tokens": 300_000_000, "size": "50M", "channel_condition": "C5",
+    "cross": {"seed": 1, "condition": "self", "train_tokens": 300_000_000, "run_tokens": None, "size": "50M", "channel_condition": "C5",
               "seeds": [1, 2, 3], "workers": 4},
 }
 AUTHOR = {"self": "consumer", "selfnv": "consumer", "teacher": "teacher", "random": "consumer"}
@@ -564,7 +564,7 @@ def compute_matched(run: Path, seed: int, settings: dict[str, Any]) -> dict[str,
     if verified is None:
         raise FileNotFoundError(f"verify --seed {seed} --author {consumer} must run before the compute-matched control")
     ledger.extend(ComputeLedger.from_json(verified["ledger"]))
-    parameters = max(e["parameters"] for e in ledger.entries)
+    parameters = verified["ledger"][0]["parameters"]            # the round host (it ran the verification)
     trainable = 0.0
     if settings["host_mode"] == "lora":
         state = torch.load(run_dir(run, settings, "base", seed) / "final.pt", weights_only=False, map_location="cpu")["model"]
@@ -795,7 +795,7 @@ def cross_config(run: Path, condition: str, seed: int, settings: dict[str, Any])
                 config[key] = value
     config["model"]["seq_len"] = length = int(settings["seq_len"])
     count = max(1, (len(TokenCorpus.open(root / corpus / "eval")) - length - 1) // length)
-    config["train"]["total_tokens"] = int(settings["cross"]["train_tokens"])
+    config["train"]["total_tokens"] = int(settings["cross"].get("run_tokens") or settings["cross"]["train_tokens"])
     config["train"]["checkpoint_minutes"] = 10
     config["eval"].update(windows=count, save_window_losses=True, reference_strata=str(root / "reference.npz"))
     config["seed"] = seed

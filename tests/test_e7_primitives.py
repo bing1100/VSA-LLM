@@ -106,6 +106,23 @@ def test_concatenate_keeps_whole_documents_and_shifts_matches(match_root: Path, 
     assert mix.matches["token"].size == full.matches["token"].size + 2 * int(inside.sum())
 
 
+def test_masking_cascades_through_shared_concepts_and_is_calibrated() -> None:
+    from vsa_embed.experiments.e7_authoring import choose_masked, choose_masked_calibrated
+    rng = np.random.default_rng(0)
+    # 2,000 entries over 1,200 concepts: many entries share a concept (polysemous union entries)
+    entry_concepts = [tuple(sorted(set(rng.integers(0, 1200, size=rng.integers(1, 3)).tolist()))) for _ in range(2000)]
+    frequency = rng.integers(0, 50, size=2000)
+    excluded = {0, 1, 2}
+    raw = choose_masked(frequency, entry_concepts, excluded, fraction=0.2, min_count=1, seed=3)
+    masked_concepts = set(raw["concepts"])
+    assert all(not set(entry_concepts[e]) & masked_concepts for e in range(2000) if e not in raw["masked_entries"] and e not in excluded)
+    assert not set(raw["masked_entries"]) & excluded
+    assert raw["masked_eligible_share"] > 0.21                                   # the cascade inflates a 20% draw
+    calibrated = choose_masked_calibrated(frequency, entry_concepts, excluded, fraction=0.2, min_count=1, seed=3)
+    assert abs(calibrated["masked_eligible_share"] - 0.2) <= 0.01 and calibrated["draw_fraction"] < 0.2
+    assert calibrated == choose_masked_calibrated(frequency, entry_concepts, excluded, fraction=0.2, min_count=1, seed=3)
+
+
 def test_span_occurrences_skip_stopword_edges() -> None:
     keys = {k for k, _, _ in span_occurrences("The zorblax engine of the farm failed.")}
     assert "zorblax engine" in keys and "zorblax" in keys and "farm" in keys

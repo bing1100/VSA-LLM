@@ -331,24 +331,21 @@ def discover_candidates(model: Any, tokenizer: Any, texts: Sequence[str], device
     `max_occurrences` occurrences (the first ones in corpus order); `excess` subtracts the mean of
     the scored spans with the same subtoken length; the `max_candidates` largest are returned with
     their total `count`."""
-    hashes: list[int] = []
+    from array import array
+    spans = dict(max_words=max_words, pattern=pattern, stopwords=stopwords, normalize_key=normalize_key)
+    hashes = array("q")          # 8 bytes per occurrence (pass 1 counts by hash; the corpus can hold ~10^8 spans)
     for text in texts:
-        hashes.extend(hash(key) for key, _, _ in span_occurrences(text, max_words=max_words, pattern=pattern,
-                                                                  stopwords=stopwords, normalize_key=normalize_key)
-                      if key not in exclude)
-    values, counts = np.unique(np.asarray(hashes, dtype=np.int64), return_counts=True)
+        hashes.extend(hash(key) for key, _, _ in span_occurrences(text, **spans) if key not in exclude)
+    values, counts = np.unique(np.frombuffer(hashes, dtype=np.int64), return_counts=True)
     occurrences_total = len(hashes)
     del hashes
     frequent = dict(zip(values[counts >= min_count].tolist(), counts[counts >= min_count].tolist()))
     surfaces: dict[int, str] = {}
-    places: dict[int, list[tuple[int, int, int]]] = defaultdict(list)
-    for t, text in enumerate(texts):
-        for key, start, end in span_occurrences(text, max_words=max_words, pattern=pattern, stopwords=stopwords,
-                                                normalize_key=normalize_key):
+    for text in texts:                                          # pass 2: the surface of every frequent span
+        for key, _, _ in span_occurrences(text, **spans):
             h = hash(key)
-            if h in frequent and key not in exclude and len(places[h]) < max_occurrences:
-                surfaces.setdefault(h, key)
-                places[h].append((t, start, end))
+            if h in frequent and h not in surfaces and key not in exclude:
+                surfaces[h] = key
     keys = sorted(surfaces, key=lambda h: surfaces[h])
     lengths: dict[int, int] = {}
     for i in range(0, len(keys), 4096):
@@ -356,6 +353,13 @@ def discover_candidates(model: Any, tokenizer: Any, texts: Sequence[str], device
         encoded = tokenizer([" " + surfaces[h] for h in chunk], add_special_tokens=False)["input_ids"]
         lengths.update({h: len(ids) for h, ids in zip(chunk, encoded)})
     keys = [h for h in keys if lengths[h] >= min_subtokens]
+    wanted = set(keys)
+    places: dict[int, list[tuple[int, int, int]]] = defaultdict(list)
+    for t, text in enumerate(texts):                            # pass 3: up to max_occurrences places per candidate
+        for key, start, end in span_occurrences(text, **spans):
+            h = hash(key)
+            if h in wanted and len(places[h]) < max_occurrences and surfaces[h] == key:
+                places[h].append((t, start, end))
     by_text: dict[int, list[tuple[int, int, int]]] = defaultdict(list)
     for h in keys:
         for t, start, end in places[h]:
