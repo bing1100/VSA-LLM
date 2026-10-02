@@ -1,0 +1,113 @@
+experiment: t2-developer-tools
+track: t2
+seed: 20261007
+tokenizer: gpt2
+workers: 3
+items_dir: experiments/t2-developer-tools/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t2-devtools/v1-gpt2
+  general_shards:
+  - ~/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet
+  - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    002_00000.parquet: 547ae182d132c9f0
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+devtools:
+  docs_dir: ~/data/vsa-llm/tracks/t2-devtools/docs-v1
+  libraries: 16
+  typescript_fraction: 0.3
+  modules:
+  - 10
+  - 16
+  classes:
+  - 5
+  - 9
+  functions:
+  - 10
+  - 18
+  methods:
+  - 2
+  - 6
+  exceptions:
+  - 10
+  - 16
+  constants:
+  - 0
+  - 2
+  heldout_fraction: 0.1
+  zero_shot: 600
+  zipf: 1.6
+  zipf_offset: 60
+  niche_libraries: 4
+  niche_weight: 0.01
+  deprecated_fraction: 0.04
+  experimental_fraction: 0.05
+  eval_uniform_focus: 0.5
+  train_chars: 440000000
+  eval_chars: 22000000
+  forbidden_general_docs: 20000
+real_libraries:
+  snapshot_dir: ~/data/vsa-llm/tracks/t2-devtools/real-v1
+  snapshot_sha256: 553d89cdc3a8101eecd47fffc93b36c12e28a5a578a0a74799a8fb4c8cb89fea
+  raw_dir: ~/data/vsa-llm/tracks/t2-devtools/raw
+  python_packages:
+  - numpy
+  - scipy
+  - pandas
+  - torch
+  - transformers
+  - sympy
+  - networkx
+  - matplotlib
+  - nltk
+  - requests
+  - jinja2
+  - click
+  - huggingface_hub
+  - PIL
+  - pygments
+  - mpmath
+  - joblib
+  - dateutil
+  - yaml
+  cpython_docs: python-3.12-docs-text.tar.bz2
+  inventory: python-3.12-objects.inv
+  node_api: node-v20.20.2-api-all.json
+  eval_buckets: 800
+  heldout_fraction: 0.1
+  holdout_min_mentions: 5
+  max_page_chars: 8000
+  max_train_share: 1.0
+  max_eval_share: 0.25
+linker:
+  alias_normalization: identifier
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_tokens: 6000000
+  contamination_docs: 2000
+  presample_tokens: 0
+  expected_holdout_sha256: 75ee2217be97bd9d5a0f3a86d9bd045c1fd13f348101e2e6d4a5335c185cea72
+  holdout_fraction: 0.1
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 5000
+  train_domain_tokens: 150000000
+  train_total_tokens: 300000000
+  min_subtokens: 2
+  cardinality_docs: 2000
+items:
+  train_per_bin: 150
+  relations_per_symbol: 3
+feasibility_strict:
+  heldout_min_entries_5plus: 300
+  heldout_min_occurrences: 2000
+  rare_min_entries: 300
+  rare_min_occurrences: 2000
+  trainer_windows: 1024
+  window_length: 1024
+cardinality_tokenizers:
+- gpt2
+- HuggingFaceTB/SmolLM2-135M
+- Qwen/Qwen2.5-0.5B
