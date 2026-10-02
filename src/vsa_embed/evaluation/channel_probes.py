@@ -169,15 +169,18 @@ def item_statuses(adapter: ModelAdapter, texts: Sequence[str], char_spans: Seque
 # -- alias table --------------------------------------------------------------------------------
 
 def save_alias_table(table: AliasTable, path: Path) -> None:
-    path.write_text(json.dumps({"alias_to_entry": table.alias_to_entry, "entry_concepts": table.entry_concepts,
-                                "holdout": sorted(table.holdout), "sha256": table.digest()}) + "\n")
+    record = {"alias_to_entry": table.alias_to_entry, "entry_concepts": table.entry_concepts,
+              "holdout": sorted(table.holdout), "sha256": table.digest()}
+    if table.normalization != "default":          # identifier-mode tables (T2) record their mode
+        record["normalization"] = table.normalization
+    path.write_text(json.dumps(record) + "\n")
 
 
 def load_alias_table(path: Path) -> AliasTable:
     data = json.loads(Path(path).read_text())
     return AliasTable({k: int(v) for k, v in data["alias_to_entry"].items()},
                       [tuple(int(c) for c in cs) for cs in data["entry_concepts"]],
-                      frozenset(int(c) for c in data.get("holdout", ())))
+                      frozenset(int(c) for c in data.get("holdout", ())), data.get("normalization", "default"))
 
 
 def _holdout_concepts_from_names(ontology: dict[str, Any], candidates: Iterable[Path]) -> tuple[list[int] | None, str | None]:

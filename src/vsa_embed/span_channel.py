@@ -43,6 +43,18 @@ def normalize_alias(text: str) -> str:
     return " ".join(text.replace("_", " ").lower().split())
 
 
+def normalize_identifier_alias(text: str) -> str:
+    """Identifier mode for code symbols: lowercase and collapse whitespace, but keep `_` (and `.`)
+    verbatim, so `fetch_record_batch` and `lib.module.fetch_record_batch` match their occurrences in
+    code. (`normalize_alias` turns `_` into a space, the WordNet lemma convention, so a snake_case
+    alias could never match code.) The linker itself is unchanged: it matches the table's keys."""
+    return " ".join(text.lower().split())
+
+
+# Alias normalization modes of `AliasTable.from_pairs`; "default" is the one every recorded corpus used.
+ALIAS_NORMALIZATIONS = {"default": normalize_alias, "identifier": normalize_identifier_alias}
+
+
 @dataclass
 class AliasTable:
     """Surface forms → link entries; an entry is a set of concepts sharing that surface form.
@@ -54,16 +66,22 @@ class AliasTable:
     alias_to_entry: dict[str, int]
     entry_concepts: list[tuple[int, ...]]
     holdout: frozenset[int] = frozenset()
+    normalization: str = "default"      # key of ALIAS_NORMALIZATIONS used to build the keys (provenance)
 
     @classmethod
     def from_pairs(cls, pairs: Iterable[tuple[str, int]], *, holdout: Iterable[int] = (),
-                   include_holdout: bool = False) -> "AliasTable":
+                   include_holdout: bool = False, normalization: str = "default") -> "AliasTable":
         """Build from (alias, concept) pairs. Unless `include_holdout`, held-out concepts and
-        every alias pointing to them are removed (linker holdout, experiments §0.1)."""
+        every alias pointing to them are removed (linker holdout, experiments §0.1).
+        `normalization` selects the alias normalization (`ALIAS_NORMALIZATIONS`); "identifier"
+        keeps underscores for code symbols (track T2)."""
+        if normalization not in ALIAS_NORMALIZATIONS:
+            raise ValueError(f"unknown alias normalization {normalization!r}; known: {sorted(ALIAS_NORMALIZATIONS)}")
+        normalize = ALIAS_NORMALIZATIONS[normalization]
         held = frozenset(int(c) for c in holdout)
         by_alias: dict[str, set[int]] = {}
         for alias, concept in pairs:
-            key = normalize_alias(alias)
+            key = normalize(alias)
             if key and _WORD.search(key):
                 by_alias.setdefault(key, set()).add(int(concept))
         if not include_holdout:
@@ -78,22 +96,24 @@ class AliasTable:
         entry_concepts = [None] * len(entries)
         for concepts, index in entries.items():
             entry_concepts[index] = concepts
-        return cls(alias_to_entry, entry_concepts, held)
+        return cls(alias_to_entry, entry_concepts, held, normalization)
 
     def without_holdout(self) -> "AliasTable":
         """Training view: drop every alias whose entry contains a held-out concept, keeping the
         entry numbering, so training and evaluation spans share entry ids."""
         kept = {alias: entry for alias, entry in self.alias_to_entry.items()
                 if not set(self.entry_concepts[entry]) & self.holdout}
-        return AliasTable(kept, self.entry_concepts, self.holdout)
+        return AliasTable(kept, self.entry_concepts, self.holdout, self.normalization)
 
     def heldout_entries(self) -> set[int]:
         return {i for i, concepts in enumerate(self.entry_concepts) if set(concepts) & self.holdout}
 
     def digest(self) -> str:
-        payload = json.dumps({"aliases": sorted(self.alias_to_entry.items()),
-                              "entries": self.entry_concepts, "holdout": sorted(self.holdout),
-                              "version": LINKER_VERSION}).encode()
+        record = {"aliases": sorted(self.alias_to_entry.items()), "entries": self.entry_concepts,
+                  "holdout": sorted(self.holdout), "version": LINKER_VERSION}
+        if getattr(self, "normalization", "default") != "default":     # default tables keep their recorded digest
+            record["normalization"] = self.normalization
+        payload = json.dumps(record).encode()
         return hashlib.sha256(payload).hexdigest()
 
     def entry_schedule(self, concept_frames: Sequence[Sequence[tuple[int, int]]]) -> FrameSchedule:
