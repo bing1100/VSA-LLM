@@ -264,6 +264,7 @@ def test_full_suite_is_deterministic_and_reports_heldout_subsets(setup, tmp_path
     assert first["summary"] == second["summary"] and untimed(first) == untimed(second)
     assert cp.items_path(outputs[0]).read_bytes() == cp.items_path(outputs[1]).read_bytes()
     assert set(first["probes"]) == set(cp.PROBES)
+    assert {"pair_probe_accuracy", "relatum_only_accuracy"} <= set(first["probes"]["bless"]["metrics"])
     assert first["model"]["alias_table"]["checks"]["digest"] is True
     tables = cp.load_items(outputs[0])
     assert "heldout" in tables["wsd"]["status"] and "heldout" in tables["bless"]["status"]

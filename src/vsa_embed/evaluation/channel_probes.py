@@ -17,13 +17,14 @@ Probes, in prompting/similarity and linear-probe form where meaningful (§0.11):
   form), SemCor MFS and WordNet first-sense baselines. No gloss prompting: definitions never appear
   in prompts (§0.1).
 - BLESS: 4-way {hyper, coord, mero, random-n} multinomial probe on `[h_x; h_y]` with a
-  concept-disjoint split; prompting: PMI of "The x is a kind of y" against "The thing is a kind of
+  concept-disjoint split, plus a relatum-only control and an interaction-feature probe on
+  `[|h_x − h_y|; h_x ⊙ h_y]` (concatenation lets a probe memorize prototypical relata); prompting: PMI of "The x is a kind of y" against "The thing is a kind of
   y" (per-concept average precision of hypernyms, pooled hyper-vs-rest AUC).
 - HyperLex: Spearman of cosine, of the prompting PMI, and of a ridge probe on `[h_x; h_y]` trained
   on the lexical split (ridge strength chosen on its dev part from a fixed grid).
 
-Every item records the link status of the word the probe reads (`heldout`; `rare`/`mid`/`frequent`
-by the training frequency of the injected entry, as the trainer's strata; `unlinked`), and each
+Every item records the link status of the entry injected at the position the probe reads (`heldout`;
+`rare`/`mid`/`frequent` by its training frequency, as the trainer's strata; `unlinked`), and each
 metric is also reported per status subset (E4.3). Per-item values go to a gzipped sidecar next to
 the output so two runs can be compared item by item (`--compare`, paired bootstrap).
 
@@ -502,6 +503,8 @@ METRICS: dict[str, dict[str, tuple[str, tuple[str, ...], str | None]]] = {
             "mfs_f1": ("mean", ("mfs_correct",), None), "wn1_f1": ("mean", ("wn1_correct",), None)},
     "bless": {"probe_accuracy": ("mean", ("probe_correct",), "test"),
               "probe_macro_f1": ("macro_f1", ("probe_pred", "relation"), "test"),
+              "pair_probe_accuracy": ("mean", ("pair_probe_correct",), "test"),
+              "pair_probe_macro_f1": ("macro_f1", ("pair_probe_pred", "relation"), "test"),
               "prompt_auc": ("auc", ("pmi", "is_hyper"), None)},
     "bless_concepts": {"prompt_map": ("mean", ("ap",), None)},
     "hyperlex": {"cosine_spearman": ("spearman", ("cosine", "gold"), None),
@@ -777,27 +780,33 @@ def probe_bless(adapter: ModelAdapter, root: Path, settings: ProbeSettings, *, d
     words = sorted({r["concept"] for r in rows} | {r["relatum"] for r in rows})
     states, status = word_states(adapter, words)
     index = {w: i for i, w in enumerate(words)}
-    features = torch.cat([states[[index[r["concept"]] for r in rows]], states[[index[r["relatum"]] for r in rows]]], -1).numpy()
+    hx, hy = states[[index[r["concept"]] for r in rows]], states[[index[r["relatum"]] for r in rows]]
     is_test = np.asarray([r["concept"] in test_set for r in rows])
     labels = np.asarray([BLESS_RELATIONS.index(r["relation"]) for r in rows])
-    x_train, x_test = standardize(features[~is_test].astype(np.float64), features[is_test].astype(np.float64))
-    (w, b), = fit_grouped_softmax(torch.from_numpy(x_train).float(), [0] * int((~is_test).sum()), labels[~is_test].tolist(),
-                                  [len(BLESS_RELATIONS)], l2=settings.l2, steps=settings.steps, device=device or "cpu")
-    predicted = (torch.from_numpy(x_test).float() @ w.T + b).argmax(-1).numpy()
-    # Control: the relatum alone (lexical memorization of prototypical hypernyms, Levy et al. 2015).
-    d = states.shape[1]
-    (w_y, b_y), = fit_grouped_softmax(torch.from_numpy(x_train[:, d:]).float(), [0] * int((~is_test).sum()),
-                                      labels[~is_test].tolist(), [len(BLESS_RELATIONS)], l2=settings.l2,
-                                      steps=settings.steps, device=device or "cpu")
-    relatum_only = (torch.from_numpy(x_test[:, d:]).float() @ w_y.T + b_y).argmax(-1).numpy()
+
+    def probe(features: torch.Tensor) -> np.ndarray:
+        x = features.numpy().astype(np.float64)
+        x_train, x_test = standardize(x[~is_test], x[is_test])
+        (w, b), = fit_grouped_softmax(torch.from_numpy(x_train).float(), [0] * len(x_train), labels[~is_test].tolist(),
+                                      [len(BLESS_RELATIONS)], l2=settings.l2, steps=settings.steps, device=device or "cpu")
+        return (torch.from_numpy(x_test).float() @ w.T + b).argmax(-1).numpy()
+
+    predicted = probe(torch.cat([hx, hy], -1))
+    # Controls: the relatum alone (lexical memorization of prototypical hypernyms, Levy et al. 2015),
+    # and WiC-style interaction features, which cannot memorize the relatum by position.
+    relatum_only = probe(hy)
+    interaction = probe(torch.cat([(hx - hy).abs(), hx * hy], -1))
     pmi = template_pmi(adapter, [(r["concept"], r["relatum"]) for r in rows], settings.noun_template, settings.noun_null)
     test_rows = np.flatnonzero(is_test)
     probe_pred: list[str | None] = [None] * len(rows); probe_correct: list[int | None] = [None] * len(rows)
+    pair_pred: list[str | None] = [None] * len(rows); pair_correct: list[int | None] = [None] * len(rows)
     for j, i in enumerate(test_rows):
         probe_pred[i] = BLESS_RELATIONS[predicted[j]]; probe_correct[i] = int(predicted[j] == labels[i])
+        pair_pred[i] = BLESS_RELATIONS[interaction[j]]; pair_correct[i] = int(interaction[j] == labels[i])
     pair_status = [combine_status(status[index[r["concept"]]], status[index[r["relatum"]]]) for r in rows]
     table = {"id": [f"{r['concept']}|{r['relation']}|{r['relatum']}" for r in rows], "relation": [r["relation"] for r in rows],
-             "test": is_test.tolist(), "probe_pred": probe_pred, "probe_correct": probe_correct, "pmi": pmi.tolist(),
+             "test": is_test.tolist(), "probe_pred": probe_pred, "probe_correct": probe_correct,
+             "pair_probe_pred": pair_pred, "pair_probe_correct": pair_correct, "pmi": pmi.tolist(),
              "is_hyper": [r["relation"] == "hyper" for r in rows], "status": pair_status}
     concept_table: dict[str, list[Any]] = {"id": [], "ap": [], "test": [], "status": []}
     for concept in concepts:
@@ -818,13 +827,16 @@ def probe_bless(adapter: ModelAdapter, root: Path, settings: ProbeSettings, *, d
         "majority_accuracy": float(np.mean(labels[is_test] == majority)),
         "relatum_only_accuracy": float(np.mean(relatum_only == labels[is_test])),
         "relatum_only_macro_f1": macro_f1([BLESS_RELATIONS[p] for p in relatum_only], gold_test, BLESS_RELATIONS),
+        "pair_probe_accuracy": float(np.mean(interaction == labels[is_test])),
+        "pair_probe_macro_f1": macro_f1([BLESS_RELATIONS[p] for p in interaction], gold_test, BLESS_RELATIONS),
         "prompt_map": float(np.mean(concept_table["ap"])),
         "prompt_map_test_concepts": float(np.mean([a for a, t in zip(concept_table["ap"], concept_table["test"]) if t])),
         "prompt_auc": roc_auc(pmi, table["is_hyper"]),
         "n_pairs": len(rows), "n_test_pairs": int(is_test.sum()),
     }
     split = {"unit": "concept", "seed": settings.seed, "test_fraction": settings.bless_test_fraction,
-             "test_concepts": test_concepts, "relations": list(BLESS_RELATIONS), "features": "[h_x; h_y]",
+             "test_concepts": test_concepts, "relations": list(BLESS_RELATIONS),
+             "features": {"probe": "[h_x; h_y]", "pair_probe": "[|h_x − h_y|; h_x ⊙ h_y]", "relatum_only": "h_y"},
              "template": settings.noun_template, "null": settings.noun_null}
     return metrics, {"bless": table, "bless_concepts": concept_table}, {"split": split}
 

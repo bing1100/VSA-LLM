@@ -102,15 +102,20 @@ def report(summary: dict[str, Any], references: dict[str, Any]) -> str:
     for row in summary["b8_comparison"]:
         lines.append(f"| {row['host']} | {row['metric']} | {fmt(row['ours'])} | "
                      + " | ".join(f"{fmt(row.get(n))} | {'yes' if row.get(f'{n}_equal') else 'no'}" for n in names) + " |")
+    if "b8_rerun_this_machine" in names:
+        lines += ["", "`b8_committed` was produced on the replaced machine (faulty RAM); R0 found that its CARD-660/RW "
+                  "Spearman and LAMBADA loss reproduce only to within 0.0035 even with B8's own code. "
+                  "`b8_rerun_this_machine` is B8's code re-run here (R0); equality with it is bit-exact."]
     lines += ["", "## New probes", "",
               "| Host | WSD probe F1 | centroid F1 | MFS F1 | WN1 F1 | probe F1 (ambiguous) | MFS F1 (ambiguous) | "
-              "BLESS probe acc | macro-F1 | relatum-only acc | majority | prompt MAP | prompt AUC | "
-              "HyperLex cosine ρ | prompt ρ | probe ρ (test) |", "|---|" + "---:|" * 15]
+              "BLESS probe acc | macro-F1 | relatum-only acc | pair probe acc | pair macro-F1 | majority | prompt MAP | "
+              "prompt AUC | HyperLex cosine ρ | prompt ρ | probe ρ (test) |", "|---|" + "---:|" * 17]
     for host, entry in summary["hosts"].items():
         w, b, h = entry["metrics"]["wsd"], entry["metrics"]["bless"], entry["metrics"]["hyperlex"]
         lines.append(f"| {host} | {fmt(w['probe_f1'])} | {fmt(w['centroid_f1'])} | {fmt(w['mfs_f1'])} | {fmt(w['wn1_f1'])} | "
                      f"{fmt(w['ambiguous']['probe_f1'])} | {fmt(w['ambiguous']['mfs_f1'])} | {fmt(b['probe_accuracy'])} | "
-                     f"{fmt(b['probe_macro_f1'])} | {fmt(b['relatum_only_accuracy'])} | {fmt(b['majority_accuracy'])} | "
+                     f"{fmt(b['probe_macro_f1'])} | {fmt(b['relatum_only_accuracy'])} | {fmt(b['pair_probe_accuracy'])} | "
+                     f"{fmt(b['pair_probe_macro_f1'])} | {fmt(b['majority_accuracy'])} | "
                      f"{fmt(b['prompt_map'])} | {fmt(b['prompt_auc'])} | {fmt(h['cosine_spearman'])} | "
                      f"{fmt(h['prompt_spearman'])} | {fmt(h['probe_spearman'])} |")
     lines += ["", "## Time", "", "| Host | total s | peak GiB | per probe (s) |", "|---|---:|---:|---|"]
@@ -124,7 +129,7 @@ def report(summary: dict[str, Any], references: dict[str, Any]) -> str:
               "that sense; unseen lemma#POS → WordNet first sense (as MFS). Centroid = nearest sense centroid (cosine). "
               "MFS = most frequent SemCor sense, ties by WordNet order.",
               "- BLESS: noun pairs of {hyper, coord, mero, random-n}; 4-way probe on [h_x; h_y], concept-disjoint split "
-              "(30% of the 200 concepts, seed 0); relatum-only control; prompting = PMI of \"The x is a kind of y\" vs "
+              "(30% of the 200 concepts, seed 0); relatum-only control (h_y); pair probe on [|h_x − h_y|; h_x ⊙ h_y]; prompting = PMI of \"The x is a kind of y\" vs "
               "\"The thing is a kind of y\" (per-concept AP of hypernyms; pooled AUC hyper vs rest).",
               "- HyperLex: cosine and PMI (verbs: \"To x is a way to y\" vs \"To do …\") on all 2,616 pairs; ridge on "
               "[h_x; h_y] trained on the lexical split's train part, α from {1, …, 10⁴} on its dev part, Spearman on its test part.",
