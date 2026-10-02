@@ -53,7 +53,7 @@ HOSTS: dict[str, dict[str, Any]] = {
 BASE = {
     "model": {"size": "pretrained", "seq_len": 1024, "lora_rank": 16, "gradient_checkpointing": False},
     "train": {"lr": 1.0e-3, "min_lr_ratio": 0.1, "warmup_tokens": 2_500_000, "weight_decay": 0.1,
-              "log_every": 10, "checkpoint_minutes": 30, "save_trainable_only": True},
+              "log_every": 10, "checkpoint_minutes": 10, "save_trainable_only": True},
     "data": {"min_subtokens": 2, "seed": 1234},
     "eval": {"windows": 1024, "first_tokens": 2_500_000},
     "device": "cuda",

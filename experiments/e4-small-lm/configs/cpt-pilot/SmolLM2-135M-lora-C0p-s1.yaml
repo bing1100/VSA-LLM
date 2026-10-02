@@ -1,0 +1,36 @@
+model:
+  size: pretrained
+  seq_len: 1024
+  lora_rank: 16
+  gradient_checkpointing: false
+  pretrained: HuggingFaceTB/SmolLM2-135M
+  host_mode: lora
+  vocab_size: 49152
+train:
+  lr: 0.001
+  min_lr_ratio: 0.1
+  warmup_tokens: 2500000
+  weight_decay: 0.1
+  log_every: 10
+  checkpoint_minutes: 10
+  save_trainable_only: true
+  micro_batch: 8
+  grad_accum: 16
+  total_tokens: 25000000
+  host_lr: 0.0002
+data:
+  min_subtokens: 2
+  seed: 1234
+  train: /home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/train
+  eval: /home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/eval
+  ontology: /home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt
+eval:
+  windows: 1024
+  first_tokens: 2500000
+  batch: 32
+  save_window_losses: true
+device: cuda
+channel:
+  mode: none
+seed: 1
+experiment: e4-cpt-pilot-SmolLM2-135M-lora-C0p-s1
