@@ -1,0 +1,51 @@
+# T3 product catalogues (E8, task C7): Google Product Taxonomy 2021-09-21 (+ Shopify Standard Product
+# Taxonomy attributes and finer category names mapped onto it) linked into Amazon ESCI US product
+# texts; the domain corpus exceeds 100M tokens, so no general text is mixed in. SmolLM2 tokenizer
+# (continued pretraining of SmolLM2-135M). Build:
+#   PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
+#     --config experiments/t3-product-catalogues/t3.yaml --output experiments/t3-product-catalogues/runs/v1
+experiment: t3-product-catalogues
+track: t3
+seed: 20261003
+tokenizer: HuggingFaceTB/SmolLM2-135M
+workers: 3
+items_dir: experiments/t3-product-catalogues/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t3-product/v1
+  general_shards:              # general text only for the locality eval set (eval-general)
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+product:
+  taxonomy: ~/data/vsa-llm/tracks/t3-product/raw/google-taxonomy-with-ids.en-US.txt          # sha256 30039729880ec5ac…
+  shopify_categories: ~/data/vsa-llm/tracks/t3-product/raw/shopify-taxonomy-3ef0220/categories.json   # c03450e89fb1d3be…
+  shopify_mapping: ~/data/vsa-llm/tracks/t3-product/raw/shopify-taxonomy-3ef0220/shopify_2026-08_to_google_2021-09-21.txt  # 7882e6c48f6f9e8c…
+  products: ~/data/vsa-llm/tracks/t3-product/raw/shopping_queries_dataset_products.parquet   # 25124442d064d64b…
+  examples: ~/data/vsa-llm/tracks/t3-product/raw/shopping_queries_dataset_examples.parquet   # 4a735b693b4a424a…
+  max_alias_senses: 8
+  eval_percent: 2
+  max_train_chars: 440000000   # ≈ 115M SmolLM2 tokens of product text
+synthetic:
+  count: 300                   # 100 each: type_invented, type_headed, sku
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_tokens: 3000000
+  contamination_docs: 2000
+  presample_tokens: 5000000
+  holdout_fraction: 0.10
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 2000
+  train_domain_tokens: 100000000
+  train_total_tokens: 100000000
+  min_subtokens: 2
+  cardinality_docs: 2000
+items:
+  category_probe_train: 4000
+  category_probe_heldout: 4000
+  relevance_train: 12000
+  relevance_test: 6000
+  relations_per_concept: 3
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-135M, gpt2, Qwen/Qwen2.5-0.5B]

@@ -1,0 +1,44 @@
+experiment: t5-enterprise-glossary
+track: t5
+seed: 20261005
+tokenizer: HuggingFaceTB/SmolLM2-135M
+workers: 3
+items_dir: experiments/t5-enterprise-glossary/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t5-glossary/v1
+  general_shards:
+  - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+glossary:
+  terms: 4000
+  zero_shot: 200
+  heldout_fraction: 0.1
+  zipf: 1.5
+  eval_uniform_focus: 0.5
+  acronym_fraction: 0.3
+  train_chars: 180000000
+  eval_chars: 11000000
+  forbidden_general_docs: 20000
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_tokens: 3000000
+  contamination_docs: 2000
+  presample_tokens: 0
+  holdout_fraction: 0.1
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 2000
+  train_domain_tokens: 50000000
+  train_total_tokens: 100000000
+  min_subtokens: 2
+  cardinality_docs: 2000
+items:
+  train_terms_per_frequency_bin: 200
+  relations_per_term: 3
+cardinality_tokenizers:
+- HuggingFaceTB/SmolLM2-135M
+- gpt2
+- Qwen/Qwen2.5-0.5B
