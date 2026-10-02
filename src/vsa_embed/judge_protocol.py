@@ -10,6 +10,8 @@ paraphrases, blinded and position-randomised:
 - `split_card` — do the two usage groups of an M3 split correspond to distinct meanings? yes/no,
   plus a short label for each group.
 - `authored_edge` — is an authored `relation: filler` edge true of the concept? true / partly / false.
+- `authored_edge_in_context` (E7.1) — the same question with one usage of the concept shown, for
+  self-authored concepts without gold (new names and phrases).
 
 Calibration: before any study, the judge grades ontology-derived items with known answers
 (WordNet hypernym pairs vs random pairs for `neighbours`; gold edges vs corrupted edges for
@@ -62,6 +64,20 @@ STUDIES: dict[str, dict[str, Any]] = {
         "prompts": [
             "Concept: {concept}\nClaimed fact: {relation} → {filler}\nIs the claimed fact true of the concept? Answer true, partly or false.",
             "Is it correct that \"{concept}\" has the relation \"{relation}\" to \"{filler}\"? Reply true, partly, or false.",
+        ],
+    },
+    # E7.1 (WP-E7): authored edges of concepts that may be new (names, phrases), shown with one usage so
+    # the judge grades the sense the author saw. Rubric: experiments/e7-self-authoring/judge_rubric.md.
+    "authored_edge_in_context": {
+        "schema": {"type": "object", "properties": {"verdict": {"type": "string", "enum": ["true", "partly", "false"]},
+                                                     "reason": {"type": "string"}}, "required": ["verdict"]},
+        "prompts": [
+            "You are checking facts in an automatically built ontology.\nUsage: \"{context}\"\nConcept (as used above): {concept}\n"
+            "Claimed fact: {concept} — {relation} — {filler}\n"
+            "Is the claimed fact true of the concept in this sense? Answer true (correct and specific enough to be useful), "
+            "partly (roughly right but too vague, or only sometimes true) or false (wrong, or the concept is not meaningful).",
+            "Text: \"{context}\"\nIn this text, \"{concept}\" is used as a concept. Someone claims: \"{concept}\" {relation} "
+            "\"{filler}\". Reply true if that is correct, partly if it is only roughly or sometimes correct, false if it is wrong.",
         ],
     },
 }
