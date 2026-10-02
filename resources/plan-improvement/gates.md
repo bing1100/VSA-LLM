@@ -59,3 +59,20 @@ Env `vsa-repro`: Python 3.12.4, torch 2.11.0+cu128, transformers 4.54.0, numpy 2
 **Judge harness note (C5 v2).** v1 used lean `claude -p --tools ""`; v2 used Claude Code subagents with the default system prompt. Agreement numbers are comparable, individual verdicts are not. Both harnesses pass calibration, so later studies may use either; each study records its harness (see [execution.md](execution.md)).
 
 **Author decisions of 2026-10-02.** T1 runs on open MeSH + PubMed (labelled open-clinical) until SNOMED CT / UMLS / MIMIC files are supplied; a small S0 sanity pilot (≈ 6 GPU-h) runs before the committed E4 blocks; G6 escalation still needs the author's approval. See [execution.md](execution.md).
+
+## D2 (E2) — mapping × operator frontier on frozen GPT-2 anchors (2026-10-02)
+
+**Inputs.** `experiments/e2-mapping-operator-frontier/runs/v2/` (bhux-tiny, commit `57e4e23`), WordNet and MeSH 2026, 6,000 concepts each, node-disjoint test, 3 seeds, 7 mapping × 7 operator cells plus shuffled-label controls.
+
+**Pre-registered gate (experiments.md E2).** M2-induced transfers at least as well as feature salience and beats binary; the best operator is carried to E4, and a tie with `random_fixed` is recorded for C8 to decide.
+
+**Outcome.**
+- Induced vs salience (test MRR): MeSH +0.0065 [−0.0021, +0.0151], WordNet +0.0023 [−0.0057, +0.0102] → **non-inferior, not superior**. Induced vs binary: MeSH +0.0062 [−0.0032, +0.0156], WordNet +0.0028 [−0.0084, +0.0140] → **"beats binary" fails**.
+- Validation-selected cell: MeSH `induced_k4 / diagonal`, WordNet `binary / low_rank_tied`. **No operator separates from `random_fixed:hrr` or `untyped`** (selected − random_fixed: MeSH −0.0001 [−0.0054, +0.0052], WordNet −0.0015 [−0.0094, +0.0064]).
+- Relation labels carry signal: true − shuffled labels is positive for every family, with CIs above zero for several (e.g. WordNet `hrr` +0.0109 [+0.0042, +0.0176]; MeSH `hrr_identity`, `low_rank_tied`, `random_fixed:hrr`, `untyped`).
+- Absolute fit to frozen anchors stays poor (test MRR 0.03–0.08; variance explained < 0), as in 01c.
+
+**Decisions.**
+1. E2 gate: partial pass (non-inferior to salience; does not beat binary). Recorded, not a stop rule.
+2. **E3 operator: `hrr_identity`.** The WordNet validation pick `low_rank_tied` cannot be used, because M3 relation splitting needs a vector-per-relation family; `hrr_identity` is the best such family on WordNet validation (0.0595 vs 0.0596 for the pick, within noise).
+3. **E4 (provisional, finalized at G2):** frozen-anchor experiments do not distinguish operators, so the E4 composition operator stays `hrr` (the family the program is about, and what the S0 pilot uses), with induced rank k = 4 for the attentive mapping, and the question is left to the E4 C8 operator ablation (`hrr`, `diagonal`, `low_rank`, `bounded_residual`, `random_fixed`, `untyped`). Per tasks.md rule 7, reports say "compositional parameter sharing" unless C8 separates `hrr` from `random_fixed`.

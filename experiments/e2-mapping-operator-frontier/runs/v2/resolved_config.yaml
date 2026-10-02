@@ -1,0 +1,30 @@
+experiment: e2-frontier
+host: gpt2
+families:
+- wordnet
+- mesh
+mesh_path: ~/data/vsa-llm/mesh/desc2026.gz
+selection_seed: 5
+max_concepts: 6000
+max_atomics: 8192
+dimension: 256
+steps: 600
+batch: 1024
+learning_rate: 0.01
+budgets:
+- 0.25
+- 0.5
+- 1.0
+operators:
+- hrr
+- hrr_identity
+- diagonal
+- low_rank_tied
+- orthogonal
+- random_fixed:hrr
+- untyped
+primary_mapping: induced_k8
+seeds:
+- 11
+- 22
+- 33
