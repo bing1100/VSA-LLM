@@ -1,0 +1,86 @@
+{
+  "track": "open-clinical (MeSH + PubMed)",
+  "build": "experiments/t1-open-clinical/runs/slice-v1",
+  "provisional": true,
+  "holdout_sha256": "fd4244eae86a54d13bfaffa69b95848e1a7a002072d6ee048344af88c2a1cf29",
+  "alias_table_sha256": "6aa8e7a73b2060a1256d4e5a4a6f7f586bfcff535bdaa15477ccac277e4a4f3d",
+  "mesh_tree_probe": {
+    "file": "mesh_tree_probe.jsonl",
+    "sha256": "5e605f8072c9ab91d3a82322b40992758acd1bc91f6f8b6f734452c314f5c642",
+    "items": 2000,
+    "by_split": {
+      "test_heldout": 800,
+      "test_seen": 231,
+      "train": 969
+    },
+    "single_category": 1721,
+    "labels_single_category": {
+      "A": 138,
+      "B": 173,
+      "C": 327,
+      "D": 471,
+      "E": 171,
+      "F": 79,
+      "G": 150,
+      "H": 28,
+      "I": 28,
+      "J": 22,
+      "K": 1,
+      "L": 26,
+      "M": 19,
+      "N": 60,
+      "Z": 28
+    },
+    "categories": {
+      "A": "Anatomy",
+      "B": "Organisms",
+      "C": "Diseases",
+      "D": "Chemicals and Drugs",
+      "E": "Analytical, Diagnostic and Therapeutic Techniques, and Equipment",
+      "F": "Psychiatry and Psychology",
+      "G": "Phenomena and Processes",
+      "H": "Disciplines and Occupations",
+      "I": "Anthropology, Education, Sociology, and Social Phenomena",
+      "J": "Technology, Industry, and Agriculture",
+      "K": "Humanities",
+      "L": "Information Science",
+      "M": "Named Groups",
+      "N": "Health Care",
+      "V": "Publication Characteristics",
+      "Z": "Geographicals"
+    },
+    "readout": "hidden state at the alias's last subtoken (injection position) in the context sentence",
+    "contexts": "pointers (PMID, character offsets, sentence sha256) into the extracted PubMed parquet; t1_items.resolve_contexts fills in the sentence (no abstract text is committed)",
+    "probe": "multinomial logistic regression on single-category train items; accuracy on test_seen and test_heldout; paired bootstrap between conditions"
+  },
+  "pubmedqa": {
+    "file": "pubmedqa_labeled.jsonl",
+    "sha256": "c517c57919b2c1496f2eb9c9a5198f38e7e8da49152d009f5db37e4591916c14",
+    "items": 1000,
+    "official_test": 500,
+    "answers": {
+      "maybe": 110,
+      "yes": 552,
+      "no": 338
+    },
+    "source": "huggingface.co/datasets/qiaojin/PubMedQA@9001f2853fb87cab8d220904e0de81ac6973b318 (pqa_labeled/train-00000-of-00001.parquet), MIT licence; official test ids from https://raw.githubusercontent.com/pubmedqa/pubmedqa/1cbae8e92f72f20c8d3747cbb3bf5bc53554d997/data/test_ground_truth.json",
+    "context": "joined from the pinned parquet by t1_items.pubmedqa_with_context (sha256-verified)",
+    "prompt": "{context}\nQuestion: {question}\nAnswer:",
+    "candidates": [
+      " yes",
+      " no",
+      " maybe"
+    ],
+    "overlap_with_training_pmids": 0
+  },
+  "rare_neighbours": {
+    "file": "rare_neighbours.jsonl",
+    "sha256": "411687059a4755b249d354ae416d9b6d089fdd923d0a73c72f7ddae1b82fa94c",
+    "items": 40,
+    "preregistration": "rare_neighbours_preregistration.json"
+  },
+  "not_built": {
+    "bioasq": "requires registration (not openly downloadable)",
+    "mimic_icd_coding": "MIMIC-IV not available (author decision 2026-10-02: reported as not run)"
+  }
+}

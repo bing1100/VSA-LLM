@@ -1,0 +1,21 @@
+# T1-open slice build (testing, ≈ 20M GPT-2 tokens): identical to t1.yaml in everything that decides the holdout
+# (ontology, alias policy, PubMed files and eval split, mix, pre-sample, seed), so it freezes the same holdout;
+# smaller training corpora and general/mixed evaluation, own data root (corpora of a different budget are never reused).
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1_open_corpus --config experiments/t1-open-clinical/t1-slice.yaml --output experiments/t1-open-clinical/runs/slice-v1
+extends: t1.yaml
+paths:
+  data_root: ~/data/vsa-llm/t1/mesh-pubmed-gpt2-slice
+data:
+  train_tokens: 3000000
+  reference_train_tokens: 300000000   # rare-stratum feasibility refers to the full build: reported as pending here
+  eval_pubmed_docs: 15000             # first 15,000 of the ≈ 39k-abstract pool: held-out counts are a lower bound
+  eval_general_docs: 1000
+  eval_mix_tokens: 1500000
+hosts:
+  - name: smollm2
+    tokenizer: HuggingFaceTB/SmolLM2-360M
+    train_tokens: 1500000
+    reference_train_tokens: 130000000
+    eval_pubmed_docs: 2000
+    eval_general_docs: 300
+    eval_mix_tokens: 800000
