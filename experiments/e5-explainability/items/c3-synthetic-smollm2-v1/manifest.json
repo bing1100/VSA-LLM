@@ -1,0 +1,47 @@
+{
+  "schema": "e5-zeroshot-items/1",
+  "scenario": "c3_synthetic",
+  "contamination_free": true,
+  "description": "C3 held-out WordNet concepts under invented names (frames of held-out entries)",
+  "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+  "ontology_alias_sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+  "alias_table": {
+    "source": "wordnet",
+    "holdout_names": "experiments/c3-general-corpus/runs/v1/holdout_concepts.txt",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 147306,
+    "sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15"
+  },
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "min_subtokens": 2,
+  "seed": 0,
+  "max_concepts": 400,
+  "distractors": 4,
+  "definitions": "wordnet",
+  "corpus_tests": false,
+  "synthetic_aliases": true,
+  "null_surface": "thing",
+  "checks": {
+    "names": 400,
+    "rejected_candidates": 0,
+    "checked_against": [
+      "wordnet lemmas",
+      "alias table words",
+      "tokenizer vocabulary",
+      "contamination texts"
+    ],
+    "contamination_chars": 113801532
+  },
+  "selection": "held-out single-concept noun/verb entries whose shortest alias has \u2265 \u2113_min subtokens; seeded uniform sample (identical for c3_heldout and c3_synthetic at equal seed and size)",
+  "counts": {
+    "concepts": 400,
+    "items": 1743,
+    "property": 968,
+    "entailment": 775
+  }
+}
