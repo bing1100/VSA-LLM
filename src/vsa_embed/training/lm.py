@@ -11,6 +11,19 @@ a span); `after` (the 8 tokens after a span) and its splits by entry status — 
 (held-out concepts, never linked in training), `after_rare` / `after_mid` / `after_frequent`
 (training frequency 1–9 / 10–99 / ≥ 100) — and by span length (`after_len1`, `after_len2`,
 `after_len3plus`).
+
+Continued pretraining of pretrained hosts (`model.pretrained`, E4.6) adds optional keys, read with
+defaults so that from-scratch configs resolve exactly as before:
+
+- `train.eval_only` (false): evaluate without training and log the result at every evaluation point
+  (C0' on a frozen host, which has no trainable parameters).
+- `train.host_lr` (null): learning rate of host parameters (LoRA adapters, or a fully trained host)
+  when it should differ from `train.lr` (which then applies to the channel only).
+- `train.save_trainable_only` (false): checkpoints and `final.pt` hold trainable parameters plus the
+  channel's state, not the frozen host weights (reloaded from the hub id); see `load_final`.
+
+For pretrained hosts the corpora are checked against the host: token ids must fit its embedding
+table, and a corpus that records its tokenizer fingerprint (host corpora do) must match the host's.
 """
 
 from __future__ import annotations
@@ -30,7 +43,7 @@ from transformers import GPT2Config, GPT2LMHeadModel
 
 from ..compose import FrameComposer, FrameSchedule
 from ..context import CausalLocalContext
-from ..data.corpus import TokenCorpus, collate_windows, eval_windows, sample_batch
+from ..data.corpus import TokenCorpus, collate_windows, eval_windows, sample_batch, tokenizer_fingerprint
 from ..developmental import DevelopmentalConfig, DevelopmentalDictionary
 from ..integrations.transformers import ChannelLM
 from ..provenance import prepare_output_dir, write_run_metadata
@@ -202,11 +215,75 @@ def evaluate(model: ChannelLM, corpus: TokenCorpus, starts: list[int], config: d
             for name in sums}
 
 
+def check_host_corpora(config: dict[str, Any], base: torch.nn.Module, corpora: tuple[TokenCorpus, ...]) -> None:
+    """Refuse corpora tokenized for another host: ids must fit the host's embedding table, and a
+    recorded tokenizer fingerprint (host corpora record one) must equal the host tokenizer's."""
+    rows = base.get_input_embeddings().weight.shape[0]
+    fingerprint = None
+    for corpus in corpora:
+        recorded = corpus.manifest.get("tokenizer_sha256")
+        if recorded is not None:
+            if fingerprint is None:
+                from transformers import AutoTokenizer
+                fingerprint = tokenizer_fingerprint(AutoTokenizer.from_pretrained(config["model"]["pretrained"], local_files_only=True))
+            if recorded != fingerprint:
+                raise ValueError(f"corpus tokenized with {corpus.manifest.get('tokenizer')}, not the tokenizer of "
+                                 f"{config['model']['pretrained']}")
+        largest = int(corpus.tokens.max()) if len(corpus) else -1
+        if largest >= rows:
+            raise ValueError(f"corpus token id {largest} ≥ {rows} embedding rows of {config['model']['pretrained']}")
+
+
+def _host_lr_groups(trainable: list[tuple[str, torch.nn.Parameter]], embedding_names: tuple[str, ...],
+                    train_cfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parameter groups with host parameters (names under `model.`) at `host_lr` via `lr_scale`."""
+    groups = []
+    for host in (False, True):
+        for decayed in (True, False):
+            params = [p for n, p in trainable if n.startswith("model.") == host
+                      and (p.ndim >= 2 and not any(e in n for e in embedding_names)) == decayed]
+            if params:
+                group = {"params": params, "weight_decay": train_cfg["weight_decay"] if decayed else 0.0}
+                if host:
+                    group["lr_scale"] = float(train_cfg["host_lr"]) / float(train_cfg["lr"])
+                groups.append(group)
+    return groups
+
+
+def _evaluate_only(model: ChannelLM, config: dict[str, Any], output_dir: Path, eval_corpus: TokenCorpus,
+                   frequency: np.ndarray | None, heldout: set[int], device: torch.device,
+                   git_at_start: dict[str, Any] | None) -> dict[str, Any]:
+    """C0' on a frozen host: one evaluation, logged at every point of the run's evaluation schedule
+    (marked `eval_only`), so its curve lines up with the trained conditions'."""
+    seq_len, train_cfg = config["model"]["seq_len"], config["train"]
+    tokens_per_step = seq_len * train_cfg["micro_batch"] * train_cfg["grad_accum"]
+    total_steps = max(1, train_cfg["total_tokens"] // tokens_per_step)
+    schedule = eval_token_schedule(config["eval"]["first_tokens"], total_steps * tokens_per_step)
+    starts = eval_windows(eval_corpus, count=config["eval"]["windows"], length=seq_len)
+    results = evaluate(model, eval_corpus, starts, config, frequency, heldout, device)
+    # Same row format as a trained run's evaluations, at the step where that run evaluates each point.
+    rows = [{"type": "eval", "step": -(-tokens // tokens_per_step), "tokens": tokens, "stratum": stratum, **value,
+             "eval_only": True} for tokens in [0, *schedule] for stratum, value in results.items()]
+    (output_dir / "metrics.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    torch.save({"model": model_state(model, True), "config": config, "composer_schedule": _schedule_state(model.channel),
+                "trainable_only": True, "eval_only": True}, output_dir / "final.pt")
+    if not (output_dir / "manifest.json").exists():
+        write_run_metadata(output_dir, config, git_at_start=git_at_start, device=device,
+                           parameters=sum(p.numel() for p in model.parameters()),
+                           channel_parameters=sum(p.numel() for p in model.channel.parameters()) if model.channel else 0,
+                           steps=0, tokens_per_step=tokens_per_step, eval_only=True)
+    return {"steps": 0, "tokens": 0, "eval_only": True}
+
+
 def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> dict[str, Any]:
     config = resolve_config(config)
     checkpoint_path = output_dir / "checkpoint.pt"
+    eval_only = bool(config["train"].get("eval_only", False))
+    if eval_only and resume and (output_dir / "final.pt").exists():
+        return {"steps": 0, "tokens": 0, "eval_only": True}
     git_at_start = None
-    if not (resume and checkpoint_path.exists()):
+    # An interrupted evaluation-only run has no checkpoint; it restarts in place.
+    if not (resume and (checkpoint_path.exists() or (eval_only and output_dir.exists()))):
         git_at_start = prepare_output_dir(output_dir)
         (output_dir / "resolved_config.yaml").write_text(yaml.safe_dump(config, sort_keys=False))
     device = torch.device(config["device"] if torch.cuda.is_available() else "cpu")
@@ -217,21 +294,28 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     heldout = set(ontology["heldout_entries"]) if ontology else set()
     frequency = np.asarray(ontology["train_frequency"]) if ontology else None
     base = build_model(config)
+    if config["model"]["pretrained"]:
+        check_host_corpora(config, base, (corpus, eval_corpus))
     width = base.get_input_embeddings().weight.shape[1]
     channel, context = build_channel(config, ontology, width)
     if channel is not None and ontology is not None:
         channel.set_unseen(ontology["heldout_entries"])
     model = ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if config["model"]["pretrained"] else "train",
                       lora_rank=int(config["model"]["lora_rank"])).to(device)
+    train_cfg = config["train"]
+    trainable_only = bool(train_cfg.get("save_trainable_only", False))
+    if eval_only:
+        return _evaluate_only(model, config, output_dir, eval_corpus, frequency, heldout, device, git_at_start)
     trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
     embedding_names = ("wte", "wpe", "embed_tokens")
     decay = [p for n, p in trainable if p.ndim >= 2 and not any(e in n for e in embedding_names)]
     no_decay = [p for n, p in trainable if not (p.ndim >= 2 and not any(e in n for e in embedding_names))]
     if not decay and not no_decay:
-        raise ValueError("no trainable parameters (frozen host without a channel?)")
-    train_cfg = config["train"]
-    optimizer = torch.optim.AdamW([{"params": decay, "weight_decay": train_cfg["weight_decay"]},
-                                   {"params": no_decay, "weight_decay": 0.0}], lr=train_cfg["lr"],
+        raise ValueError("no trainable parameters (frozen host without a channel? use train.eval_only)")
+    groups = [{"params": decay, "weight_decay": train_cfg["weight_decay"]}, {"params": no_decay, "weight_decay": 0.0}]
+    if train_cfg.get("host_lr") is not None:
+        groups = _host_lr_groups(trainable, embedding_names, train_cfg)
+    optimizer = torch.optim.AdamW(groups, lr=train_cfg["lr"],
                                   betas=(train_cfg["beta1"], train_cfg["beta2"]), fused=device.type == "cuda")
     tracker = None
     if channel is not None and channel.composer is not None and config["channel"]["developmental"]:
@@ -251,7 +335,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         state = torch.load(checkpoint_path, weights_only=False, map_location="cpu")
         if tracker is not None and state.get("composer_schedule") is not None:
             _restore_growth(channel, tracker, state, optimizer)
-        model.load_state_dict(state["model"])
+        load_model_state(model, state["model"], trainable_only=bool(state.get("trainable_only", False)))
         optimizer.load_state_dict(state["optimizer"])
         step, evaluated = state["step"], set(state["evaluated"])
         torch.set_rng_state(state["rng_cpu"])
@@ -277,7 +361,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     while step < total_steps:
         lr = _lr(step, total_steps, warmup_steps, train_cfg["lr"], train_cfg["min_lr_ratio"])
         for group in optimizer.param_groups:
-            group["lr"] = lr
+            group["lr"] = lr * group.get("lr_scale", 1.0)
         if tracker is not None:
             tracker.begin()
         total_loss = 0.0
@@ -314,14 +398,18 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
             run_eval(max(due)); evaluated.update(due)
         if train_cfg.get("stop_after_steps") and step == int(train_cfg["stop_after_steps"]) and step < total_steps:
             # Testing hook: simulate an interruption right after a checkpoint.
-            _save_checkpoint(checkpoint_path, model, optimizer, step, evaluated, channel, tracker, device)
+            _save_checkpoint(checkpoint_path, model, optimizer, step, evaluated, channel, tracker, device,
+                             trainable_only=trainable_only)
             return {"steps": step, "tokens": tokens, "interrupted": True}
         if time.monotonic() - last_checkpoint > 60 * train_cfg["checkpoint_minutes"]:
-            _save_checkpoint(checkpoint_path, model, optimizer, step, evaluated, channel, tracker, device)
+            _save_checkpoint(checkpoint_path, model, optimizer, step, evaluated, channel, tracker, device,
+                             trainable_only=trainable_only)
             last_checkpoint = time.monotonic()
-    _save_checkpoint(checkpoint_path, model, optimizer, step, evaluated, channel, tracker, device)
-    torch.save({"model": model.state_dict(), "config": config,
-                "composer_schedule": _schedule_state(channel)}, output_dir / "final.pt")
+    _save_checkpoint(checkpoint_path, model, optimizer, step, evaluated, channel, tracker, device,
+                     trainable_only=trainable_only)
+    torch.save({"model": model_state(model, trainable_only), "config": config,
+                "composer_schedule": _schedule_state(channel), **({"trainable_only": True} if trainable_only else {})},
+               output_dir / "final.pt")
     if tracker is not None:
         (output_dir / "cards.json").write_text(json.dumps(tracker.cards, indent=2, default=str) + "\n")
     if not (output_dir / "manifest.json").exists():
@@ -330,6 +418,54 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                            channel_parameters=sum(p.numel() for p in channel.parameters()) if channel else 0,
                            steps=total_steps, tokens_per_step=tokens_per_step)
     return {"steps": step, "tokens": step * tokens_per_step}
+
+
+def model_state(model: ChannelLM, trainable_only: bool = False) -> dict[str, torch.Tensor]:
+    """`model.state_dict()`, or (trainable_only) without the frozen host weights: the host's trainable
+    parameters (LoRA adapters) and everything outside the host (channel, context, their buffers)."""
+    state = model.state_dict()
+    if not trainable_only:
+        return state
+    trainable = {name for name, p in model.named_parameters() if p.requires_grad}
+    return {k: v for k, v in state.items() if not k.startswith("model.") or k in trainable}
+
+
+def load_model_state(model: ChannelLM, state: dict[str, torch.Tensor], *, trainable_only: bool = False) -> None:
+    """Inverse of `model_state`: a trainable-only state may omit exactly the frozen host weights."""
+    if not trainable_only:
+        model.load_state_dict(state)
+        return
+    missing, unexpected = model.load_state_dict(state, strict=False)
+    trainable = {name for name, p in model.named_parameters() if p.requires_grad}
+    bad = [k for k in missing if not k.startswith("model.") or k in trainable]
+    if bad or unexpected:
+        raise RuntimeError(f"trainable-only state does not fit the model: missing {bad[:5]}, unexpected {unexpected[:5]}")
+
+
+def load_final(path: Path, device: torch.device | str = "cpu") -> ChannelLM:
+    """Rebuild a trained `ChannelLM` from a run's `final.pt` (full or trainable-only state).
+
+    The host is rebuilt from the config (a pretrained host is reloaded from its hub id), the channel
+    from `data.ontology`, and a grown composer is re-grown to the saved dictionary size."""
+    final = torch.load(Path(path), weights_only=False, map_location="cpu")
+    config = final["config"]
+    ontology = torch.load(config["data"]["ontology"], weights_only=False) if config["data"].get("ontology") else None
+    base = build_model(config)
+    channel, context = build_channel(config, ontology, base.get_input_embeddings().weight.shape[1])
+    if channel is not None and ontology is not None:
+        channel.set_unseen(ontology["heldout_entries"])
+    saved = final.get("composer_schedule")
+    if channel is not None and channel.composer is not None and saved is not None:
+        composer = channel.composer
+        if int(saved["atomics"]) > composer.atomics.shape[0]:
+            composer.add_atomics(torch.zeros(int(saved["atomics"]) - composer.atomics.shape[0], composer.atomics.shape[1]))
+        if int(saved["relations_count"]) > composer.relation_count:
+            composer.add_relation_copies(torch.zeros(int(saved["relations_count"]) - composer.relation_count, dtype=torch.long))
+        composer.set_schedule(FrameSchedule(saved["offsets"], saved["relations"], saved["fillers"]))
+    model = ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if config["model"]["pretrained"] else "train",
+                      lora_rank=int(config["model"]["lora_rank"]))
+    load_model_state(model, final["model"], trainable_only=bool(final.get("trainable_only", False)))
+    return model.to(device).eval()
 
 
 def _schedule_state(channel: SpanChannel | None) -> dict[str, torch.Tensor] | None:
@@ -341,11 +477,12 @@ def _schedule_state(channel: SpanChannel | None) -> dict[str, torch.Tensor] | No
 
 
 def _save_checkpoint(path: Path, model: ChannelLM, optimizer: torch.optim.Optimizer, step: int, evaluated: set[int],
-                     channel: SpanChannel | None, tracker: DevelopmentalDictionary | None, device: torch.device) -> None:
-    state = {"model": model.state_dict(), "optimizer": optimizer.state_dict(), "step": step,
+                     channel: SpanChannel | None, tracker: DevelopmentalDictionary | None, device: torch.device, *,
+                     trainable_only: bool = False) -> None:
+    state = {"model": model_state(model, trainable_only), "optimizer": optimizer.state_dict(), "step": step,
              "evaluated": sorted(evaluated), "rng_cpu": torch.get_rng_state(),
              "rng_cuda": torch.cuda.get_rng_state() if device.type == "cuda" else None,
-             "composer_schedule": _schedule_state(channel),
+             "composer_schedule": _schedule_state(channel), **({"trainable_only": True} if trainable_only else {}),
              "tracker": None if tracker is None else {k: getattr(tracker, k) for k in (
                  "momentum", "absolute", "initial_count", "step", "splits", "candidates", "records",
                  "cooldown_until", "frozen", "low_activity_steps", "provisional", "siblings", "cards")}}

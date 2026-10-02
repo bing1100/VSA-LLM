@@ -12,7 +12,9 @@ Sampling is a pure function of `(seed, step)`, so a resumed run sees the same ba
 
 from __future__ import annotations
 
+import hashlib
 import json
+import unicodedata
 from dataclasses import dataclass
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
@@ -31,11 +33,20 @@ SPAN_FIELDS = ("start", "end", "inject", "entry", "length")
 _WORKER: dict[str, Any] = {}
 
 
-def _init_worker(tokenizer_name: str, revision: str, table_path: str, boundary: str, min_subtokens: int) -> None:
+def tokenizer_fingerprint(tokenizer: Any) -> str:
+    """sha256 of a fast tokenizer's full serialization (model, merges, normalizer, added tokens):
+    equal fingerprints mean identical token ids, so one corpus serves every host that shares it."""
+    return hashlib.sha256(tokenizer.backend_tokenizer.to_str().encode()).hexdigest()
+
+
+def _init_worker(tokenizer_name: str, revision: str, table_path: str, boundary: str, min_subtokens: int,
+                 normalization: str = "") -> None:
     """Load the tokenizer and the alias table (from a file) once per spawned worker.
 
     The table is passed by path: pickling a ~150k-alias table into every spawn payload deadlocked
     the parent on a full pipe, and fork is unsafe in a multi-threaded (torch) parent.
+    `normalization` (e.g. "NFC" for Qwen2.5, whose tokenizer normalizes its input) makes the
+    decode round-trip check compare against the normalized text.
     """
     import os
     import pickle
@@ -47,6 +58,7 @@ def _init_worker(tokenizer_name: str, revision: str, table_path: str, boundary: 
         table = pickle.load(handle)
     _WORKER["tokenizer"] = AutoTokenizer.from_pretrained(tokenizer_name, revision=revision or None, local_files_only=True)
     _WORKER["linker"] = CausalLinker(table, boundary=boundary, min_subtokens=min_subtokens)
+    _WORKER["normalization"] = normalization or None
 
 
 def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]], int]:
@@ -67,11 +79,13 @@ def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np
                     raise
     tokens, spans = [], []
     vocabulary = len(tokenizer)
+    normalization = _WORKER.get("normalization")
     checked = []
     for text, ids, offsets in pairs:
         # Byte-level BPE is lossless: a document whose ids are out of range or do not decode back
         # to the text was corrupted by the tokenizer and is dropped (counted as skipped).
-        if ids and (max(ids) >= vocabulary or tokenizer.decode(ids) != text):
+        expected = unicodedata.normalize(normalization, text) if normalization else text
+        if ids and (max(ids) >= vocabulary or tokenizer.decode(ids) != expected):
             continue
         checked.append((text, ids, offsets))
     for text, ids, offsets in checked:
@@ -92,10 +106,14 @@ def build_corpus(
     texts: Iterable[str], out_dir: Path, *, tokenizer_name: str, table: AliasTable, eos_id: int,
     max_tokens: int, revision: str | None = None, boundary: str = "prefix", min_subtokens: int = 1,
     batch_texts: int = 256, workers: int = 8, extra_manifest: dict[str, Any] | None = None,
-    vocab_size: int = 50257, reuse: bool = False,
+    vocab_size: int = 50257, reuse: bool = False, normalization: str | None = None,
 ) -> dict[str, Any]:
     """Tokenize and link documents in parallel until `max_tokens`; spans keep every length (≥ 1),
-    so `ℓ_min` is applied at sampling time and one corpus serves every threshold."""
+    so `ℓ_min` is applied at sampling time and one corpus serves every threshold.
+
+    `vocab_size` sets the token dtype (uint16 up to 65,536 ids, else uint32) and the id range check;
+    `normalization` is the Unicode form the tokenizer applies to its input (None = none), used by
+    the decode round-trip check."""
     if reuse and (out_dir / "manifest.json").exists():
         existing = json.loads((out_dir / "manifest.json").read_text())
         if existing.get("alias_table_sha256") == table.digest():
@@ -119,7 +137,7 @@ def build_corpus(
     table_path = out_dir / ".alias_table.pkl"
     with table_path.open("wb") as handle:
         pickle.dump(table, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    initargs = (tokenizer_name, revision or "", str(table_path), boundary, min_subtokens)
+    initargs = (tokenizer_name, revision or "", str(table_path), boundary, min_subtokens, normalization or "")
 
     def ordered_results(executor: ProcessPoolExecutor) -> Iterator[tuple]:
         # Bounded in-flight window, results in submission order. A crashed worker raises
@@ -163,7 +181,7 @@ def build_corpus(
     manifest = {"tokens": int(position), "documents": documents, "dtype": np.dtype(dtype).name, "tokenizer": tokenizer_name,
                 "tokenizer_revision": revision, "alias_table_sha256": table.digest(), "boundary": boundary,
                 "spans": int(arrays["inject"].size), "eos_id": eos_id, "skipped_documents": skipped_documents,
-                **(extra_manifest or {})}
+                **({"normalization": normalization} if normalization else {}), **(extra_manifest or {})}
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
 
