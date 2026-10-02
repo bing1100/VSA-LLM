@@ -1,0 +1,266 @@
+{
+ "author": "SmolLM2-360M",
+ "settings": {
+  "candidates": 12,
+  "contexts": 2,
+  "samples": 2,
+  "temperature": 0.5,
+  "top_p": 0.95,
+  "max_new_tokens": 48,
+  "min_share": 0.3,
+  "batch": 8,
+  "max_validation": 6,
+  "context_chars": 400
+ },
+ "kind": "host",
+ "model": "HuggingFaceTB/SmolLM2-360M",
+ "candidates": {
+  "glycosidase": {
+   "votes": [
+    [
+     "is_a",
+     "enzyme",
+     2
+    ],
+    [
+     "part_of",
+     "protein",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "sublime repose": {
+   "votes": [
+    [
+     "is_a",
+     "aesthetic",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    22
+   ]
+  },
+  "key functional residues": {
+   "votes": [
+    [
+     "has_member",
+     "protein",
+     1
+    ],
+    [
+     "has_part",
+     "protein",
+     1
+    ],
+    [
+     "is_a",
+     "amino acid",
+     1
+    ],
+    [
+     "is_a",
+     "protein",
+     1
+    ],
+    [
+     "part_of",
+     "protein",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "exosome-like vesicles": {
+   "votes": [
+    [
+     "is_a",
+     "vesicle",
+     2
+    ],
+    [
+     "part_of",
+     "protein",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "tricorn interacting factor": {
+   "votes": [
+    [
+     "is_a",
+     "protein",
+     2
+    ],
+    [
+     "part_of",
+     "f3",
+     1
+    ],
+    [
+     "part_of",
+     "protein",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "key functional": {
+   "votes": [],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "modfold": {
+   "votes": [
+    [
+     "is_a",
+     "model",
+     1
+    ],
+    [
+     "is_a",
+     "protein",
+     1
+    ],
+    [
+     "part_of",
+     "protein",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "mammalian apa": {
+   "votes": [
+    [
+     "is_a",
+     "enzyme",
+     2
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "tricorn interacting": {
+   "votes": [
+    [
+     "is_a",
+     "protein",
+     1
+    ],
+    [
+     "part_of",
+     "f3",
+     1
+    ],
+    [
+     "part_of",
+     "peptide",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "iturrioz": {
+   "votes": [
+    [
+     "is_a",
+     "protein",
+     2
+    ],
+    [
+     "is_a",
+     "amino acid",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "exosome-like": {
+   "votes": [
+    [
+     "is_a",
+     "vesicle",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    7
+   ]
+  },
+  "contemplative sublimity": {
+   "votes": [
+    [
+     "is_a",
+     "quality",
+     2
+    ],
+    [
+     "part_of",
+     "quality",
+     1
+    ]
+   ],
+   "samples": 2,
+   "contexts": [
+    22
+   ]
+  }
+ },
+ "examples": [
+  {
+   "prompt": "Each example names a concept from a text and lists facts about it, one per line as `relation: related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of. A related concept is a short general noun phrase.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nConcept: golden retriever\nis_a: dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nConcept: carburetor\nis_a: device\npart_of: engine\n\nText: (PVDF) membranes were from Bio-Rad. The low molecular weight column calibration kit, enhanced chemiluminescence (ECL) reagents and ECL glycoprotein detection module were from GE Healthcare. N Glycosidase F enzyme was from Roche Diagnostics Limited, and trypsin, thrombin and the GoTaq PCR Core System were from Promega. L-Glutamyl-7-amido-4-methylcoumarin (Glu-AMC) and\nConcept: glycosidase\n",
+   "completion": "is_a: enzyme\n\nText: (PVDF) membranes were from Bio-Rad. The low molecular weight column calibration kit, enhanced chemiluminescence (ECL) reagents and ECL glycoprotein detection module were from"
+  },
+  {
+   "prompt": "Each example names a concept from a text and lists facts about it, one per line as `relation: related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of. A related concept is a short general noun phrase.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nConcept: golden retriever\nis_a: dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nConcept: carburetor\nis_a: device\npart_of: engine\n\nText: with the Tilneys, experiences a moment of isolating fear during a thunderstorm at the abbey, comes to love a hyacinth under the tutelage of Eleanor Tilney, and finally shares a mournful moment of sublime repose with Eleanor in a \u201cgloomy\u201d grove of Scotch firs (183).4 Catherine thus moves from an appreciation of the picturesque (in amiable social interaction at Beechen Cliff), to the Burkean sublime (the\nConcept: sublime repose\n",
+   "completion": "is_a: aesthetic\n\nText: In the middle of the night, the wretched child is found dead on the floor, with the body of his mother, lying on the floor beside him.\nConcept: child\nis"
+  },
+  {
+   "prompt": "Each example names a concept from a text and lists facts about it, one per line as `relation: related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of. A related concept is a short general noun phrase.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nConcept: golden retriever\nis_a: dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nConcept: carburetor\nis_a: device\npart_of: engine\n\nText: completely conserved and lower case letters indicate partial conservation. Cysteine residues and predicted N-glycosylation sites (predicted using NetNGlyc) are in white text with black background. Key functional residues based on similarity with the mouse sequence are indicated in bold font: zinc and calcium binding residues are in black type with grey shading and indicated by Z and C at the top of the column\nConcept: key functional residues\n",
+   "completion": "is_a: protein\nhas_part: protein\nhas_member: protein\nhas_member: protein\n\nText: The protein was expressed in the yeast cell, and then the yeast cell was grown in the medium for "
+  }
+ ],
+ "ledger": [
+  {
+   "stage": "authoring",
+   "parameters": 361821120.0,
+   "forward_tokens": 0,
+   "prompt_tokens": 6370,
+   "generated_tokens": 1152,
+   "flops": 5443236929280.0,
+   "seconds": 31.617139674024656,
+   "note": "SmolLM2-360M"
+  }
+ ],
+ "seconds": 31.617149943951517
+}

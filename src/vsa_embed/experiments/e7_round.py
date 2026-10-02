@@ -86,7 +86,7 @@ ROUND_DEFAULTS: dict[str, Any] = {
     "host": "SmolLM2-360M", "host_mode": "frozen", "channel_condition": "C5", "operator": "hrr", "key_dimension": 8,
     "channel_dimension": 256, "base_tokens": 50_000_000, "round_tokens": 25_000_000, "sequences_per_step": 128,
     "seq_len": 1024,
-    "verification": {"window": 128, "after": 8, "min_validation": 4, "quantile": 0.05, "resamples": 1000, "batch": 32,
+    "verification": {"window": 128, "after": 8, "min_validation": 6, "quantile": 0.05, "resamples": 1000, "batch": 32,
                      "max_edges": 8},
     "new_fillers": {"min_concepts": 2},
     "cm_stages": ["discovery", "authoring", "verification"],
@@ -908,9 +908,13 @@ def materialize(run: Path, seed: int, condition: str) -> dict[str, Any]:
         info["author"] = name
     elif condition in TEXT_CONDITIONS:
         synthetic = synthetic_name(condition, seed)
-        if condition == "verbal":
-            verbal(run, seed)
-        if not (text_root(track, synthetic) / "synthetic" / "manifest.json").exists():
+        produced = verbal(run, seed) if condition == "verbal" else (
+            json.loads(p.read_text()) if condition == "notes" and (p := Path(run) / "round1" / f"s{seed}" / "verify-notes.json").exists() else None)
+        if produced is not None and not produced["tokens"]:
+            # nothing passed verification (notes) or self accepted no edge (verbal): the control is plain text
+            info["synthetic_empty"] = synthetic
+            synthetic = None
+        elif not (text_root(track, synthetic) / "synthetic" / "manifest.json").exists():
             step = {"entigraph": "entigraph", "spa": "spa", "notes": f"notes, then verify-notes --seed {seed}",
                     "verbal": f"verify --seed {seed} (self has no accepted edges?)"}[condition]
             raise FileNotFoundError(f"{condition} needs its synthetic text first: run `{step}`")
@@ -950,9 +954,9 @@ def materialize(run: Path, seed: int, condition: str) -> dict[str, Any]:
     info.update(entries_with_new_frames=len(frames), linked_candidates=len(candidates), new_atoms=len(new_names),
                 train_spans=int(spans["entry"].size), train_tokens_available=len(mix), synthetic=synthetic,
                 synthetic_share=share, mix=mix.manifest.get("sources"))
-    if condition == "cm" or synthetic:
+    if condition == "cm" or condition in TEXT_CONDITIONS:
         info["compute_matched"] = compute_matched(run, seed, settings)
-    if synthetic:
+    if condition in TEXT_CONDITIONS:
         info["text_budget"] = text_budget(run, seed, condition, settings, info["compute_matched"])
     write_reference(run, seed)
     _json(done, info)

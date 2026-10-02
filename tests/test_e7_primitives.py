@@ -142,6 +142,18 @@ def test_discover_candidates_ranks_unlinked_frequent_spans() -> None:
     assert candidates == sorted(candidates, key=lambda c: (-c.excess, c.surface))
 
 
+def test_discovery_document_floor_drops_single_document_jargon() -> None:
+    tok = _tokenizer()
+    texts = ["The zorblax engine and the zorblax engine and the zorblax engine failed."] * 1 + \
+            [f"Day {i}: a quintar valve opened." for i in range(3)] + ["A cat sat."] * 3
+    loose, _ = discover_candidates(tiny_lm(), tok, texts, torch.device("cpu"), exclude=set(), min_count=3, min_subtokens=2)
+    strict, stats = discover_candidates(tiny_lm(), tok, texts, torch.device("cpu"), exclude=set(), min_count=3, min_subtokens=2,
+                                        min_documents=2)
+    assert "zorblax engine" in {c.surface for c in loose}
+    assert "zorblax engine" not in {c.surface for c in strict} and "quintar valve" in {c.surface for c in strict}
+    assert stats["min_documents"] == 2
+
+
 def test_split_contexts_are_disjoint_and_deterministic() -> None:
     docs = [3, 3, 5, 8, 13, 21, 21, 34, 55]
     authoring_docs, validation_docs = split_contexts(docs, authoring=3, key="zorblax", seed=1)

@@ -1,0 +1,208 @@
+{
+ "kind": "devtools",
+ "data_root": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/wp-e7/smoke_dev/data",
+ "seed": 20261002,
+ "consumer": "SmolLM2-135M",
+ "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+ "relations": [
+  [
+   "kind",
+   "kind",
+   "function, class, method, exception or constant"
+  ],
+  [
+   "belongs_to",
+   "belongs_to",
+   "the module or class it belongs to"
+  ],
+  [
+   "returns",
+   "returns",
+   "the type it returns"
+  ],
+  [
+   "takes",
+   "takes",
+   "a parameter type it takes"
+  ],
+  [
+   "raises",
+   "raises",
+   "an exception it raises"
+  ],
+  [
+   "calls",
+   "calls",
+   "another function it calls"
+  ],
+  [
+   "inherits",
+   "inherits",
+   "the class it inherits from"
+  ],
+  [
+   "category",
+   "category",
+   "the kind of work it is used for"
+  ]
+ ],
+ "hearst_map": {
+  "is_a": "kind",
+  "part_of": "belongs_to",
+  "member_of": "belongs_to"
+ },
+ "demonstrations": [
+  {
+   "surface": "plorv_quandle",
+   "context": "API reference. `plorv_quandle` is a function in the `zestin` module for parsing work. It takes str and returns dict. It raises KrumbleError on invalid input.",
+   "edges": [
+    [
+     "kind",
+     "function"
+    ],
+    [
+     "belongs_to",
+     "zestin"
+    ],
+    [
+     "returns",
+     "dict"
+    ],
+    [
+     "takes",
+     "str"
+    ],
+    [
+     "raises",
+     "krumbleerror"
+    ]
+   ],
+   "note": "plorv_quandle is a parsing function in the zestin module. Call it with a str; it returns a dict and raises KrumbleError when the input is invalid."
+  },
+  {
+   "surface": "VashMorrel",
+   "context": "`VashMorrel` is a class in the `quindo` module used for caching.",
+   "edges": [
+    [
+     "kind",
+     "class"
+    ],
+    [
+     "belongs_to",
+     "quindo"
+    ],
+    [
+     "category",
+     "caching"
+    ]
+   ],
+   "note": "VashMorrel is a caching class defined in the quindo module."
+  }
+ ],
+ "direct_demonstrations": [
+  {
+   "context": "API reference. `plorv_quandle` is a function in the `zestin` module for parsing work. It takes str and returns dict. It raises KrumbleError on invalid input.",
+   "triples": [
+    [
+     "plorv_quandle",
+     "kind",
+     "function"
+    ],
+    [
+     "plorv_quandle",
+     "belongs_to",
+     "zestin"
+    ],
+    [
+     "plorv_quandle",
+     "returns",
+     "dict"
+    ],
+    [
+     "plorv_quandle",
+     "takes",
+     "str"
+    ],
+    [
+     "plorv_quandle",
+     "raises",
+     "krumbleerror"
+    ]
+   ]
+  },
+  {
+   "context": "`VashMorrel` is a class in the `quindo` module used for caching.",
+   "triples": [
+    [
+     "VashMorrel",
+     "kind",
+     "class"
+    ],
+    [
+     "VashMorrel",
+     "belongs_to",
+     "quindo"
+    ],
+    [
+     "VashMorrel",
+     "category",
+     "caching"
+    ]
+   ]
+  }
+ ],
+ "pattern": "identifier",
+ "max_words": 1,
+ "entry_count": 414,
+ "settings": {
+  "seed": 20261002,
+  "mask": {
+   "fraction": 0.2,
+   "min_count": 1
+  },
+  "corpora": {
+   "general_tokens": 60000000,
+   "replay_tokens": 6250000,
+   "read_tokens": 25000000,
+   "test_tokens": 4000000,
+   "min_subtokens": 2,
+   "workers": 4
+  },
+  "discovery": {
+   "min_count": 3,
+   "min_documents": 3,
+   "max_words": 3,
+   "max_occurrences": 4,
+   "keep": 500,
+   "batch": 4
+  },
+  "authoring": {
+   "candidates": 30,
+   "contexts": 2,
+   "samples": 2,
+   "temperature": 0.5,
+   "top_p": 0.95,
+   "max_new_tokens": 48,
+   "min_share": 0.3,
+   "batch": 8,
+   "max_validation": 24,
+   "context_chars": 400
+  },
+  "direct": {
+   "documents": 1500,
+   "passage_chars": 600,
+   "max_new_tokens": 96,
+   "batch": 16
+  },
+  "teacher": {
+   "model": "claude-opus-5-5",
+   "batch": 6,
+   "limit": 6
+  },
+  "devtools_root": "experiments/c6-devtools-benchmark/v1",
+  "data_root": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/wp-e7/smoke_dev/data",
+  "limit_documents": 300
+ },
+ "masked_sha256": "11637fb0299e8d3934dbba14150d3c6eaafd5c2e8d27651044d5ef2287e08f48",
+ "source": "experiments/c6-devtools-benchmark/v1"
+}

@@ -316,9 +316,13 @@ def test_text_controls_carry_their_synthetic_text_and_no_new_frames(e7) -> None:
     verbal = json.loads((e7["run"] / "round1" / "s1" / "verbal.json").read_text())
     cards = [json.loads(line) for line in (e7["run"] / "round1" / "s1" / "cards-tiny.jsonl").read_text().splitlines()]
     assert verbal["sentences"] == sum(c["accepted"] for c in cards)
-    for condition in ("entigraph", "spa", "verbal") + (("notes",) if notes["kept"] else ()):
+    for condition in ("entigraph", "spa", "verbal", "notes"):
         info = json.loads((data / "s1" / condition / "materialized.json").read_text())
-        assert info["synthetic"] and info["mix"][-1]["repeats"] >= 1 and info["entries_with_new_frames"] == 0
+        produced = {"verbal": verbal["tokens"], "notes": notes["tokens"]}.get(condition, 1)
+        if produced:
+            assert info["synthetic"] and info["mix"][-1]["repeats"] >= 1 and info["entries_with_new_frames"] == 0
+        else:                                   # nothing verified: the control trains on plain text at the same tokens
+            assert info["synthetic"] is None and info["synthetic_empty"] and info["text_budget"]["total_tokens"] > 0
         spans = TokenCorpus.open(data / "s1" / condition / "train").spans
         assert int((spans["entry"] >= entry_base).sum()) == 0
     selfrand = json.loads((data / "s1" / "selfrand" / "materialized.json").read_text())

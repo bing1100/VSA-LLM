@@ -324,23 +324,29 @@ def discover_candidates(model: Any, tokenizer: Any, texts: Sequence[str], device
                         min_count: int = 8, min_subtokens: int = 2, max_candidates: int = 5000, max_words: int = 3,
                         max_occurrences: int = 32, pattern: re.Pattern = WORD, stopwords: Container[str] = STOPWORDS,
                         normalize_key: Callable[[str], str] = normalize_alias, window: int = 1024, stride: int = 768,
-                        batch: int = 8, texts_per_pass: int = 256) -> tuple[list[Candidate], dict[str, Any]]:
+                        batch: int = 8, texts_per_pass: int = 256, min_documents: int = 1) -> tuple[list[Candidate], dict[str, Any]]:
     """Streaming version of `find_candidates` for a large reading corpus.
 
     Spans not in `exclude` (the visible linker and any excluded aliases) occurring ≥ `min_count` times
-    with ≥ `min_subtokens` host subtokens are scored by the mean summed surprisal of up to
-    `max_occurrences` occurrences (the first ones in corpus order); `excess` subtracts the mean of
-    the scored spans with the same subtoken length; the `max_candidates` largest are returned with
-    their total `count`."""
+    in ≥ `min_documents` texts, with ≥ `min_subtokens` host subtokens, are scored by the mean summed
+    surprisal of up to `max_occurrences` occurrences (the first ones in corpus order); `excess`
+    subtracts the mean of the scored spans with the same subtoken length; the `max_candidates` largest
+    are returned with their total `count`. (Without a document floor, the most surprising spans of a
+    small corpus are the jargon of one long document, which cannot be verified on other documents.)"""
     from array import array
     spans = dict(max_words=max_words, pattern=pattern, stopwords=stopwords, normalize_key=normalize_key)
     hashes = array("q")          # 8 bytes per occurrence (pass 1 counts by hash; the corpus can hold ~10^8 spans)
+    per_text = array("q")        # each span hash once per text: document frequency
     for text in texts:
-        hashes.extend(hash(key) for key, _, _ in span_occurrences(text, **spans) if key not in exclude)
+        found = [hash(key) for key, _, _ in span_occurrences(text, **spans) if key not in exclude]
+        hashes.extend(found)
+        per_text.extend(set(found))
     values, counts = np.unique(np.frombuffer(hashes, dtype=np.int64), return_counts=True)
+    doc_values, doc_counts = np.unique(np.frombuffer(per_text, dtype=np.int64), return_counts=True)
     occurrences_total = len(hashes)
-    del hashes
-    frequent = dict(zip(values[counts >= min_count].tolist(), counts[counts >= min_count].tolist()))
+    del hashes, per_text
+    widespread = set(doc_values[doc_counts >= min_documents].tolist())
+    frequent = {h: c for h, c in zip(values[counts >= min_count].tolist(), counts[counts >= min_count].tolist()) if h in widespread}
     surfaces: dict[int, str] = {}
     for text in texts:                                          # pass 2: the surface of every frequent span
         for key, _, _ in span_occurrences(text, **spans):
@@ -389,7 +395,8 @@ def discover_candidates(model: Any, tokenizer: Any, texts: Sequence[str], device
     candidates.sort(key=lambda c: (-c.excess, c.surface))
     stats = {"span_occurrences": occurrences_total, "distinct_spans": int(values.size), "frequent_spans": len(frequent),
              "scored_candidates": len(candidates), "forward_tokens": forwarded, "texts_scored": len(needed),
-             "min_count": min_count, "min_subtokens": min_subtokens, "max_occurrences": max_occurrences}
+             "min_count": min_count, "min_documents": min_documents, "min_subtokens": min_subtokens,
+             "max_occurrences": max_occurrences}
     return candidates[:max_candidates], stats
 
 

@@ -1,0 +1,42 @@
+{
+ "author": "direct-SmolLM2-135M",
+ "settings": {
+  "candidates": 12,
+  "contexts": 2,
+  "samples": 2,
+  "temperature": 0.5,
+  "top_p": 0.95,
+  "max_new_tokens": 48,
+  "min_share": 0.3,
+  "batch": 8,
+  "max_validation": 6,
+  "context_chars": 400
+ },
+ "kind": "direct",
+ "model": "HuggingFaceTB/SmolLM2-135M",
+ "documents": 3,
+ "candidates": {},
+ "examples": [
+  {
+   "prompt": "Each example lists important concepts mentioned in a text with facts about them, one per line as `concept | relation | related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nFacts:\ngolden retriever | is_a | dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nFacts:\ncarburetor | is_a | device\ncarburetor | part_of | engine\n\nText: Do your students need extra practice with 1 & 2 Step Number Stories? Can they figure out when to add, subtract, multiple or divide? This resource is great for test prep or just to review the skills that are reflective of the Common Core Standards. This is a colorful 11-page mini booklet that prints four per page. Page 1: cover Pages 2-7: 1 & 2 step addition, subtraction, multiplication & division number stories Pages 8-10: basic addition, subtraction, multiplication & division facts Page 11: recognition and author information Printing it is as easy as 1-2-3. You print this resource, cut &\nFacts:\n",
+   "completion": "1. 1. 2. 3. 4. 5. 6. 7. 8. 9. 10. 11. 12. 13. 14. 15. 16. 17. 18. 19. 20. 21. 22. 23. 24. 25. 26"
+  },
+  {
+   "prompt": "Each example lists important concepts mentioned in a text with facts about them, one per line as `concept | relation | related concept`, using only these relations: is_a, instance_of, has_part, part_of, has_member, member_of, made_of, substance_of, attribute, similar_to, domain, entails, causes, opposite_of.\n\nText: Our golden retriever loves to swim and fetch sticks in the lake.\nFacts:\ngolden retriever | is_a | dog\n\nText: The mechanic cleaned the carburetor so that the engine got the right mix of air and fuel.\nFacts:\ncarburetor | is_a | device\ncarburetor | part_of | engine\n\nText: What We Do! Marketplace for Kids is a nationally recognized model. Outreach and technical assistance is provided to school districts, consortium of schools, youth organizations, and associations interested in Youth Entrepreneurship. What is an Education Day? Each Education Day offers students, teachers, parents, and participants the opportunity to: - Attend short, hands-on classes/activities designed to explore career fields, personal development, financial literacy, leadership skills, new technology and discover entrepreneurship. - Explore the \u201cHall of Great Ideas.\u201d Students create projects\nFacts:\n",
+   "completion": "Hall of Great Ideas | entrepreneurship\n\nText: The company is a leader in the field of digital marketing.\nFacts:\ndigital marketing | leader\n\nText: The company is a leader in the field of digital marketing.\nFacts:\ndigital marketing | leader\n\nText: The company is a leader in the field of digital marketing.\nFacts:\ndigital marketing | leader\n\nText: The company is a leader in the field of digital marketing.\nFacts"
+  }
+ ],
+ "ledger": [
+  {
+   "stage": "direct",
+   "parameters": 134515008.0,
+   "forward_tokens": 0,
+   "prompt_tokens": 907,
+   "generated_tokens": 288,
+   "flops": 321490869120.0,
+   "seconds": null,
+   "note": "SmolLM2-135M"
+  }
+ ],
+ "seconds": 4.5755191969219595
+}

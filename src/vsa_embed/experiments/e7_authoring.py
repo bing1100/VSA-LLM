@@ -129,7 +129,7 @@ DEFAULTS: dict[str, Any] = {
     "mask": {"fraction": 0.2, "min_count": 1},
     "corpora": {"general_tokens": 60_000_000, "replay_tokens": 6_250_000, "read_tokens": 25_000_000,
                 "test_tokens": 4_000_000, "min_subtokens": 2, "workers": 4},
-    "discovery": {"min_count": 8, "max_words": 3, "max_occurrences": 32, "keep": 5000, "batch": 8},
+    "discovery": {"min_count": 8, "min_documents": 3, "max_words": 3, "max_occurrences": 32, "keep": 5000, "batch": 8},
     "authoring": {"candidates": 1000, "contexts": 4, "samples": 3, "temperature": 0.5, "top_p": 0.95,
                   "max_new_tokens": 48, "min_share": 0.3, "batch": 16, "max_validation": 24, "context_chars": 400},
     "direct": {"documents": 1500, "passage_chars": 600, "max_new_tokens": 96, "batch": 16},
@@ -585,6 +585,7 @@ def discover(run: Path, host: str, *, device: torch.device, overrides: dict[str,
     started = time.monotonic()
     candidates, stats = discover_candidates(
         model, tokenizer, texts, device, exclude=exclude, min_count=int(settings["min_count"]),
+        min_documents=int(settings.get("min_documents", 1)),
         min_subtokens=int(track["settings"]["corpora"]["min_subtokens"]),
         max_candidates=int(settings["keep"]), max_occurrences=int(settings["max_occurrences"]),
         batch=int(settings["batch"]), **_span_settings(track))
