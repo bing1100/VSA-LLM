@@ -7,9 +7,10 @@ job per config to the local GPU queue (`.jobs/`). Without `--conditions` the sta
 
 - `pilot` — S0 sanity pilot (execution.md, not a gate, never pooled with gate runs): 50M × 100M
   tokens (warmup 5M), evaluations at 10/20/40/80/100M on 512 windows with per-window losses,
-  C0, C1, C2, C3, C5 × seeds 1, 2; priority 10.
-- `shakeout` — D4.0: C0, C1, C2, C5 × seeds 1, 2 at 50M × 200M tokens, plus a kill-and-resume
-  check (`C5@resume`, seed 1: stops after half the steps, a second job resumes it); priority 50.
+  checkpoints every 5 min, C0, C1, C2, C3, C5 × seeds 1, 2; priority 10.
+- `shakeout` — D4.0: C0, C1, C2, C5 × seeds 1, 2 at 50M × 200M tokens (checkpoints every 10 min),
+  plus a kill-and-resume check (`C5@resume`, seed 1: stops after half the steps, a second job
+  resumes it); priority 50.
 - `baselines` — D4.8: C0 at 50M × 300M and 125M × 500M tokens (the committed recipe), seeds 1–3;
   priority 90 (lowest, backfill).
 
@@ -48,11 +49,12 @@ SIZES = {
     "125M": {"model": {"size": "125M"}, "train": {"micro_batch": 16, "grad_accum": 16, "total_tokens": 500_000_000,
                                                    "lr": 6.0e-4, "warmup_tokens": 10_000_000}},
 }
-_SHAKEOUT = {"train": {"total_tokens": 200_000_000}, "eval": {"save_window_losses": True}}
+# Short runs checkpoint more often than the 30-minute default (resume is bit-exact, so results do not change).
+_SHAKEOUT = {"train": {"total_tokens": 200_000_000, "checkpoint_minutes": 10}, "eval": {"save_window_losses": True}}
 STAGES: dict[str, dict[str, Any]] = {
     "pilot": {"priority": 10, "blocks": [
         {"sizes": ["50M"], "conditions": ["C0", "C1", "C2", "C3", "C5"], "seeds": [1, 2],
-         "overrides": {"train": {"total_tokens": 100_000_000, "warmup_tokens": 5_000_000},
+         "overrides": {"train": {"total_tokens": 100_000_000, "warmup_tokens": 5_000_000, "checkpoint_minutes": 5},
                        "eval": {"first_tokens": 10_000_000, "windows": 512, "save_window_losses": True}}}]},
     "shakeout": {"priority": 50, "blocks": [
         {"sizes": ["50M"], "conditions": ["C0", "C1", "C2", "C5"], "seeds": [1, 2], "overrides": _SHAKEOUT},

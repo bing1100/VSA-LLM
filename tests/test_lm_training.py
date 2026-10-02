@@ -143,6 +143,30 @@ def test_window_losses_are_opt_in_and_sum_to_the_logged_strata(setup, tmp_path: 
     np.testing.assert_array_equal(free["evals"][384][1], data["evals"][384][1])
 
 
+def test_resume_without_a_checkpoint_starts_over_and_keeps_the_partial_files(setup, tmp_path: Path) -> None:
+    torch.set_num_threads(1)
+    cfg = config(setup["root"], "compose")
+    cfg["eval"]["save_window_losses"] = True
+    train(cfg, tmp_path / "straight")
+    run = tmp_path / "crashed"
+    train(cfg, run)
+    for name in ("checkpoint.pt", "final.pt", "manifest.json"):     # as if it died before its first checkpoint
+        (run / name).unlink()
+    partial = (run / "metrics.jsonl").read_text()
+    train(cfg, run, resume=True)                                    # what the job queue does on a retry
+    assert (run / "metrics.aborted-1.jsonl").read_text() == partial
+    assert (run / "eval_windows.aborted-1.npz").is_file() and (run / "resolved_config.aborted-1.yaml").is_file()
+    rows = [json.loads(line) for line in (run / "metrics.jsonl").read_text().splitlines()]
+    assert sum(r["type"] == "eval" and r["tokens"] == 0 and r["stratum"] == "all" for r in rows) == 1
+    a = torch.load(tmp_path / "straight" / "final.pt", weights_only=False)["model"]
+    b = torch.load(run / "final.pt", weights_only=False)["model"]
+    for key in a:
+        torch.testing.assert_close(a[key], b[key])
+    (run / "checkpoint.pt").unlink()                                # a finished run is never restarted
+    with pytest.raises(FileExistsError):
+        train(cfg, run, resume=True)
+
+
 def test_window_losses_survive_an_interrupted_run(setup, tmp_path: Path) -> None:
     from vsa_embed.training.lm import load_window_losses
     torch.set_num_threads(1)

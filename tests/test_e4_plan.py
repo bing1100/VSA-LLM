@@ -47,7 +47,7 @@ def test_pilot_preset_writes_the_s0_grid_and_queues_it_first(plan: dict[str, Pat
     config = _load(plan["configs"] / "pilot" / "50M-C5-s2.yaml")
     assert config["experiment"] == "e4-pilot-50M-C5-s2" and config["seed"] == 2
     assert config["train"]["total_tokens"] == 100_000_000 and config["train"]["warmup_tokens"] == 5_000_000
-    assert config["train"]["micro_batch"] == 32 and config["train"]["lr"] == 1e-3
+    assert config["train"]["micro_batch"] == 32 and config["train"]["lr"] == 1e-3 and config["train"]["checkpoint_minutes"] == 5
     assert config["eval"] == {"windows": 512, "batch": 32, "first_tokens": 10_000_000, "save_window_losses": True}
     assert config["channel"]["context_window"] == 8 and config["data"]["ontology"] == str(plan["data"] / "ontology.pt")
     resolved = resolve_config(config)
@@ -95,7 +95,7 @@ def test_explicit_conditions_keep_the_old_behaviour(plan: dict[str, Path]) -> No
         e4_plan.stage_blocks("screen")
     blocks = e4_plan.stage_blocks("pilot", seeds=[3], overrides={"train": {"lr": 5e-4}})
     assert blocks[0]["seeds"] == [3] and blocks[0]["overrides"]["train"] == {
-        "total_tokens": 100_000_000, "warmup_tokens": 5_000_000, "lr": 5e-4}
+        "total_tokens": 100_000_000, "warmup_tokens": 5_000_000, "checkpoint_minutes": 5, "lr": 5e-4}
 
 
 def test_matched_controls_have_the_composition_channels_parameters(plan: dict[str, Path]) -> None:

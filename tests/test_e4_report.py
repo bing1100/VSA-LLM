@@ -42,7 +42,7 @@ def _shift(condition: str, stratum: str) -> float:
 
 def make_run(root: Path, condition: str, seed: int, *, size: str = "50M", total: int = 100_000_000, windows: bool = True,
              label: str | None = None, train_extra: dict | None = None, probes: dict | None = None, complete: bool = True,
-             parameters: float = 5e7, pretrained: str | None = None) -> Path:
+             parameters: float = 5e7, pretrained: str | None = None, host_mode: str = "lora") -> Path:
     label, effect = label or condition, condition.rstrip("'")         # C0' (continued pretraining) acts as C0
     path = root / f"{size}-{label}-s{seed}"
     path.mkdir(parents=True)
@@ -69,7 +69,7 @@ def make_run(root: Path, condition: str, seed: int, *, size: str = "50M", total:
     rows += [{"type": "train", "step": s, "tokens": s * PER_STEP, "loss": 4.0, "lr": 1e-3,
               "tokens_per_s": 70_000 / (1 + 0.1 * (effect != "C0"))} for s in range(20, 200, 20)]
     (path / "metrics.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
-    model = {"size": size, "seq_len": 1024, "vocab_size": 50257, **({"pretrained": pretrained, "host_mode": "lora"} if pretrained else {})}
+    model = {"size": size, "seq_len": 1024, "vocab_size": 50257, **({"pretrained": pretrained, "host_mode": host_mode} if pretrained else {})}
     config = {"seed": seed, "experiment": f"e4-test-{size}-{label}-s{seed}", "model": model,
               "train": {"micro_batch": 32, "grad_accum": 8, "total_tokens": total, **(train_extra or {})},
               "data": {"eval": "/data/eval", "ontology": "/data/ontology.pt", "min_subtokens": 2},
@@ -197,6 +197,19 @@ def test_continued_pretraining_cohort_uses_its_own_baseline_and_size_chain(summa
     assert cpt["paired"]["C0'"]["C5"]["after_heldout"]["ci_high"] < 0
     assert cpt["gate"]["C5"]["items"]["3"]["verdict"] == "pass" and cpt["gate"]["C5"]["items"]["2"]["verdict"] == "not available"
     assert cpt["escalation"]["C5"]["after_heldout"]["smaller_model_multiplier"] is None   # not chained to from-scratch 50M
+
+
+def test_an_evaluation_only_baseline_gets_paired_gaps_but_no_multiplier(tmp_path: Path) -> None:
+    host = "HuggingFaceTB/SmolLM2-360M"
+    for condition in ("C0'", "C5"):
+        for seed in (1, 2):
+            make_run(tmp_path, condition, seed, total=100_000_000, pretrained=host, host_mode="frozen",
+                     train_extra={"eval_only": True} if condition == "C0'" else None)
+    (cohort,) = analyze(discover([tmp_path]), resamples=1000)[0]["cohorts"].values()
+    assert cohort["baseline"] == "C0'" and any("evaluation-only" in w for w in cohort["warnings"])
+    assert cohort["paired"]["C0'"]["C5"]["after_heldout"]["ci_high"] < 0
+    assert cohort["convergence"] == {} and cohort["escalation"] == {}
+    assert "C0'" not in cohort["fits"].get("all", {}) and "C5" in cohort["fits"]["all"]
 
 
 def test_too_few_resamples_for_holm_are_flagged(runs_root: Path) -> None:

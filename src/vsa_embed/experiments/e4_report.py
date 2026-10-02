@@ -98,6 +98,11 @@ class Run:
     def resume_check(self) -> bool:
         return bool(self.config.get("train", {}).get("stop_after_steps"))
 
+    @property
+    def eval_only(self) -> bool:
+        """C0' on a frozen host: evaluated once, the same loss at every point (a flat curve)."""
+        return bool(self.config.get("train", {}).get("eval_only") or (self.manifest or {}).get("eval_only"))
+
 
 # ---------------------------------------------------------------- loading
 
@@ -400,17 +405,20 @@ def _curve_seeds(a: dict[int, Run], b: dict[int, Run], stratum: str) -> list[int
 
 def convergence(grid: dict[str, dict[int, Run]], strata: Sequence[str], *, baseline: str,
                 projection_tokens: Sequence[float]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Per stratum and condition: `convergence.compare` vs the baseline, projected gaps and `k(L)` curve; plus fits."""
+    """Per stratum and condition: `convergence.compare` vs the baseline, projected gaps and `k(L)` curve; plus fits.
+    An evaluation-only baseline (flat curve) has no `k(L)` or projection, so only fits are returned."""
     result: dict[str, Any] = {}; fits: dict[str, Any] = {}
+    flat_baseline = baseline in grid and all(r.eval_only for r in grid[baseline].values())
     for stratum in strata:
         for condition, runs in grid.items():
-            per_seed = {s: fit_power_law(r.curves[stratum]) for s, r in runs.items() if len(r.curves.get(stratum, [])) >= 4}
+            per_seed = {s: fit_power_law(r.curves[stratum]) for s, r in runs.items()
+                        if len(r.curves.get(stratum, [])) >= 4 and not r.eval_only}
             per_seed = {s: f for s, f in per_seed.items() if f}
             if per_seed:
                 fits.setdefault(stratum, {})[condition] = {
                     "per_seed": per_seed, **{k: float(np.mean([f[k] for f in per_seed.values()])) for k in ("E", "B", "beta", "rmse")},
                     "projected_loss": {f"{t:.3g}": float(np.mean([project(f, t) for f in per_seed.values()])) for t in projection_tokens}}
-            if condition == baseline or baseline not in grid:
+            if condition == baseline or baseline not in grid or flat_baseline:
                 continue
             seeds = _curve_seeds(grid[baseline], runs, stratum)
             if not seeds:
@@ -531,11 +539,14 @@ def analyze_cohort(label: str, runs: Sequence[Run], *, baseline: str, references
     exploratory = []
     if model != "125M" or abs(budget - 500_000_000) > 0.01 * 500_000_000:
         exploratory.append("the pre-registered gate is defined at 125M × 500M tokens")
-    if min_seeds < 3:
-        exploratory.append(f"{'a single seed' if min_seeds == 1 else f'{min_seeds} seeds'} (the gate needs 3)")
+    if 1 < min_seeds < 3:
+        exploratory.append(f"{min_seeds} seeds (the gate needs 3)")
     gate = {c: gate_items(c, grid, paired, final_loss, probe_results.get(c), baseline=baseline,
                           match_margin=match_margin, locality_margin=locality_margin) for c in gate_candidates}
     converge, fits = convergence(grid, strata, baseline=baseline, projection_tokens=projection_tokens)
+    if baseline in grid and all(r.eval_only for r in grid[baseline].values()):
+        warnings.append(f"{baseline} is evaluation-only (frozen host, flat curve): k(L), projections and the escalation "
+                        f"rule against it are undefined; use the paired differences")
     throughput = {}
     base_speed = None
     if baseline in grid:
@@ -666,12 +677,12 @@ def render(summary: dict[str, Any], *, figures: dict[str, dict[str, str]], title
         lines += ["", f"## {label}", ""]
         flags = list(c["exploratory"])
         if c["single_seed"]:
-            flags.insert(0, "**single seed**: CIs are over evaluation windows only and say nothing about seed variance")
+            flags.insert(0, "**single seed**: CIs are over evaluation windows only and say nothing about seed variance "
+                            "(the gate needs 3 seeds)")
         if flags:
             lines += ["> Exploratory: " + "; ".join(flags) + ". Gate verdicts below are computed mechanically, not as a gate.", ""]
         lines += [f"Conditions and seeds: " + "; ".join(f"{k} {v}" for k, v in c["seeds"].items()) + ".", ""]
-        for warning in c["warnings"]:
-            lines.append(f"- warning: {warning}")
+        lines += [f"- warning: {warning}" for warning in c["warnings"]] + ([""] if c["warnings"] else [])
         conditions = c["conditions"]
         lines += ["### Final loss per stratum", "", "| Stratum | Targets | " + " | ".join(conditions) + " |",
                   "|---|---:|" + "---:|" * len(conditions)]
@@ -736,7 +747,7 @@ def render(summary: dict[str, Any], *, figures: dict[str, dict[str, str]], title
                     lines.append(f"| {candidate} | {stratum} | {_number(v['multiplier_mean'])} | {_number(v['multiplier_ci_low'])} | "
                                  f"{v['rule_i']} | {controls} | {v['projection_ok']} / {v['size_trend_ok']} | **{v['escalate']}** |")
         else:
-            lines.append("No candidate with held-out or rare-stratum curves.")
+            lines.append("No candidate with held-out or rare-stratum curves against the baseline.")
         lines += ["", "### Throughput and parameters", "",
                   f"| Condition | tokens/s | Overhead vs {c['baseline']} | Parameters | Channel parameters | Channel bytes fp32 / fp16 |",
                   "|---|---:|---:|---:|---:|---:|"]
