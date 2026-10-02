@@ -1,0 +1,90 @@
+# T2 developer tools (E8, WP-T2): 16 seeded private libraries (4 of them niche) (scaled C6 generator; Python and TypeScript styles)
+# + real API documentation (installed permissive Python packages, CPython 3.12 docs, Node.js v20 API), mixed 50/50
+# by tokens with the C3 FineWeb-Edu stream (C3's 5,000 evaluation documents are the general evaluation set and are
+# never trained on). This config: SmolLM2 tokenizer, 100M training tokens (SmolLM2-135M continued pretraining).
+# `t2-gpt2.yaml` is the same track for the 50M from-scratch run (GPT-2, 300M tokens); both share the documents
+# (`devtools.docs_dir`), the holdout (pinned below) and the items.
+#   PYTHONPATH=src python -m vsa_embed.tracks.devtools --config experiments/t2-developer-tools/t2.yaml --stage snapshot
+#   PYTHONPATH=src python -m vsa_embed.tracks.devtools --config experiments/t2-developer-tools/t2.yaml --stage freeze
+#   PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
+#     --config experiments/t2-developer-tools/t2.yaml --output experiments/t2-developer-tools/runs/v1
+experiment: t2-developer-tools
+track: t2
+seed: 20261007
+tokenizer: HuggingFaceTB/SmolLM2-135M
+workers: 3
+items_dir: experiments/t2-developer-tools/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t2-devtools/v1-smollm2
+  general_shards:                         # the C3 stream (c3.yaml); evaluation documents come first
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    002_00000.parquet: 547ae182d132c9f0
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+devtools:
+  docs_dir: ~/data/vsa-llm/tracks/t2-devtools/docs-v1      # shared with t2-gpt2.yaml
+  libraries: 16                # 11 Python-style + 5 TypeScript-style private libraries
+  typescript_fraction: 0.3
+  modules: [10, 16]
+  classes: [5, 9]
+  functions: [10, 18]
+  methods: [2, 6]
+  exceptions: [10, 16]
+  constants: [0, 2]
+  heldout_fraction: 0.10       # of functions, methods and leaf classes, stratified by Zipf rank
+  zero_shot: 600               # new API symbols defined only by schemas (E5.4), in no document
+  zipf: 1.6                    # focus weights (rank + 60) ** -1.6: no symbol takes more than ~1% of the documents
+  zipf_offset: 60
+  niche_libraries: 4           # the last 4 libraries are niche: documented 100x less per symbol (a rare tail at 50M and 150M domain tokens)
+  niche_weight: 0.01
+  deprecated_fraction: 0.04
+  experimental_fraction: 0.05
+  eval_uniform_focus: 0.5      # half of the evaluation documents' focus symbols uniform (powers the tail strata)
+  train_chars: 440000000       # ≈ 165M GPT-2 / 137M SmolLM2 tokens (2.67 / 3.2 chars per token on the mix)
+  eval_chars: 22000000         # ≥ 6M tokens for either tokenizer
+  forbidden_general_docs: 20000
+real_libraries:
+  snapshot_dir: ~/data/vsa-llm/tracks/t2-devtools/real-v1
+  snapshot_sha256: 553d89cdc3a8101eecd47fffc93b36c12e28a5a578a0a74799a8fb4c8cb89fea   # 43,662 symbols, 44,880 units (2026-10-02)
+  raw_dir: ~/data/vsa-llm/tracks/t2-devtools/raw
+  python_packages: [numpy, scipy, pandas, torch, transformers, sympy, networkx, matplotlib, nltk, requests, jinja2,
+                    click, huggingface_hub, PIL, pygments, mpmath, joblib, dateutil, yaml]
+  cpython_docs: python-3.12-docs-text.tar.bz2
+  inventory: python-3.12-objects.inv
+  node_api: node-v20.20.2-api-all.json
+  eval_buckets: 800            # units with sha256 bucket < 800 / 10,000 (8%) are evaluation-only
+  heldout_fraction: 0.10
+  holdout_min_mentions: 5
+  max_page_chars: 8000
+  max_train_share: 1.0
+  max_eval_share: 0.25
+linker:
+  alias_normalization: identifier   # keep `_` in aliases: snake_case symbols must link in code
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_tokens: 6000000
+  contamination_docs: 2000
+  presample_tokens: 0          # unused: the holdout is fixed by the track
+  expected_holdout_sha256: 75ee2217be97bd9d5a0f3a86d9bd045c1fd13f348101e2e6d4a5335c185cea72   # frozen 2026-10-02 by --stage freeze, before any build (899 private + 179 real held-out symbols)
+  holdout_fraction: 0.10
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 5000      # C3's evaluation documents
+  train_domain_tokens: 50000000
+  train_total_tokens: 100000000
+  min_subtokens: 2
+  cardinality_docs: 2000
+items:
+  train_per_bin: 150           # training symbols per source × training-mention bin (1–9, 10–99, ≥ 100)
+  relations_per_symbol: 3
+feasibility_strict:            # WP-T1's bar (open decision 17), reported next to FEASIBILITY
+  heldout_min_entries_5plus: 300
+  heldout_min_occurrences: 2000
+  rare_min_entries: 300
+  rare_min_occurrences: 2000
+  trainer_windows: 1024
+  window_length: 1024
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-135M, gpt2, Qwen/Qwen2.5-0.5B]

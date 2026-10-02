@@ -1,0 +1,383 @@
+{
+  "track": "t2",
+  "documents": {
+    "request": {
+      "seed": 20261007,
+      "devtools": {
+        "libraries": 16,
+        "typescript_fraction": 0.3,
+        "modules": [
+          10,
+          16
+        ],
+        "classes": [
+          5,
+          9
+        ],
+        "functions": [
+          10,
+          18
+        ],
+        "methods": [
+          2,
+          6
+        ],
+        "exceptions": [
+          10,
+          16
+        ],
+        "constants": [
+          0,
+          2
+        ],
+        "heldout_fraction": 0.1,
+        "zero_shot": 600,
+        "zipf": 1.6,
+        "zipf_offset": 60,
+        "niche_libraries": 4,
+        "niche_weight": 0.01,
+        "deprecated_fraction": 0.04,
+        "experimental_fraction": 0.05,
+        "eval_uniform_focus": 0.5,
+        "train_chars": 440000000,
+        "eval_chars": 22000000,
+        "forbidden_general_docs": 20000
+      },
+      "real_libraries": {
+        "snapshot_sha256": "553d89cdc3a8101eecd47fffc93b36c12e28a5a578a0a74799a8fb4c8cb89fea",
+        "python_packages": [
+          "numpy",
+          "scipy",
+          "pandas",
+          "torch",
+          "transformers",
+          "sympy",
+          "networkx",
+          "matplotlib",
+          "nltk",
+          "requests",
+          "jinja2",
+          "click",
+          "huggingface_hub",
+          "PIL",
+          "pygments",
+          "mpmath",
+          "joblib",
+          "dateutil",
+          "yaml"
+        ],
+        "cpython_docs": "python-3.12-docs-text.tar.bz2",
+        "inventory": "python-3.12-objects.inv",
+        "node_api": "node-v20.20.2-api-all.json",
+        "eval_buckets": 800,
+        "heldout_fraction": 0.1,
+        "holdout_min_mentions": 5,
+        "max_page_chars": 8000,
+        "max_train_share": 1.0,
+        "max_eval_share": 0.25
+      },
+      "general_shards": [
+        "002_00000.parquet",
+        "000_00000.parquet"
+      ]
+    },
+    "code_sha256": "3f59fdd6a1f874a19c63db9655336462bea2408ff1ca298a5b3209efd853a522",
+    "train": {
+      "documents": 445320,
+      "chars": 439737453,
+      "private_chars": 396140673,
+      "real_chars": 43596780,
+      "private_documents": 436437,
+      "real_documents": 8883,
+      "real_share_target": 0.09908359090909091,
+      "real_documents_available": 8883,
+      "real_chars_available": 43596780
+    },
+    "eval": {
+      "documents": 21184,
+      "chars": 22001504,
+      "private_chars": 17899314,
+      "real_chars": 4102190,
+      "private_documents": 19119,
+      "real_documents": 2065,
+      "real_share_target": 0.1864631818181818,
+      "real_documents_available": 2065,
+      "real_chars_available": 4102190
+    },
+    "audit": {
+      "heldout_private": 899,
+      "zeroshot_private": 600,
+      "heldout_real": 179,
+      "redacted_real_lines": 8864,
+      "leaked_into_train": 0
+    },
+    "forbidden_words": 269377,
+    "private": {
+      "libraries": 16,
+      "niche_libraries": [
+        "memquilt",
+        "purkrain",
+        "sashsish",
+        "beirbflairk"
+      ],
+      "languages": {
+        "typescript": 5,
+        "python": 11
+      },
+      "symbols": 11750,
+      "by_kind": {
+        "class": 1563,
+        "constant": 208,
+        "exception": 208,
+        "function": 3203,
+        "method": 6342,
+        "module": 210,
+        "package": 16
+      },
+      "by_split": {
+        "heldout": 899,
+        "train": 10251,
+        "zeroshot": 600
+      },
+      "train_mention_bins": {
+        "0": 418,
+        "1-9": 1607,
+        "10-99": 1488,
+        "100+": 6738
+      }
+    },
+    "real": {
+      "snapshot_sha256": "553d89cdc3a8101eecd47fffc93b36c12e28a5a578a0a74799a8fb4c8cb89fea",
+      "symbols": 43662,
+      "units": 44880,
+      "unit_chars": 47901355,
+      "by_library": {
+        "PIL": 439,
+        "click": 189,
+        "dateutil": 69,
+        "huggingface_hub": 658,
+        "jinja2": 443,
+        "joblib": 187,
+        "matplotlib": 2104,
+        "mpmath": 377,
+        "networkx": 1314,
+        "nltk": 2282,
+        "node": 1270,
+        "numpy": 951,
+        "pandas": 2263,
+        "pygments": 845,
+        "requests": 179,
+        "scipy": 1485,
+        "stdlib": 6313,
+        "sympy": 7666,
+        "torch": 3616,
+        "transformers": 10982,
+        "yaml": 30
+      },
+      "heldout": 179,
+      "train_mention_bins": {
+        "0": 4198,
+        "1-9": 36678,
+        "10-99": 2454,
+        "100+": 153
+      }
+    },
+    "repetition_8gram": {
+      "private": {
+        "n": 8,
+        "ngrams": 284374,
+        "distinct_ratio": 0.6825694332111937
+      },
+      "real": {
+        "n": 8,
+        "ngrams": 397519,
+        "distinct_ratio": 0.881427051285599
+      },
+      "general": {
+        "n": 8,
+        "ngrams": 377870,
+        "distinct_ratio": 0.9966417021727049
+      }
+    }
+  },
+  "ontology": {
+    "seed": 20261007,
+    "private_symbols": 11150,
+    "real_symbols": 43662,
+    "max_atomics": 8192,
+    "max_degree": 16,
+    "concepts": 55412,
+    "atomics": 8192,
+    "relations": 16,
+    "aliases": 217493,
+    "entries": 55227
+  },
+  "holdout": {
+    "concepts": 1078,
+    "heldout_entries": 1078,
+    "eligible_entries": null,
+    "method": "fixed by the track",
+    "sha256": "75ee2217be97bd9d5a0f3a86d9bd045c1fd13f348101e2e6d4a5335c185cea72"
+  },
+  "synthetic": {
+    "candidates": 600,
+    "kept": 600,
+    "sha256": "d0e26c8f201b513de59c5217b4c079914594bb0876adb2bb2e6c834686520f7c",
+    "entries": 600,
+    "dropped_for_text_hits": 0
+  },
+  "eval_corpus": {
+    "tokens": 6000595,
+    "documents": 14757,
+    "dtype": "uint16",
+    "tokenizer": "gpt2",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "06c8191e6a7e73ae8321ec5560a29d438cab04ff822846a45eef85151e383ae2",
+    "boundary": "prefix",
+    "spans": 264051,
+    "eos_id": 50256,
+    "skipped_documents": 0,
+    "request": {
+      "source": "domain eval",
+      "max_tokens": 6000000
+    }
+  },
+  "eval_general_corpus": {
+    "tokens": 4945038,
+    "documents": 5000,
+    "dtype": "uint16",
+    "tokenizer": "gpt2",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "06c8191e6a7e73ae8321ec5560a29d438cab04ff822846a45eef85151e383ae2",
+    "boundary": "prefix",
+    "spans": 7,
+    "eos_id": 50256,
+    "skipped_documents": 0,
+    "request": {
+      "source": "general eval",
+      "shards": [
+        "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet",
+        "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet"
+      ],
+      "skip": 0,
+      "documents": 5000
+    }
+  },
+  "train_corpus": {
+    "tokens": 300004714,
+    "documents": 530912,
+    "dtype": "uint16",
+    "tokenizer": "gpt2",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "0e3880a20d93f4ae8c007b9f1cb523f1d5607da0423d368072d05632df142c05",
+    "boundary": "prefix",
+    "spans": 7222612,
+    "eos_id": 50256,
+    "skipped_documents": 0,
+    "parts": [
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t2-devtools/v1-gpt2/train-domain",
+        "tokens": 150000089,
+        "documents": 386209
+      },
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t2-devtools/v1-gpt2/train-general",
+        "tokens": 150004625,
+        "documents": 144703
+      }
+    ],
+    "mix": {
+      "domain_tokens": 150000089,
+      "general_tokens": 150004625,
+      "domain_fraction": 0.49999244011879096
+    }
+  },
+  "mix": {
+    "domain_tokens": 150000089,
+    "general_tokens": 150004625,
+    "domain_fraction": 0.49999244011879096
+  },
+  "general_text_spans_by_min_subtokens": {
+    "1": 7,
+    "2": 7,
+    "3": 2,
+    "4": 0
+  },
+  "feasibility": {
+    "min_subtokens": 2,
+    "verdict": "feasible",
+    "eval_windows": 1024
+  },
+  "items": {
+    "synthetic_concepts.jsonl": {
+      "rows": 600,
+      "splits": {
+        "synthetic": 600
+      }
+    },
+    "doc_qa_cloze.jsonl": {
+      "rows": 5752,
+      "splits": {
+        "heldout": 3788,
+        "train": 1964
+      }
+    },
+    "property_probe.jsonl": {
+      "rows": 2578,
+      "splits": {
+        "heldout": 1078,
+        "synthetic": 600,
+        "train": 900
+      }
+    },
+    "signature_probe.jsonl": {
+      "rows": 11450,
+      "splits": {
+        "heldout": 6382,
+        "train": 5068
+      }
+    },
+    "zeroshot_entailment.jsonl": {
+      "rows": 9028,
+      "splits": {
+        "heldout": 5798,
+        "synthetic": 3230
+      }
+    },
+    "zeroshot_property.jsonl": {
+      "rows": 11589,
+      "splits": {
+        "heldout": 7317,
+        "synthetic": 4272
+      }
+    }
+  },
+  "data_root": "/home/bhux/data/vsa-llm/tracks/t2-devtools/v1-gpt2",
+  "ontology_sha256": "f7a5293f68dfeaf9e5fcce232d4095f468854742a88a05a4c1d2ea8be9b3cb43",
+  "feasibility_strict": {
+    "1": "feasible",
+    "2": "feasible",
+    "3": "feasible",
+    "4": "feasible"
+  },
+  "alias_normalization": "identifier",
+  "linking_by_normalization": {
+    "tokenizer": "gpt2",
+    "documents": 2000,
+    "concepts": 55412,
+    "default": {
+      "linked_entries": 3754,
+      "span_occurrences": 27077,
+      "covered_token_fraction": 0.21193584216120673,
+      "linked_concepts": 3793,
+      "linked_concept_fraction": 0.06845087706633943
+    },
+    "identifier": {
+      "linked_entries": 6973,
+      "span_occurrences": 36530,
+      "covered_token_fraction": 0.3122368059619496,
+      "linked_concepts": 7096,
+      "linked_concept_fraction": 0.1280589042084747
+    }
+  }
+}

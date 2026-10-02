@@ -1,4 +1,4 @@
-"""Application tracks T3–T6 (E8): per-track ontology, domain documents, synthetic concepts and items.
+"""Application tracks T2–T6 (E8): per-track ontology, domain documents, synthetic concepts and items.
 
 A track object is what `experiments/track_corpus.py` drives; every method is deterministic given the
 config. `prepare` materialises the domain documents as `docs/{eval,train}.jsonl.gz` under the track's
@@ -17,6 +17,7 @@ from ..ontologies.wordnet import FrameOntology
 from .common import SyntheticConcept
 
 TRACKS = {
+    "t2": "vsa_embed.tracks.devtools:DevToolsTrack",
     "t3": "vsa_embed.tracks.product:ProductTrack",
     "t4": "vsa_embed.tracks.chemistry:ChemistryTrack",
     "t5": "vsa_embed.tracks.glossary:GlossaryTrack",

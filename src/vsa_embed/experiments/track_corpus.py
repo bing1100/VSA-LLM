@@ -1,7 +1,12 @@
 """C7: build an application track's corpora, holdout, cardinality, feasibility verdict and task items.
 
-One builder for tracks T3–T6 (E8 recipe steps 1–3, 5, 7), driven by `experiments/<track>/<track>.yaml`;
-outputs mirror `c3_corpus.py`, so the trainer and the E4 tooling read them unchanged.
+One builder for tracks T2–T6 (E8 recipe steps 1–3, 5, 7), driven by `experiments/<track>/<track>.yaml`;
+outputs mirror `c3_corpus.py`, so the trainer and the E4 tooling read them unchanged. Optional keys:
+`data.expected_holdout_sha256` (fail unless the holdout hashes to it; one holdout across builds with
+different tokenizers), `feasibility_strict` (WP-T1's criteria, reported in addition to `FEASIBILITY`) and
+`linker.alias_normalization` (`span_channel.ALIAS_NORMALIZATIONS`; "identifier" keeps `_` in code-symbol
+aliases — then `ontology.pt` records the mode, `alias_table.json` is written next to it, and the report
+compares linking with the default mode).
 
 1. `track.prepare()` writes the domain documents (`docs/eval.jsonl.gz`, `docs/train.jsonl.gz`).
 2. Ontology adapter → frames and aliases. The track's synthetic concepts (invented names, frames
@@ -40,7 +45,7 @@ from vsa_embed.data.concat import concat_corpora
 from vsa_embed.data.corpus import TokenCorpus, build_corpus, eval_windows
 from vsa_embed.experiments.c3_corpus import choose_holdout, iter_texts
 from vsa_embed.provenance import prepare_output_dir, write_run_metadata
-from vsa_embed.span_channel import LINKER_VERSION, AliasTable, alias_subtoken_lengths, cardinality_report
+from vsa_embed.span_channel import LINKER_VERSION, AliasTable, CausalLinker, alias_subtoken_lengths, cardinality_report
 from vsa_embed.tracks import Track, load_track
 from vsa_embed.tracks.common import (SyntheticConcept, names_sha256, occurrences, split_counts, text_vocabulary,
                                      wordnet_forbidden, write_jsonl)
@@ -228,7 +233,8 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     del domain_sample, general_sample
 
     # 3. holdout.
-    base_table = AliasTable.from_pairs(ontology.alias_pairs)
+    normalization = (config.get("linker") or {}).get("alias_normalization", "default")   # "identifier": T2 code symbols
+    base_table = AliasTable.from_pairs(ontology.alias_pairs, normalization=normalization)
     alias_lengths = alias_subtoken_lengths(base_table, tokenizer)
     entry_length: dict[int, int] = {}
     for alias, entry in base_table.alias_to_entry.items():
@@ -255,8 +261,12 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     real_holdout = [c for c in holdout["concepts"] if c not in set(synthetic_concepts)]
     holdout_names = sorted(ontology.concept_names[c] for c in real_holdout)
     holdout_sha = names_sha256(holdout_names)
+    expected_holdout = data.get("expected_holdout_sha256")      # optional pin (one holdout across several builds)
+    if expected_holdout and holdout_sha != expected_holdout:
+        raise ValueError(f"holdout sha256 {holdout_sha} differs from data.expected_holdout_sha256 {expected_holdout}")
     synthetic_sha = names_sha256(c.name for c in synthetic)
-    full = AliasTable.from_pairs(ontology.alias_pairs, holdout=real_holdout + synthetic_concepts, include_holdout=True)
+    full = AliasTable.from_pairs(ontology.alias_pairs, holdout=real_holdout + synthetic_concepts, include_holdout=True,
+                                 normalization=normalization)
     train_table = full.without_holdout()
     heldout_entries = sorted(full.heldout_entries())
     synthetic_set = set(synthetic_concepts)
@@ -308,6 +318,11 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "heldout_real_entries": real_heldout_entries, "synthetic_entries": synthetic_entries,
         "synthetic_sha256": synthetic_sha, "train_frequency_by_min_subtokens": {l: v.tolist() for l, v in by_length.items()},
     }
+    if normalization != "default":
+        # a consumer rebuilding the table from alias pairs must use the same mode; the sidecar is the table itself
+        from vsa_embed.evaluation.channel_probes import save_alias_table
+        channel_ontology["alias_normalization"] = normalization
+        save_alias_table(full, data_root / "alias_table.json")
     torch.save(channel_ontology, data_root / "ontology.pt")
     cardinality_texts = _take(track.documents("eval"), int(data["cardinality_docs"]))
     cardinality = {}
@@ -315,10 +330,30 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         tok = AutoTokenizer.from_pretrained(name, local_files_only=True)
         cardinality[name] = cardinality_report(full, tok, cardinality_texts, thresholds=(1, 2, 3, 4))
     (output_dir / "cardinality.json").write_text(json.dumps(cardinality, indent=2) + "\n")
+    linking = None
+    if normalization != "default":       # how much the mode matters: the same sample linked with the default mode
+        default_full = AliasTable.from_pairs(ontology.alias_pairs, holdout=real_holdout + synthetic_concepts,
+                                             include_holdout=True)
+        linking = {"tokenizer": tokenizer_name, "documents": len(cardinality_texts), "concepts": len(ontology.concept_names)}
+        for mode, table in (("default", default_full), (normalization, full)):
+            row = cardinality_report(table, tokenizer, cardinality_texts, thresholds=(1,))[0]
+            linked_concepts = len({c for e in _linked_entries(table, tokenizer, cardinality_texts) for c in table.entry_concepts[e]})
+            linking[mode] = {"linked_entries": row["linked_entries"], "span_occurrences": row["span_occurrences"],
+                             "covered_token_fraction": row["covered_token_fraction"], "linked_concepts": linked_concepts,
+                             "linked_concept_fraction": linked_concepts / max(1, len(ontology.concept_names))}
+        (output_dir / "linking_by_normalization.json").write_text(json.dumps(linking, indent=2) + "\n")
     feasible_rows = feasibility(eval_corpus, train_corpus, set(real_heldout_entries), entry_count=entry_count)
     recommendation = recommend_min_subtokens(feasible_rows)
     (output_dir / "feasibility.json").write_text(json.dumps({"criteria": FEASIBILITY, "rows": feasible_rows,
                                                              "recommendation": recommendation}, indent=2) + "\n")
+    strict_rows = None
+    if config.get("feasibility_strict"):      # optional: WP-T1's bar on the whole domain evaluation split
+        from vsa_embed.experiments.t1_open_corpus import feasibility_report
+        strict_rows = feasibility_report(data_root / "eval", heldout_entries=real_heldout_entries, entry_count=entry_count,
+                                         frequencies={l: (v, "measured") for l, v in by_length.items()},
+                                         criteria=config["feasibility_strict"])
+        (output_dir / "feasibility_strict.json").write_text(json.dumps({"criteria": config["feasibility_strict"],
+                                                                        "rows": strict_rows}, indent=2) + "\n")
     general_eval = TokenCorpus.open(data_root / "eval-general")
     general_linked = {l: int((general_eval.spans["length"] >= l).sum()) for l in (1, 2, 3, 4)}
 
@@ -358,8 +393,18 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "feasibility": recommendation, "items": {k: {"rows": v["rows"], "splits": v["splits"]} for k, v in item_files.items()},
         "data_root": str(data_root), "ontology_sha256": hashlib.sha256((data_root / "ontology.pt").read_bytes()).hexdigest(),
     }
+    if strict_rows is not None:
+        summary["feasibility_strict"] = {r["min_subtokens"]: r["verdict"] for r in strict_rows}
+    if linking is not None:
+        summary["alias_normalization"] = normalization
+        summary["linking_by_normalization"] = linking
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str) + "\n")
-    (output_dir / "report.md").write_text(render_report(config, summary, cardinality, feasible_rows))
+    report = render_report(config, summary, cardinality, feasible_rows)
+    if strict_rows is not None:
+        report += render_strict(config["feasibility_strict"], strict_rows)
+    if linking is not None:
+        report += render_linking(linking, normalization)
+    (output_dir / "report.md").write_text(report)
     write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu")
     return summary
 
@@ -405,6 +450,48 @@ def render_report(config: dict[str, Any], summary: dict[str, Any], cardinality: 
         lines.append(f"| `{name}` | {info['rows']:,} | {info['splits']} |")
     lines.append("")
     return "\n".join(lines)
+
+
+def _linked_entries(table: AliasTable, tokenizer: Any, texts: list[str]) -> set[int]:
+    """Entries linked (any span length) in `texts`."""
+    linker = CausalLinker(table, min_subtokens=1)
+    linked: set[int] = set()
+    for text in texts:
+        offsets = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)["offset_mapping"]
+        linked.update(span.entry for span in linker.link(text, offsets))
+    return linked
+
+
+def render_linking(linking: dict[str, Any], normalization: str) -> str:
+    lines = [f"## Alias normalization: `{normalization}` vs the default mode", "",
+             f"The same {linking['documents']:,} domain evaluation documents linked with both alias tables "
+             f"({linking['tokenizer']}, ℓ_min = 1; `linking_by_normalization.json`). The default mode turns `_` into a "
+             "space, so a snake_case alias can never match code.", "",
+             "| mode | linked entries | span occurrences | covered-token fraction | linked concepts | of all concepts |",
+             "|---|---:|---:|---:|---:|---:|"]
+    for mode in ("default", normalization):
+        r = linking[mode]
+        lines.append(f"| {mode} | {r['linked_entries']:,} | {r['span_occurrences']:,} | {r['covered_token_fraction']:.3f} | "
+                     f"{r['linked_concepts']:,} | {r['linked_concept_fraction']:.3f} |")
+    return "\n".join(lines) + "\n"
+
+
+def render_strict(criteria: dict[str, Any], rows: list[dict[str, Any]]) -> str:
+    """Report section for WP-T1's stricter bar (open decision 17), on the whole domain evaluation split."""
+    lines = ["## Feasibility against WP-T1's bar (whole domain evaluation split)", "",
+             f"≥ {criteria['heldout_min_entries_5plus']} held-out entries with ≥ 5 occurrences and ≥ "
+             f"{criteria['heldout_min_occurrences']:,} held-out occurrences; ≥ {criteria['rare_min_entries']} rare (training "
+             f"frequency 1–9) entries linked and ≥ {criteria['rare_min_occurrences']:,} rare occurrences "
+             "(`t1_open_corpus.feasibility_report`; details in `feasibility_strict.json`).", "",
+             "| ℓ_min | eval tokens | held-out occ. | held-out entries ≥ 5 | rare occ. | rare entries | verdict | eval windows needed |",
+             "|---:|---:|---:|---:|---:|---:|---|---:|"]
+    for r in rows:
+        s = r["split"]
+        needed = f"{r['eval_windows_needed']:,}" if r["eval_windows_needed"] else "not reached"
+        lines.append(f"| {r['min_subtokens']} | {s['tokens_considered']:,} | {s['heldout_occurrences']:,} | "
+                     f"{s['heldout_entries_5plus']:,} | {s['rare_occurrences']:,} | {s['rare_entries_linked']:,} | "
+                     f"{r['verdict']} | {needed} |")
+    return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> None:
