@@ -240,3 +240,10 @@ def test_cli_writes_the_run_folder_contract(runs_root: Path, tmp_path: Path) -> 
         "k-50m-100m-tokens.png", "k-50m-50m-tokens.png", "loss-50m-100m-tokens.png", "loss-50m-50m-tokens.png"]
     with pytest.raises(FileExistsError):
         main(["--runs", str(runs_root / "short"), "--output", str(out)])
+
+
+def test_cpt_folder_name_c0p_is_the_c0_prime_baseline(tmp_path) -> None:
+    from vsa_embed.experiments import e4_report
+    assert e4_report.NAME.search("SmolLM2-135M-lora-C0p-s1")["condition"] == "C0p"
+    source = Path(e4_report.__file__).read_text()
+    assert "C0p" in source and "\"C0'\" if condition == \"C0p\"" in source

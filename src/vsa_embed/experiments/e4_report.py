@@ -159,7 +159,9 @@ def load_run(path: Path) -> Run:
             starts = data["starts"]
     rows = [json.loads(line) for line in (path / "metrics.jsonl").read_text().splitlines() if line.strip()]
     speeds = [r["tokens_per_s"] for r in rows if r.get("type") == "train" and r.get("tokens_per_s")]
-    return Run(path=path, config=config, condition=match["condition"] if match else path.name,
+    condition = match["condition"] if match else path.name
+    condition = "C0'" if condition == "C0p" else condition         # C0' is written C0p in CPT file names
+    return Run(path=path, config=config, condition=condition,
                seed=int(match["seed"]) if match else int(config.get("seed", 0)), model=model, cohort=cohort,
                manifest=manifest, curves={s: c for s, c in curves.items() if c}, final=final, final_tokens=final_tokens,
                windows=windows, starts=starts, tokens_per_s=float(np.median(speeds)) if speeds else None,
