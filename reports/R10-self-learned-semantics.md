@@ -366,3 +366,181 @@ Recorded at commit d51bf54 (clean tree): 81 jobs, 4 workers × 1 thread, 648 s w
 **Interpretation.** The frozen-anchor target is the regime the program already refuted for VSA row fitting (01a–01c: composed rows explain little of a frozen host's contextual variance; E2 test MRR 0.03–0.08). E10.1 shows the same limit for self-learning: the anchors carry too little relational signal for the learner to recover, discover or verify ontology structure, so self-tests are uninformative (≈ random) and inference collapses to nothing. The positives that survive are structural rather than signal-driven: one-relation-at-a-time (additive) discovery beats all-at-once, and dreaming between stages helps continual discovery of `similar_to`.
 
 **Implication.** The synthetic success (E10.0) shows the mechanisms work when the training signal reflects the ontology; E10.1 shows frozen GPT-2 anchors do not provide that signal. The decisive test is **E10.2 (joint language-model training)**, where the signal is the LM loss on linked text; the S0 pilot already showed that a jointly trained channel improves held-out-concept similarity (CARD-660 0.10 → 0.33), i.e. that this regime carries ontology signal. E10.2 is scheduled after the E9/E4 recipe is fixed; its pre-registered readouts are the same refutation clauses on the LM's own strata and probes.
+
+
+## E10 baselines for claim D (WP-PQ2, 2026-10-03)
+
+**Why.** The 2026-10 novelty check (`manuscript/novelty-check-2026-10.md` §5.5) lists the baselines a reviewer will ask for before any claim D. This section runs four of them on the same worlds, scenarios, candidate pools and seeds as E10.0:
+- D-B1, property identification: AMIE-style Horn-rule mining and IterE-style axioms read off relation operators;
+- D-B2, erased-edge recovery: KG link prediction (TransE, RotatE, ComplEx, an IterE-style loop) and AMIE rule closure;
+- D-B4, a null world: no hidden relation exists, so every accepted slot and every adopted rule is a false discovery;
+- D-B5, validation reuse: a fresh validation split per test, and a multiplicity correction.
+
+Not run here: clustering / TransG / IRM discovery baselines (D-B3), dreaming ablations (D-B6), resonator / Lasso frame inference (D-B7), L2-SP / retrofitting sweeps (D-B8) and the WN18RR benchmark (D-B9).
+
+**Runs and code.**
+- `experiments/e10-self-semantics/runs/e10.0-baselines-v2/`: E10.0 world, seeds 101/202/303. Dev seeds 7–9 are used only to choose the thresholds of the operator readings (RotatE 0.621, HRR roles 0.198) and of a tuned AMIE variant (PCA confidence 0.611). 51 jobs on 2 single-threaded workers: 20.7 min wall (the `-v1` run 19.7 min), at most 0.7 CPU-h, ≤ 1 GB per process.
+- `experiments/e10-self-semantics/runs/e10.1-baselines-v2/`: E10.1 WordNet world, seeds 11/22/33, dev seed 7; graph-only parts (recovery and axioms) at 30% and 50% erasure. 11 jobs on 2 single-threaded workers: 12.7 min wall on a shared CPU (the `-v1` run 9.5 min), at most 0.43 CPU-h, ≤ 2.3 GB per process.
+- Code: `vsa_embed.kg_baselines` (rule mining, KGE models, operator axioms), `vsa_embed.experiments.e10_baselines` (runner), and an opt-in report section (`python -m vsa_embed.experiments.e10_report --baselines RUN_DIR`). Configs: `e10-baselines.yaml` and `e10-baselines-wordnet.yaml`, merged over the E10.0 / E10.1 configs.
+- **Provenance.** The numbers were first produced from an uncommitted working tree (folders `-v1`, manifests `git_dirty: true`, not committed). The committed `-v2` folders re-run the same commands from a clean tree at `d6edfc6` (the code was added in `0a38784`). Every job is seeded and single-threaded. Comparison of `-v2` with `-v1`, row by row without timing fields: E10.1, all 35 rows identical; E10.0, all 111 rows identical except the RotatE-axiom reading of discovered slots in 21 discovery rows (86 slot scores, one adoption), which `-v1` had computed before the final RotatE settings. Every number in this section is that of `-v2` (the `-v1` report showed 3 / 2 / 2 instead of 3 / 3 / 3 in the collapsed RotatE cell of §B.2).
+
+**Methods** (same pools, seeds and observations as E10.0; gold is read only by the evaluation):
+- AMIE-style mining (Galárraga et al., WWW 2013) covers closed rules with one or two body atoms, either of which may be inverted. Kinds: symmetric `r⁻¹ ⇒ r`, inverse `p⁻¹ ⇒ q`, sub-property `p ⇒ q`, and chains `a ∧ b ⇒ s` (transitivity included). Each rule gets support, head coverage, standard confidence and PCA confidence. AMIE's defaults are kept: head coverage ≥ 0.01 and PCA confidence ≥ 0.1, plus support ≥ 2.
+- KG embeddings, full-batch with uniformly corrupted heads or tails:
+  - TransE (Bordes et al., NIPS 2013);
+  - RotatE (Sun et al., ICLR 2019, arXiv:1902.10197), with self-adversarial negatives;
+  - ComplEx (Trouillon et al., ICML 2016, arXiv:1606.06357).
+
+  All use dimension 64, 400 epochs and 32 negatives. A dev-seed sweep of dimension, epochs, learning rate and margin moved validation AUC only within 0.60–0.72.
+- IterE-style (Zhang et al., WWW 2019, arXiv:1903.08948): read an axiom off the relation operators. For RotatE, an axiom holds when the phases compose: the mean cosine of the summed signed body phases minus the head phase. RotatE's rotation is unitary HRR binding in the Fourier domain. For the learnable ontology's own HRR role vectors the score is `cos(a′ ⊛ b′, s)`, with the involution `r*` for an inverted atom; symmetry is then `cos(r*, r)`. The IterE loop trains RotatE, adds the closure of the accepted axioms as training triples, and retrains it once.
+- `prior_corr` is a no-learning control for recovery, added because KG completion turned out to be the wrong competitor. It scores a candidate `(h, r, a)` by the cosine of `h`'s mean training observation with the candidate bound from the *priors*, `r_prior ⊛ a_prior`; the learnable ontology starts from the same priors.
+- Recovery thresholds (for F1) are chosen on 10% of the asserted edges, held out with distractors drawn by the scenario's own rule. The method is fit on the other 90%.
+- "Gold axioms" are the rules with standard confidence ≥ 0.9 (support ≥ 3) on the complete gold graph:
+  - `similar_to⁻¹ ⇒ similar_to`;
+  - `part_of⁻¹ ⇒ has_part` and `has_part⁻¹ ⇒ part_of`;
+  - `located_in ∘ located_in ⇒ located_in`;
+  - the two sibling chains `similar_to(⁻¹) ∘ is_a ⇒ is_a`.
+- Fresh validation data is **simulated**. New views of each concept are drawn exactly like the world's observations from its clean target, from a separate generator. They stand for a new split of the same size, which in practice would need more data.
+
+### B.1 Erased-edge recovery (D-B2): graph-only completion is far below; a no-learning observation readout gets most of the way
+
+AUC on the E10.0 (b) candidate pools; the learnable ontology's numbers are its committed E10.0 run, on the same pools (sizes checked). Means over 3 seeds [95% t-interval].
+
+| Erased | learnable ontology | `prior_corr` (no learning) | AMIE closure | TransE | RotatE | ComplEx | IterE-style |
+|---|---|---|---|---|---|---|---|
+| 10% | 0.989 [0.988, 0.991] | 0.909 [0.903, 0.915] | 0.769 [0.761, 0.778] | 0.761 [0.738, 0.784] | 0.718 [0.628, 0.807] | 0.710 [0.688, 0.732] | 0.722 [0.680, 0.763] |
+| 30% | 0.987 [0.981, 0.992] | 0.916 [0.902, 0.930] | 0.694 [0.673, 0.715] | 0.688 [0.646, 0.730] | 0.672 [0.618, 0.727] | 0.663 [0.623, 0.703] | 0.661 [0.641, 0.682] |
+| 50% | 0.986 [0.985, 0.988] | 0.917 [0.901, 0.933] | 0.616 [0.581, 0.651] | 0.623 [0.577, 0.669] | 0.593 [0.571, 0.615] | 0.597 [0.538, 0.656] | 0.585 [0.512, 0.659] |
+| 70% | 0.984 [0.973, 0.996] | 0.913 [0.896, 0.931] | 0.557 [0.537, 0.578] | 0.560 [0.507, 0.614] | 0.538 [0.493, 0.583] | 0.548 [0.496, 0.601] | 0.545 [0.477, 0.613] |
+
+- Every graph-only method is below the learnable ontology at every erasure level. ΔAUC runs from −0.22 to −0.45, and every CI excludes 0. Graph-only AUC also falls toward chance as more of the graph is erased. AMIE closure and TransE are the best graph-only methods (0.77 at 10% erased). The IterE loop adds nothing over RotatE, because RotatE cannot represent transitivity or the sibling chains (§B.2).
+- The no-learning `prior_corr` reaches 0.91–0.92 AUC at every erasure level, against 0.98–0.99 for the learnable ontology (ΔAUC −0.07 to −0.08, CI excludes 0). At 50–70% erasure its F1 at a validation-chosen threshold (0.76–0.77) equals or beats the learnable ontology's committed F1 (0.74 / 0.55). The learnable ontology's F1 uses its fixed mass ≥ 0.5 rule, which loses recall as erasure grows.
+- **Reading.** "Erased-edge recovery, AUC ≈ 0.99" is not something any KG-completion method gets in this world; graph regularities give 0.55–0.77. But most of it does not need the learning loop either. In this world every observation is composed by an HRR teacher from all of a concept's gold edges, erased ones included. So a single correlation of the observations with prior-bound candidates already ranks erased edges at 0.91. The learnable ontology's own contribution is the step from 0.91 to 0.99: it learns better atomics and relations under the L2 pull, and better ranks than one correlation. Erasure recovery should therefore be described as "decoding the edges present in the training signal", not as inference from ontology structure. In a world whose observations do not contain the erased edges, the graph-only rows are the relevant comparison.
+
+### B.2 Property identification from pairs vs from operators (D-B1)
+
+Horn axioms on the 30%-erasure asserted graph against the gold axioms; 3 seeds.
+
+| Reading | precision | recall | F1 | AUC of the score | axioms accepted |
+|---|---|---|---|---|---|
+| AMIE, defaults (PCA ≥ 0.1, HC ≥ 0.01) | 0.45 [0.24, 0.66] | **1.00** [1.00, 1.00] | 0.62 [0.41, 0.83] | **0.999** | 13.7 |
+| AMIE, default filters and PCA ≥ 0.611 (dev-chosen) | 0.84 [0.81, 0.88] | 0.89 [0.65, 1.13] | **0.86** [0.74, 0.99] | 0.999 | 6.3 |
+| IterE-style, RotatE phases ≥ 0.621 (dev-chosen) | **1.00** [1.00, 1.00] | 0.33 [−0.08, 0.75] | 0.48 [0.01, 0.96] | 0.86 [0.67, 1.06] | 2.0 |
+| the learnable ontology's own HRR role vectors ≥ 0.198 (dev-chosen) | 0.01 | 0.17 | 0.02 | **0.45** (chance) | 80.0 |
+
+- **AMIE recovers every planted Horn property from the observed pairs alone**: symmetry, both inverse directions, transitivity and the sibling chains. Its confidence ranks gold axioms almost perfectly (AUC 0.999). One application of the dev-tuned rules recovers 27% of the erased edges at 0.94 gold precision.
+- RotatE's operators carry the symmetric and inverse axioms when they hold (precision 1.0). They cannot express transitivity or chains, so recall is 0.33.
+- **The learnable ontology's HRR role vectors carry no axiom information** (AUC 0.45, at chance). This is expected: in a composer, a role binds fillers into the head's row; it does not map heads to tails. The logical properties in E10.0 come from testing hypotheses on *pairs* (the riddle step), not from the operators.
+
+The same accepted slots of the additive curriculum (E10.0 (c), re-run here with identical settings), explained four ways. Entries are adopted / true of the slot's best-matching relation / that relation's designed property, pooled over 3 seeds:
+
+| Scenario | accepted slots | riddle (E10.6) | AMIE on the captured pairs | RotatE axiom | slot's own HRR operator |
+|---|---:|---|---|---|---|
+| absent (has_part, similar_to, located_in hidden) | 10 | 5 / 5 / 5 | 7 / 5 / 5 | 0 / 0 / 0 | 9 / 0 / 0 |
+| collapsed (part_of + member_of merged) | 6 | 3 / 3 / 3 | 6 / 3 / 3 | 3 / 3 / 3 | 6 / 0 / 0 |
+
+- AMIE on the captured pairs finds exactly the riddle step's correct identifications: `symmetric` for similar_to slots, `inverse_of:part_of` for has_part, `inverse_of:has_part` for part_of. It also adopts more wrong ones:
+  - 2 of 7 in the absent world: `inverse_of:part_of` on two mixed located_in slots;
+  - 3 of 6 in the collapsed world: `sub_relation_of:meronym`, which is true by construction but uninformative.
+
+  With the re-used split the riddle step adopts nothing wrong on accepted slots of the real worlds.
+- Rule completion is the same: has_part 0.62 vs 0.60, similar_to 0.49 vs 0.49, part_of 0.97 vs 0.97 (Jaccard over all framed heads). The riddle step is ahead only on located_in fragments (0.24 vs 0.15).
+- The riddle's extra predictions are more precise (0.82 vs 0.60 gold precision in the absent world).
+- **Reading.** At this level the held-out hypothesis test is **not better than standard rule mining at identifying properties**. It is more conservative: it has equal true identifications and fewer false adoptions. Neither method names located_in fragments transitive.
+
+### B.3 Null worlds (D-B4): the slot self-test does not control false discoveries
+
+The additive curriculum, run exactly as E10.0 (c), on worlds with no hidden relation:
+- `null_distractors`: every relation asserted, and only distractor pairs offered, as many as in the absent world;
+- `null_permuted`: the absent world with the offered pairs' tails permuted, and no gold pair left.
+
+| World | proposed slots / run | accepted slots / run | false accepted slots / run | runs with ≥ 1 false acceptance | rules adopted on accepted slots: riddle / AMIE | AMIE rules involving the offered pairs |
+|---|---|---|---|---:|---|---|
+| absent (real) | 4.33 | 3.33 [1.90, 4.77] | 0.67 | 1 of 3 | 5 / 7 | 3.0 (all reflect hidden relations) |
+| null_distractors | 3.67 | **2.67** [1.23, 4.10] | **2.67** | **3 of 3** | 1 / 0 | 0 |
+| null_permuted | 5.00 | **4.33** [2.90, 5.77] | **4.33** | **3 of 3** | 2 / 0 | 0 |
+
+- **In both null worlds the curriculum accepts 2.7–4.3 slots per run, all false.** Every run has at least one false discovery, and the acceptance rate (73–87% of proposed slots) is as high as in the real world (77%).
+- The slot self-test (utility lower bound > 0 *and* beating random tails under the same operator) therefore does not distinguish a real hidden relation from a bundle of random pairs.
+- The likely mechanism is co-adaptation. Both tests ablate or add edges in a model *trained with* the slot's members, so the rest of the model has adapted to them, while the random-tail control was never trained in.
+- The riddle step adopts a structural rule on 3 of 21 null slots (`one_to_one`, `antisymmetric`: weak, negative-only properties). AMIE adopts none, and mining the offered pairs as a pseudo-relation yields **no** rule in either null world (3 true rules in the real world).
+- **Reading.** Clause (iii) of H-H ("self-acceptance better than random acceptance") was supported in E10.0 only *relative to* random acceptance at the matched rate in the real world. The null world shows that the acceptance itself has no false-discovery control. E10.0's "about half the oracle's alignment" for discovered relations must be read together with ≈ 3–4 accepted false slots per run in a world with nothing to discover. A merge test, a refit-based acceptance (compare against an equally long refit *without* the slot, as dreaming does), or an MDL charge per slot is needed before any discovery claim (R10 §6, open decisions 1–2).
+
+### B.4 Validation reuse (D-B5): reuse is not what inflates acceptance
+
+Edge self-test of E10.0 (d): accept a proposed edge if removing it lowers held-out fit (lower bound > 0). Variants:
+- `reused`: one validation split for every proposal, as in E10.0;
+- `fresh`: a fresh simulated split per proposal;
+- `ttest`: a one-sided t-test per proposal;
+- `holm`: Holm over all proposals of a run.
+
+| Scenario | proposals | variant | acceptance | wrong among accepted | false acceptance of non-gold proposals | recall of gold |
+|---|---:|---|---|---|---|---|
+| erasure 30% | 840 | reused | 0.915 | 0.053 | 0.446 | 0.973 |
+| | | fresh | 0.933 | 0.064 | 0.544 | 0.981 |
+| | | ttest | 0.824 | 0.030 | 0.228 | 0.897 |
+| | | holm | 0.043 | 0.000 | 0.000 | 0.049 |
+| erasure 50% | 1,368 | reused | 0.918 | 0.056 | 0.476 | 0.974 |
+| | | fresh | 0.921 | 0.056 | 0.459 | 0.977 |
+| null (nothing erased) | 92 | reused | 0.450 | 1.000 | 0.450 | — |
+| | | fresh | 0.400 | 1.000 | 0.400 | — |
+| | | ttest | 0.281 | 1.000 | 0.281 | — |
+| | | holm | 0.000 | — | 0.000 | — |
+
+The `reused` row reproduces E10.0's committed (d) numbers exactly (840 proposals, acceptance 0.92, accuracy 0.927).
+
+- A fresh split changes nothing material: acceptance 0.92–0.93 vs 0.92 in the erasure worlds, and 0.40 vs 0.45 in the null world. The slot curriculum with a fresh validation split per round accepts the same slots as with the re-used split in the absent world (3.33 / run in both), and 2.67 → 3.00 and 4.33 → 4.33 in the null worlds.
+- So adaptive reuse of one split is not the problem. The edge test accepts **40–45% of the distractor edges that training proposes** even on fresh data, the same co-adaptation effect as for slots.
+- Most proposals in the real worlds are real edges, so precision stays high (5–6% wrong among accepted). But "false acceptance among non-gold proposals" is 45–54%.
+- Holm over all proposals (with 4 observations per test) is far too conservative: it accepts 3–4% of proposals. A plain t-test roughly halves the false acceptances (0.23 vs 0.45 at 30% erasure; 0.28 vs 0.45 in the null world) at a recall cost of 0.08.
+
+### B.5 E10.1 (WordNet, frozen GPT-2 anchors): graph-only baselines
+
+Graph-only parts only: recovery at 30% / 50% erasure on the E10.1 (b) pools and the axiom readings. Seeds 11/22/33; the learnable ontology's numbers are from the committed `runs/e10.1-v1`, on the same pools (sizes checked). The composer-based parts (edge self-tests, slot discovery, null worlds) were not repeated: E10.1 already found the self-tests at chance on WordNet. `prior_corr` needs observations in the composer's space, so it applies to the synthetic world only (the WordNet anchors are 768-d GPT-2 states).
+
+| Erased | learnable ontology (E10.1) | AMIE closure | TransE | RotatE | ComplEx | IterE-style |
+|---|---|---|---|---|---|---|
+| 30% | 0.589 [0.527, 0.651] | 0.508 [0.504, 0.512] | 0.588 [0.554, 0.622] | 0.601 [0.569, 0.633] | 0.628 [0.618, 0.638] | 0.601 [0.558, 0.644] |
+| 50% | 0.561 [0.545, 0.577] | 0.507 [0.504, 0.510] | 0.570 [0.536, 0.603] | 0.582 [0.569, 0.596] | 0.605 [0.565, 0.644] | 0.577 [0.542, 0.612] |
+
+- On WordNet, every KG-embedding baseline matches or numerically exceeds the learnable ontology. ComplEx gives ΔAUC +0.04 [−0.03, +0.11] at 30% and +0.04 [−0.01, +0.10] at 50%; the TransE, RotatE and IterE-style CIs also include 0.
+- AMIE's rule closure is at chance (0.51): erased hypernym and meronym edges are rarely implied by short Horn rules within 3,000 concepts.
+- All three models' F1 (KGE 0.41–0.51, AMIE 0.50) is above the learnable ontology's committed F1 (0.33 / 0.22). The accept-all F1 is 0.5 at this prevalence, so the learnable ontology's fixed mass threshold is below the trivial F1 there.
+- Gold axioms on the WordNet slice are category-inheritance chains (`hypernym ∘ lexname ⇒ lexname`, `… ∘ pos ⇒ pos`) and antonym chains. AMIE ranks them at AUC 0.999. With default filters it recovers only 27% of them: the head-coverage filter excludes rules into the large lexname / pos relations.
+- The RotatE threshold chosen on the single dev seed is degenerate (−0.18): it accepts ≈ 15.7k axioms at precision 0.001. The IterE loop therefore injects only the 50 best supported axioms, and its recovery equals plain RotatE.
+- **Reading.** This confirms the E10.1 verdict from the baseline side. On frozen-anchor WordNet the learnable ontology's recovery is no better than graph-only KG completion, so it carries no signal beyond what the graph provides.
+
+### B.6 What the baselines mean for claim D
+
+| Sub-claim of D | Baseline outcome | Wording consequence |
+|---|---|---|
+| Recovers erased edges (AUC ≈ 0.99) | KG completion: 0.55–0.77; a no-learning prior × observation correlation: 0.91–0.92 | Recovery is **decoding edges that are present in the training signal**; learning adds +0.07 AUC over one correlation. Not "inference"; not specific to a learnable ontology against KGE in the sense that KGE has no access to that signal |
+| Identifies symmetric / inverse relations without labels | AMIE on the same captured pairs finds the same correct properties (and more false ones); AMIE on the observed graph identifies every planted Horn axiom (AUC 0.999) | "Property-hypothesis testing on held-out pairs **matches standard rule mining** in identification, with fewer false adoptions" — not a new capability |
+| Self-tested acceptance | Null worlds: 2.7–4.3 false accepted slots per run, every run; fresh splits do not change acceptance; the edge test accepts 40–45% of proposed distractors | **No false-discovery control.** Clause (iii) holds only relative to random acceptance. A null-calibrated acceptance (refit-based or MDL) is a prerequisite for any discovery claim |
+| The learnable operators encode logic | HRR role readings at chance | Do not claim that the learned operators are logical; the logic is in the hypothesis tests over pairs |
+
+**Overall.** Recommended wording for D (novelty check §5.6) should be narrowed further. Say:
+- "recovers erased edges present in its training signal";
+- "identifies symmetric and inverse relations from captured pairs as well as rule mining";
+- "its acceptance test is not calibrated against a null world".
+
+Claim D stays out of the abstract. The next E10 step, before E10.2, is a null-calibrated acceptance test, with this null world as its pre-registered check.
+
+**Deviations.**
+1. `prior_corr` was added after the first run showed that every graph-only method was far below. It uses the learner's own priors and training observations only, with no gold.
+2. The E10.0 baseline run was executed twice: before and after adding `prior_corr`. All shared rows are identical.
+3. Operator-reading thresholds are F1-optimal on the dev seeds' gold axioms. This is an evaluation-side calibration; IterE itself uses a fixed hyper-parameter.
+4. AMIE support ≥ 2 replaces AMIE 3's absolute 100 (a small graph).
+5. Fresh validation splits are simulated from the clean targets (synthetic only).
+6. E10.1 runs graph-only parts with a smaller KGE budget (150 epochs, 16 negatives; ≈ 10.7k entities). Its first attempt (200 epochs, 32 negatives) was stopped at ~12 min, at ≈ 4–5 GB per worker, above this work package's memory limit; that run left no folder.
+
+**Reproduce.**
+
+```bash
+PY=~/anaconda3/envs/vsa-repro/bin/python
+PYTHONPATH=src CUDA_VISIBLE_DEVICES= $PY -m vsa_embed.experiments.e10_baselines \
+  --config experiments/e10-self-semantics/e10-baselines.yaml --output experiments/e10-self-semantics/runs/e10.0-baselines-v2 --workers 2
+PYTHONPATH=src CUDA_VISIBLE_DEVICES= $PY -m vsa_embed.experiments.e10_baselines \
+  --config experiments/e10-self-semantics/e10-baselines-wordnet.yaml --output experiments/e10-self-semantics/runs/e10.1-baselines-v2 --workers 2
+PYTHONPATH=src $PY -m vsa_embed.experiments.e10_report --baselines experiments/e10-self-semantics/runs/e10.0-baselines-v2
+```

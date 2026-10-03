@@ -1,0 +1,42 @@
+# E10.1 baselines for claim D (WP-PQ2) on WordNet with frozen GPT-2 anchors (E10.1 world, scenarios and learner).
+# Graph-only baselines (rule mining, KGE, IterE-style axioms) on the E10.1 (b) erasure pools at the two acceptance
+# rates; the composer-based parts (edge self-tests, slot discovery) are not repeated here: E10.1 already found the
+# self-tests at chance on WordNet. CPU only, single-threaded jobs.
+#   python -m vsa_embed.experiments.e10_baselines --config experiments/e10-self-semantics/e10-baselines-wordnet.yaml \
+#     --output experiments/e10-self-semantics/runs/e10.1-baselines-v1
+experiment: e10-baselines
+stage: E10.1-baselines
+base_config: experiments/e10-self-semantics/e10-wordnet.yaml
+seeds: [11, 22, 33]
+dev_seeds: [7]              # the E10.1 dev seed: operator-axiom thresholds only
+num_threads: 1
+workers: 2
+parts: [recovery, axioms]
+
+amie: {min_support: 2, min_head_coverage: 0.01, min_pca: 0.1}
+
+recovery:
+  rates: [0.3, 0.5]
+  validation_fraction: 0.1
+  models: [amie, transe, rotate, complex, itere]
+  # smaller budget than E10.0 (≈ 10.7k entities: ≈ 0.5 s per full-batch epoch single-threaded; the E10.0 dev sweep
+  # moved validation AUC by ≤ 0.06 across dimension / epochs / lr / gamma)
+  kge: {dimension: 64, epochs: 150, negatives: 16, lr: 0.01, gamma: 6.0, adversarial: 1.0}
+  reference: experiments/e10-self-semantics/runs/e10.1-v1/metrics.jsonl
+
+axioms:
+  erasure: 0.3
+  gold_confidence: 0.9
+  gold_support: 3
+  itere_iterations: 2
+  itere_max_axioms: 50      # supported axioms only, at most 50 injected (the code default; the WordNet dev threshold is low)
+
+edges:                      # dev seed only: the composer's HRR role readings (no fresh split: WordNet has no clean targets)
+  scenarios: ["0.3"]
+  steps: 1000
+  fresh_observations: 2
+  null_fraction: 0.3
+
+discovery_baselines:
+  rotate_epochs: 200
+  worlds: {}

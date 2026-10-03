@@ -653,3 +653,317 @@ def render_report(summary: dict[str, Any], config: dict[str, Any]) -> str:
     if timing:
         L += ["CPU seconds by part (sum over jobs): " + ", ".join(f"{k} {v:.0f}" for k, v in timing.items()) + ".", ""]
     return "\n".join(L)
+
+
+# =====================================================================================================
+# E10 baselines (WP-PQ2; `e10_baselines`): summaries and report section. Opt-in: nothing above uses it.
+# =====================================================================================================
+
+BASELINE_RECOVERY_METHODS = ("prior_corr", "amie", "transe", "rotate", "complex", "itere")
+BASELINE_EDGE_VARIANTS = ("reused", "fresh", "ttest", "holm")
+BASELINE_EXPLAINERS = ("riddle", "amie", "rotate", "hrr")
+
+
+def _reference_b_rows(config: dict[str, Any]) -> dict[tuple[int, float], dict]:
+    """Part-b rows of the learnable ontology's E10.0 run (`recovery.reference`), by (seed, rate)."""
+    import json
+    from pathlib import Path
+    path = (config.get("recovery") or {}).get("reference")
+    if not path or not Path(path).exists():
+        return {}
+    out = {}
+    for line in Path(path).read_text().splitlines():
+        row = json.loads(line)
+        if row.get("part") == "b":
+            out[(int(row["seed"]), float(row["rate"]))] = row
+    return out
+
+
+def _axiom_reading(row: dict, scores: list, threshold: float, *, passes: list | None = None) -> dict[str, Any]:
+    """Precision / recall / F1 / AUC of one axiom reading (scores ≥ threshold, or `passes`) against the gold axioms."""
+    from vsa_embed.kg_baselines import auc
+    gold = [bool(g) for g in (row["axiom_gold"] if "axiom_gold" in row else row["gold"])]
+    kinds = row.get("kinds") or row.get("axiom_kinds")
+    values = [(-2.0 if s is None else float(s)) for s in scores]
+    chosen = [bool(p) for p in passes] if passes is not None else [v >= threshold for v in values]
+    tp = sum(c and g for c, g in zip(chosen, gold))
+    predicted, positives = sum(chosen), sum(gold)
+    precision = tp / predicted if predicted else float("nan")
+    recall = tp / positives if positives else float("nan")
+    f1 = 2 * precision * recall / (precision + recall) if predicted and positives and precision + recall > 0 else 0.0
+    by_kind = {}
+    for kind in ("symmetric", "inverse", "transitive", "chain"):
+        idx = [i for i, k in enumerate(kinds) if k == kind and gold[i]]
+        if idx:
+            by_kind[kind] = sum(chosen[i] for i in idx) / len(idx)
+    return {"precision": precision, "recall": recall, "f1": f1, "predicted": predicted, "gold": positives,
+            "auc": auc(values, gold), "recall_by_kind": by_kind}
+
+
+def summarize_baselines(rows: list[dict], config: dict[str, Any]) -> dict[str, Any]:
+    """Summary of an `e10_baselines` run: main seeds only (dev-seed rows set the thresholds)."""
+    thresholds = config.get("thresholds") or {}
+    main = [r for r in rows if not r.get("dev")]
+    out: dict[str, Any] = {"seeds": sorted({int(r["seed"]) for r in main}), "thresholds": thresholds}
+    # ---- recovery (D-B2)
+    reference = _reference_b_rows(config)
+    rec = [r for r in main if r["part"] == "recovery"]
+    recovery: dict[str, Any] = {}
+    for rate in sorted({float(r["rate"]) for r in rec}):
+        block: dict[str, Any] = {"methods": {}, "pool_matches_reference": True}
+        sel = [r for r in rec if float(r["rate"]) == rate]
+        ref = {s: reference.get((s, rate)) for s in sorted({int(r["seed"]) for r in sel})}
+        for s, row in ref.items():
+            any_row = next(r for r in sel if int(r["seed"]) == s)
+            if row is None or int(row.get("candidates", -1)) != int(any_row["candidates"]):
+                block["pool_matches_reference"] = False
+        if ref and all(v is not None for v in ref.values()):
+            block["methods"]["learnable ontology"] = {m: _ci([ref[s][m] for s in ref]) for m in ("auc", "r_precision", "f1")}
+            block["frequency_baseline"] = {"auc": _ci([ref[s].get("frequency_auc") for s in ref]),
+                                           "r_precision": _ci([ref[s].get("frequency_r_precision") for s in ref])}
+        for method in BASELINE_RECOVERY_METHODS:
+            ms = {int(r["seed"]): r for r in sel if r["method"] == method}
+            if not ms:
+                continue
+            entry = {m: _ci([ms[s][m] for s in ms]) for m in ("auc", "r_precision", "f1", "precision", "recall", "validation_auc")}
+            if all(ref.get(s) for s in ms):
+                entry["auc_minus_learnable"] = _ci([_num(ms[s]["auc"]) - _num(ref[s]["auc"]) for s in ms])
+                entry["f1_minus_learnable"] = _ci([_num(ms[s]["f1"]) - _num(ref[s]["f1"]) for s in ms])
+            block["methods"][method] = entry
+        recovery[str(rate)] = block
+    out["recovery"] = recovery
+    # ---- axioms (D-B1)
+    ax = [r for r in main if r["part"] == "axioms"]
+    edges03 = {int(r["seed"]): r for r in main if r["part"] == "edges" and r.get("hrr") is not None}
+    readings: dict[str, list[dict]] = defaultdict(list)
+    for r in ax:
+        readings["AMIE (defaults: PCA ≥ 0.1, HC ≥ 0.01)"].append(_axiom_reading(r, r["amie_pca"], 0, passes=r["amie_passes"]))
+        tuned = thresholds.get("amie", float("inf"))
+        readings[f"AMIE (default filters and PCA ≥ {tuned:.3g}, dev-chosen)"].append(
+            _axiom_reading(r, r["amie_pca"], tuned, passes=[bool(p) and (s or 0) >= tuned for p, s in zip(r["amie_passes"], r["amie_pca"])]))
+        readings[f"IterE-style RotatE phases (≥ {thresholds.get('rotate', float('nan')):.3g}, dev-chosen)"].append(
+            _axiom_reading(r, r["rotate"], thresholds.get("rotate", float("inf"))))
+        e = edges03.get(int(r["seed"]))
+        if e is not None:
+            readings[f"learnable ontology's HRR roles (≥ {thresholds.get('hrr', float('nan')):.3g}, dev-chosen)"].append(
+                _axiom_reading(e, e["hrr"], thresholds.get("hrr", float("inf"))))
+    axioms = {}
+    for name, items in readings.items():
+        kinds = sorted({k for it in items for k in it["recall_by_kind"]})
+        axioms[name] = {"precision": _ci([it["precision"] for it in items]), "recall": _ci([it["recall"] for it in items]),
+                        "f1": _ci([it["f1"] for it in items]), "auc": _ci([it["auc"] for it in items]),
+                        "predicted": _ci([it["predicted"] for it in items]), "gold": _ci([it["gold"] for it in items]),
+                        "recall_by_kind": {k: _ci([it["recall_by_kind"].get(k) for it in items]) for k in kinds}}
+    out["axioms"] = axioms
+    out["gold_axioms"] = sorted({a for r in ax for a in r.get("gold_axioms", [])})
+    closures: dict[str, dict[str, list]] = defaultdict(lambda: defaultdict(list))
+    for r in ax:
+        for key, v in (r.get("closures") or {}).items():
+            for m in ("axioms", "closure", "erased_recall", "precision_vs_gold"):
+                closures[key][m].append(v.get(m))
+    out["axiom_closures"] = {k: {m: _ci(v) for m, v in d.items()} for k, d in closures.items()}
+    # ---- edges (D-B5)
+    ed = [r for r in main if r["part"] == "edges"]
+    edges: dict[str, Any] = {}
+    for scenario in sorted({r["scenario"] for r in ed}):
+        sel = [r for r in ed if r["scenario"] == scenario and r.get("gold") is not None]
+        block = {"proposals": sum(int(r["proposals"]) for r in sel)}
+        for variant in BASELINE_EDGE_VARIANTS:
+            if not any(variant in r for r in sel):          # e.g. no fresh split on WordNet (no clean targets)
+                continue
+            per_seed: dict[str, list] = defaultdict(list)
+            pooled = {"tp": 0, "fp": 0, "fn": 0, "tn": 0}
+            for r in sel:
+                g = [bool(x) for x in r["gold"]]; a = [bool(x) for x in r[variant]]
+                tp = sum(x and y for x, y in zip(a, g)); fp = sum(x and not y for x, y in zip(a, g))
+                fn = sum((not x) and y for x, y in zip(a, g)); tn = sum((not x) and (not y) for x, y in zip(a, g))
+                for k, v in (("tp", tp), ("fp", fp), ("fn", fn), ("tn", tn)):
+                    pooled[k] += v
+                n = len(g)
+                per_seed["acceptance"].append(sum(a) / n if n else float("nan"))
+                per_seed["accuracy"].append((tp + tn) / n if n else float("nan"))
+                per_seed["wrong_among_accepted"].append(fp / (tp + fp) if tp + fp else float("nan"))
+                per_seed["false_acceptance"].append(fp / (fp + tn) if fp + tn else float("nan"))
+                per_seed["recall"].append(tp / (tp + fn) if tp + fn else float("nan"))
+            block[variant] = {**{k: _ci(v) for k, v in per_seed.items()}, "pooled": pooled}
+        block["prevalence"] = _ci([sum(map(bool, r["gold"])) / len(r["gold"]) for r in sel if r["gold"]])
+        edges[scenario] = block
+    out["edges"] = edges
+    # ---- discovery (D-B1 identification, D-B4 null worlds, D-B5 fresh holdout)
+    dis = [r for r in main if r["part"] == "discovery"]
+    discovery: dict[str, Any] = {}
+    for world in ("absent", "collapsed", "null_distractors", "null_permuted"):
+        for holdout in ("reused", "fresh"):
+            sel = [r for r in dis if r["world"] == world and r["holdout"] == holdout]
+            if not sel:
+                continue
+            null = world.startswith("null")
+            accepted = [[s for s in r["slots"] if s["accept"]] for r in sel]
+            real = [[] if null else [s for s in acc if (s.get("gold_precision") or 0) >= 0.5] for acc in accepted]
+            false_counts = [len(a) - len(rr) for a, rr in zip(accepted, real)]
+            entry: dict[str, Any] = {
+                "runs": len(sel), "accepted_slots": _ci([len(a) for a in accepted]),
+                "proposed_slots": _ci([len(r["slots"]) for r in sel]), "false_accepted_slots": _ci(false_counts),
+                "runs_with_false_acceptance": sum(1 for c in false_counts if c > 0),
+                "offered_rules": _ci([len(r.get("offered_rules") or []) for r in sel]),
+                "accepted_sizes": [s["size"] for a in accepted for s in a]}
+            flat = [s for a in accepted for s in a]
+            for explainer in BASELINE_EXPLAINERS:
+                adopted = [s for s in flat if s[explainer]["adopted"]]
+                entry[explainer] = {"accepted": len(flat), "adopted": len(adopted),
+                                    "true": sum(bool(s[explainer]["true"]) for s in adopted),
+                                    "designed": sum(bool(s[explainer]["designed"]) for s in adopted)}
+            if not null:
+                rec_r: dict[str, list] = defaultdict(list); rec_a: dict[str, list] = defaultdict(list)
+                for r in sel:
+                    best: dict[str, float] = defaultdict(float)
+                    for s in r["slots"]:
+                        if not (s["accept"] and s.get("best_relation")):
+                            continue
+                        value = s.get("amie_closure_jaccard")
+                        value = s.get("slot_jaccard_framed") if value is None else value
+                        best[s["best_relation"]] = max(best[s["best_relation"]], float(value or 0.0))
+                    for name, v in (r.get("relation_recovery") or {}).items():
+                        rec_r[name].append(v["jaccard"]); rec_a[name].append(best.get(name, 0.0))
+                entry["closure_jaccard_riddle"] = {k: _ci(v) for k, v in rec_r.items()}
+                entry["closure_jaccard_amie"] = {k: _ci(v) for k, v in rec_a.items()}
+                entry["rule_precision"] = {
+                    "riddle": _ci([s["riddle_rule_precision"] for s in flat if s.get("riddle_rule_precision") is not None]),
+                    "amie": _ci([s["amie_rule_precision"] for s in flat if s.get("amie_rule_precision") is not None])}
+            discovery[f"{world}/{holdout}"] = entry
+    out["discovery"] = discovery
+    return out
+
+
+def render_baselines(summary: dict[str, Any], config: dict[str, Any]) -> str:
+    """Markdown report of an `e10_baselines` run (claim D baselines; novelty check §5.5)."""
+    th = summary.get("thresholds") or {}
+    L = [f"# {config.get('stage', 'E10 baselines')} — baselines for claim D (WP-PQ2)", "",
+         f"Seeds {summary.get('seeds')}; dev seeds {config.get('dev_seeds')} set the operator-axiom thresholds only "
+         f"(RotatE {th.get('rotate', float('nan')):.3f}, HRR roles {th.get('hrr', float('nan')):.3f}, tuned AMIE "
+         f"{th.get('amie', float('nan')):.3f}). World and scenarios: `{config.get('base_config')}`. Means over seeds with "
+         "95% t-intervals in brackets. Baselines see only asserted edges (and, for the learnable ontology, training and "
+         "validation observations); gold is read by the evaluation only.", ""]
+    rec = summary.get("recovery") or {}
+    if rec:
+        matches = all(b.get("pool_matches_reference") for b in rec.values())
+        base = config.get("base_stage") or "E10"
+        reference = (config.get("recovery") or {}).get("reference")
+        L += [f"## D-B2 Erased-edge recovery on the {base} (b) candidate pools", "",
+              "Methods are fit on 90% of the asserted edges; F1 uses a threshold chosen on the other 10% plus distractors. "
+              f"The learnable ontology's row (and the filler-frequency row) is its committed {base} run `{reference}` (same "
+              "pools; " + ("pool sizes match" if matches else "**pool sizes differ**") + "), whose F1 uses its fixed mass ≥ 0.5 "
+              "rule. With one erased edge per two distractors, accepting every candidate gives F1 = 0.5, so AUC and "
+              "R-precision are the primary comparison.", "",
+              "| Erased | Method | AUC | R-precision | F1 | ΔAUC vs learnable | ΔF1 vs learnable |", "|---|---|---|---|---|---|---|"]
+        for rate, block in rec.items():
+            for method, m in block["methods"].items():
+                L.append(f"| {float(rate):.0%} | {method} | {_fmt(m['auc'])} | {_fmt(m['r_precision'])} | {_fmt(m['f1'])} | "
+                         f"{_fmt(m.get('auc_minus_learnable'))} | {_fmt(m.get('f1_minus_learnable'))} |")
+            fb = block.get("frequency_baseline")
+            if fb:
+                L.append(f"| {float(rate):.0%} | filler-frequency ranking | {_fmt(fb['auc'])} | {_fmt(fb['r_precision'])} | — | | |")
+        L.append("")
+    ax = summary.get("axioms") or {}
+    if ax:
+        L += ["## D-B1 Horn axioms on the 30%-erasure graph (vs axioms with confidence ≥ 0.9 on the complete gold graph)", "",
+              f"Gold axioms (union over seeds): {', '.join(summary.get('gold_axioms', []))}.", "",
+              "| Reading | precision | recall | F1 | AUC of the score | axioms accepted | recall: symmetric / inverse / transitive / chain |",
+              "|---|---|---|---|---|---|---|"]
+        for name, m in ax.items():
+            kinds = m["recall_by_kind"]
+            L.append(f"| {name} | {_fmt(m['precision'])} | {_fmt(m['recall'])} | {_fmt(m['f1'])} | {_fmt(m['auc'])} | "
+                     f"{_fmt(m['predicted'], 1)} | " + " / ".join(_fmt(kinds.get(k), 2) for k in ("symmetric", "inverse", "transitive", "chain")) + " |")
+        cl = summary.get("axiom_closures") or {}
+        if cl:
+            L += ["", "Closure of the accepted axioms over the observed graph (one application; `amie_dev` = support ≥ 2 and "
+                  "PCA ≥ the dev threshold; `rotate` = supported axioms above the dev threshold, at most 50, as injected by "
+                  "the IterE loop):", "",
+                  "| Axioms from | axioms | closure triples | recall of erased edges | precision vs gold |", "|---|---|---|---|---|"]
+            for key, m in cl.items():
+                L.append(f"| {key} | {_fmt(m['axioms'], 1)} | {_fmt(m['closure'], 1)} | {_fmt(m['erased_recall'])} | {_fmt(m['precision_vs_gold'])} |")
+        L.append("")
+    ed = summary.get("edges") or {}
+    if ed:
+        L += ["## D-B5 Edge self-test: re-used validation split vs fresh split vs multiplicity correction", "",
+              "`reused` = E10.0 (lower bound > 0 on the one validation split); `fresh` = a fresh simulated draw of the same "
+              "size per proposal; `ttest` = one-sided t-test per proposal (α 0.025) on the re-used split; `holm` = Holm over "
+              "all proposals of a run. `null` = nothing erased: every proposal is a distractor.", "",
+              "| Scenario | proposals | variant | acceptance | accuracy | wrong among accepted | false acceptance (of non-gold) | recall |",
+              "|---|---:|---|---|---|---|---|---|"]
+        for scenario, block in ed.items():
+            label = "null (no erasure)" if scenario == "null" else f"erasure {float(scenario):.0%}"
+            for variant in BASELINE_EDGE_VARIANTS:
+                m = block.get(variant)
+                if m:
+                    L.append(f"| {label} | {block['proposals']} | {variant} | {_fmt(m['acceptance'])} | {_fmt(m['accuracy'])} | "
+                             f"{_fmt(m['wrong_among_accepted'])} | {_fmt(m['false_acceptance'])} | {_fmt(m['recall'])} |")
+        L.append("")
+    dis = summary.get("discovery") or {}
+    if dis:
+        L += ["## D-B4 / D-B5 Blank-slot discovery: real, null and fresh-holdout worlds", "",
+              "Null worlds have no hidden relation (`null_distractors`: every relation asserted, only distractors offered; "
+              "`null_permuted`: the absent scenario with the offered pairs' tails permuted), so every accepted slot is a false "
+              "discovery. In the real worlds a slot counts as false if fewer than half of its pairs are offered gold pairs of a "
+              "hidden relation.", "",
+              "| World / holdout | runs | proposed slots | accepted slots | false accepted slots | runs with ≥ 1 false acceptance | AMIE rules on the offered pairs |",
+              "|---|---:|---|---|---|---:|---|"]
+        for key, m in dis.items():
+            L.append(f"| {key} | {m['runs']} | {_fmt(m['proposed_slots'], 2)} | {_fmt(m['accepted_slots'], 2)} | "
+                     f"{_fmt(m['false_accepted_slots'], 2)} | {m['runs_with_false_acceptance']} | {_fmt(m['offered_rules'], 1)} |")
+        L += ["", "Explaining the accepted slots (pooled over seeds): adopted / true of the slot's relation / its designed property. "
+              "`riddle` = E10.6 held-out hypothesis tests; `amie` = best AMIE rule on the captured pairs; `rotate` = IterE-style "
+              "axiom from a RotatE fit; `hrr` = axiom read off the slot's own learned operator.", "",
+              "| World / holdout | accepted slots | riddle | AMIE | RotatE | HRR roles |", "|---|---:|---|---|---|---|"]
+        for key, m in dis.items():
+            cells = [f"{m[e]['adopted']} / {m[e]['true']} / {m[e]['designed']}" for e in BASELINE_EXPLAINERS]
+            L.append(f"| {key} | {m['riddle']['accepted']} | " + " | ".join(cells) + " |")
+        rows = [(k, m) for k, m in dis.items() if m.get("closure_jaccard_riddle")]
+        if rows:
+            L += ["", "Relation completion with the adopted rule (Jaccard over all framed heads, best accepted slot per hidden "
+                  "relation; riddle = E10.0 crystallization with rule enforcement, AMIE = captured pairs ∪ the AMIE rule's predictions):", "",
+                  "| World / holdout | relation | riddle | AMIE |", "|---|---|---|---|"]
+            for key, m in rows:
+                for name, v in m["closure_jaccard_riddle"].items():
+                    L.append(f"| {key} | {name} | {_fmt(v)} | {_fmt(m['closure_jaccard_amie'].get(name))} |")
+            L += ["", "Gold precision of the adopted rule's predictions beyond the captured pairs (mean over accepted slots with "
+                  "an adopted rule and a matched relation): " + "; ".join(
+                      f"{key}: riddle {_fmt(m['rule_precision']['riddle'])}, AMIE {_fmt(m['rule_precision']['amie'])}"
+                      for key, m in rows) + "."]
+        L.append("")
+    timing = summary.get("job_cpu_seconds_by_part")
+    if timing:
+        L += ["CPU seconds by part (sum over jobs): " + ", ".join(f"{k} {v:.0f}" for k, v in timing.items())
+              + (f"; wall {summary['wall_seconds']:.0f} s." if summary.get("wall_seconds") else "."), ""]
+    return "\n".join(L)
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Re-render a report from a run folder's rows: `--baselines RUN_DIR` (an `e10_baselines` run)."""
+    import argparse
+    import json
+    from pathlib import Path
+
+    import yaml
+    parser = argparse.ArgumentParser(description="E10 report from a run folder's metrics.jsonl")
+    parser.add_argument("--baselines", type=Path, required=True, help="an e10_baselines run folder")
+    parser.add_argument("--output", type=Path, default=None, help="markdown file (default: print)")
+    args = parser.parse_args(argv)
+    config = yaml.safe_load((args.baselines / "resolved_config.yaml").read_text())
+    rows = [json.loads(line) for line in (args.baselines / "metrics.jsonl").read_text().splitlines() if line.strip()]
+    summary = summarize_baselines(rows, config)
+    stored = args.baselines / "summary.json"
+    if stored.exists():
+        old = json.loads(stored.read_text())
+        for key in ("job_cpu_seconds_by_part", "wall_seconds"):
+            if key in old:
+                summary[key] = old[key]
+    text = render_baselines(summary, config)
+    if args.output:
+        args.output.write_text(text)
+    else:
+        print(text)
+
+
+if __name__ == "__main__":
+    main()

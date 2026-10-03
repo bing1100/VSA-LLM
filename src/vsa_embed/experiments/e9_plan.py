@@ -10,6 +10,8 @@
         --lora-rank 64 [--memory-report PATH] [--micro-batch N] [--channel-scale auto|on|off] [--queue]
     python -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3.5-2B-Base Qwen3.5-0.8B-Base --host-mode lora
         --lora-rank 64 [--queue]
+    python -m vsa_embed.experiments.e9_plan --track t5 [--stage NAME] [--hosts ...] --dim3-baselines [--seeds 1] [--models ...]
+        [--dim3-weights-on-candidate] [--dry-run] [--queue] [--priority 60]
 
 writes one YAML per (host, model, seed) under `experiments/e9-retrofit/configs/<stage>/` (stem
 `<host>-<mode>-<model>-s<seed>`; mode `full` for a fully trained host, `lora`, or `frozen` for P0; the stage
@@ -82,6 +84,13 @@ and INT4 (`RUN/probes.json`, `RUN/probes-int4.json`), the track's zero-shot item
 and, for tracks with a general-text corpus, on `eval-general` (`quant-general/<stage>/`); at P + 3 — the R9
 report (`experiments/e9-retrofit/report/<stage>/`). Track runs read the evaluation alias table written by
 `e9_tracks.ensure_alias_table` at queue time. Retries of evaluation jobs replace their partial outputs.
+
+**Dimension-3 baselines** (WP-PQ2, novelty check §4.4; `--dim3-baselines`): evaluation-only jobs on the stage's
+existing runs, nothing is trained or re-planned — per run `RUN/dim3-baselines` (`e9_dim3_baselines`: in-context frames
+and IKE on every model, ROME / MEMIT / AlphaEdit on P0 and C0′ (and on C5 with `--dim3-weights-on-candidate`), frame
+transplant and channel-off audit on C5, intra-entity locality, row sources on C2/C5) at priority 60, then the stage's R9
+report with the dimension-3 section in `report/<stage>-dim3` at 61; `--dry-run` prints the jobs with GPU estimates
+(`dim3_estimate_hours`).
 """
 
 from __future__ import annotations
@@ -556,6 +565,115 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     return queued
 
 
+# ---------------------------------------------------------------- dimension-3 baselines (WP-PQ2; opt-in `--dim3-baselines`)
+
+DIM3_PRIORITY = 60
+DIM3_FOLDER = "dim3-baselines"
+# `e9_dim3_baselines` methods per model: weight editors on the host weights (P0, C0′), the channel audits on C5, row
+# sources on the channel models, in-context frames / IKE / intra-entity locality on every model.
+DIM3_METHODS = {"P0": "context,ike,rome,memit,alphaedit,intra", "C0p": "context,ike,rome,memit,alphaedit,intra",
+                "C2": "context,ike,intra,rows", "C5": "context,ike,transplant,channel_off,intra,rows"}
+DIM3_WEIGHT_METHODS = ("rome", "memit", "alphaedit")
+# GPU seconds of one SmolLM2-360M evaluation (RTX 3090 used alone, 200 edits and their 200 control edits, 300 new words), per
+# method. Calibration (2026-10-03): on the shared, fully busy GPU, SmolLM2-135M C0′ took 2.4 s per edit and condition
+# for ROME and for MEMIT (δ optimization, keys, scoring) and 4 s for the second moments of 20k tokens; the CPU smoke of
+# every method on C5-135M (8 new words, 6 edits) gives the relative cost of the scoring methods (in-context frames ≈ 50 s
+# per new word on 2 CPU threads; IKE scored at a quarter of the batch size). Small-batch editing is latency-bound, so
+# other hosts scale with (parameters / 360M)^0.6, never below 0.75. Rough: replace by the first block's job times.
+DIM3_SECONDS_360M = {"context": 420, "ike": 480, "rome": 720, "memit": 620, "alphaedit": 640, "transplant": 90,
+                     "channel_off": 120, "intra": 60, "rows": 360, "second_moments": 30}
+DIM3_SCALE_EXPONENT, DIM3_SCALE_FLOOR = 0.6, 0.75
+
+
+def dim3_methods(model: str, *, weights_on_candidate: bool = False) -> str:
+    methods = DIM3_METHODS[model]
+    if model == "C5" and weights_on_candidate:       # "ontology edit + ROME/MEMIT": the editors on C5's host weights too
+        methods += "," + ",".join(DIM3_WEIGHT_METHODS)
+    return methods
+
+
+def dim3_estimate_hours(host: str, model: str, *, weights_on_candidate: bool = False) -> float:
+    """GPU hours of one dimension-3 baseline evaluation (`DIM3_SECONDS_360M`, scaled to the host)."""
+    methods = dim3_methods(model, weights_on_candidate=weights_on_candidate).split(",")
+    seconds = sum(DIM3_SECONDS_360M[m] for m in methods)
+    if any(m in DIM3_WEIGHT_METHODS for m in methods):
+        seconds += DIM3_SECONDS_360M["second_moments"]
+    scale = max(DIM3_SCALE_FLOOR, (HOST_PARAMETERS[host] / HOST_PARAMETERS["SmolLM2-360M"]) ** DIM3_SCALE_EXPONENT)
+    return seconds * scale / 3600
+
+
+def dim3_baseline_job(run_dir: Path, spec: TrackSpec, *, model: str, python: str = sys.executable, alias_table: Path | None = None,
+                      batch_size: int | None = None, weights_on_candidate: bool = False) -> tuple[str, list[str], list[str]]:
+    """(suffix, command, retry arguments) of a run's dimension-3 baseline evaluation (`RUN/dim3-baselines`, bf16): the
+    same new-word and edit items as the run's `edit` job."""
+    new_items, edit_items = dimension3_items(spec.name, spec.family)
+    table = ["--alias-table", str(alias_table)] if alias_table else []
+    batch = ["--batch-size", str(int(batch_size))] if batch_size else []
+    command = [python, "-m", "vsa_embed.experiments.e9_dim3_baselines", "evaluate", "--run", str(run_dir),
+               "--new-items", str(new_items), "--edit-items", str(edit_items),
+               "--methods", dim3_methods(model, weights_on_candidate=weights_on_candidate), *table, *batch,
+               "--output", str(Path(run_dir) / DIM3_FOLDER)]
+    return DIM3_FOLDER, command, ["--overwrite"]
+
+
+def dim3_report_command(stage: str, *, python: str = sys.executable, root: Path = ROOT) -> list[str]:
+    """The R9 report of the stage with the dimension-3 baselines section, in its own folder (`report/<stage>-dim3`)."""
+    quant = root / "quant" / stage
+    general = root / "quant-general" / stage
+    return [python, "-m", "vsa_embed.experiments.e9_report", "--runs", str(root / "runs" / stage),
+            *(["--quant", str(quant)] if quant.exists() else []), *(["--quant-general", str(general)] if general.exists() else []),
+            "--dim3-baselines", "--output", str(root / "report" / f"{stage}-dim3"), "--overwrite"]
+
+
+def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, queue_dir: Path | None = None,
+                         priority: int = DIM3_PRIORITY, models: list[str] | None = None, seeds: list[int] | None = None,
+                         alias_table: Path | None = None, weights_on_candidate: bool = False, queue: bool = True
+                         ) -> tuple[list[str], list[tuple[str, list[str], float]]]:
+    """Evaluation-only dimension-3 baseline jobs for the stage's existing configs (`configs/<stage>/*.yaml`; no
+    training is queued or re-planned): one job per run at `priority` (after the run's training, whose priority is
+    lower), the stage's report with the dimension-3 section at `priority + 1`. Returns (queued names, planned jobs
+    as (name, command, GPU-h estimate)); `queue=False` only plans."""
+    from vsa_embed.jobqueue import DEFAULT_DIR, add
+    paths = sorted((root / "configs" / stage).glob("*.yaml"))
+    if not paths:
+        raise FileNotFoundError(f"no configs under {root / 'configs' / stage} (plan the stage first)")
+    configs = {p: yaml.safe_load(p.read_text()) for p in paths}
+    families = {c.get("e9_family", "smollm2") for c in configs.values()}
+    if len(families) != 1:
+        raise ValueError("one E9 stage per host tokenizer family")
+    family = families.pop()
+    hosts = [h for h in (_config_host(c) for c in configs.values()) if h is not None]
+    python = stage_python(hosts) if hosts else pinned_python()
+    spec = track_spec(track, family)
+    if alias_table is None:
+        alias_table = ensure_alias_table(spec) if queue else spec.alias_table_path
+    planned: list[tuple[str, list[str], float]] = []
+    for path in paths:
+        stem = path.stem
+        model, seed = stem.rsplit("-s", 1)[0].rsplit("-", 1)[1], int(stem.rsplit("-s", 1)[1])
+        if model not in DIM3_METHODS or (models and model not in models) or (seeds and model != "P0" and seed not in seeds):
+            continue
+        host = _config_host(configs[path]) or ""
+        run_dir = root / "runs" / stage / stem
+        suffix, command, _ = dim3_baseline_job(run_dir, spec, model=model, python=python, alias_table=alias_table,
+                                               batch_size=EVAL_JOB_BATCH.get(host), weights_on_candidate=weights_on_candidate)
+        hours = dim3_estimate_hours(host, model, weights_on_candidate=weights_on_candidate) if host in HOST_PARAMETERS else float("nan")
+        planned.append((f"{stage}-{stem}-{suffix}", command, hours))
+    planned.append((f"{stage}-report-dim3", dim3_report_command(stage, python=python, root=root), 0.0))
+    queued: list[str] = []
+    if queue:
+        target = queue_dir or DEFAULT_DIR
+        for name, command, _ in planned:
+            level = priority + 1 if name.endswith("-report-dim3") else priority
+            try:
+                add(target, command, name=name, priority=level, min_free_gb=1 if level > priority else 6,
+                    env={"PYTHONPATH": "src"}, resume_args=["--overwrite"] if level == priority else [])
+                queued.append(name)
+            except FileExistsError:
+                pass
+    return queued, planned
+
+
 def describe_plan(paths: list[Path], plans: dict[str, dict[str, Any]]) -> list[str]:
     """One line per host: micro-batch, checkpointing, host dtype, their source (table, memory probe, override) and
     GPU hours of the trained runs (measured tokens/s from the probe, else the 6N model)."""
@@ -613,9 +731,26 @@ def main(argv: list[str] | None = None) -> None:
                              f"{INT4_PROBES_NO_WSD} for Qwen3 and Qwen3.5 — WSD is the slowest)")
     parser.add_argument("--queue", action="store_true"); parser.add_argument("--priority", type=int, default=None,
                                                                              help="default 22 (SmolLM2) / 26 (Qwen3) / 52 (Qwen3.5)")
+    parser.add_argument("--dim3-baselines", action="store_true",
+                        help="WP-PQ2: queue only the evaluation-only dimension-3 baselines (e9_dim3_baselines) for the stage's "
+                             f"existing configs and runs (no training; default priority {DIM3_PRIORITY}; --seeds/--models filter)")
+    parser.add_argument("--dim3-weights-on-candidate", action="store_true",
+                        help="with --dim3-baselines: also run ROME/MEMIT/AlphaEdit on C5's host weights (ontology edit + ROME)")
+    parser.add_argument("--dry-run", action="store_true", help="with --dim3-baselines: print the jobs and GPU estimates only")
     args = parser.parse_args(argv)
     family = stage_family(args.hosts)
     stage = args.stage or f"{args.track}{FAMILIES[family]['suffix']}"
+    if args.dim3_baselines:
+        given = sys.argv[1:] if argv is None else argv
+        explicit, seeds_given = "--models" in given, "--seeds" in given
+        queued, planned = queue_dim3_baselines(
+            stage, track=args.track, priority=args.priority if args.priority is not None else DIM3_PRIORITY,
+            models=args.models if explicit else None, seeds=args.seeds if seeds_given else None,
+            weights_on_candidate=args.dim3_weights_on_candidate, queue=args.queue and not args.dry_run)
+        for name, command, hours in planned:
+            print(f"{name}  ≈ {hours:.2f} GPU-h\n  {' '.join(command)}")
+        print(f"≈ {sum(h for _, _, h in planned if h == h):.1f} GPU-h for {len(planned) - 1} evaluation job(s); queued {len(queued)} job(s)")
+        return
     memory = load_memory_report(args.memory_report or FAMILIES[family]["memory_report"])
     paths = write_stage(stage, hosts=args.hosts, models=args.models, seeds=args.seeds, track=args.track, mode=args.host_mode,
                         lora_rank=args.lora_rank, host_lr=args.host_lr, gate_bias=args.gate_bias, tokens=args.tokens,
