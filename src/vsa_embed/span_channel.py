@@ -382,6 +382,40 @@ class SpanChannel(nn.Module):
             keys.append(hash(tuple(input_ids[b, s:e + 1].tolist())) % self.hashed_buckets)
         return self.table(torch.tensor(keys, device=entries.device))
 
+    def add_entries(self, count: int, frames: Sequence[Iterable[tuple[int, int]]] | None = None, *, seed: int = 0) -> Tensor:
+        """Append `count` link entries at evaluation time (E9 zero-shot insertion); returns their ids.
+
+        Composition (`compose`) appends the entries' `frames` to the composer (rows composed from the
+        existing atomics and relations); the free table (C2) appends rows marked unseen, which fall
+        back to the mean of the trained rows; the random control (C1) appends fixed random vectors
+        drawn from `seed`; a hashed memory (C1h) is keyed by subtokens and needs nothing. Rows of
+        existing entries are unchanged in every mode.
+        """
+        if count < 0 or (frames is not None and len(frames) != count):
+            raise ValueError("frames must hold one frame per new entry")
+        start = self.entry_count
+        if self.mode == "compose":
+            if frames is None:
+                raise ValueError("compose mode needs the new entries' frames")
+            ids = self.composer.add_concepts(frames)
+            if int(ids[0] if count else start) != start:
+                raise ValueError("the composer's concepts are not the channel's entries")
+        elif self.mode == "free":
+            weight = self.table.weight
+            table = nn.Embedding(start + count, weight.shape[1], device=weight.device, dtype=weight.dtype)
+            with torch.no_grad():
+                table.weight.zero_()
+                table.weight[:start] = weight.detach()
+            table.weight.requires_grad_(weight.requires_grad)
+            self.table = table
+            self.unseen = torch.cat([self.unseen, torch.ones(count, dtype=torch.bool, device=self.unseen.device)])
+        elif self.mode == "random":
+            fixed = self.table_fixed
+            extra = torch.randn(count, fixed.shape[1], generator=torch.Generator().manual_seed(seed)) / fixed.shape[1] ** 0.5
+            self.table_fixed = torch.cat([fixed, extra.to(fixed)])
+        self.entry_count = start + count
+        return torch.arange(start, start + count)
+
     def set_unseen(self, entries: Tensor | Iterable[int]) -> None:
         """Mark entries that received no training signal (free-table control only)."""
         if self.mode == "free":

@@ -117,7 +117,8 @@ class E5Run:
                 "size": self.size, "channel_mode": self.mode, "channel": self.config.get("channel"),
                 "experiment": self.config.get("experiment"), "run_git_sha": git_sha,
                 "ontology": self.config["data"].get("ontology"), "eval_corpus": self.config["data"].get("eval"),
-                "min_subtokens": self.min_subtokens, "tokenizer": self.adapter.info.get("tokenizer")}
+                "min_subtokens": self.min_subtokens, "tokenizer": self.adapter.info.get("tokenizer"),
+                **({"quantization": self.adapter.info["quantization"]} if self.adapter.info.get("quantization") else {})}
 
 
 def run_config(run_dir: Path, checkpoint: str = "final.pt") -> dict[str, Any]:
@@ -131,11 +132,15 @@ def run_config(run_dir: Path, checkpoint: str = "final.pt") -> dict[str, Any]:
 
 def open_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.device | str | None = None,
              batch_size: int = 32, max_length: int = 256, ontology_path: Path | None = None,
-             alias_table: Path | None = None, holdout_names: Path | None = None) -> E5Run:
+             alias_table: Path | None = None, holdout_names: Path | None = None, quantize: str | None = None,
+             quantize_channel: bool = False, group_size: str | int = "auto") -> E5Run:
+    """`quantize` ("int8"/"int4", `quantize_channel` = variant B) evaluates the run after the
+    post-training quantization of `e4_quant` (`channel_probes.quantize_model`)."""
     run_dir = Path(run_dir)
     adapter = cp.load_run(run_dir, checkpoint=checkpoint, device=device, ontology_path=ontology_path,
                           alias_table=alias_table, holdout_names=holdout_names, batch_size=batch_size,
-                          max_length=max_length)
+                          max_length=max_length, quantize=quantize, quantize_channel=quantize_channel,
+                          group_size=group_size)
     config = run_config(run_dir, checkpoint)
     source = ontology_path or config["data"].get("ontology")
     ontology = torch.load(source, weights_only=False) if source else None
@@ -384,6 +389,21 @@ def status_of(entry: int, heldout: set[int] | frozenset[int], frequency: np.ndar
 
 
 # -- run folders --------------------------------------------------------------------------------------------
+
+RESULT_FILES = ("resolved_config.yaml", "manifest.json", "summary.json", "report.md", "predictions.jsonl")
+
+
+def clear_output(output: Path) -> list[str]:
+    """Remove a previous (possibly interrupted) evaluation's result files from `output` so that it
+    can be written again (opt-in `--overwrite`); any other file in the folder is left and still
+    makes `start_output` refuse it."""
+    removed = []
+    for name in RESULT_FILES:
+        path = Path(output) / name
+        if path.is_file():
+            path.unlink(); removed.append(name)
+    return removed
+
 
 def start_output(output: Path, config: dict[str, Any]) -> dict[str, Any]:
     git_at_start = prepare_output_dir(Path(output))
