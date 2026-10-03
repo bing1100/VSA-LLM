@@ -406,7 +406,7 @@ def test_e9_plan_arms_queue(plan_root, tmp_path, monkeypatch) -> None:
     assert shuffled[shuffled.index("--sources") + 1] == "own,none,mean_row"
     assert "--edit-items" not in jobs["main-SmolLM2-360M-full-C5sh-s1-edit"]["command"]
     assert "--edit-items" in jobs[f"main-{stem}-edit"]["command"]
-    assert not any("quant" in n for n in jobs) and jobs["main-report-s1-pq"]["priority"] == 54   # no e4_quant for arms
+    assert not any("quant" in n for n in jobs) and jobs["main-report-s1-pq-SmolLM2-360M"]["priority"] == 54   # no e4_quant for arms
     base = _plan(plan_root, models=list(e9_plan.MODELS), seeds=[2])
     more = e9_plan.queue_jobs(base, "main", 51, root=plan_root["root"], queue_dir=queue, track="t5", alias_table=Path("t5.json"),
                               rescore="all")

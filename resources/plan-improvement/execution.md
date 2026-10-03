@@ -369,8 +369,8 @@ manuscript wording are WP-PQ2.
   without the `random_frame` source and the edit items, which do not apply to shuffled frames) and `e9_rescore` (`ref`,
   `int4-A`); no `e4_quant` (the rescoring has `int4-A`); missing C6 tables are built by a job at P queued before the
   training jobs (GPU: seconds for T5, minutes for T4). `--rescore all` also rescores P0 / C0′ / C2 / C5 with the
-  `controls` variants. A batch with arms gets its own quant/report job names (`…-s1-2-3-pq`), so it never collides with a
-  queued base batch.
+  `controls` variants. A batch with arms gets its own quant/report job names (`…-s1-2-3-pq-<hosts>`, e.g. `t5-report-s1-2-3-pq-SmolLM2-360M`), so it never collides with a
+  queued base batch, and a later arm batch on another host (Tier 3) reports again.
 
 **Decisions (WP-PQ1).**
 
@@ -402,24 +402,26 @@ zero-shot + editing at bf16 ≈ 3 / 1.7 min; the R9 report ≈ 22 min. Estimates
 **Budgeted plan** (GPU-h; ≥ 3 seeds on the decisive comparisons C5 vs C5rf / C5ut / C5sh / C6m / C6d / C6g on T5 and
 T4 with SmolLM2-360M; C5tr rides along with 3 seeds, first to drop):
 
-| Tier | Block | Runs | GPU-h |
-|---|---|---|---:|
-| 0 | rescoring of the base runs (filler split + claim-B controls): T5 SmolLM2 360M + 135M seeds 1–3, T4 360M seeds 1–3 (+ 135M seed 1) | 34 | ≈ 4 |
-| 1 | T5, SmolLM2-360M: 7 arms × seeds 1–3 (+ `pq` evaluations, light rescoring, tables, report) | 21 | ≈ 26 |
-| 2 | T4, SmolLM2-360M: base C0′ / C2 / C5 seeds 2–3 (full evaluations, e4_quant) + 7 arms × seeds 1–3 | 6 + 21 | ≈ 36 |
-| 3 (optional) | size trend: T5, SmolLM2-135M, 7 arms × seeds 1–3 | 21 | ≈ 13 |
+| Tier | Block | New jobs | GPU-h |
+|---|---|---:|---:|
+| 1 | T5, SmolLM2-360M: 7 arms × seeds 1–3 (training 21 × 1.14 h; `pq` evaluations + light rescoring ≈ 5 min each) + controls rescoring of P0 / C0′ / C2 / C5 seeds 1–3 (10 × ≈ 9 min) + quant re-analysis + report | ≈ 97 | ≈ 28 |
+| 0b | controls rescoring of the T5 SmolLM2-135M base runs (10) and the T4 135M seed-1 runs (4) | 14 | ≈ 1 |
+| 2 | T4, SmolLM2-360M: base C0′ / C2 / C5 seeds 2–3 (6 × ≈ 1.2 h + full evaluations + e4_quant) + 7 arms × seeds 1–3 (21 × ≈ 1.2 h) + tables (definition, TransE: minutes) + controls rescoring (10) + report | ≈ 141 | ≈ 39 |
+| 3 (optional) | size trend: T5, SmolLM2-135M, 7 arms × seeds 1–3 (21 × 0.52 h + evaluations) | ≈ 85 | ≈ 12.5 |
 
-Tiers 0–2 ≈ 66 GPU-h; with Tier 3 ≈ 79 GPU-h. Dropping C5tr saves ≈ 2.6 GPU-h per track and host.
+Tiers 1, 0b and 2 ≈ 68 GPU-h; with Tier 3 ≈ 80 GPU-h. Dropping C5tr saves ≈ 3.7 GPU-h per track and host. Optional
+claim-B rescoring of the Qwen3 T5 base runs (`e9_rescore queue --stage t5-qwen3 --priority 51 --models P0 C0p C2 C5`;
+1.7B ≈ 0.5 h, 0.6B ≈ 0.2 h per run) ≈ 5 GPU-h for seeds 1–2.
 
 ```bash
 PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
-# Tier 1 + Tier 0 for T5 (360M): arms × 3 seeds; P0/C0p/C2/C5 already exist or are queued (their jobs are skipped by
+# Tier 1, T5 (360M): arms × 3 seeds; P0/C0p/C2/C5 already exist or are queued (their jobs are skipped by
 # name) and get the controls rescoring through --rescore all
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --stage t5 --hosts SmolLM2-360M \
   --models P0 C0p C2 C5 C5rf C5ut C5tr C5sh C6m C6d C6g --seeds 1 2 3 --rescore all --priority 51 --queue
-# Tier 0 for the T5 135M base runs (filler split and claim-B controls for the size trend)
+# Tier 0b: the T5 135M base runs (filler split and claim-B controls for the size trend)
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_rescore queue --stage t5 --priority 51 --models P0 C0p C2 C5
-# Tier 2 + Tier 0 for T4 (360M): base seeds 2–3, arms × 3 seeds, rescoring of every base run (seed 1 is queued at 35–38)
+# Tier 2, T4 (360M): base seeds 2–3, arms × 3 seeds, rescoring of every base run (seed 1 is queued at 35–38)
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t4 --stage t4 --hosts SmolLM2-360M \
   --models P0 C0p C2 C5 C5rf C5ut C5tr C5sh C6m C6d C6g --seeds 1 2 3 --rescore all --priority 51 --queue
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_rescore queue --stage t4 --priority 51 --models P0 C0p C2 C5

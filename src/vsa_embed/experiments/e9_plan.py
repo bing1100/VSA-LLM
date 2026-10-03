@@ -543,7 +543,7 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
         seeds = sorted({int(p.stem.rsplit("-s", 1)[1]) for p in paths if "-P0-" not in p.stem}) or [1]
         batch = f"s{'-'.join(map(str, seeds))}"
         if any(stem_model(p.stem) in ARMS for p in paths):          # a batch with WP-PQ1 arms: its own quant/report names
-            batch += "-pq"
+            batch += "-pq-" + "-".join(sorted(set(hosts)))           # (per host set, so a later batch reports again)
         if quant_dirs:
             submit(f"{stage}-quant-{batch}", quant_command(stage, quant_dirs, python=python, root=root), priority + 2,
                    min_free_gb=5, resume_args=[])
