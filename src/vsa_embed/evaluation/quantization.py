@@ -29,12 +29,17 @@ channel's dictionary tables, embedding rows, compressed-table parameters):
 - `fake_quantize_module_(module, bits, group_size)` quantizes every floating parameter or buffer
   with ≥ 2 dimensions of a module in place (variant B of D4.3: the channel's dictionary, relation
   parameters, composer and projector) and returns the bytes of each tensor.
+
+Simulated weight-only schemes beyond torchao RTN (WP-PQ1 claim-B controls; `simulate_weight_only_`:
+`rtn`, `hqq`, `nf4`, `gptq`, `awq`) and the input-embedding quantization of the `-emb` variants
+(`quantize_input_embedding_`) are documented at their section below; `experiments.e9_rescore` uses them.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Iterable
+import re
+from typing import Any, Callable, Iterable, Sequence
 
 import torch
 from torch import Tensor, nn
@@ -221,3 +226,301 @@ def fake_quantize_module_(module: nn.Module, bits: int, group_size: int | None =
         sizes[name] = group_quantized_bytes(tensor.numel() // tensor.shape[-1], tensor.shape[-1], bits, group_size,
                                             symmetric=symmetric)
     return sizes
+
+
+# -- simulated weight-only schemes beyond torchao RTN (WP-PQ1, claim-B controls) -------------------------------------
+#
+# Every scheme below replaces a host linear weight `W` by its dequantized value (bf16 when it runs), which is exactly
+# what a weight-only kernel computes with (it dequantizes on the fly); only speed and memory are not simulated, and
+# bytes are reported nominally (`scheme_bits`). All schemes skip the output head and the input embedding (kept 16-bit,
+# as for torchao's `int4-A`), unless `quantize_input_embedding_` is applied as well (`-emb` variants).
+#
+# - `rtn`  — group-wise asymmetric round-to-nearest with an integer zero point (the AutoGPTQ grid), no calibration;
+# - `hqq`  — half-quadratic quantization (torchao's `_choose_qparams_and_quantize_affine_hqq`, proximal solver on the
+#            zero point; float scale and zero rounded to FP16), no calibration;
+# - `nf4`  — QLoRA NormalFloat-4: 64-element absmax blocks, the 16-value NF4 code book, absmax double-quantized to int8 in
+#            blocks of 256 (torchao `NF4Tensor`'s algorithm; the last scaler block is padded, so any shape works);
+# - `gptq` — GPTQ (Frantar et al. 2023) on the `rtn` grid: Hessians `X Xᵀ` from calibration inputs, 1% dampening,
+#            act-order with static groups, 128-column blocks; block-sequential (transformer block `i` sees the
+#            already-quantized blocks `< i`);
+# - `awq`  — activation-aware scaling (Lin et al. 2024) on the `rtn` grid: per input channel `s = s̄_x^α`, normalized,
+#            shared by the linears that read the same input (q/k/v; gate/up), `α ∈ {0, 0.05, …, 0.95}` chosen by the
+#            output error on sampled calibration inputs, `W ← Q(W·diag(s))·diag(1/s)`; block-sequential; no clip search.
+
+SIMULATED_SCHEMES = ("rtn", "hqq", "nf4", "gptq", "awq")
+CALIBRATED_SCHEMES = frozenset({"gptq", "awq"})
+NF4_CODE = (-1.0, -0.6962, -0.5251, -0.3949, -0.2844, -0.1848, -0.0911, 0.0, 0.0796, 0.1609, 0.2461, 0.3379, 0.4407, 0.5626,
+            0.7230, 1.0)
+
+
+def scheme_bits(scheme: str, group_size: int) -> float:
+    """Nominal bits per weight: 4-bit codes plus a 16-bit scale and zero per group (NF4: an 8-bit double-quantized
+    absmax per 64 values plus a 32-bit factor per 256 absmax values)."""
+    if scheme == "nf4":
+        return 4 + 8 / 64 + 32 / (64 * 256)
+    return 4 + 32 / group_size
+
+
+def int4_fake_quantize(w: Tensor, group_size: int, *, scale_mult: Tensor | None = None) -> Tensor:
+    """The `rtn` grid: asymmetric 4-bit codes per group of `group_size` input columns, integer zero point, scale in FP16.
+    `scale_mult` (AWQ) multiplies the columns before quantization and divides them afterwards."""
+    x = w.float() if scale_mult is None else w.float() * scale_mult
+    groups, columns = _groups(x, group_size)
+    lo = groups.amin(-1, keepdim=True).clamp(max=0)
+    hi = groups.amax(-1, keepdim=True).clamp(min=0)
+    scale = ((hi - lo) / 15).half().float()
+    scale = torch.where(scale > 0, scale, torch.ones_like(scale))
+    zero = (-lo / scale).round().clamp(0, 15)
+    q = ((groups / scale).round() + zero).clamp(0, 15)
+    out = ((q - zero) * scale).reshape(groups.shape[0], -1)[:, :columns].reshape(x.shape)
+    return out if scale_mult is None else out / scale_mult
+
+
+def hqq_fake_quantize(w: Tensor, group_size: int) -> Tensor:
+    from torchao.quantization.quant_primitives import _choose_qparams_and_quantize_affine_hqq
+    rows, columns = w.shape
+    if columns % group_size:
+        raise ValueError(f"HQQ needs the input width {columns} divisible by the group size {group_size}")
+    q, scale, zero, _ = _choose_qparams_and_quantize_affine_hqq(w.detach().float(), nbits=4, group_size=group_size, axis=1,
+                                                                compute_dtype=torch.float32, device=str(w.device), raw_output=True)
+    scale, zero = scale.half().float().reshape(rows, -1, 1), zero.half().float().reshape(rows, -1, 1)
+    return ((q.float().reshape(rows, -1, group_size) - zero) * scale).reshape(rows, columns)
+
+
+def nf4_fake_quantize(w: Tensor, block_size: int = 64, scaler_block_size: int = 256) -> Tensor:
+    """NF4 quantize–dequantize of `w`: torchao `NF4Tensor`'s algorithm and arithmetic (in bf16, the dtype QLoRA
+    quantizes), equal to `NF4Tensor.from_tensor(w.bfloat16(), 64, 256).get_original_weight()` wherever torchao accepts
+    the shape; the last weight and scaler blocks are padded otherwise. Returned in float32."""
+    dtype = torch.bfloat16
+    code = torch.tensor(NF4_CODE, device=w.device, dtype=dtype)
+    flat = w.detach().to(dtype).flatten()
+    padded = -(-flat.numel() // block_size) * block_size
+    if padded != flat.numel():
+        flat = torch.cat([flat, flat[-1:].expand(padded - flat.numel())])
+    blocks = flat.view(-1, block_size)
+    absmax = blocks.abs().max(dim=1).values
+    mean = absmax.mean()
+    centered = absmax - mean
+    count = centered.numel()
+    padded_scalers = -(-count // scaler_block_size) * scaler_block_size
+    if padded_scalers != count:
+        centered = torch.cat([centered, centered[-1:].expand(padded_scalers - count)])
+    scaler_blocks = centered.view(-1, scaler_block_size)
+    factor = 256 / (2 * scaler_blocks.abs().max(dim=1, keepdim=True).values)
+    quantized = (scaler_blocks * factor).round().clamp(-128, 127).to(torch.int8)
+    scalers = (quantized / factor).flatten().to(dtype)[:count] + mean
+    index = ((blocks / absmax[:, None]).unsqueeze(-1) - code).abs().min(dim=-1).indices
+    out = code[index] * scalers[:, None]
+    return out.flatten()[:w.numel()].reshape(w.shape).float()
+
+
+def _damped_inverse_cholesky(H: Tensor, damp: float, *, retries: int = 4) -> Tensor:
+    """Upper Cholesky factor of `(H + λ I)⁻¹` with `λ = damp · mean(diag H)`, in float64; `λ` grows tenfold while the
+    factorization fails (an ill-conditioned Hessian of few calibration rows)."""
+    H64 = H.double()
+    eye = torch.eye(H.shape[0], device=H.device, dtype=torch.float64)
+    mean = torch.mean(torch.diag(H64))
+    for attempt in range(retries + 1):
+        try:
+            lower = torch.linalg.cholesky(H64 + damp * 10 ** attempt * mean * eye)
+            return torch.linalg.cholesky(torch.cholesky_inverse(lower), upper=True).float()
+        except torch.linalg.LinAlgError:
+            if attempt == retries:
+                raise
+    raise AssertionError("unreachable")
+
+
+def gptq_quantize_weight(w: Tensor, hessian: Tensor, group_size: int, *, damp: float = 0.01, block: int = 128,
+                         act_order: bool = True) -> Tensor:
+    """GPTQ on the `rtn` grid (static groups: each group's scale and zero from the original weights)."""
+    W = w.detach().float().clone()
+    H = hessian.float().clone()
+    columns = W.shape[1]
+    dead = torch.diag(H) == 0
+    H[dead, dead] = 1
+    W[:, dead] = 0
+    groups, _ = _groups(W, group_size)
+    lo = groups.amin(-1).clamp(max=0)
+    hi = groups.amax(-1).clamp(min=0)
+    scale = ((hi - lo) / 15).half().float()
+    scale = torch.where(scale > 0, scale, torch.ones_like(scale))
+    zero = (-lo / scale).round().clamp(0, 15)                       # rows × groups
+    group_of = torch.arange(columns, device=W.device) // group_size
+    perm = torch.argsort(torch.diag(H), descending=True) if act_order else torch.arange(columns, device=W.device)
+    W, H = W[:, perm], H[perm][:, perm]
+    Hinv = _damped_inverse_cholesky(H, damp)
+    scales, zeros = scale[:, group_of[perm]], zero[:, group_of[perm]]       # per (permuted) column
+    Q = torch.zeros_like(W)
+    for i1 in range(0, columns, block):
+        i2 = min(i1 + block, columns)
+        W1, Err1, Hinv1 = W[:, i1:i2].clone(), torch.zeros_like(W[:, i1:i2]), Hinv[i1:i2, i1:i2]
+        for i in range(i2 - i1):
+            s, z = scales[:, i1 + i], zeros[:, i1 + i]
+            col = W1[:, i]
+            q = ((col / s).round() + z).clamp(0, 15)
+            deq = (q - z) * s
+            Q[:, i1 + i] = deq
+            err = (col - deq) / Hinv1[i, i]
+            W1[:, i:] -= err[:, None] * Hinv1[i, i:][None, :]
+            Err1[:, i] = err
+        W[:, i2:] -= Err1 @ Hinv[i1:i2, i2:]
+    return Q[:, torch.argsort(perm)].to(w.dtype)
+
+
+def _block_key(name: str) -> str:
+    """Transformer block of a linear layer's qualified name (`…layers.<i>.…`, GPT-2 `…h.<i>.…`), else the name."""
+    match = re.search(r"(?:^|\.)(?:layers|h|blocks|layer)\.(\d+)\.", name)
+    return f"block{int(match[1]):05d}" if match else name
+
+
+class _StopForward(Exception):
+    pass
+
+
+def host_linears(host: nn.Module) -> list[tuple[str, nn.Linear]]:
+    """The linear layers weight-only quantization touches: every `nn.Linear` except the output head and a layer tied
+    to the input embedding (GPT-2 `Conv1D` must be converted first, `conv1d_to_linear`)."""
+    head = host.get_output_embeddings() if hasattr(host, "get_output_embeddings") else None
+    embedding = host.get_input_embeddings() if hasattr(host, "get_input_embeddings") else None
+    tied = {id(embedding.weight)} if embedding is not None else set()
+    return [(name, m) for name, m in host.named_modules()
+            if isinstance(m, nn.Linear) and m is not head and id(m.weight) not in tied and not name.endswith("lm_head")]
+
+
+def _collect(linears: list[tuple[str, nn.Linear]], forward: Callable, scheme: str, samples: int,
+             seed: int) -> dict[str, dict[str, Any]]:
+    """Run the calibration batches (`forward`) with hooks on `linears`: GPTQ accumulates `X Xᵀ`; AWQ the mean |x| per
+    input channel, up to `samples` sampled input rows, and the identity of the first input (linears reading the same
+    tensor share AWQ scales). Each batch is cut short once every hooked linear has run."""
+    stats: dict[str, dict[str, Any]] = {name: {"n": 0} for name, _ in linears}
+    fired: set[str] = set()
+    generator = torch.Generator().manual_seed(seed)
+
+    def hook(name: str) -> Callable:
+        def run(module: nn.Module, inputs: tuple[Tensor, ...], output: Tensor) -> None:
+            x = inputs[0].detach()
+            entry = stats[name]
+            if "input_key" not in entry:
+                entry["input_key"] = (x.data_ptr(), tuple(x.shape))
+            x = x.reshape(-1, x.shape[-1]).float()
+            # The hooks run inside the forward's autocast region: without this, `x.T @ x` would be computed in bf16
+            # (a Gram matrix with negative eigenvalues).
+            with torch.autocast(device_type=x.device.type, enabled=False):
+                if scheme == "gptq":
+                    entry["H"] = entry.get("H", 0) + x.T @ x
+                else:
+                    entry["abs"] = entry.get("abs", 0) + x.abs().sum(0)
+                    rows = entry.setdefault("rows", [])
+                    if sum(r.shape[0] for r in rows) < samples:
+                        keep = min(x.shape[0], max(1, samples // 8))
+                        rows.append(x[torch.randperm(x.shape[0], generator=generator)[:keep].to(x.device)])
+            entry["n"] += x.shape[0]
+            fired.add(name)
+            if len(fired) == len(linears):
+                raise _StopForward
+        return run
+
+    def step(call: Callable) -> None:
+        fired.clear()
+        try:
+            call()
+        except _StopForward:
+            pass
+
+    handles = [module.register_forward_hook(hook(name)) for name, module in linears]
+    try:
+        forward(step)
+    finally:
+        for handle in handles:
+            handle.remove()
+    return stats
+
+
+def simulate_weight_only_(host: nn.Module, scheme: str, *, group_size: int, forward: Callable | None = None, samples: int = 2048,
+                          seed: int = 0, damp: float = 0.01, act_order: bool = True,
+                          awq_grid: Sequence[float] = tuple(i / 20 for i in range(20))) -> dict[str, Any]:
+    """Quantize–dequantize the host's linear weights in place with a simulated scheme (see the section comment).
+
+    `forward(step)` runs the calibration batches (GPTQ, AWQ): for each batch it calls `step(run)`, where `run()` runs
+    the model on that batch; it is called once per transformer block (block-sequential)."""
+    if scheme not in SIMULATED_SCHEMES:
+        raise ValueError(f"scheme must be one of {SIMULATED_SCHEMES}")
+    if scheme in CALIBRATED_SCHEMES and forward is None:
+        raise ValueError(f"{scheme} needs calibration batches")
+    conv1d_to_linear(host)
+    linears = host_linears(host)
+    skipped = [name for name, m in linears if m.in_features % group_size and scheme in {"hqq"}]
+    linears = [(name, m) for name, m in linears if name not in skipped]
+    info: dict[str, Any] = {"scheme": scheme, "group_size": None if scheme == "nf4" else group_size,
+                            "bits_per_weight": scheme_bits(scheme, group_size), "linear_quantized": len(linears),
+                            "linear_skipped": skipped}
+    with torch.no_grad():
+        if scheme not in CALIBRATED_SCHEMES:
+            for _, module in linears:
+                w = module.weight
+                new = (int4_fake_quantize(w, group_size) if scheme == "rtn" else hqq_fake_quantize(w, group_size)
+                       if scheme == "hqq" else nf4_fake_quantize(w))
+                w.copy_(new.to(w.dtype))
+            return info
+        blocks: dict[str, list[tuple[str, nn.Linear]]] = {}
+        for name, module in linears:
+            blocks.setdefault(_block_key(name), []).append((name, module))
+        chosen: dict[str, float] = {}
+        for _, members in sorted(blocks.items()):
+            stats = _collect(members, forward, scheme, samples, seed)
+            if scheme == "gptq":
+                for name, module in members:
+                    if stats[name]["n"]:
+                        hessian = 2 * stats[name]["H"] / stats[name]["n"]
+                        module.weight.copy_(gptq_quantize_weight(module.weight, hessian, group_size, damp=damp,
+                                                                 act_order=act_order).to(module.weight.dtype))
+                continue
+            shared: dict[Any, list[tuple[str, nn.Linear]]] = {}
+            for name, module in members:
+                if stats[name]["n"]:
+                    shared.setdefault(stats[name]["input_key"], []).append((name, module))
+            for group in shared.values():
+                first = stats[group[0][0]]
+                mean_abs = first["abs"] / first["n"]
+                x = torch.cat(first["rows"])[:samples]
+                references = [x @ m.weight.float().T for _, m in group]
+                best = best_alpha = best_scales = None
+                for alpha in awq_grid:
+                    s = mean_abs.clamp_min(1e-4) ** alpha
+                    s = s / (s.max() * s.min()).sqrt()
+                    error = sum(float((x @ int4_fake_quantize(m.weight, group_size, scale_mult=s).T - ref).square().sum())
+                                for (_, m), ref in zip(group, references))
+                    if best is None or error < best:
+                        best, best_alpha, best_scales = error, alpha, s
+                for name, module in group:
+                    module.weight.copy_(int4_fake_quantize(module.weight, group_size, scale_mult=best_scales).to(module.weight.dtype))
+                    chosen[name] = float(best_alpha)
+    info.update(calibration_rows_per_linear=samples if scheme == "awq" else None, blocks=len(blocks))
+    if scheme == "gptq":
+        info.update(damp=damp, act_order=act_order)
+    else:
+        info["awq_alpha_mean"] = float(sum(chosen.values()) / len(chosen)) if chosen else None
+    return info
+
+
+def quantize_input_embedding_(host: nn.Module, group_size: int, *, include_head: bool = False) -> dict[str, Any]:
+    """`-emb` variants: the input-embedding rows quantize–dequantized on the `rtn` grid (4 bits, groups along the width).
+    A tied output head keeps the 16-bit table (the lookup gets an untied copy) unless `include_head`, which quantizes
+    the shared table, i.e. both (GGUF-style)."""
+    embedding = host.get_input_embeddings()
+    head = host.get_output_embeddings()
+    tied = head is not None and head.weight is embedding.weight
+    with torch.no_grad():
+        quantized = int4_fake_quantize(embedding.weight, group_size).to(embedding.weight.dtype)
+        if tied and not include_head:
+            copy = nn.Embedding(embedding.num_embeddings, embedding.embedding_dim, padding_idx=embedding.padding_idx,
+                                device=embedding.weight.device, dtype=embedding.weight.dtype)
+            copy.weight.copy_(quantized)
+            copy.weight.requires_grad_(False)
+            host.set_input_embeddings(copy)
+        else:
+            embedding.weight.copy_(quantized)
+            if include_head and not tied:
+                head.weight.copy_(int4_fake_quantize(head.weight, group_size).to(head.weight.dtype))
+    return {"embedding_group_size": group_size, "embedding_bits_per_weight": scheme_bits("rtn", group_size),
+            "head_tied": bool(tied), "head_quantized": bool(include_head)}

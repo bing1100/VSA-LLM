@@ -3,6 +3,9 @@
     python -m vsa_embed.experiments.e9_plan --track t5|t4|t1|wordnet [--stage NAME] [--hosts SmolLM2-360M SmolLM2-135M]
         [--host-mode train|lora] [--lora-rank 64] [--host-lr X] [--channel-lr 1e-3] [--gate-bias 0] [--tokens 50000000]
         [--seeds 1] [--models P0 C0p C2 C5] [--no-evals] [--int4-probes SUBSET] [--queue] [--priority 22]
+        [--rescore arms|all|none]
+    python -m vsa_embed.experiments.e9_plan --track t5 --models C5rf C5ut C5tr C5sh C6m C6d C6g --seeds 1 2 3
+        --stage t5 --priority 51 --queue                                    # WP-PQ1 arms (below)
     python -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-1.7B-Base Qwen3-0.6B-Base --host-mode lora
         --lora-rank 64 [--memory-report PATH] [--micro-batch N] [--channel-scale auto|on|off] [--queue]
     python -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3.5-2B-Base Qwen3.5-0.8B-Base --host-mode lora
@@ -52,6 +55,23 @@ Models (one fixed test set per track):
 - `C2` — the same plus a capacity-matched free per-concept table (`e4_plan.matched_sizes` on the track ontology);
 - `C5` — the same plus the attentive VSA channel (hrr, 256 dimensions, key 8, P1 context window 8).
 
+WP-PQ1 arms (paper-quality controls for dimensions 1–2 after the 2026-10 novelty check; opt-in through `--models`,
+same recipe, test set and seeds as C5; `C5_ABLATIONS`, `ROW_SOURCE_ARMS`):
+
+- operator / specificity ablation of C5 — `C5rf` a fixed random orthogonal operator per relation
+  (`random_fixed:unitary_hrr`, never trained), `C5ut` no binding (`untyped`: the bundle of filler atomics), `C5tr` a
+  TransE-style translation `x + t_r` (`translation`), `C5sh` shuffled frames (`frames: shuffled`: every entry reads
+  another entry's frame);
+- same-site row sources (`channel.mode: source`, `e9_rowsource`): `C6m` the subtoken mean of the pretrained host's
+  input embeddings (FVT / Hewitt), `C6d` the frozen host's mean-pooled hidden state of the entry's verbalized frame
+  (definition encoder), `C6g` a TransE embedding of the entry in the track ontology (KnowLA / map-tuning); a frozen
+  table read through a trained MLP projector whose parameters match C5's dictionary plus projector, the C5 gate and
+  site; held-out terms get their rows from the same source.
+
+The arms get the `pq` evaluations (`evaluation_jobs`: track zero-shot and editing at bf16; no probes) and an
+`e9_rescore` job (filler / non-filler strata, `int4-A`); `--rescore all` adds `e9_rescore` with the claim-B controls
+(channel off at INT4, HQQ / NF4 / GPTQ / AWQ, quantized input embedding) to P0 / C0′ / C2 / C5.
+
 Job chaining (the queue runs the lowest priority number first, so everything queued after training at
 priority P runs once the stage's training is done): per run (P0 included) at P + 1 — channel probes at bf16
 and INT4 (`RUN/probes.json`, `RUN/probes-int4.json`), the track's zero-shot items at bf16 and INT4
@@ -73,6 +93,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import torch
 import yaml
 
 from vsa_embed.experiments.cpt_plan import HOSTS as CPT_HOSTS
@@ -86,6 +107,17 @@ QWEN3_HOSTS = ("Qwen3-1.7B-Base", "Qwen3-0.6B-Base", "Qwen3-4B-Base")
 QWEN35_HOSTS = ("Qwen3.5-2B-Base", "Qwen3.5-0.8B-Base")
 ALL_HOSTS = E9_HOSTS + QWEN3_HOSTS + QWEN35_HOSTS
 MODELS = ("P0", "C0p", "C2", "C5")
+# WP-PQ1 arms (opt-in through --models; module docstring): the operator / specificity ablation of C5 (its channel with
+# one change each) and the same-site row-source baselines (`e9_rowsource`).
+C5_ABLATIONS: dict[str, dict[str, Any]] = {
+    "C5rf": {"operator": "random_fixed:unitary_hrr"},     # a fixed random orthogonal (unitary HRR) operator per relation
+    "C5ut": {"operator": "untyped"},                      # no binding: the bundle of filler atomics (attention keys keep relations)
+    "C5tr": {"operator": "translation"},                  # TransE-style x + t_r (additive, not a binding)
+    "C5sh": {"frames": "shuffled"},                       # every entry reads another entry's frame (a derangement)
+}
+ROW_SOURCE_ARMS = {"C6m": "subtoken_mean", "C6d": "definition", "C6g": "kge"}
+ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS)
+ALL_MODELS = MODELS + ARMS
 MODE_LABELS = {"train": "full", "lora": "lora", "frozen": "frozen"}
 HOST_LR = {"train": 3.0e-5, "lora": 2.0e-4}
 # Micro-batches: SmolLM2-360M as in the engagement check (full and LoRA-64 at 4); SmolLM2-135M at twice
@@ -177,15 +209,41 @@ def _merge(config: dict[str, Any], part: dict[str, Any]) -> None:
             config[key] = copy.deepcopy(value)
 
 
-def model_spec(model: str, *, free_dimension: int, gate_bias: float) -> dict[str, Any]:
+def model_spec(model: str, *, free_dimension: int, gate_bias: float, source: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Channel keys of a model; the row-source arms (C6m / C6d / C6g) need `source` (`source_table`, `source_hidden`,
+    `source_kind`; `write_stage` fills it)."""
     table = conditions("hrr", 8, 256, free_dimension, 256, {})
     if model in {"P0", "C0p"}:
         return {"channel": {"mode": "none"}}
-    if model not in {"C2", "C5"}:
-        raise ValueError(f"unknown E9 model {model!r}; choose from {', '.join(MODELS)}")
-    spec = copy.deepcopy(table[model])
+    if model in C5_ABLATIONS:
+        spec = copy.deepcopy(table["C5"])
+        spec["channel"].update(C5_ABLATIONS[model])
+    elif model in ROW_SOURCE_ARMS:
+        if not source:
+            raise ValueError(f"{model} needs its row-source table (source_table, source_hidden)")
+        spec = {"channel": {"mode": "source", **source}}
+    elif model in {"C2", "C5"}:
+        spec = copy.deepcopy(table[model])
+    else:
+        raise ValueError(f"unknown E9 model {model!r}; choose from {', '.join(ALL_MODELS)}")
     spec["channel"]["gate_bias"] = float(gate_bias)
     return spec
+
+
+def channel_budget(ontology: dict[str, Any] | Path, model_dimension: int, channel_dimension: int = 256) -> int:
+    """Parameters the C5 channel adds that `e4_plan.matched_sizes` matches C2 to: dictionary (atomics + relations) and
+    projector; the row-source arms' projector MLP is matched to the same budget."""
+    onto = torch.load(ontology, weights_only=False) if isinstance(ontology, (str, Path)) else ontology
+    return int((onto["atomic_count"] + onto["relation_count"]) * channel_dimension + channel_dimension * model_dimension)
+
+
+def row_source(model: str, *, track: str, family: str, host: str, budget: int) -> dict[str, Any]:
+    """The `channel` keys of a row-source arm on `host`: its table (`e9_rowsource.table_path`) and the matched hidden width."""
+    from .e9_rowsource import matched_hidden, source_dimension, table_path
+    kind = ROW_SOURCE_ARMS[model]
+    width = int(CPT_HOSTS[host]["width"])
+    return {"source_kind": kind, "source_table": str(table_path(track, family, kind, host)),
+            "source_hidden": matched_hidden(budget, source_dimension(kind, width), width)}
 
 
 def load_memory_report(path: Path | None) -> dict[str, Any] | None:
@@ -235,10 +293,11 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
                host_lr: float | None, gate_bias: float, free_dimension: int, sequences_per_step: int = 64,
                windows: int = MIN_WINDOWS, channel_lr: float = 1.0e-3, eval_split: str = "eval",
                overrides: dict[str, Any] | None = None, plan: dict[str, Any] | None = None,
-               channel_extra: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
+               channel_extra: dict[str, Any] | None = None, source: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
     """(file stem, config) of one run; P0 ignores the host mode (frozen, evaluation only). `plan` (`host_plan`)
     sets micro-batches, host model keys and evaluation batch (default: the tables); `channel_extra` is merged
-    into the channel of C2 and C5 (Qwen3: `scale_to_host`)."""
+    into the channel of every model with a channel (C2, C5 and the WP-PQ1 arms; Qwen3: `scale_to_host`); `source`
+    is a row-source arm's table (`row_source`)."""
     if windows < MIN_WINDOWS:
         raise ValueError(f"E9 evaluates on ≥ {MIN_WINDOWS} windows (got {windows})")
     if mode not in HOST_LR:
@@ -260,8 +319,8 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
                   "save_trainable_only": host_mode != "train"},
         "eval": {"windows": int(windows), "batch": plan["eval_batch"]},
     })
-    _merge(config, model_spec(model, free_dimension=free_dimension, gate_bias=gate_bias))
-    if model in {"C2", "C5"} and channel_extra:
+    _merge(config, model_spec(model, free_dimension=free_dimension, gate_bias=gate_bias, source=source))
+    if model not in {"P0", "C0p"} and channel_extra:
         _merge(config, {"channel": channel_extra})
     if model == "P0":
         config["train"]["eval_only"] = True
@@ -301,16 +360,21 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
     if counts is None:
         raise FileNotFoundError(f"no ontology under {corpus_root} (build the track's {family} corpus, or pass counts_ontology)")
     paths = []
+    sizes = torch.load(counts, weights_only=False) if any(m in ROW_SOURCE_ARMS for m in models) else None
     for host in hosts:
         free_dimension, _ = matched_sizes(counts, CPT_HOSTS[host]["width"], 256)
         plan = host_plan(host, mode, memory=memory, micro_batch=micro_batch)
         for model in models:
+            source = (row_source(model, track=spec.name, family=family, host=host,
+                                 budget=channel_budget(sizes, int(CPT_HOSTS[host]["width"])))
+                      if model in ROW_SOURCE_ARMS else None)
             for seed in ([1] if model == "P0" else seeds):
                 stem, config = run_config(stage=stage, host=host, mode=mode, model=model, seed=seed, data_root=corpus_root,
                                           tokens=tokens, lora_rank=lora_rank, host_lr=host_lr, gate_bias=gate_bias,
                                           free_dimension=free_dimension, sequences_per_step=sequences_per_step,
                                           windows=windows, channel_lr=channel_lr,
-                                          eval_split=spec.eval_split, overrides=overrides, plan=plan, channel_extra=channel_extra)
+                                          eval_split=spec.eval_split, overrides=overrides, plan=plan, channel_extra=channel_extra,
+                                          source=source)
                 config["e9_track"] = spec.name
                 if family != "smollm2":            # new key only where it applies (SmolLM2 configs as before)
                     config["e9_family"] = family
@@ -321,14 +385,37 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
 
 
 def evaluation_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executable, alias_table: Path | None = None,
-                    int4_probes: str = "all", batch_size: int | None = None) -> list[tuple[str, list[str], list[str]]]:
+                    int4_probes: str = "all", batch_size: int | None = None, model: str | None = None,
+                    profile: str = "full") -> list[tuple[str, list[str], list[str]]]:
     """(suffix, command, retry arguments) of the per-run evaluations at bf16 and INT4 (variant A).
     `int4_probes` restricts the INT4 probe run to a comma-separated subset (it pairs with the bf16 run on
-    the tables both have); `batch_size` (large-vocabulary hosts) is passed to every evaluation."""
+    the tables both have); `batch_size` (large-vocabulary hosts) is passed to every evaluation.
+
+    `profile="pq"` (the WP-PQ1 arms): the track zero-shot items and the ontology-editing evaluation at bf16 only, no
+    probes (dimensions 1–2 come from the run's own evaluation windows and `e9_rescore`); the shuffled-frame arm C5sh
+    skips the `random_frame` zero-shot source and the edit items (its entries read other entries' frames, so neither
+    applies) and keeps the new words."""
     run = str(run_dir)
     table = ["--alias-table", str(alias_table)] if alias_table else []
     batch = ["--batch-size", str(int(batch_size))] if batch_size else []
     new_items, edit_items = dimension3_items(spec.name, spec.family)
+    if profile == "pq":
+        shuffled = (model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled")
+        jobs = []
+        if spec.name == "wordnet":
+            jobs.append(("zeroshot", [python, "-m", "vsa_embed.experiments.e5_zeroshot", "evaluate", "--run", run,
+                                      "--items", str(zeroshot_items(spec.family)), "--sources", ZEROSHOT_SOURCES,
+                                      *batch, "--output", str(run_dir / "zeroshot")], ["--overwrite"]))
+        elif spec.zeroshot_items is not None:
+            jobs.append(("zeroshot", [python, "-m", "vsa_embed.experiments.e9_tracks", "zeroshot", "--run", run, "--track", spec.name,
+                                      *table, *(["--sources", "own,none,mean_row"] if shuffled else []), *batch,
+                                      "--output", str(run_dir / "zeroshot")], ["--overwrite"]))
+        jobs.append(("edit", [python, "-m", "vsa_embed.experiments.e9_ontology_edit", "evaluate", "--run", run,
+                              "--new-items", str(new_items), *([] if shuffled else ["--edit-items", str(edit_items)]), *table,
+                              *batch, "--output", str(run_dir / "edit")], ["--overwrite"]))
+        return jobs
+    if profile != "full":
+        raise ValueError("profile must be full or pq")
     jobs = []
     for suffix, quantize in (("", []), ("-int4", ["--quantize", "int4"])):
         subset = ["--probes", int4_probes] if suffix and int4_probes != "all" else []
@@ -368,14 +455,45 @@ def _config_host(config: dict[str, Any]) -> str | None:
     return next((name for name, settings in CPT_HOSTS.items() if settings["pretrained"] == pretrained), None)
 
 
+def stem_model(stem: str) -> str:
+    """The model of a run stem `<host>-<mode>-<model>-s<seed>`."""
+    return stem.rsplit("-s", 1)[0].rsplit("-", 1)[1]
+
+
+def rowsource_jobs(configs: dict[Path, dict[str, Any]], track: str, *, python: str) -> list[tuple[str, list[str]]]:
+    """(name suffix, command) of the row-source tables the stage's C6 arms need and that do not exist yet
+    (`e9_rowsource build`, idempotent: an existing table is kept)."""
+    jobs: dict[str, list[str]] = {}
+    for path, config in configs.items():
+        settings = config.get("channel", {})
+        if settings.get("mode") != "source" or Path(settings["source_table"]).expanduser().exists():
+            continue
+        kind, host = settings["source_kind"], _config_host(config)
+        family = config.get("e9_family", "smollm2")
+        name = f"rowsource-{kind}" + ("" if kind == "kge" else f"-{host}")
+        jobs[name] = [python, "-m", "vsa_embed.experiments.e9_rowsource", "build", "--track", track, "--kind", kind,
+                      "--family", family, *([] if kind == "kge" else ["--host", host]), "--device", "cuda",
+                      "--output", settings["source_table"]]
+    return sorted(jobs.items())
+
+
 def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, track: str = "t5", evals: bool = True,
                root: Path = ROOT, queue_dir: Path | None = None, int4_probes: str | None = None,
-               alias_table: Path | None = None) -> list[str]:
+               alias_table: Path | None = None, rescore: str = "arms") -> list[str]:
     """Training jobs at `priority` (default: the hosts' family's, 22 SmolLM2 / 26 Qwen3); per-run evaluations
     at +1, `e4_quant` over the runs at +2, the R9 report at +3. Names are idempotent: a job that exists is left
     alone (P0, shared by seed batches). Track runs get the evaluation alias table (written here once if
     `alias_table` is not given). The tokenizer family (corpora, items) is read from the configs, and every job
-    runs with the hosts' interpreter (`stage_python`: the Qwen3.5 environment for Qwen3.5 hosts, else the pinned one)."""
+    runs with the hosts' interpreter (`stage_python`: the Qwen3.5 environment for Qwen3.5 hosts, else the pinned one).
+
+    WP-PQ1 arms (`ARMS`): the `pq` evaluation profile (`evaluation_jobs`) plus `e9_rescore` (filler strata; `light`
+    variants) at +1, no `e4_quant` (their INT4 evaluation is the rescoring's `int4-A`); C6 arms whose row-source table
+    is missing get an `e9_rowsource build` job at `priority`, queued before the training jobs (the queue runs equal
+    priorities first come, first served). `rescore="all"` also rescores P0 / C0′ / C2 / C5 (the `controls` variants:
+    filler strata and the claim-B controls); `"none"` rescores nothing."""
+    from .e9_rescore import profile_variants, rescore_command
+    if rescore not in {"arms", "all", "none"}:
+        raise ValueError("rescore must be arms, all or none")
     from vsa_embed.jobqueue import DEFAULT_DIR, add
     configs = {path: yaml.safe_load(Path(path).read_text()) for path in paths}
     families = {c.get("e9_family", "smollm2") for c in configs.values()} or {"smollm2"}
@@ -400,26 +518,39 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
         except FileExistsError:
             pass
 
-    run_dirs = []
+    for name, command in rowsource_jobs(configs, spec.name, python=python):
+        submit(f"{stage}-{name}", command, priority, min_free_gb=5, resume_args=[])
+    run_dirs, quant_dirs = [], []
     for path in paths:
         run_dir = root / "runs" / stage / path.stem
         run_dirs.append(run_dir)
+        model = stem_model(path.stem)
         submit(f"{stage}-{path.stem}", [python, "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(run_dir)],
                priority, min_free_gb=20)
+        if model not in ARMS:
+            quant_dirs.append(run_dir)
         if evals:
             batch = EVAL_JOB_BATCH.get(_config_host(configs[path]) or "")
             for suffix, command, retry in evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
-                                                          int4_probes=int4_probes, batch_size=batch):
+                                                          int4_probes=int4_probes, batch_size=batch, model=model,
+                                                          profile="pq" if model in ARMS else "full"):
                 submit(f"{stage}-{path.stem}-{suffix}", command, priority + 1, min_free_gb=5, resume_args=retry)
+            if rescore == "all" or (rescore == "arms" and model in ARMS):
+                submit(f"{stage}-{path.stem}-rescore", rescore_command(run_dir, profile_variants("auto", model), python=python,
+                                                                       batch_size=batch),
+                       priority + 1, min_free_gb=5, resume_args=[])
     if evals and run_dirs:
         seeds = sorted({int(p.stem.rsplit("-s", 1)[1]) for p in paths if "-P0-" not in p.stem}) or [1]
         batch = f"s{'-'.join(map(str, seeds))}"
-        submit(f"{stage}-quant-{batch}", quant_command(stage, run_dirs, python=python, root=root), priority + 2, min_free_gb=5,
-               resume_args=[])
-        if spec.general_corpus is not None:
-            submit(f"{stage}-quant-general-{batch}",
-                   quant_command(stage, run_dirs, python=python, root=root, eval_corpus=spec.general_corpus),
-                   priority + 2, min_free_gb=5, resume_args=[])
+        if any(stem_model(p.stem) in ARMS for p in paths):          # a batch with WP-PQ1 arms: its own quant/report names
+            batch += "-pq-" + "-".join(sorted(set(hosts)))           # (per host set, so a later batch reports again)
+        if quant_dirs:
+            submit(f"{stage}-quant-{batch}", quant_command(stage, quant_dirs, python=python, root=root), priority + 2,
+                   min_free_gb=5, resume_args=[])
+            if spec.general_corpus is not None:
+                submit(f"{stage}-quant-general-{batch}",
+                       quant_command(stage, quant_dirs, python=python, root=root, eval_corpus=spec.general_corpus),
+                       priority + 2, min_free_gb=5, resume_args=[])
         submit(f"{stage}-report-{batch}", report_command(stage, python=python, root=root, general=spec.general_corpus is not None),
                priority + 3, min_free_gb=1, resume_args=[])
     return queued
@@ -453,7 +584,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--track", default="t5", choices=sorted(TRACKS), help="corpus, ontology and items (default t5)")
     parser.add_argument("--stage", default=None, help="run-folder stage name (default: the track; <track>-qwen3 / <track>-qwen35 for Qwen3 / Qwen3.5 hosts)")
     parser.add_argument("--hosts", nargs="+", default=list(E9_HOSTS), choices=list(ALL_HOSTS))
-    parser.add_argument("--models", nargs="+", default=list(MODELS), choices=list(MODELS))
+    parser.add_argument("--models", nargs="+", default=list(MODELS), choices=list(ALL_MODELS),
+                        help=f"default {' '.join(MODELS)}; WP-PQ1 arms: {' '.join(ARMS)}")
+    parser.add_argument("--rescore", default="arms", choices=["arms", "all", "none"],
+                        help="e9_rescore jobs (filler strata, claim-B controls): for the WP-PQ1 arms (default), for every "
+                             "model (P0/C0p/C2/C5 get the controls variants), or none")
     parser.add_argument("--host-mode", default=None, choices=sorted(HOST_LR),
                         help="train = full fine-tuning; lora (default: train for SmolLM2, lora for Qwen3 and Qwen3.5)")
     parser.add_argument("--lora-rank", type=int, default=64)
@@ -493,7 +628,8 @@ def main(argv: list[str] | None = None) -> None:
         plans = {h: host_plan(h, mode, memory=memory, micro_batch=args.micro_batch) for h in args.hosts}
         print("\n".join(describe_plan(paths, plans)))
     if args.queue:
-        queued = queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes)
+        queued = queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
+                            rescore=args.rescore)
         print(f"queued {len(queued)} job(s)")
 
 

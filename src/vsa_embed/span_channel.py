@@ -343,15 +343,28 @@ class SpanChannel(nn.Module):
 
     def __init__(self, composer: FrameComposer | None, model_dimension: int, *, entry_count: int,
                  mode: str = "compose", hashed_buckets: int = 0, gate_bias: float = -2.0,
-                 semantic_dimension: int = 0, free_dimension: int = 0) -> None:
+                 semantic_dimension: int = 0, free_dimension: int = 0, source_rows: Tensor | None = None,
+                 source_hidden: int = 0) -> None:
         super().__init__()
-        if mode not in {"compose", "free", "random", "hashed"}:
-            raise ValueError("mode must be compose, free, random or hashed")
+        if mode not in {"compose", "free", "random", "hashed", "source"}:
+            raise ValueError("mode must be compose, free, random, hashed or source")
         if mode == "compose" and composer is None:
             raise ValueError("compose mode needs a FrameComposer")
         self.mode, self.composer, self.entry_count = mode, composer, entry_count
         source_dimension = composer.atomics.shape[1] if mode == "compose" else model_dimension
-        if mode == "compose":
+        if mode == "source":
+            # Same-site row-source baselines (WP-PQ1, C6m/C6d/C6g): a frozen per-entry source vector (subtoken
+            # mean of the host's input embeddings, the host's encoding of the verbalized frame, or a KG
+            # embedding), read through a trained projector (an MLP of hidden width `source_hidden`, else
+            # linear). The table is a non-persistent buffer: rebuilt from its file, never saved in checkpoints.
+            if source_rows is None or source_rows.ndim != 2 or source_rows.shape[0] != entry_count:
+                raise ValueError(f"source mode needs source_rows of shape ({entry_count}, dim)")
+            self.register_buffer("source_rows", torch.as_tensor(source_rows, dtype=torch.float32).clone(), persistent=False)
+            width = int(source_rows.shape[1])
+            self.source_projector = (nn.Sequential(nn.Linear(width, int(source_hidden), bias=False), nn.GELU(),
+                                                   nn.Linear(int(source_hidden), model_dimension, bias=False))
+                                     if source_hidden else nn.Linear(width, model_dimension, bias=False))
+        elif mode == "compose":
             self.projector = nn.Linear(source_dimension, model_dimension, bias=False)
         elif mode == "free":
             # `free_dimension` > 0: a low-dimensional free table plus a projector, so the control's
@@ -410,6 +423,8 @@ class SpanChannel(nn.Module):
         entries = spans["entry"]
         if self.mode == "compose":
             return self.projector(self.composer.compose(entries, context))
+        if self.mode == "source":
+            return self.source_projector(self.source_rows[entries])
         if self.mode == "free":
             rows = self.table(entries)
             if bool(self.unseen.any()):
@@ -425,14 +440,16 @@ class SpanChannel(nn.Module):
             keys.append(hash(tuple(input_ids[b, s:e + 1].tolist())) % self.hashed_buckets)
         return self.table(torch.tensor(keys, device=entries.device))
 
-    def add_entries(self, count: int, frames: Sequence[Iterable[tuple[int, int]]] | None = None, *, seed: int = 0) -> Tensor:
+    def add_entries(self, count: int, frames: Sequence[Iterable[tuple[int, int]]] | None = None, *, seed: int = 0,
+                    source_rows: Tensor | None = None) -> Tensor:
         """Append `count` link entries at evaluation time (E9 zero-shot insertion); returns their ids.
 
         Composition (`compose`) appends the entries' `frames` to the composer (rows composed from the
         existing atomics and relations); the free table (C2) appends rows marked unseen, which fall
         back to the mean of the trained rows; the random control (C1) appends fixed random vectors
-        drawn from `seed`; a hashed memory (C1h) is keyed by subtokens and needs nothing. Rows of
-        existing entries are unchanged in every mode.
+        drawn from `seed`; a hashed memory (C1h) is keyed by subtokens and needs nothing; a row-source
+        channel (`source`) appends `source_rows` if given, else the mean source row (no information about
+        the new entry). Rows of existing entries are unchanged in every mode.
         """
         if count < 0 or (frames is not None and len(frames) != count):
             raise ValueError("frames must hold one frame per new entry")
@@ -456,6 +473,13 @@ class SpanChannel(nn.Module):
             fixed = self.table_fixed
             extra = torch.randn(count, fixed.shape[1], generator=torch.Generator().manual_seed(seed)) / fixed.shape[1] ** 0.5
             self.table_fixed = torch.cat([fixed, extra.to(fixed)])
+        elif self.mode == "source":
+            table = self.source_rows[:start]            # rows past entry_count (an earlier, restored insertion) are dropped
+            extra = (torch.as_tensor(source_rows, dtype=table.dtype, device=table.device) if source_rows is not None
+                     else table.mean(0, keepdim=True).expand(count, -1))
+            if extra.shape != (count, table.shape[1]):
+                raise ValueError(f"source_rows must have shape ({count}, {table.shape[1]})")
+            self.source_rows = torch.cat([table, extra])
         self.entry_count = start + count
         return torch.arange(start, start + count)
 

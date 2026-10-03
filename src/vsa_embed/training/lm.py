@@ -43,6 +43,16 @@ Two further opt-in keys (E7 self-authoring; absent keys change nothing):
   `metrics.jsonl` and `eval_windows.npz`. The masks are fixed by the caller, so they are identical
   across conditions whose linkers differ (paired comparisons on the same target tokens).
 
+Opt-in keys of the E9 paper-quality controls (WP-PQ1; absent keys change nothing):
+
+- `eval.filler_strata` (null): a filler table (`e9_rescore fillers`, `row_sources.save_filler_table`); every
+  after-span stratum `X` gains `X_filler` (targets that belong to a token sequence verbalizing a filler of that
+  span's ontology frame, starting after the span) and `X_nonfiller` (the rest of `X`), appended after the other
+  strata. `e9_rescore score` computes the same strata for finished runs from `final.pt`.
+- `channel.mode: source` with `channel.source_table` (a row-source table, `e9_rowsource`) and
+  `channel.source_hidden` (hidden width of the MLP projector; 0 = linear): the same-site row-source baselines
+  C6m / C6d / C6g. The table is frozen (a non-persistent buffer, re-read from its file on every rebuild).
+
 Opt-in keys for larger pretrained hosts (E9 on Qwen3; absent keys change nothing):
 
 - `channel.scale_to_host` (false) and `channel.host_scale_fraction` (`span_channel.HOST_SCALE_FRACTION`,
@@ -98,6 +108,7 @@ from ..data.corpus import TokenCorpus, collate_windows, eval_windows, sample_bat
 from ..developmental import DevelopmentalConfig, DevelopmentalDictionary
 from ..integrations.transformers import ChannelLM
 from ..provenance import git_state, prepare_output_dir, write_run_metadata
+from ..row_sources import FillerIndex, load_filler_index, load_source_table
 from ..span_channel import HOST_SCALE_FRACTION, SpanChannel
 
 MODEL_SIZES = {
@@ -215,7 +226,12 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
         raise ValueError("channel conditions need data.ontology")
     entries = int(ontology["entry_count"])
     context = None
-    if mode != "compose":
+    if mode == "source":                               # WP-PQ1 row-source baselines (C6m / C6d / C6g); see the module docstring
+        rows, _ = load_source_table(settings["source_table"], ontology)
+        channel = SpanChannel(None, width, entry_count=entries, mode="source", gate_bias=float(settings["gate_bias"]),
+                              semantic_dimension=width if config["train"]["semantic_weight"] else 0,
+                              source_rows=rows, source_hidden=int(settings.get("source_hidden") or 0))
+    elif mode != "compose":
         channel = SpanChannel(None, width, entry_count=entries, mode=mode, hashed_buckets=int(settings["hashed_buckets"]),
                               gate_bias=float(settings["gate_bias"]), free_dimension=int(settings["free_dimension"]),
                               semantic_dimension=width if config["train"]["semantic_weight"] else 0)
@@ -300,15 +316,24 @@ def _lr(step: int, total_steps: int, warmup_steps: int, peak: float, floor_ratio
     return peak * (floor_ratio + (1 - floor_ratio) * 0.5 * (1 + math.cos(math.pi * progress)))
 
 
+AFTER_STRATA = ("after", "after_heldout", "after_rare", "after_mid", "after_frequent", "after_len1", "after_len2",
+                "after_len3plus", "after_unseen", "after_rare_seen")
+
+
 def stratum_masks(ids: torch.Tensor, spans: dict[str, torch.Tensor], frequency: np.ndarray | None,
-                  heldout: set[int]) -> dict[str, torch.Tensor]:
-    """Boolean masks over target positions `j ∈ [1, T)` (shape batch × (T − 1))."""
+                  heldout: set[int], fillers: FillerIndex | None = None) -> dict[str, torch.Tensor]:
+    """Boolean masks over target positions `j ∈ [1, T)` (shape batch × (T − 1)).
+
+    With `fillers` (opt-in, `eval.filler_strata`; WP-PQ1) every after-span stratum `X` is also split into
+    `X_filler` — targets in the 8-token window of a span of kind `X` that belong to an occurrence (starting after
+    the span) of a token sequence verbalizing a filler of that span's ontology frame — and `X_nonfiller` = `X`
+    minus `X_filler`. These masks come after the others, so the first strata keep their order."""
     batch, length = ids.shape
     shape = (batch, length - 1)
     inside = torch.zeros(shape, dtype=torch.bool)
-    after: dict[str, torch.Tensor] = {name: torch.zeros(shape, dtype=torch.bool) for name in (
-        "after", "after_heldout", "after_rare", "after_mid", "after_frequent", "after_len1", "after_len2", "after_len3plus",
-        "after_unseen", "after_rare_seen")}
+    after: dict[str, torch.Tensor] = {name: torch.zeros(shape, dtype=torch.bool) for name in AFTER_STRATA}
+    filler = {name: torch.zeros(shape, dtype=torch.bool) for name in AFTER_STRATA} if fillers is not None else None
+    rows = ids.tolist() if fillers is not None else None
     for b, s, e, entry, n in zip(spans["batch"].tolist(), spans["start"].tolist(), spans["end"].tolist(),
                                  spans["entry"].tolist(), spans["length"].tolist()):
         if e > s:
@@ -326,8 +351,18 @@ def stratum_masks(ids: torch.Tensor, spans: dict[str, torch.Tensor], frequency: 
                 names.append("after_unseen" if count == 0 else "after_rare_seen")
         for name in names:
             after[name][b, lo:hi] = True
+        if filler is not None:
+            hits = fillers.target_hits(rows[b], entry, lo + 1, hi)       # targets j ∈ [e+1, e+8] → positions j − 1
+            if hits:
+                index = torch.tensor(hits) - 1
+                for name in names:
+                    filler[name][b, index] = True
     masks = {"all": torch.ones(shape, dtype=torch.bool), "inside": inside, **after}
     masks["unlinked"] = ~(inside | after["after"])
+    if filler is not None:
+        for name in AFTER_STRATA:
+            masks[f"{name}_filler"] = filler[name]
+            masks[f"{name}_nonfiller"] = after[name] & ~filler[name]
     return masks
 
 
@@ -358,9 +393,10 @@ def load_reference_strata(path: Path, starts: list[int], length: int) -> dict[st
 def evaluate(model: ChannelLM, corpus: TokenCorpus, starts: list[int], config: dict[str, Any],
              frequency: np.ndarray | None, heldout: set[int], device: torch.device, *,
              window_sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = None,
-             reference: dict[str, np.ndarray] | None = None) -> dict[str, dict[str, float]]:
+             reference: dict[str, np.ndarray] | None = None, fillers: FillerIndex | None = None) -> dict[str, dict[str, float]]:
     """Stratified loss over the evaluation windows; `window_sink` (if given) collects per-window
-    loss sums and target counts per stratum; `reference` adds fixed per-window target masks."""
+    loss sums and target counts per stratum; `reference` adds fixed per-window target masks; `fillers`
+    adds the filler / non-filler split of every after-span stratum (`stratum_masks`)."""
     model.eval()
     length, batch = config["model"]["seq_len"], config["eval"]["batch"]
     sums: dict[str, float] = {}; counts: dict[str, int] = {}
@@ -371,7 +407,7 @@ def evaluate(model: ChannelLM, corpus: TokenCorpus, starts: list[int], config: d
         with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
             per_token = model(ids_d, spans={k: v.to(device) for k, v in spans.items()} if model.channel else None,
                               labels=ids_d, reduction="none")["loss"].float().cpu()
-        masks = stratum_masks(ids, spans, frequency, heldout)
+        masks = stratum_masks(ids, spans, frequency, heldout, fillers)
         if reference:
             masks.update({name: torch.from_numpy(values[i:i + batch]) for name, values in reference.items()})
         for name, mask in masks.items():
@@ -436,9 +472,20 @@ def build_optimizer(model: ChannelLM, train_cfg: dict[str, Any], device: torch.d
                              fused=device.type == "cuda")
 
 
+def filler_index(config: dict[str, Any], ontology: dict[str, Any] | None) -> FillerIndex | None:
+    """The filler index of `eval.filler_strata` (opt-in; WP-PQ1): a filler table written by `e9_rescore fillers`, checked
+    against the run's ontology frames; None when the key is absent (every recorded run)."""
+    path = config["eval"].get("filler_strata")
+    if not path:
+        return None
+    if ontology is None:
+        raise ValueError("eval.filler_strata needs data.ontology")
+    return load_filler_index(Path(path), ontology)
+
+
 def _evaluate_only(model: ChannelLM, config: dict[str, Any], output_dir: Path, eval_corpus: TokenCorpus,
                    frequency: np.ndarray | None, heldout: set[int], device: torch.device,
-                   git_at_start: dict[str, Any] | None) -> dict[str, Any]:
+                   git_at_start: dict[str, Any] | None, fillers: FillerIndex | None = None) -> dict[str, Any]:
     """C0' on a frozen host: one evaluation, logged at every point of the run's evaluation schedule
     (marked `eval_only`), so its curve lines up with the trained conditions'."""
     seq_len, train_cfg = config["model"]["seq_len"], config["train"]
@@ -449,7 +496,8 @@ def _evaluate_only(model: ChannelLM, config: dict[str, Any], output_dir: Path, e
     sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = {} if config["eval"].get("save_window_losses") else None
     reference = (load_reference_strata(Path(config["eval"]["reference_strata"]), starts, seq_len)
                  if config["eval"].get("reference_strata") else None)
-    results = evaluate(model, eval_corpus, starts, config, frequency, heldout, device, window_sink=sink, reference=reference)
+    results = evaluate(model, eval_corpus, starts, config, frequency, heldout, device, window_sink=sink, reference=reference,
+                       fillers=fillers)
     # Same row format as a trained run's evaluations, at the step where that run evaluates each point.
     rows = [{"type": "eval", "step": -(-tokens // tokens_per_step), "tokens": tokens, "stratum": stratum,
              "loss": value["loss"], "stratum_tokens": value["tokens"], "eval_only": True}
@@ -507,8 +555,9 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     if train_cfg.get("init_from") and not (resume and checkpoint_path.exists()):
         initial = torch.load(train_cfg["init_from"], weights_only=False, map_location="cpu")
         load_model_state(model, initial["model"], trainable_only=bool(initial.get("trainable_only", False)))
+    fillers = filler_index(config, ontology)
     if eval_only:
-        return _evaluate_only(model, config, output_dir, eval_corpus, frequency, heldout, device, git_at_start)
+        return _evaluate_only(model, config, output_dir, eval_corpus, frequency, heldout, device, git_at_start, fillers=fillers)
     optimizer = build_optimizer(model, train_cfg, device)
     tracker = None
     if channel is not None and channel.composer is not None and config["channel"]["developmental"]:
@@ -548,7 +597,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     def run_eval(tokens: int) -> None:
         sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = {} if save_windows else None
         results = evaluate(model, eval_corpus, eval_starts, config, frequency, heldout, device, window_sink=sink,
-                           reference=reference)
+                           reference=reference, fillers=fillers)
         for stratum, value in results.items():
             # `tokens` = training tokens at this evaluation; `stratum_tokens` = target tokens in the
             # stratum (rows written before this fix carry only the latter, under `tokens`).

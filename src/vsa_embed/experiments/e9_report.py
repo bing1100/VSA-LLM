@@ -32,6 +32,10 @@ and the probe differences at INT4 complete it.
 paired over items, seed-averaged per item) and edits (ROME/MEMIT-style efficacy, generalization,
 specificity) at bf16 and INT4, plus the E5.4 contamination-free synthetic items.
 
+**WP-PQ1 sections** (when their inputs exist; see the comment above `pq_sections`): the operator / specificity
+ablation of C5 (C5rf, C5ut, C5tr, C5sh), the same-site row sources (C6m, C6d, C6g), the filler / non-filler split of
+the after-span strata and the claim-B quantization controls (both from `e9_rescore`'s `RUN/rescore`).
+
 Every result notes its seeds; a single seed is flagged (CIs then cover evaluation windows or items only).
 Output (run-folder contract): `report.md`, `summary.json`, `figures/`, `resolved_config.yaml`, `manifest.json`.
 """
@@ -406,6 +410,278 @@ def dimension3(group: Group, *, candidate: str, resamples: int, seed: int, varia
     return result
 
 
+# ---------------------------------------------------------------- WP-PQ1: ablation arms, filler split, claim-B controls
+#
+# Paper-quality controls after the 2026-10 novelty check (`e9_plan` arms, `e9_rescore`). Each section appears only when
+# its inputs exist, so reports of stages without them are unchanged:
+#
+# - operator / specificity ablation: `C5 − arm` per stratum for C5rf (fixed random orthogonal operators), C5ut (no
+#   binding), C5tr (translation), C5sh (shuffled frames) — negative = C5 better, i.e. the ablated part matters — and
+#   `arm − C0′` (does the ablated channel still help); final-evaluation windows, pooled over common seeds, Holm over the
+#   arms within each stratum;
+# - same-site row sources: the same for C6m (subtoken mean), C6d (definition encoder), C6g (TransE), held-out terms
+#   first among the strata of interest;
+# - filler / non-filler split (`RUN/rescore`, variant `ref`): every model difference on `X_filler` and `X_nonfiller`
+#   for the after-span strata, the share of targets that are filler tokens and the share of the gain carried by them;
+# - claim-B controls (`RUN/rescore`): for each quantizer `q` the absolute loss of reference and candidate at bf16 and
+#   at `q`, the gaps, the difference in differences `DiD = (C5 − r)@q − (C5 − r)@bf16` with paired window bootstraps
+#   (`e4_quant.retention`), the same with the candidate's channel off (`DiD_off`: what the C5-trained host weights do by
+#   themselves) and the channel's own contribution `(C5 − C5off)@q − (C5 − C5off)@bf16`; Holm over quantizers within
+#   each stratum.
+
+OPERATOR_ARMS = ("C5rf", "C5ut", "C5tr", "C5sh")
+SOURCE_ARMS = ("C6m", "C6d", "C6g")
+ARM_LABELS = {"C5rf": "fixed random orthogonal operators", "C5ut": "untyped (no binding)", "C5tr": "translation x + r",
+              "C5sh": "shuffled frames", "C6m": "subtoken mean (FVT)", "C6d": "definition encoder", "C6g": "TransE KG embedding"}
+FILLER_BASES = ("after", "after_heldout", "after_rare_seen", "after_unseen", "after_len3plus")
+CONTROL_QUANTIZERS = ("int4-A", "int4-rtn", "int4-hqq", "int4-nf4", "int4-gptq", "int4-awq", "int4-A-emb", "int4-A-embhead")
+CONTROL_STRATA = ("after_heldout", "after_rare_seen", "after_unseen", "after_len3plus", "inside", "unlinked", "all")
+
+
+def arm_comparison(group: Group, arms: Sequence[str], *, candidate: str, resamples: int, seed: int) -> dict[str, Any]:
+    """`candidate − arm` and `arm − C0′` per stratum for the arms present (Holm over arms within a stratum)."""
+    present = [a for a in arms if a in group.models]
+    if candidate not in group.models or not present:
+        return {"available": False}
+    result: dict[str, Any] = {"available": True, "arms": present, "strata": {}, "seeds": {}}
+    strata_present = {s for runs in group.models.values() for r in runs.values() for s in r.final}
+    for stratum in [s for s in STRATA if s in strata_present]:
+        block: dict[str, dict[str, Any]] = {}
+        for arm in present:
+            common = sorted(set(group.seeds(candidate)) & set(group.seeds(arm)))
+            result["seeds"][arm] = common
+            entry = {}
+            versus = paired_difference(group.paired(candidate, common), group.paired(arm, common), stratum, resamples=resamples, seed=seed)
+            if versus is not None:
+                entry["candidate_minus_arm"] = versus
+            if "C0'" in group.models:
+                base = sorted(set(group.seeds(arm)) & set(group.seeds("C0'")))
+                over = paired_difference(group.paired(arm, base), group.paired("C0'", base), stratum, resamples=resamples, seed=seed)
+                if over is not None:
+                    entry["arm_minus_baseline"] = over
+            block[arm] = entry
+        for key in ("candidate_minus_arm", "arm_minus_baseline"):
+            tested = [e[key] for e in block.values() if e.get(key, {}).get("p_value") is not None]
+            for comparison, adjusted in zip(tested, holm_adjust([c["p_value"] for c in tested])):
+                comparison.update(holm_p=adjusted, significant=adjusted < ALPHA)
+        result["strata"][stratum] = block
+    return result
+
+
+def load_rescores(group: Group) -> dict[str, dict[int, dict[str, Any]]]:
+    """`RUN/rescore` outputs (`e9_rescore`) of the group's runs: model → seed → rescoring."""
+    from .e9_rescore import load_rescore
+    out: dict[str, dict[int, dict[str, Any]]] = {}
+    for model, runs in group.models.items():
+        for s, run in runs.items():
+            found = load_rescore(run.path / "rescore")
+            if found is not None:
+                out.setdefault(model, {})[s] = found
+    return out
+
+
+def _rescore_sums(rescores: dict[str, dict[int, dict[str, Any]]], model: str, seeds: Sequence[int], variant: str,
+                  stratum: str) -> tuple[np.ndarray, np.ndarray] | None:
+    """Window sums and counts of `model` pooled over `seeds` (P0: its one run for every seed); a model without a
+    channel answers `-off` with its plain variant. None if missing."""
+    from .e9_rescore import plain_variant
+    by_seed = rescores.get(model, {})
+    picks = [by_seed[min(by_seed)]] * len(seeds) if model == "P0" and by_seed else [by_seed.get(s) for s in seeds]
+    if not picks or any(p is None for p in picks):
+        return None
+    sums, counts = 0, 0
+    for found in picks:
+        if stratum not in found["strata"]:
+            return None
+        name = variant if variant in found["sums"] else plain_variant(variant)
+        if name not in found["sums"] or (name != variant and found["record"].get("channel", "none") != "none"):
+            return None
+        i = found["strata"].index(stratum)
+        sums = sums + found["sums"][name][i]
+        counts = counts + found["count"][i].astype(np.float64)
+    return sums, counts
+
+
+def filler_split(group: Group, rescores: dict[str, dict[int, dict[str, Any]]], *, candidate: str, resamples: int,
+                 seed: int) -> dict[str, Any]:
+    """Candidate − reference on `X_filler` / `X_nonfiller` (bf16, `ref`), paired by window, pooled over common seeds."""
+    if candidate not in rescores:
+        return {"available": False}
+    references = [m for m in (*REFERENCES, *OPERATOR_ARMS, *SOURCE_ARMS) if m in rescores and m != candidate]
+    result: dict[str, Any] = {"available": True, "references": references, "rows": {}}
+    for base in FILLER_BASES:
+        for reference in references:
+            common = (group.seeds(candidate) if reference == "P0"
+                      else sorted(set(rescores[candidate]) & set(rescores[reference])))
+            common = [s for s in common if s in rescores[candidate]]
+            parts: dict[str, Any] = {}
+            for part in ("", "_filler", "_nonfiller"):
+                stratum = base + part
+                a = _rescore_sums(rescores, candidate, common, "ref", stratum)
+                b = _rescore_sums(rescores, reference, common, "ref", stratum)
+                if a is None or b is None or not np.array_equal(a[1], b[1]) or a[1].sum() == 0:
+                    continue
+                boot = paired_ratio_bootstrap(a[0] - b[0], a[1], b[0], resamples=resamples, seed=seed)
+                parts[part.lstrip("_") or "total"] = {**{k: boot.get(k) for k in ("mean", "ci_low", "ci_high", "p_value", "relative",
+                                                                        "relative_ci_low", "relative_ci_high")},
+                                          "targets": int(a[1].sum()), "seeds": common,
+                                          "gain_sum": float((a[0] - b[0]).sum())}
+            if "total" in parts and "filler" in parts:
+                total = parts["total"]
+                parts["filler_target_share"] = parts["filler"]["targets"] / total["targets"] if total["targets"] else None
+                parts["filler_gain_share"] = parts["filler"]["gain_sum"] / total["gain_sum"] if total["gain_sum"] else None
+            if parts:
+                result["rows"].setdefault(base, {})[reference] = parts
+    tested = [p[k] for by_ref in result["rows"].values() for p in by_ref.values() for k in ("filler", "nonfiller")
+              if isinstance(p.get(k), dict) and p[k].get("p_value") is not None]
+    for comparison, adjusted in zip(tested, holm_adjust([c["p_value"] for c in tested]) if tested else []):
+        comparison.update(holm_p=adjusted, significant=adjusted < ALPHA)
+    return result
+
+
+def claim_b_controls(group: Group, rescores: dict[str, dict[int, dict[str, Any]]], *, candidate: str, resamples: int,
+                     seed: int) -> dict[str, Any]:
+    """Difference in differences of the candidate's gap per quantizer, with and without its channel (module comment)."""
+    if candidate not in rescores:
+        return {"available": False}
+    variants = {v for found in rescores[candidate].values() for v in found["sums"]}
+    quantizers = [q for q in CONTROL_QUANTIZERS if q in variants] + sorted(
+        v for v in variants if v.startswith("int") and not v.endswith("-off") and v not in CONTROL_QUANTIZERS)
+    if "ref" not in variants or not quantizers:
+        return {"available": False}
+    result: dict[str, Any] = {"available": True, "quantizers": quantizers, "references": {}}
+    for reference in [r for r in REFERENCES if r in rescores and r != candidate]:
+        seeds = (sorted(rescores[candidate]) if reference == "P0" else sorted(set(rescores[candidate]) & set(rescores[reference])))
+        if not seeds:
+            continue
+        block: dict[str, dict[str, Any]] = {}
+        for q in quantizers:
+            for stratum in CONTROL_STRATA:
+                c_ref, r_ref = _rescore_sums(rescores, candidate, seeds, "ref", stratum), _rescore_sums(rescores, reference, seeds, "ref", stratum)
+                c_q, r_q = _rescore_sums(rescores, candidate, seeds, q, stratum), _rescore_sums(rescores, reference, seeds, q, stratum)
+                if None in (c_ref, r_ref, c_q, r_q) or c_ref[1].sum() == 0:
+                    continue
+                n = c_ref[1]
+                entry: dict[str, Any] = {
+                    "cells": {"reference_bf16": float(r_ref[0].sum() / n.sum()), "candidate_bf16": float(c_ref[0].sum() / n.sum()),
+                              "reference_q": float(r_q[0].sum() / n.sum()), "candidate_q": float(c_q[0].sum() / n.sum())},
+                    "did": retention(c_ref[0], r_ref[0], c_q[0], r_q[0], n, resamples=resamples, seed=seed), "seeds": seeds,
+                    "targets": int(n.sum())}
+                c_off, c_q_off = (_rescore_sums(rescores, candidate, seeds, "ref-off", stratum),
+                                  _rescore_sums(rescores, candidate, seeds, f"{q}-off", stratum))
+                if c_off is not None and c_q_off is not None:
+                    entry["cells"].update(candidate_off_bf16=float(c_off[0].sum() / n.sum()), candidate_off_q=float(c_q_off[0].sum() / n.sum()))
+                    entry["did_off"] = retention(c_off[0], r_ref[0], c_q_off[0], r_q[0], n, resamples=resamples, seed=seed)
+                    entry["channel"] = retention(c_ref[0], c_off[0], c_q[0], c_q_off[0], n, resamples=resamples, seed=seed)
+                block.setdefault(q, {})[stratum] = entry
+        for stratum in CONTROL_STRATA:
+            tested = [block[q][stratum]["did"]["gain_change"] for q in quantizers
+                      if stratum in block.get(q, {}) and block[q][stratum]["did"]["gain_change"].get("p_value") is not None]
+            for test, adjusted in zip(tested, holm_adjust([t["p_value"] for t in tested]) if tested else []):
+                test.update(holm_p=adjusted, significant=adjusted < ALPHA)
+        result["references"][reference] = block
+    return result
+
+
+def pq_sections(group: Group, *, candidate: str, resamples: int, seed: int) -> dict[str, Any]:
+    """The WP-PQ1 sections of one group (empty when none of their inputs exist)."""
+    out: dict[str, Any] = {}
+    operators = arm_comparison(group, OPERATOR_ARMS, candidate=candidate, resamples=resamples, seed=seed)
+    if operators.get("available"):
+        out["operator_ablation"] = operators
+    sources = arm_comparison(group, SOURCE_ARMS, candidate=candidate, resamples=resamples, seed=seed)
+    if sources.get("available"):
+        out["row_sources"] = sources
+    rescores = load_rescores(group)
+    if rescores:
+        split = filler_split(group, rescores, candidate=candidate, resamples=resamples, seed=seed)
+        if split.get("available") and split["rows"]:
+            out["filler_split"] = split
+        controls = claim_b_controls(group, rescores, candidate=candidate, resamples=resamples, seed=seed)
+        if controls.get("available") and controls["references"]:
+            out["claim_b_controls"] = controls
+        out["rescored"] = {m: sorted(by_seed) for m, by_seed in rescores.items()}
+    return out
+
+
+def _render_arms(block: dict[str, Any], candidate: str, title: str, note: str) -> list[str]:
+    arms = block["arms"]
+    lines = ["", f"### {title}", "", note, "",
+             "Seeds: " + "; ".join(f"{a} {block['seeds'].get(a, [])}" for a in arms) + ".", "",
+             f"Relative loss difference [95% CI] (`*` = Holm over the arms within the stratum; negative {candidate} − arm = "
+             f"{candidate} better):", "",
+             "| Stratum | " + " | ".join(f"{candidate} − {a}" for a in arms) + " | " + " | ".join(f"{a} − C0′" for a in arms) + " |",
+             "|---|" + "---|" * (2 * len(arms))]
+    for stratum, by_arm in block["strata"].items():
+        lines.append(f"| {_stratum_label(stratum)} | " + " | ".join(_relative(by_arm.get(a, {}).get("candidate_minus_arm")) for a in arms)
+                     + " | " + " | ".join(_relative(by_arm.get(a, {}).get("arm_minus_baseline")) for a in arms) + " |")
+    lines += ["", f"Absolute {candidate} − arm (nats/token):", "", "| Stratum | " + " | ".join(arms) + " |", "|---|" + "---|" * len(arms)]
+    for stratum, by_arm in block["strata"].items():
+        lines.append(f"| {stratum} | " + " | ".join(_ci(by_arm.get(a, {}).get("candidate_minus_arm"), "delta") for a in arms) + " |")
+    if any(len(block["seeds"].get(a, [])) == 1 for a in arms):
+        lines += ["", "> Single seed for at least one arm: CIs cover evaluation windows only."]
+    return lines
+
+
+def render_pq(pq: dict[str, Any], candidate: str) -> list[str]:
+    """Markdown of `pq_sections`."""
+    lines: list[str] = []
+    if "operator_ablation" in pq:
+        lines += _render_arms(pq["operator_ablation"], candidate, "WP-PQ1 — operator and specificity ablation of " + candidate,
+                              "Arms: " + "; ".join(f"**{a}** {ARM_LABELS[a]}" for a in pq["operator_ablation"]["arms"])
+                              + ". Same recipe, test set and parameters as the candidate otherwise.")
+    if "row_sources" in pq:
+        lines += _render_arms(pq["row_sources"], candidate, "WP-PQ1 — same-site row sources (vs " + candidate + ")",
+                              "Arms: " + "; ".join(f"**{a}** {ARM_LABELS[a]}" for a in pq["row_sources"]["arms"])
+                              + ": a frozen per-entry vector through a trained MLP projector (parameters matched to the "
+                              "candidate's dictionary plus projector), at the same site and gate; held-out terms get their "
+                              "vectors from the same source. `after_heldout` is the zero-shot comparison.")
+    split = pq.get("filler_split")
+    if split:
+        lines += ["", "### WP-PQ1 — filler vs non-filler targets after a term (copy concern)", "",
+                  "`X_filler` = targets in the 8-token window after a span that belong to an alias of a filler of that span's "
+                  "ontology frame (starting after the span); `X_nonfiller` = the rest of `X` (`e9_rescore`, bf16). Relative "
+                  f"loss difference {candidate} − reference [95% CI] (`*` = Holm over all filler / non-filler tests); "
+                  "filler share = fraction of the stratum's targets that are filler tokens; gain share = fraction of the "
+                  "summed loss difference carried by filler tokens.", "",
+                  "| Stratum | Reference | targets | filler share | total | filler | non-filler | gain share on fillers |",
+                  "|---|---|---:|---:|---|---|---|---:|"]
+        for base, by_ref in split["rows"].items():
+            for reference, parts in by_ref.items():
+                total = parts.get("total") or {}
+                lines.append(f"| {base} | {reference} | {total.get('targets', 'n/a')} | "
+                             f"{_fmt(parts.get('filler_target_share'), 3, signed=False)} | {_relative(parts.get('total'))} | "
+                             f"{_relative(parts.get('filler'))} | {_relative(parts.get('nonfiller'))} | "
+                             f"{_fmt(parts.get('filler_gain_share'), 3, signed=False)} |")
+    controls = pq.get("claim_b_controls")
+    if controls:
+        lines += ["", "### WP-PQ1 — claim-B controls (quantizers, channel off, quantized embedding)", "",
+                  "Absolute nats/token in the four cells, gap = candidate − reference, `DiD` = gap@q − gap@bf16 (negative = "
+                  "the advantage grows under quantization; `*` = Holm over quantizers within the stratum), `DiD off` = the "
+                  "same with the candidate's channel switched off at both precisions (the C5-trained host weights alone), "
+                  "`channel DiD` = (C5 − C5off)@q − (C5 − C5off)@bf16 (the channel's own contribution). `int4-A` = torchao "
+                  "RTN; `int4-rtn/hqq/nf4/gptq/awq` simulated (`evaluation.quantization`); `-emb` = input embedding "
+                  "quantized too. Paired window bootstraps, pooled over common seeds.", ""]
+        for reference, block in controls["references"].items():
+            lines += [f"**{candidate} vs {reference}**", "",
+                      "| Stratum | n | q | ref bf16 | cand bf16 | ref q | cand q | gap bf16 | gap q | DiD [95% CI] | DiD off [95% CI] | channel DiD [95% CI] |",
+                      "|---|---:|---|---:|---:|---:|---:|---|---|---|---|---|"]
+            for stratum in CONTROL_STRATA:
+                for q in controls["quantizers"]:
+                    entry = block.get(q, {}).get(stratum)
+                    if entry is None:
+                        continue
+                    cells, did = entry["cells"], entry["did"]
+                    lines.append(f"| {stratum} | {entry['targets']} | {q} | {cells['reference_bf16']:.4f} | {cells['candidate_bf16']:.4f} | "
+                                 f"{cells['reference_q']:.4f} | {cells['candidate_q']:.4f} | {_fmt(did['gain_bf16']['mean'])} | "
+                                 f"{_fmt(did['gain_quantized']['mean'])} | {_ci(did['gain_change'])} | "
+                                 f"{_ci((entry.get('did_off') or {}).get('gain_change'))} | {_ci((entry.get('channel') or {}).get('gain_change'))} |")
+            lines.append("")
+    if pq.get("rescored"):
+        lines += ["", "Rescored runs (`RUN/rescore`): " + "; ".join(f"{m} {s}" for m, s in pq["rescored"].items()) + "."]
+    return lines
+
+
 # ---------------------------------------------------------------- analysis and rendering
 
 
@@ -432,6 +708,9 @@ def analyze(runs: Sequence[Run], quant: dict[str, dict[str, Any]], *, candidate:
         if quant_general:
             summary["groups"][group.label]["general_text"] = dimension2(group, quant_general, candidate=candidate,
                                                                        resamples=resamples, seed=seed)
+        pq = pq_sections(group, candidate=candidate, resamples=resamples, seed=seed)      # WP-PQ1 (only when present)
+        if pq:
+            summary["groups"][group.label]["pq"] = pq
     return summary, groups
 
 
@@ -553,6 +832,8 @@ def render(summary: dict[str, Any], figures: dict[str, dict[str, str]], *, title
         if len(g["seeds"].get(candidate, [])) == 1:
             lines += ["> Single seed: intervals cover items only, not seed variance.", ""]
         lines += _render_dimension3(d3, candidate)
+        if g.get("pq"):
+            lines += render_pq(g["pq"], candidate)
         if figures.get(label):
             lines += ["", "### Figures", ""]
             for caption, path in figures[label].items():
@@ -740,8 +1021,8 @@ def plot_group(label: str, g: dict[str, Any], out: Path, slug: str, *, candidate
                     v = [x for x in values[t] if x is not None]
                     if v:
                         rows.append((t, model, {"mean": float(np.mean(v)), "ci_low": min(v), "ci_high": max(v)}))
-            _dot_panel(ax, rows, tests, [m for m in MODELS if m in d3[variant]["models"]], scale=1.0, key="mean",
-                       xlabel="accuracy (own rows; bar = seed range)")
+            series = [m for m in MODELS if m in d3[variant]["models"]] + [m for m in d3[variant]["models"] if m not in MODELS]
+            _dot_panel(ax, rows, tests, series, scale=1.0, key="mean", xlabel="accuracy (own rows; bar = seed range)")
             ax.set_title(f"new words — {variant}", fontsize=9, color=INK, loc="left")
             if ax is not axes[0][0]:
                 ax.set_yticklabels([])
