@@ -1,0 +1,155 @@
+{
+ "stage": "d71",
+ "jobs": [
+  {
+   "name": "e7-general-v1-discover-SmolLM2-360M",
+   "gpu_hours": 0.24962462462462462,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "discover",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--host",
+    "SmolLM2-360M"
+   ]
+  },
+  {
+   "name": "e7-general-v1-discover-SmolLM2-135M",
+   "gpu_hours": 0.12827932098765432,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "discover",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--host",
+    "SmolLM2-135M"
+   ]
+  },
+  {
+   "name": "e7-general-v1-discover-Qwen2.5-0.5B",
+   "gpu_hours": 0.2886284722222222,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "discover",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--host",
+    "Qwen2.5-0.5B"
+   ]
+  },
+  {
+   "name": "e7-general-v1-author-SmolLM2-360M",
+   "gpu_hours": 0.12942942942942942,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "author",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--author",
+    "SmolLM2-360M"
+   ]
+  },
+  {
+   "name": "e7-general-v1-author-SmolLM2-135M",
+   "gpu_hours": 0.07416666666666667,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "author",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--author",
+    "SmolLM2-135M"
+   ]
+  },
+  {
+   "name": "e7-general-v1-author-Qwen2.5-0.5B",
+   "gpu_hours": 0.1579861111111111,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "author",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--author",
+    "Qwen2.5-0.5B"
+   ]
+  },
+  {
+   "name": "e7-general-v1-direct-SmolLM2-360M",
+   "gpu_hours": 0.030608108108108108,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "author",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--author",
+    "direct-SmolLM2-360M"
+   ]
+  },
+  {
+   "name": "e7-general-v1-direct-SmolLM2-135M",
+   "gpu_hours": 0.018025462962962962,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "author",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--author",
+    "direct-SmolLM2-135M"
+   ]
+  },
+  {
+   "name": "e7-general-v1-direct-Qwen2.5-0.5B",
+   "gpu_hours": 0.037890625,
+   "command": [
+    "/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+    "-m",
+    "vsa_embed.experiments.e7_authoring",
+    "author",
+    "--run",
+    "experiments/e7-self-authoring/runs/general-v1",
+    "--author",
+    "direct-Qwen2.5-0.5B"
+   ]
+  }
+ ],
+ "gpu_hours": 1.1146388211127793,
+ "then": [
+  "PYTHONPATH=src /home/bhux/anaconda3/envs/vsa-repro/bin/python -m vsa_embed.experiments.e7_authoring link --run experiments/e7-self-authoring/runs/general-v1   # CPU; run after the SmolLM2-360M discovery job, before the author jobs",
+  "PYTHONPATH=src /home/bhux/anaconda3/envs/vsa-repro/bin/python -m vsa_embed.experiments.e7_authoring author --run experiments/e7-self-authoring/runs/general-v1 --author hearst   # CPU",
+  "PYTHONPATH=src /home/bhux/anaconda3/envs/vsa-repro/bin/python -m vsa_embed.experiments.e7_authoring author --run experiments/e7-self-authoring/runs/general-v1 --author random   # CPU, after the SmolLM2-360M author job",
+  "PYTHONPATH=src /home/bhux/anaconda3/envs/vsa-repro/bin/python -m vsa_embed.experiments.e7_authoring author --run experiments/e7-self-authoring/runs/general-v1 --author teacher  # claude -p (\u2248 candidates / 8 calls)",
+  "PYTHONPATH=src /home/bhux/anaconda3/envs/vsa-repro/bin/python -m vsa_embed.experiments.e7_authoring quality --run experiments/e7-self-authoring/runs/general-v1",
+  "PYTHONPATH=src /home/bhux/anaconda3/envs/vsa-repro/bin/python -m vsa_embed.experiments.e7_authoring judge-items --run experiments/e7-self-authoring/runs/general-v1",
+  "PYTHONPATH=src /home/bhux/anaconda3/envs/vsa-repro/bin/python -m vsa_embed.experiments.e7_authoring judge --run experiments/e7-self-authoring/runs/general-v1 --runner cli   # claude -p, \u2265 3 calls per item"
+ ],
+ "priority": 60,
+ "assumptions": {
+  "train_tokens_per_s": {
+   "SmolLM2-135M": 36000,
+   "SmolLM2-360M": 18500,
+   "Qwen2.5-0.5B": 16000,
+   "50M": 70000
+  },
+  "generation_tokens_per_s": {
+   "SmolLM2-135M": 2500,
+   "SmolLM2-360M": 1500,
+   "Qwen2.5-0.5B": 1200
+  }
+ }
+}

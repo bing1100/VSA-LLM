@@ -1,0 +1,50 @@
+model:
+  vocab_size: 50257
+  seq_len: 1024
+  size: 50M
+  gradient_checkpointing: false
+  pretrained: null
+  host_mode: train
+  lora_rank: 16
+data:
+  min_subtokens: 2
+  seed: 1234
+  train: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/train
+  eval: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/eval
+  ontology: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/ontology.pt
+eval:
+  windows: 512
+  batch: 32
+  first_tokens: 10000000
+  save_window_losses: true
+device: cuda
+train:
+  micro_batch: 32
+  grad_accum: 8
+  total_tokens: 100000000
+  lr: 0.004
+  warmup_tokens: 5000000
+  checkpoint_minutes: 5
+  min_lr_ratio: 0.1
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  log_every: 20
+  semantic_weight: 0.0
+  delta_weight: 0.001
+channel:
+  mode: none
+  operator: hrr
+  composition: attentive
+  dimension: 256
+  key_dimension: 32
+  context_window: 0
+  gate_bias: -2.0
+  hashed_buckets: 0
+  developmental: null
+  concept_factor: induced
+  free_dimension: 0
+  frames: ontology
+seed: 1
+experiment: e4-recipe-50M-C0@b256k_lr0.004-s1

@@ -1,0 +1,83 @@
+{
+ "host": "SmolLM2-360M",
+ "host_mode": "frozen",
+ "channel_condition": "C5",
+ "operator": "hrr",
+ "key_dimension": 8,
+ "channel_dimension": 256,
+ "base_tokens": 50000000,
+ "round_tokens": 25000000,
+ "sequences_per_step": 128,
+ "seq_len": 1024,
+ "verification": {
+  "window": 128,
+  "after": 8,
+  "min_validation": 6,
+  "quantile": 0.05,
+  "resamples": 1000,
+  "batch": 32,
+  "max_edges": 8
+ },
+ "new_fillers": {
+  "min_concepts": 2
+ },
+ "cm_stages": [
+  "discovery",
+  "authoring",
+  "verification"
+ ],
+ "teacher_verified": true,
+ "teacher_condition": true,
+ "entigraph": {
+  "writer": "SmolLM2-360M",
+  "per_entity": 4,
+  "max_new_tokens": 192,
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "batch": 16,
+  "share": 0.1,
+  "context_chars": 600
+ },
+ "notes": {
+  "writer": null,
+  "samples": 1,
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "max_new_tokens": 64,
+  "batch": 16,
+  "share": 0.1
+ },
+ "spa": {
+  "writer": null,
+  "documents": 2000,
+  "passage_chars": 1200,
+  "max_new_tokens": 160,
+  "temperature": 0.7,
+  "top_p": 0.95,
+  "batch": 16,
+  "share": 0.1
+ },
+ "verbal": {
+  "share": 0.02
+ },
+ "text": {
+  "budget": "tokens"
+ },
+ "eval": {
+  "first_fraction": 0.5
+ },
+ "cross": {
+  "seed": 1,
+  "condition": "self",
+  "train_tokens": 300000000,
+  "run_tokens": null,
+  "size": "50M",
+  "channel_condition": "C5",
+  "seeds": [
+   1,
+   2,
+   3
+  ],
+  "workers": 4
+ }
+}
