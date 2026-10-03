@@ -1,0 +1,33 @@
+experiment: e9-dim3-toy
+model: HuggingFaceTB/SmolLM2-135M
+cov_texts: 2000
+methods:
+- rome
+- memit
+- alphaedit
+nullspace_relative: null
+facts:
+- - '{x} is located in the city of'
+  - The Eiffel Tower
+  - ' Paris'
+  - ' Rome'
+  - '{x} can be found in the city of'
+  - The Louvre is located in the city of
+- - '{x} is located in the country of'
+  - The Great Wall
+  - ' China'
+  - ' Brazil'
+  - You can visit {x} in the country of
+  - The Forbidden City is located in the country of
+- - The mother tongue of {x} is
+  - Danielle Darrieux
+  - ' French'
+  - ' English'
+  - '{x} grew up speaking'
+  - "The mother tongue of L\xE9on Blum is"
+- - '{x} was developed by'
+  - The iPhone
+  - ' Apple'
+  - ' Nokia'
+  - The company behind {x} is
+  - The iPad was developed by
