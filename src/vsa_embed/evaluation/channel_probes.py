@@ -290,7 +290,7 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
     from transformers import AutoTokenizer
 
     from ..integrations.transformers import ChannelLM
-    from ..training.lm import build_channel, build_model, resolve_config
+    from ..training.lm import build_channel, build_model, load_model_state, resolve_config
 
     run_dir = Path(run_dir)
     state = torch.load(run_dir / checkpoint, weights_only=False, map_location="cpu")
@@ -307,7 +307,9 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
         restore_composer_schedule(channel.composer, state["composer_schedule"])
     host_mode = config["model"]["host_mode"] if config["model"]["pretrained"] else "train"
     model = ChannelLM(base, channel, context=context, host_mode=host_mode, lora_rank=int(config["model"]["lora_rank"]))
-    model.load_state_dict(state["model"])
+    # A trainable-only state (frozen or LoRA hosts, `train.save_trainable_only`; an evaluation-only C0')
+    # omits the frozen host weights, which `build_model` has just reloaded from the Hugging Face cache.
+    load_model_state(model, state["model"], trainable_only=bool(state.get("trainable_only", False)))
     model.to(device).eval()
     tokenizer_name, boundary = run_tokenizer(config)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
@@ -326,6 +328,8 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
             "boundary": boundary, "min_subtokens": int(config["data"]["min_subtokens"]),
             "ontology": str(ontology_path) if ontology_path else None, "alias_table": table_info,
             "heldout_entries": len(heldout), "parameters": sum(p.numel() for p in model.parameters())}
+    if state.get("trainable_only"):          # new keys only where they apply (headers of earlier outputs unchanged)
+        info["trainable_only_checkpoint"] = True
     return ChannelModelAdapter(model, tokenizer, device, layer=layer, batch_size=batch_size, max_length=max_length,
                                linker=linker, heldout_entries=heldout, train_frequency=frequency, info=info)
 
