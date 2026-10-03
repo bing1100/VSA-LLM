@@ -391,8 +391,9 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     return queued
 
 
-def describe_plan(paths: list[Path], *, memory_used: bool) -> list[str]:
-    """One line per host: micro-batch, checkpointing, host dtype, where they came from, and GPU-hour estimates."""
+def describe_plan(paths: list[Path], plans: dict[str, dict[str, Any]]) -> list[str]:
+    """One line per host: micro-batch, checkpointing, host dtype, their source (table, memory probe, override) and
+    GPU hours of the trained runs (measured tokens/s from the probe, else the 6N model)."""
     lines = []
     by_host: dict[str, list[dict[str, Any]]] = {}
     for path in paths:
@@ -400,15 +401,16 @@ def describe_plan(paths: list[Path], *, memory_used: bool) -> list[str]:
         by_host.setdefault(_config_host(config) or "?", []).append(config)
     for host, configs in by_host.items():
         trained = [c for c in configs if not c["train"].get("eval_only")]
-        if not trained:
+        if not trained or host not in HOST_PARAMETERS:
             continue
-        c = trained[0]
+        c, plan = trained[0], plans.get(host, {})
         checkpointing = bool(c["model"].get("gradient_checkpointing"))
-        hours = estimate_hours(host, int(c["train"]["total_tokens"]), checkpointing=checkpointing) if host in HOST_PARAMETERS else float("nan")
-        lines.append(f"{host}: micro-batch {c['train']['micro_batch']} × {c['train']['grad_accum']}, checkpointing "
-                     f"{checkpointing}, host dtype {c['model'].get('host_dtype', 'float32')}, eval batch {c['eval']['batch']} "
-                     f"({'memory probe' if memory_used else 'provisional table'}); ≈ {hours:.1f} GPU-h per trained run "
-                     f"(6N model), {len(trained)} trained run(s) ≈ {hours * len(trained):.1f} GPU-h before evaluations")
+        hours = estimate_hours(host, int(c["train"]["total_tokens"]), tokens_per_s=plan.get("tokens_per_s"), checkpointing=checkpointing)
+        basis = "measured tokens/s" if plan.get("tokens_per_s") else "6N model"
+        lines.append(f"{host}: micro-batch {c['train']['micro_batch']} × {c['train']['grad_accum']}, checkpointing {checkpointing}, "
+                     f"host dtype {c['model'].get('host_dtype', 'float32')}, eval batch {c['eval']['batch']} "
+                     f"({plan.get('source', 'table')}); ≈ {hours:.1f} GPU-h per trained run ({basis}), {len(trained)} trained "
+                     f"run(s) ≈ {hours * len(trained):.1f} GPU-h before evaluations")
     return lines
 
 
@@ -452,7 +454,9 @@ def main(argv: list[str] | None = None) -> None:
                         micro_batch=args.micro_batch, channel_scale=args.channel_scale)
     print("\n".join(str(p) for p in paths))
     if family != "smollm2" or memory:
-        print("\n".join(describe_plan(paths, memory_used=memory is not None and not args.micro_batch)))
+        mode = args.host_mode or FAMILIES[family]["mode"]
+        plans = {h: host_plan(h, mode, memory=memory, micro_batch=args.micro_batch) for h in args.hosts}
+        print("\n".join(describe_plan(paths, plans)))
     if args.queue:
         queued = queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes)
         print(f"queued {len(queued)} job(s)")

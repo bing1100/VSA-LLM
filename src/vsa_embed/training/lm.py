@@ -372,6 +372,21 @@ def _host_lr_groups(trainable: list[tuple[str, torch.nn.Parameter]], embedding_n
     return groups
 
 
+def build_optimizer(model: ChannelLM, train_cfg: dict[str, Any], device: torch.device) -> torch.optim.Optimizer:
+    """The trainer's AdamW: decay on ≥ 2-D non-embedding parameters; host parameters at `host_lr` if set."""
+    trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+    embedding_names = ("wte", "wpe", "embed_tokens")
+    decay = [p for n, p in trainable if p.ndim >= 2 and not any(e in n for e in embedding_names)]
+    no_decay = [p for n, p in trainable if not (p.ndim >= 2 and not any(e in n for e in embedding_names))]
+    if not decay and not no_decay:
+        raise ValueError("no trainable parameters (frozen host without a channel? use train.eval_only)")
+    groups = [{"params": decay, "weight_decay": train_cfg["weight_decay"]}, {"params": no_decay, "weight_decay": 0.0}]
+    if train_cfg.get("host_lr") is not None:
+        groups = _host_lr_groups(trainable, embedding_names, train_cfg)
+    return torch.optim.AdamW(groups, lr=train_cfg["lr"], betas=(train_cfg["beta1"], train_cfg["beta2"]),
+                             fused=device.type == "cuda")
+
+
 def _evaluate_only(model: ChannelLM, config: dict[str, Any], output_dir: Path, eval_corpus: TokenCorpus,
                    frequency: np.ndarray | None, heldout: set[int], device: torch.device,
                    git_at_start: dict[str, Any] | None) -> dict[str, Any]:
@@ -443,17 +458,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         load_model_state(model, initial["model"], trainable_only=bool(initial.get("trainable_only", False)))
     if eval_only:
         return _evaluate_only(model, config, output_dir, eval_corpus, frequency, heldout, device, git_at_start)
-    trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
-    embedding_names = ("wte", "wpe", "embed_tokens")
-    decay = [p for n, p in trainable if p.ndim >= 2 and not any(e in n for e in embedding_names)]
-    no_decay = [p for n, p in trainable if not (p.ndim >= 2 and not any(e in n for e in embedding_names))]
-    if not decay and not no_decay:
-        raise ValueError("no trainable parameters (frozen host without a channel? use train.eval_only)")
-    groups = [{"params": decay, "weight_decay": train_cfg["weight_decay"]}, {"params": no_decay, "weight_decay": 0.0}]
-    if train_cfg.get("host_lr") is not None:
-        groups = _host_lr_groups(trainable, embedding_names, train_cfg)
-    optimizer = torch.optim.AdamW(groups, lr=train_cfg["lr"],
-                                  betas=(train_cfg["beta1"], train_cfg["beta2"]), fused=device.type == "cuda")
+    optimizer = build_optimizer(model, train_cfg, device)
     tracker = None
     if channel is not None and channel.composer is not None and config["channel"]["developmental"]:
         tracker = DevelopmentalDictionary(channel.composer, optimizer, DevelopmentalConfig(**config["channel"]["developmental"]))

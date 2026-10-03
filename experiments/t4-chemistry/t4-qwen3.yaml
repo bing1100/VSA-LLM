@@ -1,0 +1,58 @@
+# T4 chemistry with the Qwen3 tokenizer (WP-Qwen, E9 on Qwen3 base hosts): t4.yaml relinked and retokenized with the
+# Qwen3 base tokenizer (shared by Qwen3-0.6B/1.7B/4B-Base; uint32 ids, NFC decode check). T4's holdout was chosen from a
+# SmolLM2 presample, which another tokenizer would not reproduce, so it is read from the frozen list
+# (`data.holdout_names`) and pinned to its hash. Items go next to the data (not committed). Build (≈ 10 min, 3 workers):
+#   PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
+#     --config experiments/t4-chemistry/t4-qwen3.yaml --output experiments/t4-chemistry/runs/v1-qwen3
+experiment: t4-chemistry-qwen3
+track: t4
+seed: 20261004
+tokenizer: Qwen/Qwen3-0.6B-Base
+workers: 3
+items_dir: ~/data/vsa-llm/tracks/t4-chemistry/v1-qwen3/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t4-chemistry/v1-qwen3
+  general_shards:
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+chebi:
+  obo: ~/data/vsa-llm/tracks/t4-chemistry/raw/chebi-255.obo.gz   # sha256 c2765eb4599fbcbb…
+  min_star: 3
+  role_budget: 8
+  max_alias_chars: 120
+  eval_percent: 10             # ChEBI entry texts held for evaluation (by hash of the ChEBI id)
+pubmed:
+  dir: ~/data/vsa-llm/pubmed/baseline-2026
+  files: [pubmed26n1315.xml.gz, pubmed26n1316.xml.gz, pubmed26n1317.xml.gz, pubmed26n1318.xml.gz,
+          pubmed26n1319.xml.gz, pubmed26n1320.xml.gz, pubmed26n1321.xml.gz, pubmed26n1322.xml.gz,
+          pubmed26n1323.xml.gz, pubmed26n1324.xml.gz, pubmed26n1325.xml.gz, pubmed26n1326.xml.gz]
+  min_links: 3                 # or a ChemicalList
+  eval_percent: 3
+synthetic:
+  count: 300
+  max_substituents: 2
+ontology:
+  max_atomics: 8192
+  max_degree: 24
+data:
+  eval_tokens: 3000000
+  contamination_docs: 2000
+  presample_tokens: 5000000
+  holdout_fraction: 0.10
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 2000
+  train_domain_tokens: 100000000
+  train_total_tokens: 100000000
+  min_subtokens: 2
+  cardinality_docs: 2000
+  holdout_names: experiments/t4-chemistry/items/holdout_concepts.txt     # frozen by the SmolLM2 build (runs/v1)
+  expected_holdout_sha256: b58e504f8b060726a6c5b910e494f473ff469b0dabcdbcb22b7c9ea04f39861b
+items:
+  train_concepts_per_frequency_bin: 200
+  relations_per_concept: 3
+  probe_classes: 40
+  probe_roles: 30
+  probe_train_concepts: 3000
+cardinality_tokenizers: [Qwen/Qwen3-0.6B-Base, HuggingFaceTB/SmolLM2-135M]

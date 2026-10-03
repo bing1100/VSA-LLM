@@ -6,7 +6,11 @@ outputs mirror `c3_corpus.py`, so the trainer and the E4 tooling read them uncha
 different tokenizers), `feasibility_strict` (WP-T1's criteria, reported in addition to `FEASIBILITY`) and
 `linker.alias_normalization` (`span_channel.ALIAS_NORMALIZATIONS`; "identifier" keeps `_` in code-symbol
 aliases — then `ontology.pt` records the mode, `alias_table.json` is written next to it, and the report
-compares linking with the default mode).
+compares linking with the default mode), `data.holdout_names` (a `holdout_concepts.txt` of another build: the
+holdout is read instead of chosen from this tokenizer's presample, so a relink for another host tokenizer keeps
+the frozen holdout of a presample-chosen track, e.g. T4 for Qwen3; pin it with `expected_holdout_sha256`).
+Tokenizers that normalize their input (Qwen: NFC) are decode-checked against the normalized text, and every
+corpus manifest records the tokenizer fingerprint (`tokenizer_sha256`).
 
 1. `track.prepare()` writes the domain documents (`docs/eval.jsonl.gz`, `docs/train.jsonl.gz`).
 2. Ontology adapter → frames and aliases. The track's synthetic concepts (invented names, frames
@@ -250,7 +254,16 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     for alias, entry in base_table.alias_to_entry.items():
         entry_length[entry] = max(entry_length.get(entry, 0), alias_lengths[alias])
     fixed = track.fixed_holdout(ontology)
-    if fixed is None:
+    frozen = data.get("holdout_names")       # opt-in: the holdout another tokenizer's build froze (its holdout_concepts.txt)
+    if fixed is None and frozen:
+        index = {name: i for i, name in enumerate(ontology.concept_names)}
+        names = sorted(n for n in Path(frozen).expanduser().read_text().splitlines() if n)
+        missing = [n for n in names if n not in index]
+        if missing:
+            raise ValueError(f"{len(missing)} frozen held-out concepts are not in the ontology (e.g. {missing[:3]})")
+        holdout = {"concepts": sorted(index[n] for n in names), "names": names, "sha256": names_sha256(names),
+                   "eligible_entries": None, "chosen_entries": [], "method": f"frozen names ({frozen})"}
+    elif fixed is None:
         presample_dir = data_root / "presample"
         build_part(track.documents("train"), presample_dir, table=base_table, max_tokens=int(data["presample_tokens"]),
                    request={"source": "domain train presample", "max_tokens": int(data["presample_tokens"])}, **encode)

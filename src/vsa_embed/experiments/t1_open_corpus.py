@@ -51,7 +51,7 @@ import torch
 import yaml
 from transformers import AutoTokenizer
 
-from vsa_embed.data.corpus import TokenCorpus, build_corpus, eval_windows
+from vsa_embed.data.corpus import TokenCorpus, build_corpus, eval_windows, tokenizer_fingerprint
 from vsa_embed.data.pubmed import (baseline_names, download_baseline, extract_baseline, file_digest, iter_pubmed,
                                    pmid_bucket, text_paths)
 from vsa_embed.experiments.c3_corpus import choose_holdout, iter_texts
@@ -333,6 +333,12 @@ def relink_for_host(tokenizer_name: str, out_dir: Path, *, documents: TrackDocum
     `ontology.pt` (training frequencies differ per tokenizer because span lengths do)."""
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     eos, vocab = tokenizer.eos_token_id, len(tokenizer)
+    # A tokenizer that normalizes its input (Qwen: NFC) is decode-checked against the normalized text and its corpora
+    # record its fingerprint; GPT-2 and SmolLM2 have no normalizer, so their relinks are unchanged.
+    from .host_corpus import tokenizer_normalization
+    normalization = tokenizer_normalization(tokenizer)
+    extra = {"normalization": normalization} if normalization else {}
+    fingerprint = {"tokenizer_sha256": tokenizer_fingerprint(tokenizer)} if normalization else {}
     out_dir.mkdir(parents=True, exist_ok=True)
     plan: dict[str, tuple[Callable[[list[int]], Iterator[str]], AliasTable, int, int]] = {
         "train": (documents.train, train_table, train_tokens, train_min_subtokens),
@@ -352,7 +358,7 @@ def relink_for_host(tokenizer_name: str, out_dir: Path, *, documents: TrackDocum
         manifests[name] = build_corpus(stream(log), out_dir / name, tokenizer_name=tokenizer_name, table=table, eos_id=eos,
                                        max_tokens=max_tokens, min_subtokens=min_length, workers=workers, vocab_size=vocab,
                                        reuse=True, extra_manifest={"track": TRACK_LABEL, "max_tokens_requested": max_tokens,
-                                                                   "stream_signature": signature})
+                                                                   "stream_signature": signature, **fingerprint}, **extra)
         if name in ("train", "eval"):
             shares[name] = record_shares(out_dir / name, log, eos)
     frequency = train_frequency(out_dir / "train", len(full.entry_concepts), min_subtokens)
