@@ -167,14 +167,15 @@ def _take(texts: Iterator[str], limit: int) -> list[str]:
 
 
 def build_part(texts: Iterator[str], out_dir: Path, *, table: AliasTable, max_tokens: int, request: dict[str, Any],
-               **build: Any) -> dict[str, Any]:
+               tokenizer_sha256: str | None = None, **build: Any) -> dict[str, Any]:
     """`build_corpus` with resumption only if the earlier build had the same request (sources and
-    token budget) as well as the same alias table; otherwise the directory is rebuilt."""
+    token budget) as well as the same alias table; otherwise the directory is rebuilt. `tokenizer_sha256`
+    (the tokenizer fingerprint) is recorded in the manifest, where the trainer checks it against its host."""
     manifest_path = out_dir / "manifest.json"
     if manifest_path.exists() and json.loads(manifest_path.read_text()).get("request") != request:
         manifest_path.unlink()
-    return build_corpus(texts, out_dir, table=table, max_tokens=max_tokens, extra_manifest={"request": request},
-                        reuse=True, **build)
+    extra = {"request": request, **({"tokenizer_sha256": tokenizer_sha256} if tokenizer_sha256 else {})}
+    return build_corpus(texts, out_dir, table=table, max_tokens=max_tokens, extra_manifest=extra, reuse=True, **build)
 
 
 def _metadata_scalars(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -215,6 +216,15 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     tokenizer_name = config["tokenizer"]
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     eos, vocab_size, workers = tokenizer.eos_token_id, len(tokenizer), int(config["workers"])
+    # A tokenizer that normalizes its input (Qwen: NFC) is decode-checked against the normalized text (as
+    # host_corpus); SmolLM2 and GPT-2 have no normalizer, so their builds pass nothing and are unchanged. Every
+    # corpus records the tokenizer fingerprint (`TokenCorpus` manifests; the trainer refuses another host's).
+    from vsa_embed.data.corpus import tokenizer_fingerprint
+    from vsa_embed.experiments.host_corpus import tokenizer_normalization
+    normalization_form = tokenizer_normalization(tokenizer)
+    fingerprint = tokenizer_fingerprint(tokenizer)
+    encode = dict(tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size, tokenizer_sha256=fingerprint,
+                  **({"normalization": normalization_form} if normalization_form else {}))
 
     # 1. domain documents.
     documents_summary = track.prepare()
@@ -243,8 +253,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     if fixed is None:
         presample_dir = data_root / "presample"
         build_part(track.documents("train"), presample_dir, table=base_table, max_tokens=int(data["presample_tokens"]),
-                   request={"source": "domain train presample", "max_tokens": int(data["presample_tokens"])},
-                   tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size)
+                   request={"source": "domain train presample", "max_tokens": int(data["presample_tokens"])}, **encode)
         counts = Counter(TokenCorpus.open(presample_dir).spans["entry"].tolist())
         synthetic_entries_base = {base_table.alias_to_entry[a.lower()] for c in synthetic for a in c.aliases
                                   if a.lower() in base_table.alias_to_entry}
@@ -274,7 +283,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     real_heldout_entries = sorted(set(heldout_entries) - set(synthetic_entries))
 
     # 4. corpora.
-    build = dict(tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size)
+    build = encode
     eval_manifest = build_part(track.documents("eval"), data_root / "eval", table=full, max_tokens=int(data["eval_tokens"]),
                                request={"source": "domain eval", "max_tokens": int(data["eval_tokens"])}, **build)
     general_skip, general_eval_docs = int(data["general_skip_docs"]), int(data["general_eval_docs"])
@@ -296,7 +305,8 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         parts.append(data_root / "train-general")
     mix = {"domain_tokens": domain_manifest["tokens"], "general_tokens": general_manifest["tokens"] if general_manifest else 0}
     mix["domain_fraction"] = mix["domain_tokens"] / max(1, mix["domain_tokens"] + mix["general_tokens"])
-    train_manifest = concat_corpora(parts, data_root / "train", extra_manifest={"mix": mix}, reuse=True)
+    train_manifest = concat_corpora(parts, data_root / "train", extra_manifest={"mix": mix, "tokenizer_sha256": fingerprint},
+                                    reuse=True)
 
     # 5. channel ontology, cardinality, feasibility.
     train_corpus, eval_corpus = TokenCorpus.open(data_root / "train"), TokenCorpus.open(data_root / "eval")

@@ -1,0 +1,49 @@
+# T5 enterprise glossaries with the Qwen3 tokenizer (WP-Qwen, E9 on Qwen3-0.6B/1.7B/4B-Base): the same generator
+# seed, documents, glossary, holdout and zero-shot terms as t5.yaml (SmolLM2), relinked and retokenized with the Qwen3
+# base tokenizer (shared by all three sizes; ids need uint32). The holdout is pinned to the SmolLM2 build's hash; the
+# alias-table digest must equal it too (5cae33ad…, checked after the build). Items are written inside the run folder
+# so the committed SmolLM2 items stay untouched (the WP-C7 zero-shot items are tokenizer-independent and must match).
+# Build: PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
+#   --config experiments/t5-enterprise-glossary/t5-qwen3.yaml --output experiments/t5-enterprise-glossary/runs/v1-qwen3
+experiment: t5-enterprise-glossary-qwen3
+track: t5
+seed: 20261005
+tokenizer: Qwen/Qwen3-0.6B-Base
+workers: 3
+items_dir: experiments/t5-enterprise-glossary/runs/v1-qwen3/items
+paths:
+  data_root: ~/data/vsa-llm/tracks/t5-glossary/v1-qwen3
+  general_shards:
+    - ~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet
+  general_shard_sha256:
+    000_00000.parquet: b1ba7b2ce4cb5ea6
+glossary:
+  terms: 4000
+  zero_shot: 200
+  heldout_fraction: 0.10
+  zipf: 1.5
+  eval_uniform_focus: 0.5
+  acronym_fraction: 0.3
+  train_chars: 180000000       # the SmolLM2 build's documents (≈ 50M SmolLM2 tokens; fewer Qwen3 tokens)
+  eval_chars: 11000000
+  forbidden_general_docs: 20000
+ontology:
+  max_atomics: 8192
+  max_degree: 16
+data:
+  eval_tokens: 3000000
+  contamination_docs: 2000
+  presample_tokens: 0
+  holdout_fraction: 0.10
+  holdout_min_count: 5
+  general_skip_docs: 0
+  general_eval_docs: 2000
+  train_domain_tokens: 50000000
+  train_total_tokens: 100000000
+  min_subtokens: 2
+  cardinality_docs: 2000
+  expected_holdout_sha256: e7313dcece6d0b7893784a26c80b4b39205269e90e0781340163fefca850243f
+items:
+  train_terms_per_frequency_bin: 200
+  relations_per_term: 3
+cardinality_tokenizers: [Qwen/Qwen3-0.6B-Base, HuggingFaceTB/SmolLM2-135M, Qwen/Qwen2.5-0.5B]

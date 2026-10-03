@@ -36,6 +36,11 @@ from .compose import FrameComposer, FrameSchedule
 LINKER_VERSION = "1.1"   # 1.1: trie end marker can no longer collide with a "$" in text
 _END = object()          # trie end marker; not a character, so it cannot collide with text
 _WORD = re.compile(r"\w", re.UNICODE)
+# Default fraction ρ of `SpanChannel.set_host_scale` (open decision 1): the injected row starts at ρ times the host's
+# mean input-embedding row norm. 0.3 is SmolLM2-360M's own unscaled ratio for a composed (C3–C6) channel (a
+# 256 → 960 projector gives rows of norm ≈ 1.12 against rows of 3.70; SmolLM2-135M: 0.87 / 3.18 ≈ 0.27), so scaling
+# is a no-op-sized change there, while Qwen2.5-0.5B (rows of 0.46) starts ≈ 8× lower than unscaled.
+HOST_SCALE_FRACTION = 0.3
 
 
 def normalize_alias(text: str) -> str:
@@ -327,6 +332,13 @@ class SpanChannel(nn.Module):
     `mode="free"` replaces composition by a free per-entry table (control C2); `mode="random"`
     uses fixed random per-entry vectors (control C1); `mode="hashed"` uses a hashed table keyed by
     the span's subtoken ids (control C1h). Otherwise rows come from the `FrameComposer`.
+
+    Host scale (opt-in, `set_host_scale`; open decision 1): every row is multiplied by a fixed scalar
+    `s = ρ · n̄_E / n̄_c`, with `n̄_E` the host's mean input-embedding row norm and `n̄_c` this channel's
+    mean row norm when `set_host_scale` is called (at build time, i.e. at initialization), so the injected
+    row starts at the same fraction ρ of an embedding row on every host and in every channel mode. `s` is
+    the buffer `host_scale`, registered only then (channels without it keep their state-dict keys), so it is
+    saved with every checkpoint and restored exactly by every rebuild that loads the state.
     """
 
     def __init__(self, composer: FrameComposer | None, model_dimension: int, *, entry_count: int,
@@ -364,6 +376,37 @@ class SpanChannel(nn.Module):
         self.semantic_head = nn.Linear(model_dimension, model_dimension, bias=False) if semantic_dimension else None
 
     def rows(self, spans: dict[str, Tensor], input_ids: Tensor | None = None, context: Tensor | None = None) -> Tensor:
+        """The rows the channel injects (before the gate), host scale included."""
+        rows = self._rows(spans, input_ids, context)
+        scale = self._buffers.get("host_scale")
+        return rows if scale is None else rows * scale.to(rows.dtype)
+
+    @torch.no_grad()
+    def mean_row_norm(self, sample: int = 4096) -> float:
+        """Mean L2 norm of the unscaled rows of up to `sample` evenly spaced entries (context-free, as stored:
+        a free table's own rows; a hashed memory's bucket rows)."""
+        if self.mode == "hashed":
+            weight = self.table.weight
+            index = torch.linspace(0, weight.shape[0] - 1, min(sample, weight.shape[0])).round().long()
+            return float(weight[index].float().norm(dim=-1).mean())
+        device = next(self.parameters()).device
+        entries = torch.linspace(0, self.entry_count - 1, min(sample, self.entry_count)).round().long().unique().to(device)
+        return float(self._rows({"entry": entries}).float().norm(dim=-1).mean())
+
+    def set_host_scale(self, host_row_norm: float, fraction: float = HOST_SCALE_FRACTION) -> dict[str, float]:
+        """Fix `host_scale = fraction · host_row_norm / mean_row_norm()` (see the class docstring); returns
+        the record {host_row_norm, channel_row_norm, fraction, scale}."""
+        if not host_row_norm > 0 or not fraction > 0:
+            raise ValueError("host_row_norm and fraction must be positive")
+        reference = self.mean_row_norm()
+        scale = float(fraction) * float(host_row_norm) / reference
+        if "host_scale" in self._buffers:
+            self.host_scale.fill_(scale)
+        else:
+            self.register_buffer("host_scale", torch.tensor(scale, dtype=torch.float32, device=next(self.parameters()).device))
+        return {"host_row_norm": float(host_row_norm), "channel_row_norm": reference, "fraction": float(fraction), "scale": scale}
+
+    def _rows(self, spans: dict[str, Tensor], input_ids: Tensor | None = None, context: Tensor | None = None) -> Tensor:
         entries = spans["entry"]
         if self.mode == "compose":
             return self.projector(self.composer.compose(entries, context))

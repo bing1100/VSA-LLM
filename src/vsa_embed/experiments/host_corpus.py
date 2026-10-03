@@ -50,6 +50,9 @@ HOSTS: dict[str, dict[str, Any]] = {
     "smollm2": {"tokenizer": "HuggingFaceTB/SmolLM2-135M",
                 "models": ["HuggingFaceTB/SmolLM2-135M", "HuggingFaceTB/SmolLM2-360M"]},
     "qwen2.5": {"tokenizer": "Qwen/Qwen2.5-0.5B", "models": ["Qwen/Qwen2.5-0.5B"]},
+    # Qwen3 base models: Qwen2.5's byte-level BPE plus 4 added tokens (ids 151,665–151,668): another fingerprint.
+    "qwen3": {"tokenizer": "Qwen/Qwen3-0.6B-Base",
+              "models": ["Qwen/Qwen3-0.6B-Base", "Qwen/Qwen3-1.7B-Base", "Qwen/Qwen3-4B-Base"]},
 }
 DEFAULTS = {"train_tokens": 130_000_000, "min_subtokens": 2, "eval_min_subtokens": 1, "workers": 6}
 FREQUENCY_BINS = (("heldout", None, None), ("unseen", 0, 1), ("rare", 1, 10), ("mid", 10, 100), ("frequent", 100, None))

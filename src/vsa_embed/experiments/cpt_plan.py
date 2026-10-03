@@ -50,6 +50,18 @@ HOSTS: dict[str, dict[str, Any]] = {
                      "micro_batch": {"frozen": 8, "lora": 4}, "eval_batch": 16},
     "Qwen2.5-0.5B": {"pretrained": "Qwen/Qwen2.5-0.5B", "corpus": "qwen2.5", "width": 896, "vocab_size": 151936,
                      "micro_batch": {"frozen": 4, "lora": 2}, "eval_batch": 8},
+    # Qwen3 base hosts (E9 on modern hosts; the three share one tokenizer, fingerprint a63080b4…, which is Qwen2.5's
+    # byte-level BPE plus 4 added tokens, so they get their own corpora). Tied 151,936-row embeddings (the chunked LM
+    # loss never builds full logits); LoRA targets q/k/v/o/gate/up/down_proj (`add_lora` finds 7 per layer). Micro-
+    # batches are provisional (memory estimates at sequence 1024, fp32 host, bf16 autocast) until the E9 memory
+    # probe (`e9_memory`) measures them; Qwen3-4B uses gradient checkpointing (non-reentrant, so a LoRA C0′ trains).
+    "Qwen3-0.6B-Base": {"pretrained": "Qwen/Qwen3-0.6B-Base", "corpus": "qwen3", "width": 1024, "vocab_size": 151936,
+                        "micro_batch": {"frozen": 8, "lora": 4}, "eval_batch": 8},
+    "Qwen3-1.7B-Base": {"pretrained": "Qwen/Qwen3-1.7B-Base", "corpus": "qwen3", "width": 2048, "vocab_size": 151936,
+                        "micro_batch": {"frozen": 4, "lora": 2}, "eval_batch": 4},
+    "Qwen3-4B-Base": {"pretrained": "Qwen/Qwen3-4B-Base", "corpus": "qwen3", "width": 2560, "vocab_size": 151936,
+                      "micro_batch": {"frozen": 2, "lora": 1}, "eval_batch": 2,
+                      "model": {"gradient_checkpointing": True, "checkpoint_use_reentrant": False}},
 }
 BASE = {
     "model": {"size": "pretrained", "seq_len": 1024, "lora_rank": 16, "gradient_checkpointing": False},
@@ -108,7 +120,8 @@ def run_config(*, stage: str, host: str, mode: str, label: str, spec: dict[str, 
         raise ValueError(f"{sequences_per_step} sequences per step is not a multiple of micro-batch {micro}")
     config = copy.deepcopy(BASE)
     _merge(config, {
-        "model": {"pretrained": settings["pretrained"], "host_mode": mode, "vocab_size": settings["vocab_size"]},
+        "model": {"pretrained": settings["pretrained"], "host_mode": mode, "vocab_size": settings["vocab_size"],
+                  **settings.get("model", {})},      # host-specific model keys (Qwen3-4B: gradient checkpointing)
         "train": {"micro_batch": micro, "grad_accum": sequences_per_step // micro, "total_tokens": total_tokens},
         "eval": {"batch": settings["eval_batch"]},
     })
@@ -207,6 +220,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--developmental", default="{}")
     parser.add_argument("--no-window-losses", action="store_true", help="do not set eval.save_window_losses")
     parser.add_argument("--smollm2-root", type=Path, default=None); parser.add_argument("--qwen-root", type=Path, default=None)
+    parser.add_argument("--qwen3-root", type=Path, default=None)
     parser.add_argument("--overrides", default="{}", help="JSON merged into every config")
     parser.add_argument("--queue", action="store_true"); parser.add_argument("--priority", type=int, default=None)
     args = parser.parse_args(argv)
@@ -215,7 +229,8 @@ def main(argv: list[str] | None = None) -> None:
     names = [condition_name(n) for n in (args.conditions or spec["conditions"])]
     if "best" in names and args.best_condition is None:
         print("note: `best` is fixed at G3; its configs are written once --best-condition is given")
-    roots = {k: v for k, v in (("smollm2", args.smollm2_root), ("qwen2.5", args.qwen_root)) if v is not None}
+    roots = {k: v for k, v in (("smollm2", args.smollm2_root), ("qwen2.5", args.qwen_root), ("qwen3", args.qwen3_root))
+             if v is not None}
     paths = write_stage(args.stage, hosts=hosts,
                         modes=stage_modes(args.stage, hosts, large_host_mode=args.large_host_mode,
                                           lora_check=False if args.no_lora_check else None),

@@ -42,6 +42,22 @@ Two further opt-in keys (E7 self-authoring; absent keys change nothing):
   masks over the evaluation windows; each mask becomes an extra stratum (`ref_<name>`) in
   `metrics.jsonl` and `eval_windows.npz`. The masks are fixed by the caller, so they are identical
   across conditions whose linkers differ (paired comparisons on the same target tokens).
+
+Opt-in keys for larger pretrained hosts (E9 on Qwen3; absent keys change nothing):
+
+- `channel.scale_to_host` (false) and `channel.host_scale_fraction` (`span_channel.HOST_SCALE_FRACTION`,
+  0.3): multiply the channel's rows by `ρ · n̄_E / n̄_c` (open decision 1) — `n̄_E` the host's mean
+  input-embedding row norm (`host_row_norm`, every row of the table), `n̄_c` the freshly built channel's
+  mean row norm — so the injection starts at the same fraction ρ of an embedding row on every host. The
+  scale is computed once when the channel is built (`build_channel(..., host=...)`), kept as the channel
+  buffer `host_scale` (in every checkpoint and `final.pt`, so every rebuild — `load_final`,
+  `channel_probes.load_run`, hence `e4_quant`, E5/E9 evaluations — restores the trained value exactly) and
+  recorded in `channel_scale.json` and the manifest (`channel_host_scale`).
+- `model.host_dtype` (float32): `bfloat16` loads a pretrained host in bf16 (half the weight memory); LoRA
+  adapters are then kept in float32.
+- `model.checkpoint_use_reentrant` (null = Hugging Face's default, reentrant): `false` enables gradient
+  checkpointing in its non-reentrant form, which a LoRA host needs when the embeddings carry no gradient
+  (C0′: with reentrant checkpointing the adapters inside checkpointed layers would get no gradient).
 """
 
 from __future__ import annotations
@@ -66,7 +82,7 @@ from ..data.corpus import TokenCorpus, collate_windows, eval_windows, sample_bat
 from ..developmental import DevelopmentalConfig, DevelopmentalDictionary
 from ..integrations.transformers import ChannelLM
 from ..provenance import git_state, prepare_output_dir, write_run_metadata
-from ..span_channel import SpanChannel
+from ..span_channel import HOST_SCALE_FRACTION, SpanChannel
 
 MODEL_SIZES = {
     "tiny": dict(n_layer=2, n_embd=64, n_head=2),
@@ -115,24 +131,54 @@ def eval_token_schedule(first: int, total: int) -> list[int]:
     return points + [total]
 
 
+HOST_DTYPES = {"float32": torch.float32, "bfloat16": torch.bfloat16}
+
+
+def host_dtype(config: dict[str, Any]) -> torch.dtype:
+    """`model.host_dtype` (opt-in; float32 when absent)."""
+    name = config["model"].get("host_dtype") or "float32"
+    if name not in HOST_DTYPES:
+        raise ValueError(f"model.host_dtype must be one of {sorted(HOST_DTYPES)}")
+    return HOST_DTYPES[name]
+
+
+def _enable_checkpointing(model: torch.nn.Module, config: dict[str, Any]) -> None:
+    reentrant = config["model"].get("checkpoint_use_reentrant")
+    if reentrant is None:
+        model.gradient_checkpointing_enable()          # Hugging Face's default (reentrant), as every recorded run
+    else:
+        model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": bool(reentrant)})
+    model.config.use_cache = False
+
+
 def build_model(config: dict[str, Any]):
     if config["model"]["pretrained"]:
         from transformers import AutoModelForCausalLM
         model = AutoModelForCausalLM.from_pretrained(config["model"]["pretrained"], local_files_only=True,
-                                                     torch_dtype=torch.float32, attn_implementation="sdpa")
+                                                     torch_dtype=host_dtype(config), attn_implementation="sdpa")
         if config["model"]["gradient_checkpointing"]:
-            model.gradient_checkpointing_enable(); model.config.use_cache = False
+            _enable_checkpointing(model, config)
         return model
     size = config["model"]["size"]
     gpt2 = GPT2Config(vocab_size=config["model"]["vocab_size"], n_positions=config["model"]["seq_len"], **MODEL_SIZES[size])
     gpt2._attn_implementation = "sdpa"
     model = GPT2LMHeadModel(gpt2)
     if config["model"]["gradient_checkpointing"]:
-        model.gradient_checkpointing_enable(); model.config.use_cache = False
+        _enable_checkpointing(model, config)
     return model
 
 
-def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width: int) -> tuple[SpanChannel | None, CausalLocalContext | None]:
+def host_row_norm(model: torch.nn.Module) -> float:
+    """Mean L2 norm of the rows of the host's input-embedding table (every row; float64 mean)."""
+    weight = model.get_input_embeddings().weight.detach()
+    norms = torch.cat([part.float().norm(dim=-1) for part in weight.split(16384)])
+    return float(norms.double().mean())
+
+
+def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width: int, *,
+                  host: torch.nn.Module | None = None) -> tuple[SpanChannel | None, CausalLocalContext | None]:
+    """The run's channel and P1 context; `host` (the host model) is needed only with `channel.scale_to_host`,
+    whose scale is computed here, at build time (see the module docstring)."""
     settings = config["channel"]
     mode = settings["mode"]
     if mode == "none":
@@ -140,24 +186,44 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
     if ontology is None:
         raise ValueError("channel conditions need data.ontology")
     entries = int(ontology["entry_count"])
+    context = None
     if mode != "compose":
-        return SpanChannel(None, width, entry_count=entries, mode=mode, hashed_buckets=int(settings["hashed_buckets"]),
-                           gate_bias=float(settings["gate_bias"]), free_dimension=int(settings["free_dimension"]),
-                           semantic_dimension=width if config["train"]["semantic_weight"] else 0), None
-    schedule = frame_variant(FrameSchedule(ontology["offsets"], ontology["relations"], ontology["fillers"]),
-                             settings["frames"], int(ontology["relation_count"]), seed=int(config["seed"]))
-    atomic_count = int(ontology["relation_count"]) if settings["frames"] == "relation_only" else int(ontology["atomic_count"])
-    context_window = int(settings["context_window"])
-    composer = FrameComposer(
-        schedule, atomic_count, int(ontology["relation_count"]), int(settings["dimension"]),
-        operator=settings["operator"], mode=settings["composition"], concept_factor=settings["concept_factor"],
-        key_dimension=int(settings["key_dimension"]),
-        context_dimension=int(settings["key_dimension"]) if context_window else 0,
-    )
-    channel = SpanChannel(composer, width, entry_count=entries, gate_bias=float(settings["gate_bias"]),
-                          semantic_dimension=width if config["train"]["semantic_weight"] else 0)
-    context = CausalLocalContext(width, int(settings["key_dimension"]), window=context_window) if context_window else None
+        channel = SpanChannel(None, width, entry_count=entries, mode=mode, hashed_buckets=int(settings["hashed_buckets"]),
+                              gate_bias=float(settings["gate_bias"]), free_dimension=int(settings["free_dimension"]),
+                              semantic_dimension=width if config["train"]["semantic_weight"] else 0)
+    else:
+        schedule = frame_variant(FrameSchedule(ontology["offsets"], ontology["relations"], ontology["fillers"]),
+                                 settings["frames"], int(ontology["relation_count"]), seed=int(config["seed"]))
+        atomic_count = int(ontology["relation_count"]) if settings["frames"] == "relation_only" else int(ontology["atomic_count"])
+        context_window = int(settings["context_window"])
+        composer = FrameComposer(
+            schedule, atomic_count, int(ontology["relation_count"]), int(settings["dimension"]),
+            operator=settings["operator"], mode=settings["composition"], concept_factor=settings["concept_factor"],
+            key_dimension=int(settings["key_dimension"]),
+            context_dimension=int(settings["key_dimension"]) if context_window else 0,
+        )
+        channel = SpanChannel(composer, width, entry_count=entries, gate_bias=float(settings["gate_bias"]),
+                              semantic_dimension=width if config["train"]["semantic_weight"] else 0)
+        context = CausalLocalContext(width, int(settings["key_dimension"]), window=context_window) if context_window else None
+    if settings.get("scale_to_host"):                  # opt-in (open decision 1); no random draw, so the RNG stream is unchanged
+        if host is None:
+            raise ValueError("channel.scale_to_host needs the host model (build_channel(..., host=model))")
+        channel.host_scale_record = channel.set_host_scale(host_row_norm(host),
+                                                           float(settings.get("host_scale_fraction") or HOST_SCALE_FRACTION))
     return channel, context
+
+
+def lora_adapter_dtype(config: dict[str, Any]) -> torch.dtype | None:
+    """LoRA adapters of a 16-bit host are kept in float32 (None: the host weights' dtype, as before)."""
+    return torch.float32 if host_dtype(config) != torch.float32 else None
+
+
+def wrap_host(config: dict[str, Any], base: torch.nn.Module, channel: SpanChannel | None,
+              context: CausalLocalContext | None) -> ChannelLM:
+    """The run's `ChannelLM` around a built host (host mode, LoRA rank and adapter dtype from the config)."""
+    pretrained = bool(config["model"]["pretrained"])
+    return ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if pretrained else "train",
+                     lora_rank=int(config["model"]["lora_rank"]), adapter_dtype=lora_adapter_dtype(config))
 
 
 def frame_variant(schedule: FrameSchedule, variant: str, relation_count: int, *, seed: int) -> FrameSchedule:
@@ -364,11 +430,12 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     if config["model"]["pretrained"]:
         check_host_corpora(config, base, (corpus, eval_corpus))
     width = base.get_input_embeddings().weight.shape[1]
-    channel, context = build_channel(config, ontology, width)
+    channel, context = build_channel(config, ontology, width, host=base)
     if channel is not None and ontology is not None:
         channel.set_unseen(ontology["heldout_entries"])
-    model = ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if config["model"]["pretrained"] else "train",
-                      lora_rank=int(config["model"]["lora_rank"])).to(device)
+    if getattr(channel, "host_scale_record", None) and not (output_dir / "channel_scale.json").exists():
+        (output_dir / "channel_scale.json").write_text(json.dumps(channel.host_scale_record, indent=2) + "\n")
+    model = wrap_host(config, base, channel, context).to(device)
     train_cfg = config["train"]
     trainable_only = bool(train_cfg.get("save_trainable_only", False))
     if train_cfg.get("init_from") and not (resume and checkpoint_path.exists()):
@@ -500,11 +567,21 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     if tracker is not None:
         (output_dir / "cards.json").write_text(json.dumps(tracker.cards, indent=2, default=str) + "\n")
     if not (output_dir / "manifest.json").exists():
+        scale = channel_scale_record(channel)
         write_run_metadata(output_dir, config, git_at_start=git_at_start, device=device,
                            parameters=sum(p.numel() for p in model.parameters()),
                            channel_parameters=sum(p.numel() for p in channel.parameters()) if channel else 0,
-                           steps=total_steps, tokens_per_step=tokens_per_step)
+                           steps=total_steps, tokens_per_step=tokens_per_step,
+                           **({"channel_host_scale": scale} if scale else {}))
     return {"steps": step, "tokens": step * tokens_per_step}
+
+
+def channel_scale_record(channel: SpanChannel | None) -> dict[str, float] | None:
+    """The host-scale record of a channel built with `channel.scale_to_host`, its `scale` read from the
+    live buffer (a resumed run carries its checkpoint's value); None without a host scale."""
+    if channel is None or "host_scale" not in channel._buffers:
+        return None
+    return {**(getattr(channel, "host_scale_record", None) or {}), "scale": float(channel.host_scale)}
 
 
 def set_aside_partial_run(output_dir: Path) -> dict[str, Any]:
@@ -580,7 +657,7 @@ def load_final(path: Path, device: torch.device | str = "cpu") -> ChannelLM:
     config = final["config"]
     ontology = torch.load(config["data"]["ontology"], weights_only=False) if config["data"].get("ontology") else None
     base = build_model(config)
-    channel, context = build_channel(config, ontology, base.get_input_embeddings().weight.shape[1])
+    channel, context = build_channel(config, ontology, base.get_input_embeddings().weight.shape[1], host=base)
     if channel is not None and ontology is not None:
         channel.set_unseen(ontology["heldout_entries"])
     saved = final.get("composer_schedule")
@@ -591,8 +668,7 @@ def load_final(path: Path, device: torch.device | str = "cpu") -> ChannelLM:
         if int(saved["relations_count"]) > composer.relation_count:
             composer.add_relation_copies(torch.zeros(int(saved["relations_count"]) - composer.relation_count, dtype=torch.long))
         composer.set_schedule(FrameSchedule(saved["offsets"], saved["relations"], saved["fillers"]))
-    model = ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if config["model"]["pretrained"] else "train",
-                      lora_rank=int(config["model"]["lora_rank"]))
+    model = wrap_host(config, base, channel, context)
     load_model_state(model, final["model"], trainable_only=bool(final.get("trainable_only", False)))
     return model.to(device).eval()
 
