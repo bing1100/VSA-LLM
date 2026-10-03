@@ -189,10 +189,13 @@ Report: `reports/R10-self-learned-semantics.md`. E10.0/E10.1 start now (CPU / ba
     - Feasible at ℓ_min = 2 with 256 windows. At 1,024 windows: 326 held-out entries / 6,864 spans and 600 rare entries / 4,850 spans.
     - The WP-C7 items are byte-identical; only the frequency annotations of `term_relation_probe` differ. E9 therefore reads the committed zero-shot items for both host families.
     - Dimension-3 items: `experiments/e9-retrofit/items/{new-words,edits}-t5-qwen3-v1` (items identical to SmolLM2's; the Qwen3 checks pass).
-  - **T4:** `t4-qwen3.yaml`. The holdout chosen by the SmolLM2 presample is read through the new `data.holdout_names` key and pinned to `b58e504f…`.
-  - **T1-open:** `t1-qwen3.yaml`, a host relink `hosts/qwen3`. The GPT-2-presample holdout is pinned.
-  - **WordNet:** `host_corpus --host qwen3`.
-  - Commands for these three are below.
+  - **T4 (built):** `t4-qwen3.yaml` → `experiments/t4-chemistry/runs/v1-qwen3`. The holdout chosen by the SmolLM2 presample is read through the new `data.holdout_names` key and pinned to `b58e504f…`.
+    - Unchanged from SmolLM2: the alias table `ab5351cc…`, the entries and frames, the 299 synthetic concepts and the documents.
+    - Sizes: 100.0M tokens (domain 50.8M), eval 1.97M tokens.
+    - The zero-shot items are identical. Dimension-3 items: `{new-words,edits}-t4-qwen3-v1`. The new words are identical; the edits differ in the seen half (284 of 597 concepts shared), because their seen entries are sampled by this tokenizer's training frequencies.
+  - **T1-open:** `t1-qwen3.yaml`, a host relink `hosts/qwen3`. The GPT-2-presample holdout is pinned. Not built: several CPU-hours.
+  - **WordNet:** `host_corpus --host qwen3`. Not built.
+  - Commands for T1-open and WordNet are below.
 - **Memory probe (`e9_memory`).** The real E9 C5 run (LoRA 64, `scale_to_host`, T5 Qwen3 batches, sequence 1024) at micro-batches 1/2/4/8.
   - Settings: fp32 for every host; with and without checkpointing for 1.7B and 4B; a bf16 host for 4B.
   - It writes `recommendation.json`, which `e9_plan` reads, choosing per host the fastest setting under the budget with an fp32 host.
@@ -212,10 +215,8 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name e9-qwen3-memory-probe --prio
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-1.7B-Base Qwen3-0.6B-Base --host-mode lora --lora-rank 64 --queue
 # 3. later: Qwen3-4B, single seed, its own stage (consider --tokens 25000000 or --models P0 C0p C5; decision 45)
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-4B-Base --host-mode lora --lora-rank 64 --stage t5-qwen3-4b --queue
-# corpora for the later tracks (CPU; WordNet and T1 ≥ 1 h with 3–4 workers)
-PYTHONPATH=src $PY -m vsa_embed.experiments.track_corpus --config experiments/t4-chemistry/t4-qwen3.yaml --output experiments/t4-chemistry/runs/v1-qwen3
-PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t4 --kind new --family qwen3 --output experiments/e9-retrofit/items/new-words-t4-qwen3-v1
-PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t4 --kind edits --family qwen3 --output experiments/e9-retrofit/items/edits-t4-qwen3-v1
+# T4 Qwen3 block (corpus and items built): as step 2 with --track t4 (stage t4-qwen3)
+# corpora for the later tracks (CPU; WordNet and T1 ≥ 1 h with 3–4 workers; not run)
 PYTHONPATH=src $PY -m vsa_embed.experiments.t1_open_corpus --config experiments/t1-open-clinical/t1-qwen3.yaml --output experiments/t1-open-clinical/runs/v1-qwen3
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t1 --kind new --family qwen3 --output experiments/e9-retrofit/items/new-words-t1-qwen3-v1
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t1 --kind edits --family qwen3 --output experiments/e9-retrofit/items/edits-t1-qwen3-v1
@@ -226,3 +227,27 @@ PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track wordnet --ki
   --reserved-names experiments/e5-explainability/items/c3-synthetic-qwen3-v1 --output experiments/e9-retrofit/items/new-words-qwen3-v1
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track wordnet --kind edits --family qwen3 --output experiments/e9-retrofit/items/edits-qwen3-v1
 ```
+
+**Qwen3.5 feasibility (WP-Qwen, 2026-10-03; separate env only).**
+
+- **Environment:** `~/venvs/vsa-qwen35`, a `venv --system-site-packages` over `vsa-repro` (torch 2.11.0+cu128 inherited) with transformers 5.18.0, huggingface_hub 1.33.0, tokenizers 0.23.2 and safetensors 0.8.0. `vsa-repro` itself is untouched.
+- **Models:** Qwen3.5-0.8B-Base and Qwen3.5-2B-Base, commits in `DATA_SOURCES.md` §13.
+- **Findings:**
+  - **Loading.** `AutoModelForCausalLM` loads the `Qwen3_5ForConditionalGeneration` checkpoint text-only as `Qwen3_5ForCausalLM`. It strips the `model.language_model.` prefix and ignores `mtp.*` and `model.visual.*`, with no missing or unexpected keys. 2B-Base has 1.88B text parameters, 24 layers (18 Gated DeltaNet linear-attention, 6 gated full-attention), width 2048, a tied 248,320-row head and a mean embedding row norm of 0.68.
+  - **ChannelLM.** `get_input_embeddings`, `base_model` (`Qwen3_5TextModel` with `inputs_embeds`) and `get_output_embeddings` work. The chunked loss equals the HF loss exactly (2.83256). A C5 channel with LoRA and non-reentrant checkpointing runs forward and backward (CPU).
+  - **LoRA.** The default targets reach q/k/v/o only in the 6 full-attention layers, plus gate/up/down in all 24 MLPs. The linear-attention projections (`in_proj_qkv`, `in_proj_z`, `in_proj_a`, `in_proj_b`, `out_proj`) are not reached, so 18 of 24 token mixers would stay frozen.
+  - **Kernels.** `flash-linear-attention` and `causal-conv1d` are absent, so transformers falls back to its PyTorch reference implementation, which it describes as "correct but much slower".
+  - **Tokenizer.** A new one: 248,077 ids, NFC, fingerprint `4d765ac5…`, not Qwen3's.
+  - **Test suite.** 498 passed, 1 skipped under transformers 5.18 on CPU. The only API drift found is a deprecation warning for `torch_dtype`.
+- **Needed for E9 on Qwen3.5-2B-Base:**
+  1. Run its jobs with the venv's interpreter. `e9_plan` queues `sys.executable`, so call it with `~/venvs/vsa-qwen35/bin/python`.
+  2. Install `flash-linear-attention` and `causal-conv1d` in the venv. The latter needs a CUDA build.
+  3. Add an opt-in `model.lora_targets` key covering the Gated DeltaNet projections.
+  4. Add a `Qwen3.5-2B-Base` host and a `qwen3_5` family: corpora (the T5 build takes ≈ 3 min), items, and `torch_dtype` → `dtype`.
+  5. Measure memory. The 248k vocabulary doubles the chunked-loss logits; `loss_chunk` may need lowering.
+- **Risks:**
+  - Speed and memory of the fallback path if the kernels do not build.
+  - Every result would come from a second transformers major version.
+  - The channel's effect passes through recurrent state rather than attention in 3/4 of the layers.
+  - The checkpoint is a natively multimodal base, used here text-only.
+  - INT4 tinygemm has not been tried on the new layer shapes.
