@@ -1,0 +1,52 @@
+{
+  "gpu": "NVIDIA GeForce RTX 3090",
+  "total_gib": 23.552001953125,
+  "budget_gib": 22.052001953125,
+  "steps": 3,
+  "hosts": {
+    "Qwen3-0.6B-Base": {
+      "lora": {
+        "micro_batch": 4,
+        "gradient_checkpointing": false,
+        "host_dtype": "float32",
+        "tokens_per_s": 8172.415967974339,
+        "peak_gib": 16.609868049621582,
+        "peak_reserved_gib": 19.408203125,
+        "eval_batch": 16,
+        "gpu_hours_per_run": 1.699483842148513,
+        "rule": "fastest setting under the budget with an fp32 host (bf16 only if no fp32 setting fits)"
+      }
+    },
+    "Qwen3-1.7B-Base": {
+      "lora": {
+        "micro_batch": 2,
+        "gradient_checkpointing": false,
+        "host_dtype": "float32",
+        "tokens_per_s": 4338.254049626208,
+        "peak_gib": 20.28394317626953,
+        "peak_reserved_gib": 21.255859375,
+        "eval_batch": 16,
+        "gpu_hours_per_run": 3.2014927503117483,
+        "rule": "fastest setting under the budget with an fp32 host (bf16 only if no fp32 setting fits)"
+      }
+    },
+    "Qwen3-4B-Base": {
+      "lora": {
+        "micro_batch": 1,
+        "gradient_checkpointing": true,
+        "host_dtype": "float32",
+        "tokens_per_s": 1215.1449063803,
+        "peak_gib": 19.455434799194336,
+        "peak_reserved_gib": 20.310546875,
+        "eval_batch": 8,
+        "gpu_hours_per_run": 11.429821098671608,
+        "rule": "fastest setting under the budget with an fp32 host (bf16 only if no fp32 setting fits)"
+      }
+    }
+  },
+  "probed_hosts": [
+    "Qwen3-0.6B-Base",
+    "Qwen3-1.7B-Base",
+    "Qwen3-4B-Base"
+  ]
+}

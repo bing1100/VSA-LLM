@@ -1,0 +1,41 @@
+experiment: e9-memory-qwen3
+hosts:
+- Qwen3-0.6B-Base
+- Qwen3-1.7B-Base
+- Qwen3-4B-Base
+settings:
+  Qwen3-0.6B-Base:
+  - host_dtype: float32
+    checkpointing: false
+  Qwen3-1.7B-Base:
+  - host_dtype: float32
+    checkpointing: false
+  - host_dtype: float32
+    checkpointing: true
+  Qwen3-4B-Base:
+  - host_dtype: float32
+    checkpointing: false
+  - host_dtype: float32
+    checkpointing: true
+  - host_dtype: bfloat16
+    checkpointing: false
+  - host_dtype: bfloat16
+    checkpointing: true
+micro_batches:
+- 1
+- 2
+- 4
+- 8
+eval_batches:
+- 2
+- 4
+- 8
+- 16
+steps: 3
+budget_gib: 22.052001953125
+sequence: 1024
+model: C5
+lora_rank: 64
+track: t5
+family: qwen3
+data_root: null
