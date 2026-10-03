@@ -58,6 +58,22 @@ Opt-in keys for larger pretrained hosts (E9 on Qwen3; absent keys change nothing
 - `model.checkpoint_use_reentrant` (null = Hugging Face's default, reentrant): `false` enables gradient
   checkpointing in its non-reentrant form, which a LoRA host needs when the embeddings carry no gradient
   (C0′: with reentrant checkpointing the adapters inside checkpointed layers would get no gradient).
+
+Opt-in keys for hybrid linear-attention hosts (E9 on Qwen3.5, WP-Qwen35; transformers ≥ 5 in the separate
+`vsa-qwen35` environment; absent keys change nothing):
+
+- `model.lora_targets` (null = `integrations.transformers.LORA_TARGETS`): a target-set name
+  (`linear_attention` adds Qwen3.5's Gated DeltaNet projections in_proj_qkv / in_proj_z / in_proj_a /
+  in_proj_b / out_proj, so every layer's token mixer gets adapters) or a list of projection names. Runs that
+  set it record the adapters per layer type in the manifest (`lora_coverage`).
+- `model.loss_chunk` (null = 2048): rows per chunk of the chunked LM loss (a 248,320-row head: 1024 keeps a
+  chunk's logits near the size of Qwen3's at 2048).
+
+A linear-attention host (`integrations.linear_attention.is_linear_attention_host`) is loaded with
+`use_cache` off (no recurrent/KV cache objects in training or scoring forwards) and the CUDA-only dispatch of its
+fast kernels (`install_device_dispatch`: flash-linear-attention / causal-conv1d on CUDA tensors, the PyTorch
+reference on CPU); the bound kernels and the calls of each implementation are printed and recorded in the
+manifest (`linear_attention_kernels`).
 """
 
 from __future__ import annotations
@@ -151,11 +167,23 @@ def _enable_checkpointing(model: torch.nn.Module, config: dict[str, Any]) -> Non
     model.config.use_cache = False
 
 
+def dtype_kwargs(dtype: torch.dtype) -> dict[str, torch.dtype]:
+    """`from_pretrained`'s dtype argument: `torch_dtype` up to transformers 4.x (the pinned 4.54), `dtype` from 5
+    on (where `torch_dtype` is deprecated)."""
+    import transformers
+    return {"dtype": dtype} if int(transformers.__version__.split(".")[0]) >= 5 else {"torch_dtype": dtype}
+
+
 def build_model(config: dict[str, Any]):
     if config["model"]["pretrained"]:
         from transformers import AutoModelForCausalLM
+
+        from ..integrations.linear_attention import install_device_dispatch, is_linear_attention_host
         model = AutoModelForCausalLM.from_pretrained(config["model"]["pretrained"], local_files_only=True,
-                                                     torch_dtype=host_dtype(config), attn_implementation="sdpa")
+                                                     attn_implementation="sdpa", **dtype_kwargs(host_dtype(config)))
+        if is_linear_attention_host(model):           # Qwen3.5 (see the module docstring); other hosts as before
+            model.config.use_cache = False
+            model.linear_attention_kernels = install_device_dispatch()
         if config["model"]["gradient_checkpointing"]:
             _enable_checkpointing(model, config)
         return model
@@ -221,9 +249,30 @@ def lora_adapter_dtype(config: dict[str, Any]) -> torch.dtype | None:
 def wrap_host(config: dict[str, Any], base: torch.nn.Module, channel: SpanChannel | None,
               context: CausalLocalContext | None) -> ChannelLM:
     """The run's `ChannelLM` around a built host (host mode, LoRA rank and adapter dtype from the config)."""
+    from ..integrations.transformers import lora_targets
     pretrained = bool(config["model"]["pretrained"])
+    optional = {}                                     # opt-in keys (absent: ChannelLM's defaults, as every recorded run)
+    if config["model"].get("lora_targets") is not None:
+        optional["lora_targets"] = lora_targets(config["model"]["lora_targets"])
+    if config["model"].get("loss_chunk"):
+        optional["loss_chunk"] = int(config["model"]["loss_chunk"])
     return ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if pretrained else "train",
-                     lora_rank=int(config["model"]["lora_rank"]), adapter_dtype=lora_adapter_dtype(config))
+                     lora_rank=int(config["model"]["lora_rank"]), adapter_dtype=lora_adapter_dtype(config), **optional)
+
+
+def host_records(config: dict[str, Any], model: ChannelLM) -> dict[str, Any]:
+    """Manifest records of the opt-in host features: `linear_attention_kernels` (bound kernels, calls per
+    implementation, interpreter) for linear-attention hosts and `lora_coverage` (adapters per layer type) for runs
+    with `model.lora_targets`; empty for every other run."""
+    import sys
+
+    from ..integrations.linear_attention import is_linear_attention_host, kernel_calls, kernel_status, lora_layer_coverage
+    records: dict[str, Any] = {}
+    if config["model"]["pretrained"] and is_linear_attention_host(model.model):
+        records["linear_attention_kernels"] = {"status": kernel_status(), "calls": kernel_calls(), "python": sys.executable}
+    if config["model"].get("lora_targets") is not None and model.host_mode == "lora":
+        records["lora_coverage"] = lora_layer_coverage(model.model)
+    return records
 
 
 def frame_variant(schedule: FrameSchedule, variant: str, relation_count: int, *, seed: int) -> FrameSchedule:
@@ -415,7 +464,7 @@ def _evaluate_only(model: ChannelLM, config: dict[str, Any], output_dir: Path, e
         write_run_metadata(output_dir, config, git_at_start=git_at_start, device=device,
                            parameters=sum(p.numel() for p in model.parameters()),
                            channel_parameters=sum(p.numel() for p in model.channel.parameters()) if model.channel else 0,
-                           steps=0, tokens_per_step=tokens_per_step, eval_only=True)
+                           steps=0, tokens_per_step=tokens_per_step, eval_only=True, **host_records(config, model))
     return {"steps": 0, "tokens": 0, "eval_only": True}
 
 
@@ -451,6 +500,8 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     if getattr(channel, "host_scale_record", None) and not (output_dir / "channel_scale.json").exists():
         (output_dir / "channel_scale.json").write_text(json.dumps(channel.host_scale_record, indent=2) + "\n")
     model = wrap_host(config, base, channel, context).to(device)
+    if records := host_records(config, model):      # linear-attention hosts / opt-in LoRA targets only
+        print(json.dumps({"host_records": records}, default=str), flush=True)
     train_cfg = config["train"]
     trainable_only = bool(train_cfg.get("save_trainable_only", False))
     if train_cfg.get("init_from") and not (resume and checkpoint_path.exists()):
@@ -577,7 +628,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                            parameters=sum(p.numel() for p in model.parameters()),
                            channel_parameters=sum(p.numel() for p in channel.parameters()) if channel else 0,
                            steps=total_steps, tokens_per_step=tokens_per_step,
-                           **({"channel_host_scale": scale} if scale else {}))
+                           **({"channel_host_scale": scale} if scale else {}), **host_records(config, model))
     return {"steps": step, "tokens": step * tokens_per_step}
 
 

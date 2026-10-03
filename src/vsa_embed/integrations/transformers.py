@@ -1,6 +1,6 @@
 """Hugging Face causal-LM integration for the span channel (B6).
 
-`ChannelLM` wraps any HF causal LM (GPT-2, Llama/SmolLM2, Qwen2): it embeds the tokens,
+`ChannelLM` wraps any HF causal LM (GPT-2, Llama/SmolLM2, Qwen2/3, Qwen3.5 text-only): it embeds the tokens,
 adds the span channel at linked positions (optionally with a P1 causal context query), runs the
 base model on `inputs_embeds`, and computes the LM loss with a chunked cross-entropy that never
 materialises the full `(tokens × vocabulary)` logits (Qwen2.5 has 151,936 entries). The host can
@@ -39,6 +39,25 @@ class LoRALinear(nn.Module):
 
 
 LORA_TARGETS = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "c_attn", "c_proj", "c_fc")
+# Opt-in target sets (`model.lora_targets`: a set name or a list of projection names). Qwen3.5's Gated DeltaNet layers
+# (18 of 24) mix tokens through in_proj_qkv / in_proj_z / in_proj_a / in_proj_b / out_proj, which the default set
+# misses (it reaches only the 6 full-attention layers' q/k/v/o and every MLP); `linear_attention` adds them.
+LINEAR_ATTENTION_TARGETS = ("in_proj_qkv", "in_proj_z", "in_proj_a", "in_proj_b", "out_proj")
+LORA_TARGET_SETS = {"default": LORA_TARGETS, "linear_attention": LORA_TARGETS + LINEAR_ATTENTION_TARGETS}
+
+
+def lora_targets(spec: str | Iterable[str] | None) -> tuple[str, ...]:
+    """Projection names of a `model.lora_targets` value: None → the default set; a set name; or a list of names."""
+    if spec is None:
+        return LORA_TARGETS
+    if isinstance(spec, str):
+        if spec not in LORA_TARGET_SETS:
+            raise ValueError(f"unknown LoRA target set {spec!r}; choose from {sorted(LORA_TARGET_SETS)} or give a list")
+        return LORA_TARGET_SETS[spec]
+    names = tuple(spec)
+    if not names or not all(isinstance(n, str) and n for n in names):
+        raise ValueError("model.lora_targets must be a set name or a non-empty list of projection names")
+    return names
 
 
 def add_lora(model: nn.Module, *, rank: int = 16, alpha: float = 32.0,
@@ -83,7 +102,8 @@ class ChannelLM(nn.Module):
 
     def __init__(self, model: nn.Module, channel: SpanChannel | None = None, *,
                  context: CausalLocalContext | None = None, host_mode: str = "train",
-                 lora_rank: int = 16, loss_chunk: int = 2048, adapter_dtype: torch.dtype | None = None) -> None:
+                 lora_rank: int = 16, loss_chunk: int = 2048, adapter_dtype: torch.dtype | None = None,
+                 lora_targets: Iterable[str] = LORA_TARGETS) -> None:
         super().__init__()
         if host_mode not in {"train", "frozen", "lora"}:
             raise ValueError("host_mode must be train, frozen or lora")
@@ -93,7 +113,7 @@ class ChannelLM(nn.Module):
             for parameter in self.model.parameters():
                 parameter.requires_grad_(False)
         if host_mode == "lora":
-            add_lora(self.model, rank=lora_rank, dtype=adapter_dtype)
+            add_lora(self.model, rank=lora_rank, dtype=adapter_dtype, targets=lora_targets)
 
     @property
     def base(self) -> nn.Module:
