@@ -1087,12 +1087,22 @@ def part_seed(config: dict[str, Any], seed: int, kind: str) -> list[dict[str, An
     for name in world.relation_names:
         g = world.pairs(name, heads=framed)
         per_relation[name] = jaccard(recovered.get(name, set()), g) if g else float("nan")
+    # the learned part: candidate pairs sorted into relations, scored on the offered candidate universe
+    t = scenario.table
+    offered_all, offered_gold = set(), defaultdict(set)
+    for h, a, o in zip(t.heads.tolist(), t.fillers.tolist(), t.open.tolist()):
+        if o:
+            pair = (world.concept_node[h], world.filler_node[a]); offered_all.add(pair)
+            for r in gold_pairs.get((h, a), set()):
+                offered_gold[world.relation_names[r]].add(pair)
+    offered_jaccard = {name: jaccard(recovered.get(name, set()) & offered_all, g) for name, g in offered_gold.items() if g}
     audit = audit_data(world)
     row = {"part": "seed", "seed": seed, "condition": kind, "steps": result["steps"],
            "edges_all": _prf(rec_edges, gold_all), "edges_train": _prf({e for e in rec_edges if e[0] in train}, gold_train),
            "relation_jaccard": per_relation,
            "relations_recovered": sum(v >= 0.5 for v in per_relation.values() if v == v),
-           "candidate_auc": candidate_auc,
+           "candidate_auc": candidate_auc, "offered_relation_jaccard": offered_jaccard,
+           "offered_relation_jaccard_mean": float(np.mean(list(offered_jaccard.values()))) if offered_jaccard else float("nan"),
            "accepted_slots": sum(r["accept"] for r in result["rounds"]), "proposed_slots": len(result["rounds"]),
            "adopted": [r["adopted"] for r in result["rounds"] if r["accept"]],
            **_reasoning_probes(world, recovered, seed),
@@ -1305,6 +1315,11 @@ def part_continual(config: dict[str, Any], seed: int, condition: str) -> list[di
         else:
             stage_of[e] = last_stage.get(heads[e], 0)
     gold_sets = {world.relation_names[r]: world.pairs(world.relation_names[r], heads=framed) for r in order}
+    # Matching is scored on the offered candidate universe (comparable across conditions, whether or not
+    # a condition adds rule-implied edges); the Jaccard against all framed heads is kept as `jaccard_framed`.
+    offered_gold = _offered_pairs(world, scenario)
+    offered_all = {(world.concept_node[h], world.filler_node[a]) for h, a, o in
+                   zip(scenario.table.heads.tolist(), scenario.table.fillers.tolist(), scenario.table.open.tolist()) if o}
     settings = discovery_settings(config, max_rounds=1, patience=99)
     curve, history = [], []
 
@@ -1313,8 +1328,10 @@ def part_continual(config: dict[str, Any], seed: int, condition: str) -> list[di
         pairs = {s: edge_pairs(comp, comp.slot_members(s), ctx.nodes) for s in slots}
         matched = {}
         for name, g in gold_sets.items():
-            best = max(((jaccard(p, g), s) for s, p in pairs.items()), default=(0.0, None))
-            matched[name] = {"jaccard": best[0], "slot": best[1]}
+            best = max(((jaccard(p & offered_all, offered_gold.get(name, set())), s) for s, p in pairs.items()),
+                       default=(0.0, None))
+            framed_best = max((jaccard(p, g) for p in pairs.values()), default=0.0)
+            matched[name] = {"jaccard": best[0], "slot": best[1], "jaccard_framed": framed_best}
         curve.append({"stage": stage, "matched": sum(v["jaccard"] >= 0.5 for v in matched.values()), "per_relation": matched,
                       "val_fit": eval_fit(comp, ctx.heldout, world.splits["train"])})
 

@@ -338,6 +338,7 @@ def summarize_seed(rows: list[dict]) -> dict[str, Any]:
                  "edges_recall_all": _ci([r["edges_all"]["recall"] for r in sel]),
                  "edges_f1_train": _ci([r["edges_train"]["f1"] for r in sel]),
                  "candidate_auc": _ci([r.get("candidate_auc") for r in sel]),
+                 "offered_relation_jaccard_mean": _ci([r.get("offered_relation_jaccard_mean") for r in sel]),
                  "relations_recovered": _ci([r["relations_recovered"] for r in sel]),
                  "accepted_slots": _ci([r["accepted_slots"] for r in sel]),
                  "val_fit": _ci([r["val_fit"] for r in sel]), "test_fit": _ci([r["test_fit"] for r in sel])}
@@ -409,10 +410,14 @@ def summarize_continual(rows: list[dict]) -> dict[str, Any]:
         curve = [_ci([r["curve"][i]["matched"] for r in sel if len(r["curve"]) > i]) for i in range(stages)]
         final = _ci([r["curve"][-1]["matched"] for r in sel])
         retention = defaultdict(lambda: {"at_arrival": [], "final": []})
+        framed = defaultdict(list)
         for r in sel:
             for name, v in r["retention"].items():
                 retention[name]["at_arrival"].append(v["at_arrival"]); retention[name]["final"].append(v["final"])
+            for name, v in r["curve"][-1]["per_relation"].items():
+                framed[name].append(v.get("jaccard_framed"))
         out[cond] = {"matched_by_stage": curve, "final_matched": final,
+                     "final_jaccard_framed": {k: _ci(v) for k, v in framed.items()},
                      "final_val_fit": _ci([r["curve"][-1]["val_fit"] for r in sel]),
                      "retention": {k: {"at_arrival": _ci(v["at_arrival"]), "final": _ci(v["final"]),
                                        "drop": _ci([a - f for a, f in zip(v["at_arrival"], v["final"])])}
@@ -596,11 +601,11 @@ def render_report(summary: dict[str, Any], config: dict[str, Any]) -> str:
     s = summary.get("seed_ontology")
     if s:
         L += ["## E10.4 Seed ontology → recovered logical ontology", "",
-              "| Start | edge F1 (all framed) | P / R | candidate AUC | relations recovered (J ≥ 0.5, of 7) | accepted slots | multi-hop is-a acc (gold) | transitivity located_in (gold) | inverse part (gold) | symmetry similar (gold) | test fit |",
-              "|---|---|---|---|---|---|---|---|---|---|---|"]
+              "| Start | edge F1 (all framed) | P / R | candidate AUC | candidate-level relation Jaccard (mean) | relations recovered (J ≥ 0.5, of 7) | accepted slots | multi-hop is-a acc (gold) | transitivity located_in (gold) | inverse part (gold) | symmetry similar (gold) | test fit |",
+              "|---|---|---|---|---|---|---|---|---|---|---|---|"]
         for cond, m in s.items():
             L.append(f"| {cond} | {_fmt(m['edges_f1_all'])} | {_fmt(m['edges_precision_all'], 2)} / {_fmt(m['edges_recall_all'], 2)} | "
-                     f"{_fmt(m['candidate_auc'])} | {_fmt(m['relations_recovered'], 1)} | {_fmt(m['accepted_slots'], 1)} | "
+                     f"{_fmt(m['candidate_auc'])} | {_fmt(m.get('offered_relation_jaccard_mean'))} | {_fmt(m['relations_recovered'], 1)} | {_fmt(m['accepted_slots'], 1)} | "
                      f"{_fmt(m['isa_multihop_accuracy'], 2)} ({_fmt(m['gold_isa_multihop_accuracy'], 2)}) | "
                      f"{_fmt(m['located_in_transitivity'], 2)} ({_fmt(m['gold_located_in_transitivity'], 2)}) | "
                      f"{_fmt(m['part_inverse_consistency'], 2)} ({_fmt(m['gold_part_inverse_consistency'], 2)}) | "
@@ -635,12 +640,14 @@ def render_report(summary: dict[str, Any], config: dict[str, Any]) -> str:
     co = summary.get("continual")
     if co:
         L += ["## E10.8 Continual additive learning (hidden relations arrive one per stage)", "",
-              "| Condition | relations matched (J ≥ 0.5) by stage | final | retention drop per relation (arrival − final Jaccard) | final val fit |",
-              "|---|---|---|---|---|"]
+              "| Condition | relations matched (Jaccard ≥ 0.5 on offered candidate pairs) by stage | final | final Jaccard on offered pairs | final Jaccard over all framed heads (incl. rule closure) | retention drop (arrival − final) | final val fit |",
+              "|---|---|---|---|---|---|---|"]
         for cond, m in co.items():
             stages = " → ".join(_fmt(x, 2) for x in m["matched_by_stage"])
             drops = "; ".join(f"{k} {_fmt(v['drop'], 2)}" for k, v in m["retention"].items())
-            L.append(f"| {cond} | {stages} | {_fmt(m['final_matched'], 2)} | {drops} | {_fmt(m['final_val_fit'], 4)} |")
+            finals = "; ".join(f"{k} {_fmt(v['final'], 2)}" for k, v in m["retention"].items())
+            framed = "; ".join(f"{k} {_fmt(v, 2)}" for k, v in m.get("final_jaccard_framed", {}).items())
+            L.append(f"| {cond} | {stages} | {_fmt(m['final_matched'], 2)} | {finals} | {framed} | {drops} | {_fmt(m['final_val_fit'], 4)} |")
         L.append("")
     timing = summary.get("job_cpu_seconds_by_part")
     if timing:
