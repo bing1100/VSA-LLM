@@ -455,13 +455,15 @@ def test_e9_plan_chains_evaluations_after_training(plan_root, tmp_path) -> None:
     assert len(queued) == 4 + 4 * 6 + 2
     jobs = {p.stem: json.loads(p.read_text()) for p in queue.glob("*.json")}
     train = jobs["main-SmolLM2-135M-full-C5-s1"]
-    assert train["priority"] == 22 and train["command"][:3] == [sys.executable, "-m", "vsa_embed.training.lm"]
+    from vsa_embed.experiments.cpt_plan import pinned_python     # this interpreter (the pinned one under the Qwen3.5 env)
+    assert pinned_python() == sys.executable or "vsa-qwen35" in sys.prefix
+    assert train["priority"] == 22 and train["command"][:3] == [pinned_python(), "-m", "vsa_embed.training.lm"]
     assert train["resume_args"] == ["--resume"] and train["env"] == {"PYTHONPATH": "src"}
     run_dir = str(plan_root["root"] / "runs" / "main" / "SmolLM2-135M-full-C5-s1")
     for suffix, module in (("probes", "vsa_embed.evaluation.channel_probes"), ("zeroshot-int4", "vsa_embed.experiments.e5_zeroshot"),
                            ("edit-int4", "vsa_embed.experiments.e9_ontology_edit")):
         job = jobs[f"main-SmolLM2-135M-full-C5-s1-{suffix}"]
-        assert job["priority"] == 23 and job["command"][0] == sys.executable and job["command"][2] == module
+        assert job["priority"] == 23 and job["command"][0] == pinned_python() and job["command"][2] == module
         assert run_dir in job["command"] and job["resume_args"] == ["--overwrite"]
         assert ("--quantize" in job["command"]) == suffix.endswith("int4")
     assert jobs["main-SmolLM2-135M-frozen-P0-s1-edit"]["priority"] == 23

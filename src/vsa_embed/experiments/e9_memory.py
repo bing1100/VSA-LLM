@@ -1,4 +1,5 @@
-"""E9 memory/throughput probe for the Qwen3 hosts (WP-Qwen; the B6 pattern of `host_memory`, on the real E9 run).
+"""E9 memory/throughput probe for the Qwen3 and Qwen3.5 hosts (WP-Qwen, WP-Qwen35; the B6 pattern of `host_memory`, on
+the real E9 run).
 
 For each host × setting (host dtype, gradient checkpointing) × micro-batch (1, 2, 4, 8; ascending, stopping at
 the first OOM): build the E9 C5 run exactly as the trainer does — the `e9_plan` config (LoRA r = 64, attentive
@@ -18,6 +19,19 @@ settings cover the stage. Runs as one GPU job that needs the whole GPU:
 
     python -m vsa_embed.experiments.e9_memory --output experiments/e9-retrofit/memory/qwen3-v1 \
         [--hosts Qwen3-0.6B-Base Qwen3-1.7B-Base Qwen3-4B-Base] [--steps 3] [--budget-gib 22.5]
+
+**Qwen3.5 hosts** (WP-Qwen35; run with the Qwen3.5 environment's interpreter, `cpt_plan.QWEN35_PYTHON`):
+
+    ~/venvs/vsa-qwen35/bin/python -m vsa_embed.experiments.e9_memory --output experiments/e9-retrofit/memory/qwen3_5-v1 \
+        --hosts Qwen3.5-0.8B-Base Qwen3.5-2B-Base
+
+probes an fp32 host with and without gradient checkpointing at micro-batches 1, 2, 4 on the T5 Qwen3.5 batches (the
+hosts' LoRA targets cover every Gated DeltaNet projection; loss chunks of 1,024 rows). For these hybrid
+linear-attention hosts every training row records the kernel calls per implementation (`kernel_calls`: the fast
+flash-linear-attention / causal-conv1d path must be the one that ran), and after the fast rows one more row
+(`kind: train-reference`, micro-batch 1, no checkpointing) times the same step with the PyTorch reference
+implementation (`linear_attention.reference_only`), the speed comparison of the two paths at full size. One stage
+per tokenizer family: the hosts of one probe share a family (its corpora).
 """
 
 from __future__ import annotations
@@ -34,30 +48,40 @@ import torch
 
 from vsa_embed.data.corpus import TokenCorpus, collate_windows, sample_batch
 from vsa_embed.experiments.e4_plan import matched_sizes
-from vsa_embed.experiments.e9_plan import CPT_HOSTS, QWEN3_HOSTS, estimate_hours, host_plan, run_config
+from vsa_embed.experiments.e9_plan import CPT_HOSTS, QWEN3_HOSTS, QWEN35_HOSTS, estimate_hours, host_family, host_plan, run_config
 from vsa_embed.experiments.e9_tracks import track_spec
+from vsa_embed.integrations import linear_attention as la
 from vsa_embed.provenance import prepare_output_dir, write_run_metadata
 
 MICRO_BATCHES = (1, 2, 4, 8)
 EVAL_BATCHES = (2, 4, 8, 16)
 SEQUENCES_PER_STEP = 64
 # (host dtype, gradient checkpointing) settings per host: checkpointing with and without for 4B (and 1.7B, whose
-# fp32 activations may not fit beyond micro-batch 1); a bf16 host for 4B (fp32 weights alone are 16 GB).
+# fp32 activations may not fit beyond micro-batch 1); a bf16 host for 4B (fp32 weights alone are 16 GB). Qwen3.5: an
+# fp32 host with and without checkpointing (the 2B host's head is 1.6× Qwen3-1.7B's).
 SETTINGS = {"Qwen3-0.6B-Base": [("float32", False)],
             "Qwen3-1.7B-Base": [("float32", False), ("float32", True)],
-            "Qwen3-4B-Base": [("float32", False), ("float32", True), ("bfloat16", False), ("bfloat16", True)]}
+            "Qwen3-4B-Base": [("float32", False), ("float32", True), ("bfloat16", False), ("bfloat16", True)],
+            "Qwen3.5-0.8B-Base": [("float32", False), ("float32", True)],
+            "Qwen3.5-2B-Base": [("float32", False), ("float32", True)]}
+HOST_MICRO_BATCHES = {"Qwen3.5-0.8B-Base": (1, 2, 4), "Qwen3.5-2B-Base": (1, 2, 4)}   # others: MICRO_BATCHES
+FAMILY_LABELS = {"qwen3": "Qwen3", "qwen3_5": "Qwen3.5"}
+MEMORY_KEYS = ("gradient_checkpointing", "checkpoint_use_reentrant", "host_dtype")
 
 
 def probe_config(host: str, micro_batch: int, *, host_dtype: str = "float32", checkpointing: bool = False,
-                 track: str = "t5", family: str = "qwen3", data_root: Path | None = None, lora_rank: int = 64) -> dict[str, Any]:
-    """The E9 C5 config of `host` (as `e9_plan` writes it) at one micro-batch and memory setting."""
+                 track: str = "t5", family: str | None = None, data_root: Path | None = None, lora_rank: int = 64) -> dict[str, Any]:
+    """The E9 C5 config of `host` (as `e9_plan` writes it) at one micro-batch and memory setting; `family`: the
+    host's (`e9_plan.host_family`) by default."""
     from vsa_embed.training.lm import resolve_config
-    spec = track_spec(track, family)
+    spec = track_spec(track, family or host_family(host))
     root = Path(data_root) if data_root else spec.data_root
     free_dimension, _ = matched_sizes(root / "ontology.pt", CPT_HOSTS[host]["width"], 256)
     plan = host_plan(host, "lora")
     plan["micro"]["lora"] = int(micro_batch)
-    plan["model"] = {**({"gradient_checkpointing": True, "checkpoint_use_reentrant": False} if checkpointing else {}),
+    # the host's own model keys (Qwen3.5: LoRA targets, loss chunk) stay; the memory keys are the probed setting's
+    plan["model"] = {**{k: v for k, v in plan["model"].items() if k not in MEMORY_KEYS},
+                     **({"gradient_checkpointing": True, "checkpoint_use_reentrant": False} if checkpointing else {}),
                      **({"host_dtype": host_dtype} if host_dtype != "float32" else {})}
     _, config = run_config(stage="memory", host=host, mode="lora", model="C5", seed=1, data_root=root, tokens=50_000_000,
                            lora_rank=lora_rank, host_lr=None, gate_bias=0.0, free_dimension=free_dimension,
@@ -115,11 +139,15 @@ def measure_setting(host: str, *, host_dtype: str, checkpointing: bool, device: 
                   "trainable_parameters": sum(p.numel() for p in model.parameters() if p.requires_grad),
                   "channel_host_scale": float(channel.host_scale), "load_seconds": load_seconds}
     length, autocast = config["model"]["seq_len"], device.type == "cuda"
+    linear = la.is_linear_attention_host(base)
+    if linear:
+        parameters["lora_adapters"] = la.lora_layer_coverage(base)["adapters"]
     model.train()
-    fitted = 0
-    for micro in micro_batches:
+
+    def train_row(micro: int, kind: str = "train") -> dict[str, Any]:
         timings: list[float] = []
-        row = {**base_row, "kind": "train", "micro_batch": micro, **parameters}
+        row = {**base_row, "kind": kind, "micro_batch": micro, **parameters}
+        la.kernel_calls(reset=True)
         try:
             if device.type == "cuda":
                 torch.cuda.reset_peak_memory_stats()
@@ -141,17 +169,26 @@ def measure_setting(host: str, *, host_dtype: str, checkpointing: bool, device: 
                     timings.append(time.perf_counter() - tick)
             seconds = float(np.median(timings))
             row.update(ok=True, step_s=seconds, tokens_per_s=micro * length / seconds, **_peaks(device))
-            fitted = micro
         except torch.cuda.OutOfMemoryError:
             row.update(ok=False, tokens_per_s=None, **_peaks(device))
+        if linear:                                         # which implementation ran (new key only for these hosts)
+            row["kernel_calls"] = la.kernel_calls(reset=True)
         optimizer.zero_grad(set_to_none=True)
         loss = None
         gc.collect()
         if device.type == "cuda":
             torch.cuda.empty_cache()
         rows.append(row); log(json.dumps(row))
-        if not row["ok"]:
+        return row
+
+    fitted = 0
+    for micro in micro_batches:
+        if not train_row(micro)["ok"]:
             break
+        fitted = micro
+    if linear and fitted and not checkpointing and device.type == "cuda":
+        with la.reference_only():                          # the same step on the PyTorch reference path
+            train_row(1, kind="train-reference")
     if fitted:
         eval_corpus = TokenCorpus.open(Path(config["data"]["eval"]))
         model.eval()
@@ -205,9 +242,10 @@ def recommend(rows: list[dict[str, Any]], *, budget_gib: float, tokens: int = 50
 
 
 def render(rows: list[dict[str, Any]], recommendation: dict[str, Any], header: dict[str, Any]) -> str:
-    lines = ["# E9 Qwen3 memory and throughput (C5, LoRA r = 64, sequence 1024, bf16 autocast)", "",
+    label = FAMILY_LABELS.get(header.get("family", "qwen3"), header.get("family", "qwen3"))
+    lines = [f"# E9 {label} memory and throughput (C5, LoRA r = 64, sequence 1024, bf16 autocast)", "",
              f"GPU: {header['gpu']} ({header['total_gib']:.1f} GiB); budget {header['budget_gib']:.1f} GiB (peak reserved). "
-             f"T5 Qwen3 batches; {header['steps']} timed optimizer steps per micro-batch after one warm-up step "
+             f"T5 {label} batches; {header['steps']} timed optimizer steps per micro-batch after one warm-up step "
              "(fused AdamW, the trainer's parameter groups); channel injection scaled to the host (`scale_to_host`).", "",
              "| Host | dtype | checkpointing | micro-batch | peak GiB | reserved GiB | tokens/s |", "|---|---|---|---:|---:|---:|---:|"]
     fmt = lambda v, f: "—" if v is None else format(v, f)
@@ -231,25 +269,52 @@ def render(rows: list[dict[str, Any]], recommendation: dict[str, Any], header: d
     missing = [h for h in header["hosts"] if h not in recommendation]
     if missing:
         lines += ["", f"No setting fits the budget for: {', '.join(missing)}."]
+    linear = [r for r in rows if r["kind"] in {"train", "train-reference"} and "kernel_calls" in r]
+    if linear:                     # hybrid linear-attention hosts: which implementation ran, and the two paths' speed
+        status = header.get("linear_attention_kernels") or {}
+        bound = {m: s.get("fast_path_bound") for m, s in status.items()}
+        lines += ["", "## Linear-attention kernels", "",
+                  f"Bound by transformers: {bound or '—'}; packages {next(iter(status.values()), {}).get('packages', '—')}. "
+                  "Calls per implementation in each training row (warm-up and timed steps; `fast` = flash-linear-attention / "
+                  "causal-conv1d, `reference` = PyTorch):", "",
+                  "| Host | checkpointing | kind | micro-batch | tokens/s | kernel calls |", "|---|---|---|---:|---:|---|"]
+        for r in linear:
+            lines.append(f"| {r['host']} | {r['checkpointing']} | {r['kind']} | {r['micro_batch']} | "
+                         + (f"{r['tokens_per_s']:,.0f}" if r["ok"] else "OOM") + f" | {r['kernel_calls']} |")
+        for host in dict.fromkeys(r["host"] for r in linear):
+            fast = next((r for r in linear if r["host"] == host and r["kind"] == "train" and not r["checkpointing"]
+                         and r["micro_batch"] == 1 and r["ok"]), None)
+            reference = next((r for r in linear if r["host"] == host and r["kind"] == "train-reference" and r["ok"]), None)
+            if fast and reference:
+                lines.append(f"\n{host}: fast path {fast['tokens_per_s']:,.0f} vs reference {reference['tokens_per_s']:,.0f} tokens/s "
+                             f"at micro-batch 1 (speed-up {fast['tokens_per_s'] / reference['tokens_per_s']:.2f}×).")
     return "\n".join(lines) + "\n"
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--hosts", nargs="+", default=["Qwen3-0.6B-Base", "Qwen3-1.7B-Base", "Qwen3-4B-Base"], choices=list(QWEN3_HOSTS))
+    parser.add_argument("--hosts", nargs="+", default=["Qwen3-0.6B-Base", "Qwen3-1.7B-Base", "Qwen3-4B-Base"],
+                        choices=list(QWEN3_HOSTS + QWEN35_HOSTS), help="one tokenizer family per probe (Qwen3 or Qwen3.5)")
     parser.add_argument("--steps", type=int, default=3)
     parser.add_argument("--budget-gib", type=float, default=None, help="default: GPU memory − 1.5 GiB")
-    parser.add_argument("--data-root", type=Path, default=None, help="default: the T5 Qwen3 corpus")
+    parser.add_argument("--data-root", type=Path, default=None, help="default: the hosts' T5 corpus (Qwen3 or Qwen3.5)")
     parser.add_argument("--device", default="cuda")
     args = parser.parse_args(argv)
+    families = {host_family(h) for h in args.hosts}
+    if len(families) != 1:
+        parser.error("one tokenizer family per probe (its T5 corpus): Qwen3 hosts or Qwen3.5 hosts")
+    family = families.pop()
     device = torch.device(args.device)
     total = _gib(torch.cuda.get_device_properties(device).total_memory) if device.type == "cuda" else 0.0
     budget = args.budget_gib if args.budget_gib is not None else total - 1.5
     settings = {h: [{"host_dtype": d, "checkpointing": c} for d, c in SETTINGS[h]] for h in args.hosts}
-    config = {"experiment": "e9-memory-qwen3", "hosts": args.hosts, "settings": settings, "micro_batches": list(MICRO_BATCHES), "eval_batches": list(EVAL_BATCHES), "steps": args.steps, "budget_gib": budget,
-              "sequence": 1024, "model": "C5", "lora_rank": 64, "track": "t5", "family": "qwen3",
+    config = {"experiment": f"e9-memory-{family}", "hosts": args.hosts, "settings": settings, "micro_batches": list(MICRO_BATCHES), "eval_batches": list(EVAL_BATCHES), "steps": args.steps, "budget_gib": budget,
+              "sequence": 1024, "model": "C5", "lora_rank": 64, "track": "t5", "family": family,
               "data_root": str(args.data_root) if args.data_root else None}
+    per_host = {h: list(HOST_MICRO_BATCHES[h]) for h in args.hosts if h in HOST_MICRO_BATCHES}
+    if per_host:                                      # new key only where it applies (Qwen3.5)
+        config["host_micro_batches"] = per_host
     git_at_start = prepare_output_dir(args.output)
     (args.output / "resolved_config.yaml").write_text(json.dumps(config, indent=2) + "\n")
     rows: list[dict[str, Any]] = []
@@ -259,14 +324,20 @@ def main(argv: list[str] | None = None) -> None:
         for host in args.hosts:
             for host_dtype, checkpointing in SETTINGS[host]:
                 rows += measure_setting(host, host_dtype=host_dtype, checkpointing=checkpointing, device=device, steps=args.steps,
-                                        data_root=args.data_root, log=log)
+                                        data_root=args.data_root, log=log,
+                                        **({"micro_batches": HOST_MICRO_BATCHES[host]} if host in HOST_MICRO_BATCHES else {}))
     recommendation = recommend(rows, budget_gib=budget)
     header = {"gpu": torch.cuda.get_device_name(device) if device.type == "cuda" else "cpu", "total_gib": total, "budget_gib": budget,
               "steps": args.steps, "hosts": args.hosts}
+    extra: dict[str, Any] = {}
+    if family != "qwen3":                             # new keys only where they apply (headers of the Qwen3 probe as before)
+        header["family"] = family
+        if any("kernel_calls" in r for r in rows):
+            header["linear_attention_kernels"] = extra["linear_attention_kernels"] = la.kernel_status()
     (args.output / "memory.json").write_text(json.dumps(rows, indent=2) + "\n")
     (args.output / "recommendation.json").write_text(json.dumps({**header, "hosts": recommendation, "probed_hosts": args.hosts}, indent=2) + "\n")
     (args.output / "report.md").write_text(render(rows, recommendation, header))
-    write_run_metadata(args.output, config, git_at_start=git_at_start, device=device)
+    write_run_metadata(args.output, config, git_at_start=git_at_start, device=device, **extra)
 
 
 if __name__ == "__main__":

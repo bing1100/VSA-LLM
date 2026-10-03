@@ -1,0 +1,168 @@
+{
+  "track": "t5",
+  "documents": {
+    "train": {
+      "documents": 433971,
+      "chars": 180000007
+    },
+    "eval": {
+      "documents": 25346,
+      "chars": 11000098
+    },
+    "heldout_terms": 360,
+    "zeroshot_terms": 200,
+    "leaked_into_train": 0,
+    "forbidden_words": 236428
+  },
+  "ontology": {
+    "seed": 20261005,
+    "terms": 4000,
+    "max_atomics": 8192,
+    "max_degree": 16,
+    "fillers_replaced_by_type": 0,
+    "concepts": 4200,
+    "atomics": 3493,
+    "relations": 23,
+    "aliases": 4319,
+    "entries": 4200
+  },
+  "holdout": {
+    "concepts": 360,
+    "heldout_entries": 360,
+    "eligible_entries": null,
+    "method": "fixed by the track",
+    "sha256": "e7313dcece6d0b7893784a26c80b4b39205269e90e0781340163fefca850243f"
+  },
+  "synthetic": {
+    "candidates": 200,
+    "kept": 200,
+    "sha256": "407388893336b53e78776e111883f46162b10226d58439f21ec09a13c25211bc",
+    "entries": 200,
+    "dropped_for_text_hits": 0
+  },
+  "eval_corpus": {
+    "tokens": 2842113,
+    "documents": 25346,
+    "dtype": "uint32",
+    "tokenizer": "Qwen/Qwen3.5-0.8B-Base",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415",
+    "boundary": "prefix",
+    "spans": 179641,
+    "eos_id": 248044,
+    "skipped_documents": 0,
+    "normalization": "NFC",
+    "request": {
+      "source": "domain eval",
+      "max_tokens": 3000000
+    },
+    "tokenizer_sha256": "4d765ac5a92a75f240af39f9358a09a140216dce113e57754c91042ef8b9e4e8"
+  },
+  "eval_general_corpus": {
+    "tokens": 2192203,
+    "documents": 2000,
+    "dtype": "uint32",
+    "tokenizer": "Qwen/Qwen3.5-0.8B-Base",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415",
+    "boundary": "prefix",
+    "spans": 0,
+    "eos_id": 248044,
+    "skipped_documents": 0,
+    "normalization": "NFC",
+    "request": {
+      "source": "general eval",
+      "shards": [
+        "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet"
+      ],
+      "skip": 0,
+      "documents": 2000
+    },
+    "tokenizer_sha256": "4d765ac5a92a75f240af39f9358a09a140216dce113e57754c91042ef8b9e4e8"
+  },
+  "train_corpus": {
+    "tokens": 100002971,
+    "documents": 485383,
+    "dtype": "uint32",
+    "tokenizer": "Qwen/Qwen3.5-0.8B-Base",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "f9aead8ca85dc9e3bc98cbe380011f78e59081ba7729cb42abd1e7b9bb70f450",
+    "boundary": "prefix",
+    "spans": 2835316,
+    "eos_id": 248044,
+    "skipped_documents": 0,
+    "parts": [
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen35/train-domain",
+        "tokens": 45481329,
+        "documents": 433971
+      },
+      {
+        "path": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen35/train-general",
+        "tokens": 54521642,
+        "documents": 51412
+      }
+    ],
+    "mix": {
+      "domain_tokens": 45481329,
+      "general_tokens": 54521642,
+      "domain_fraction": 0.45479977789859866
+    },
+    "tokenizer_sha256": "4d765ac5a92a75f240af39f9358a09a140216dce113e57754c91042ef8b9e4e8"
+  },
+  "mix": {
+    "domain_tokens": 45481329,
+    "general_tokens": 54521642,
+    "domain_fraction": 0.45479977789859866
+  },
+  "general_text_spans_by_min_subtokens": {
+    "1": 0,
+    "2": 0,
+    "3": 0,
+    "4": 0
+  },
+  "feasibility": {
+    "min_subtokens": 2,
+    "verdict": "feasible",
+    "eval_windows": 256
+  },
+  "items": {
+    "synthetic_concepts.jsonl": {
+      "rows": 200,
+      "splits": {
+        "synthetic": 200
+      }
+    },
+    "glossary_cloze.jsonl": {
+      "rows": 5432,
+      "splits": {
+        "heldout": 2014,
+        "train": 3418
+      }
+    },
+    "term_relation_probe.jsonl": {
+      "rows": 4200,
+      "splits": {
+        "heldout": 360,
+        "synthetic": 200,
+        "train": 3640
+      }
+    },
+    "zeroshot_entailment.jsonl": {
+      "rows": 3360,
+      "splits": {
+        "heldout": 2160,
+        "synthetic": 1200
+      }
+    },
+    "zeroshot_property.jsonl": {
+      "rows": 4698,
+      "splits": {
+        "heldout": 3018,
+        "synthetic": 1680
+      }
+    }
+  },
+  "data_root": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen35",
+  "ontology_sha256": "9e2ccd30b939f2f65fbb2f6f8a8a1bb2c58dda8f9d7793e99fd6e1044275b52b"
+}

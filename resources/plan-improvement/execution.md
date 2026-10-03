@@ -256,6 +256,61 @@ PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track wordnet --ki
   - The checkpoint is a natively multimodal base, used here text-only.
   - INT4 tinygemm has not been tried on the new layer shapes.
 
+**E9 on Qwen3.5 (WP-Qwen35, 2026-10-03).** Qwen3.5-2B-Base (main) and Qwen3.5-0.8B-Base (size trend) run the Qwen3 E9 recipe
+(LoRA r = 64 at host lr 2e-4, channel lr 1e-3, gate bias 0, `scale_to_host`, 50M tokens, 65,536 tokens per step, T5 first) in the
+separate environment; the pinned `vsa-repro` is unchanged. Open decisions 47–50 apply.
+
+- **Environment** (`experiments/e9-retrofit/env/`: lock file `qwen35-requirements.txt`, notes `README.md`):
+  `~/venvs/vsa-qwen35` over `vsa-repro` (torch 2.11.0+cu128, Triton 3.6.0, torchao 0.18.0 inherited) with transformers 5.18.0,
+  tokenizers 0.23.2, huggingface_hub 1.33.0, safetensors 0.8.0, flash-linear-attention / fla-core 0.5.2 and causal-conv1d 1.7.0
+  (built from the sdist for torch 2.11 / CUDA 12.8 / sm_86 with a build-only conda-forge nvcc 12.8.93 in `~/venvs/cuda-12.8`;
+  no prebuilt wheel exists for torch 2.11).
+- **Fast path.** transformers binds the Gated DeltaNet functions to fla / causal-conv1d at import, whatever the device (a CPU
+  forward then fails); `integrations.linear_attention.install_device_dispatch` (applied by `build_model` to linear-attention
+  hosts) sends CUDA tensors to the kernels and CPU tensors to the PyTorch reference and counts the calls. Every Qwen3.5 run
+  prints and records `linear_attention_kernels` (bound implementations, calls per implementation, interpreter) in its manifest.
+  A tiny GPU smoke (`linear_attention_smoke`) ran the fast path (18 + 18 fast calls) at 1.8× the reference speed with matching
+  gradients (cosine 0.9999); the memory probe measures the full-size speed-up (`train-reference` row).
+- **Hosts (`cpt_plan.HOSTS`).** Width 2048 / 1024, tied 248,320-row heads, a `python` field (`~/venvs/vsa-qwen35/bin/python`) so
+  every job of these hosts — training, evaluations, `e4_quant`, report — runs in the venv and every other host's with the
+  pinned interpreter (`cpt_plan.pinned_python`, also when planning from the venv). New opt-in keys, absent elsewhere:
+  `model.lora_targets: linear_attention` (in_proj_qkv / z / a / b and out_proj besides q/k/v/o/gate/up/down: 8 adapters per
+  Gated DeltaNet layer, 7 per full-attention layer, every token mixer covered; recorded as `lora_coverage`) and
+  `model.loss_chunk: 1024`. These hosts load with `use_cache` off. INT8 and INT4 (tile-packed) PTQ quantize every Qwen3.5
+  linear layer, including the 16-row `in_proj_a/b`.
+- **T5 corpus (built, CPU ≈ 10 min):** `experiments/t5-enterprise-glossary/t5-qwen35.yaml` → `runs/v1-qwen35`, data in
+  `~/data/vsa-llm/tracks/t5-glossary/v1-qwen35`. 100.0M Qwen3.5 tokens (domain 45.5M, general 54.5M), eval 2.84M, eval-general
+  2.19M; uint32 ids, NFC, tokenizer fingerprint `4d765ac5…`. Identical to the SmolLM2 and Qwen3 builds (`runs/v1-qwen35/crosscheck.json`):
+  the generated documents (decompressed sha256 `cc311dd2…` / `f00b4d43…`), alias table `5cae33ad…`, holdout `e7313dce…`,
+  zero-shot set `40738889…`, entries, frames and held-out entries, and the training-frequency strata (102 unseen, 693 rare,
+  1,979 mid, 866 frequent non-held-out entries). Feasible at ℓ_min = 2 with 256 windows; at 1,024 windows 326 held-out
+  entries / 6,601 spans and 592 rare entries / 4,782 spans. WP-C7 items byte-identical except the frequency annotations of
+  `term_relation_probe` (as for Qwen3). Dimension-3 items `experiments/e9-retrofit/items/{new-words,edits}-t5-qwen3_5-v1`:
+  `items.jsonl` / `concepts.jsonl` byte-identical to the SmolLM2 and Qwen3 ones.
+- **T4:** `experiments/t4-chemistry/t4-qwen35.yaml` (frozen SmolLM2 holdout `b58e504f…`), not built. T1-open and WordNet relinks
+  for Qwen3.5 have roots in `e9_tracks.QWEN35_ROOTS` but no configs yet.
+- **Memory probe** (`e9_memory --hosts Qwen3.5-0.8B-Base Qwen3.5-2B-Base`): fp32 host with and without checkpointing at
+  micro-batches 1, 2, 4; kernel calls per row and one reference-path row per host; `recommendation.json` under
+  `experiments/e9-retrofit/memory/qwen3_5-v1`, which `e9_plan` reads by default for this family.
+- **E9 stage `t5-qwen35`**: priority 52 (evaluations 53, `e4_quant` 54, report 55); evaluation batches 16 (0.8B) / 8 (2B),
+  INT4 probes without WSD. Estimates before the probe (FLOP-scaled from the measured Qwen3 probe): 2B ≈ 3.0 h per 50M-token
+  run if micro-batch 2 fits without checkpointing, ≈ 4.5 h with it; 0.8B ≈ 2.1 h; the block (3 trained runs per host + P0,
+  evaluations, quantization, report) ≈ 20–25 GPU-h; the probe ≈ 0.5 h.
+
+```bash
+PYQ=/home/bhux/venvs/vsa-qwen35/bin/python
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+# 1. Qwen3.5 memory/throughput probe (one GPU job, whole GPU; venv interpreter)
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name e9-qwen35-memory-probe --priority 52 --no-resume -- \
+  $PYQ -m vsa_embed.experiments.e9_memory --output experiments/e9-retrofit/memory/qwen3_5-v1 --hosts Qwen3.5-0.8B-Base Qwen3.5-2B-Base
+# 2. after experiments/e9-retrofit/memory/qwen3_5-v1/recommendation.json exists: the 2B + 0.8B T5 block (P0, C0′, C2, C5; seed 1)
+PYTHONPATH=src $PYQ -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3.5-2B-Base Qwen3.5-0.8B-Base --host-mode lora --lora-rank 64 --queue
+# T4 Qwen3.5 corpus and items (CPU, venv; then step 2 with --track t4, stage t4-qwen35)
+PYTHONPATH=src $PYQ -m vsa_embed.experiments.track_corpus --config experiments/t4-chemistry/t4-qwen35.yaml --output experiments/t4-chemistry/runs/v1-qwen35
+PYTHONPATH=src $PYQ -m vsa_embed.experiments.e9_tracks items --track t4 --kind new --family qwen3_5 --output experiments/e9-retrofit/items/new-words-t4-qwen3_5-v1
+PYTHONPATH=src $PYQ -m vsa_embed.experiments.e9_tracks items --track t4 --kind edits --family qwen3_5 --output experiments/e9-retrofit/items/edits-t4-qwen3_5-v1
+```
+
 ## 3-day GPU block (author request 2026-10-03, ≈ 72 GPU-h, measured costs)
 
 Measured: SmolLM2 E9 block (360M + 135M, one track, one seed, with evaluations) ≈ 6.5 GPU-h; Qwen3 training per 50M-token LoRA run 0.6B 1.7 h, 1.7B 3.2 h, 4B 11.4 h (memory probe `experiments/e9-retrofit/memory/qwen3-v1`).
