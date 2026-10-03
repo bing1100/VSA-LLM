@@ -345,3 +345,24 @@ PYTHONPATH=src CUDA_VISIBLE_DEVICES= $PY -m vsa_embed.experiments.e10_self_seman
 
 Recorded at commit d51bf54 (clean tree): 81 jobs, 4 workers × 1 thread, 648 s wall, 0.71 CPU-h. Every job seeds its own generators and runs single-threaded, so reruns replay exactly.
 
+
+## E10.1 — WordNet on frozen GPT-2 anchors (run `experiments/e10-self-semantics/runs/e10.1-v1`, 3 seeds, 3,000 concepts, d = 128, CPU)
+
+**Verdict: most of H-H does not transfer from the synthetic world to real WordNet relations on frozen anchors.** Refutation clauses: (i) erased-edge recovery above matched random candidates only at 50% erasure (AUC 0.53–0.61 vs 0.5); (ii) additive blank-slot alignment above chance only for collapsed relations (ARI 0.33; per-seed permutation also passes for absent relations, ARI 0.04); (iii) self-acceptance is **not** better than random at the matched rate (edges 0.46 vs 0.45; slots 0.35 vs 0.37); (iv) new-word frame inference is far **below** nearest-neighbour frames (F1 ≈ 0.01 vs 0.25), although the composed rows fit the targets better than nearest-neighbour rows (0.55 vs 0.44 at k = 4) and worse than the context mean (0.65).
+
+| Readout | Synthetic (E10.0) | WordNet / frozen GPT-2 (E10.1) |
+|---|---|---|
+| L2-to-prior beats free and fixed (zero-shot fit) | yes | no — everything fixed has the best zero-shot fit (0.149 vs 0.094); learning fits training concepts (0.74 vs 0.25) but does not transfer |
+| erased-edge recovery AUC (30% erased) | 0.987 | 0.589 |
+| additive vs all-at-once (collapsed, ARI) | +0.23 | +0.31 [0.26, 0.36] |
+| additive vs M3 splitting (collapsed, ARI) | tie | −0.29 (M3 better: 0.62) |
+| riddle rules adopted / true | 13 of 14 true | 7 adopted of 37 slots, 4 true |
+| self-acceptance vs random | +0.10 | ≈ 0 |
+| new-word frame F1 at k = 4 vs nearest neighbour | 0.64 vs 0.36 | 0.007 vs 0.267 |
+| dreaming repairs injected wrong edges | ≈ 50%, ≤ 0.3% damage | 7–12%, with 8–12% damage to correct edges |
+| continual: additive + dreaming vs all-at-once (similar_to Jaccard) | — | 0.36 vs 0.15 (best E10.1 condition) |
+| seed ontology: multi-hop is-a from a core / 30% seed | chance / 0.56–0.58 | 0.61 / 0.55 (full ontology 0.95) |
+
+**Interpretation.** The frozen-anchor target is the regime the program already refuted for VSA row fitting (01a–01c: composed rows explain little of a frozen host's contextual variance; E2 test MRR 0.03–0.08). E10.1 shows the same limit for self-learning: the anchors carry too little relational signal for the learner to recover, discover or verify ontology structure, so self-tests are uninformative (≈ random) and inference collapses to nothing. The positives that survive are structural rather than signal-driven: one-relation-at-a-time (additive) discovery beats all-at-once, and dreaming between stages helps continual discovery of `similar_to`.
+
+**Implication.** The synthetic success (E10.0) shows the mechanisms work when the training signal reflects the ontology; E10.1 shows frozen GPT-2 anchors do not provide that signal. The decisive test is **E10.2 (joint language-model training)**, where the signal is the LM loss on linked text; the S0 pilot already showed that a jointly trained channel improves held-out-concept similarity (CARD-660 0.10 → 0.33), i.e. that this regime carries ontology signal. E10.2 is scheduled after the E9/E4 recipe is fixed; its pre-registered readouts are the same refutation clauses on the LM's own strata and probes.

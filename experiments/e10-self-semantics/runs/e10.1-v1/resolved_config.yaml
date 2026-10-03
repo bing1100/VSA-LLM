@@ -1,0 +1,269 @@
+experiment: e10-self-semantics
+stage: E10.1
+seeds:
+- 11
+- 22
+- 33
+num_threads: 1
+workers: 4
+parts:
+- a
+- b
+- c
+- d
+- e
+- seed
+- dream
+- continual
+world:
+  kind: wordnet
+  host: gpt2
+  anchors: ~/data/vsa-llm/e10/wordnet-anchors-v1.pt
+  selection_seed: 5
+  max_concepts: 3000
+  max_atomics: 8192
+  dimension: 128
+  split_fractions:
+  - 0.1
+  - 0.1
+  - 0.1
+model:
+  operator: hrr_identity
+  relation_scaling: true
+  scale_free: true
+  lr: 0.01
+learn:
+  atomics: l2
+  relations: l2
+  mapping: l2
+  frames: l2
+  atomic_l2: 1.0
+  relation_l2: 1.0
+  mapping_l2: 0.1
+  frame_l1: 0.002
+  frame_l2: 0.0
+  assignment_entropy: 0.01
+  slot_group_l1: 0.0
+  gate_max: 2.0
+  mass_floor: 1.0
+  mass_floor_weight: 1.0
+selftest:
+  resamples: 1000
+  alpha: 0.025
+  propose_mass: 0.1
+discovery:
+  steps_per_round: 600
+  min_assignment: 0.5
+  min_mass: 0.25
+  resamples: 1000
+  alpha: 0.025
+  patience: 1
+  max_rounds: 5
+  enforce_rule: true
+  hypothesis_limit: 400
+  rule_limit: 5000
+  trajectory_every: 100
+  riddle_full: true
+  slot_init_mass: 0.1
+  absorb: true
+  refine: false
+  hypotheses:
+    min_overlap: 0.2
+    min_symmetry: 0.1
+    max_antisymmetry: 0.05
+    min_transitivity: 0.2
+    min_two_paths: 3
+    min_functional: 0.8
+dream_settings:
+  refit_steps: 100
+  min_split_members: 8
+  split_epsilon: 0.3
+  merge_cosine: 0.3
+  merge_margin: 0.0
+  max_relabel_edges: 3000
+a:
+  erasure: 0.3
+  erase_relations:
+  - hypernym
+  - part_meronym
+  - member_meronym
+  - substance_meronym
+  spurious: 0.05
+  distractors: 2
+  settings:
+  - fixed
+  - l2
+  - free
+  configs:
+  - - l2
+    - l2
+    - l2
+    - l2
+  - - free
+    - free
+    - free
+    - free
+  - - fixed
+    - fixed
+    - fixed
+    - fixed
+  - - fixed
+    - l2
+    - l2
+    - l2
+  - - l2
+    - fixed
+    - l2
+    - l2
+  - - l2
+    - l2
+    - fixed
+    - l2
+  - - l2
+    - l2
+    - l2
+    - fixed
+  - - free
+    - l2
+    - l2
+    - l2
+  - - l2
+    - free
+    - l2
+    - l2
+  - - l2
+    - l2
+    - free
+    - l2
+  - - l2
+    - l2
+    - l2
+    - free
+  - - l2
+    - fixed
+    - fixed
+    - fixed
+  - - fixed
+    - l2
+    - fixed
+    - fixed
+  - - fixed
+    - fixed
+    - l2
+    - fixed
+  - - fixed
+    - fixed
+    - fixed
+    - l2
+  steps: 1000
+  chunk: 5
+b:
+  rates:
+  - 0.1
+  - 0.3
+  - 0.5
+  - 0.7
+  erase_relations:
+  - hypernym
+  - part_meronym
+  - member_meronym
+  - substance_meronym
+  distractors: 2
+  steps: 1000
+  acceptance_rates:
+  - 0.3
+  - 0.5
+c:
+  modes:
+  - absent
+  - collapsed
+  hidden:
+  - instance_hypernym
+  - antonym
+  - similar_to
+  coverage: 0.7
+  distractor_ratio: 1.0
+  max_slots: 20
+  collapse:
+    meronym:
+    - part_meronym
+    - member_meronym
+    - substance_meronym
+    holonym:
+    - part_holonym
+    - member_holonym
+    - substance_holonym
+  methods:
+  - additive
+  - additive_norule
+  - all_at_once
+  - m3
+  - stem_cell
+  - oracle
+  all_at_once_slots: 5
+  stem_cell_pool: 20
+  m3_schedule:
+  - 0.3
+  - 0.5
+  m3:
+    beta: 0.9
+    screen_every: 100
+    activity_percentile: 0.25
+    coherence_threshold: 0.6
+    max_candidates: 32
+    min_usages: 4
+    min_contributions: 20
+    max_splits_per_round: 8
+    growth_budget: 0.5
+    cooldown: 200
+    epsilon: 0.05
+    permutations: 199
+    p_value: 0.01
+    merge_cosine: 0.98
+    route_unobserved: parent
+e:
+  k:
+  - 1
+  - 2
+  - 4
+  - 6
+  max_edges: 16
+  threshold: 0.15
+  filler_pool: 1500
+seed_ontology:
+  conditions:
+  - core
+  - curated30
+  - full
+  coverage: 0.7
+  distractor_ratio: 1.0
+  max_slots: 12
+  max_rounds: 6
+  patience: 2
+  settle_steps: 600
+  core_levels: 4
+  core_relations:
+  - hypernym
+  - part_meronym
+  full_steps: 1000
+dream:
+  every:
+  - 0
+  - 600
+  - 300
+  post_steps: 600
+  passes_for_off: 2
+  consolidate_steps: 1000
+  wrong_edge_rate: 0.1
+  wrong_slot_edges: 40
+continual:
+  conditions:
+  - additive
+  - additive_dream
+  - plastic
+  - all_at_once
+  order:
+  - antonym
+  - similar_to
+  - instance_hypernym
+  steps_per_stage: 600
