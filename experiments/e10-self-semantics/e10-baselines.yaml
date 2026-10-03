@@ -1,0 +1,44 @@
+# E10 baselines for claim D (WP-PQ2; manuscript/novelty-check-2026-10.md §5.5 D-B1, D-B2, D-B4, D-B5).
+# Merged over the E10.0 config (same world, scenarios, learner and discovery settings); CPU only, single-threaded jobs.
+#   python -m vsa_embed.experiments.e10_baselines --config experiments/e10-self-semantics/e10-baselines.yaml \
+#     --output experiments/e10-self-semantics/runs/e10.0-baselines-v1
+experiment: e10-baselines
+stage: E10.0-baselines
+base_config: experiments/e10-self-semantics/e10-synthetic.yaml
+seeds: [101, 202, 303]
+dev_seeds: [7, 8, 9]        # operator-axiom thresholds (and the tuned AMIE threshold) are chosen on these only
+num_threads: 1
+workers: 2
+parts: [recovery, axioms, edges, discovery]
+
+amie:                       # AMIE defaults (Galárraga et al. 2013): head coverage ≥ 0.01, PCA confidence ≥ 0.1; support ≥ 2 pairs
+  min_support: 2
+  min_head_coverage: 0.01
+  min_pca: 0.1
+
+recovery:                   # D-B2: erased-edge recovery on the E10.0 (b) candidate pools
+  rates: [0.1, 0.3, 0.5, 0.7]
+  validation_fraction: 0.1  # of the asserted edges: threshold selection (with distractors drawn like the scenario's)
+  models: [prior_corr, amie, transe, rotate, complex, itere]   # prior_corr: no learning, observations × priors (synthetic only)
+  kge: {dimension: 64, epochs: 400, negatives: 32, lr: 0.01, gamma: 6.0, adversarial: 1.0}
+  reference: experiments/e10-self-semantics/runs/e10.0-v3/metrics.jsonl
+
+axioms:                     # D-B1: Horn axioms from pairs (AMIE) or operators (IterE-style)
+  erasure: 0.3
+  gold_confidence: 0.9      # a gold axiom holds on the complete gold graph with standard confidence ≥ 0.9
+  gold_support: 3
+  itere_iterations: 2
+
+edges:                      # D-B5: edge self-test with the re-used split vs a fresh split vs Holm
+  scenarios: ["0.3", "0.5", "null"]
+  steps: 1500
+  fresh_observations: 4     # as many as the re-used validation split has
+  null_fraction: 0.3        # null edge world: distractors for 30% of the training heads' edges, nothing erased
+
+discovery_baselines:        # D-B1 / D-B4 / D-B5 on the E10.0 (c) additive curriculum
+  rotate_epochs: 300
+  worlds:
+    absent: [reused, fresh]
+    collapsed: [reused]
+    null_distractors: [reused, fresh]
+    null_permuted: [reused, fresh]
