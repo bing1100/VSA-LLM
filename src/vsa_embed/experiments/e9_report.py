@@ -1,7 +1,12 @@
 """R9 report generator: retrofit × quantization (execution.md, E9; `reports/R9-retrofit-quantization.md`).
 
     python -m vsa_embed.experiments.e9_report --runs experiments/e9-retrofit/runs/<stage>
-        [--quant experiments/e9-retrofit/quant/<stage>] --output <dir> [--candidate C5] [--resamples 10000] [--overwrite]
+        [--quant experiments/e9-retrofit/quant/<stage>] [--quant-general experiments/e9-retrofit/quant-general/<stage>]
+        --output <dir> [--candidate C5] [--resamples 10000] [--overwrite]
+
+`--quant-general` (tracks with a general-text corpus) adds the locality and quantization damage on general
+text: the dimension-2 analysis on `e4_quant --eval-corpus <eval-general>`, whose bf16 gain is C5 − reference
+on general text. Track zero-shot outputs (`e9_tracks zeroshot`, WP-C7 items) are read like E5.4 outputs.
 
 Runs are the E9 run folders (`e9_plan`; condition from `<host>-<mode>-<model>-s<seed>`, C0p read as C0′).
 They are grouped per host and training mode; the host's P0 (the original model, evaluation only, no
@@ -405,8 +410,11 @@ def dimension3(group: Group, *, candidate: str, resamples: int, seed: int, varia
 
 
 def analyze(runs: Sequence[Run], quant: dict[str, dict[str, Any]], *, candidate: str = "C5", resamples: int = 10_000,
-            seed: int = 0, quantized: str = "int4") -> tuple[dict[str, Any], list[Group]]:
-    """`quantized` names the per-run quantized evaluations (`probes-<q>.json`, `zeroshot-<q>`, `edit-<q>`)."""
+            seed: int = 0, quantized: str = "int4", quant_general: dict[str, dict[str, Any]] | None = None
+            ) -> tuple[dict[str, Any], list[Group]]:
+    """`quantized` names the per-run quantized evaluations (`probes-<q>.json`, `zeroshot-<q>`, `edit-<q>`);
+    `quant_general` is `e4_quant` on the track's general-text corpus (locality and general-text damage:
+    the dimension-2 analysis on that corpus, whose `gain_bf16` is the bf16 locality difference)."""
     groups = build_groups(runs)
     summary: dict[str, Any] = {"candidate": candidate, "resamples": resamples, "seed": seed, "quantized": quantized, "groups": {},
                                "runs": [{"path": str(r.path), "condition": model_name(r.condition), "seed": r.seed,
@@ -421,6 +429,9 @@ def analyze(runs: Sequence[Run], quant: dict[str, dict[str, Any]], *, candidate:
                                                                  resamples=min(resamples, 2000), seed=seed)},
             "dimension3": dimension3(group, candidate=candidate, resamples=min(resamples, 10_000), seed=seed,
                                      variants=("bf16", quantized))}
+        if quant_general:
+            summary["groups"][group.label]["general_text"] = dimension2(group, quant_general, candidate=candidate,
+                                                                       resamples=resamples, seed=seed)
     return summary, groups
 
 
@@ -518,6 +529,26 @@ def render(summary: dict[str, Any], figures: dict[str, dict[str, str]], *, title
             lines += _render_probe_damage(d2["probe_damage"], summary["quantized"])
         if d2.get("probes_quantized"):
             lines += _render_probes(d2["probes_quantized"], candidate, f"Probe differences at {summary['quantized']} (variant A)")
+        general = g.get("general_text")
+        if general is not None:
+            lines += ["", "### General text (the track's `eval-general`: locality and general-text quantization damage)", ""]
+            if not general.get("available"):
+                lines.append(f"Not available: {general.get('detail')}.")
+            else:
+                keep = [s for s in ("all", "unlinked") if s in general["strata"]]
+                lines += [f"{candidate} − reference at bf16 (locality, nats/token; positive = worse on general text) and its "
+                          "change under quantization (Δgain; negative = the gap grows; Holm over references × variants):", "",
+                          "| Stratum | Reference | Variant | gain bf16 [95% CI] | Δgain [95% CI] |", "|---|---|---|---|---|"]
+                for reference, by_variant in general["gap"].items():
+                    for variant in general["variants"]:
+                        for stratum in keep:
+                            r = by_variant.get(variant, {}).get(stratum)
+                            if r is not None:
+                                lines.append(f"| {stratum} | {reference} | {variant} | {_ci(r['gain_bf16'])} | {_ci(r['gain_change'])} |")
+                lines += ["", "Quantization damage on general text (relative):", "",
+                          "| Model | " + " | ".join(general["variants"]) + " |", "|---|" + "---|" * len(general["variants"])]
+                for model, by_variant in general["damage"].items():
+                    lines.append(f"| {model} | " + " | ".join(_relative(by_variant.get(v, {}).get("all")) for v in general["variants"]) + " |")
         lines += ["", "### Dimension 3 — zero-shot learning by ontology editing (no weight update)", ""]
         if len(g["seeds"].get(candidate, [])) == 1:
             lines += ["> Single seed: intervals cover items only, not seed variance.", ""]
@@ -727,9 +758,10 @@ def plot_group(label: str, g: dict[str, Any], out: Path, slug: str, *, candidate
 
 def write_report(runs_dirs: Sequence[Path], output: Path, *, quant_dir: Path | None = None, candidate: str = "C5",
                  resamples: int = 10_000, seed: int = 0, title: str = "R9 — retrofit × quantization (E9)", figures: bool = True,
-                 overwrite: bool = False, quantized: str = "int4") -> dict[str, Any]:
+                 overwrite: bool = False, quantized: str = "int4", quant_general_dir: Path | None = None) -> dict[str, Any]:
     config = {"runs": [str(p) for p in runs_dirs], "quant": str(quant_dir) if quant_dir else None, "candidate": candidate,
-              "resamples": resamples, "seed": seed, "title": title, "quantized": quantized}
+              "resamples": resamples, "seed": seed, "title": title, "quantized": quantized,
+              "quant_general": str(quant_general_dir) if quant_general_dir else None}
     if overwrite and output.exists():
         for path in [*output.glob("figures/*.png"), *(output / n for n in ("report.md", "summary.json", "resolved_config.yaml", "manifest.json"))]:
             if path.is_file():
@@ -740,7 +772,8 @@ def write_report(runs_dirs: Sequence[Path], output: Path, *, quant_dir: Path | N
     runs = discover(runs_dirs)
     if not runs:
         raise FileNotFoundError(f"no run folders (metrics.jsonl) under {', '.join(map(str, runs_dirs))}")
-    summary, _ = analyze(runs, load_quant(quant_dir), candidate=candidate, resamples=resamples, seed=seed, quantized=quantized)
+    summary, _ = analyze(runs, load_quant(quant_dir), candidate=candidate, resamples=resamples, seed=seed, quantized=quantized,
+                         quant_general=load_quant(quant_general_dir) if quant_general_dir else None)
     plots: dict[str, dict[str, str]] = {}
     if figures:
         (output / "figures").mkdir(exist_ok=True)
@@ -764,10 +797,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--no-figures", action="store_true")
     parser.add_argument("--overwrite", action="store_true", help="regenerate into an existing report folder")
     parser.add_argument("--quantized", default="int4", help="label of the per-run quantized evaluations (probes-<q>.json, edit-<q>, …)")
+    parser.add_argument("--quant-general", type=Path, default=None, help="e4_quant output on the track's general-text corpus")
     args = parser.parse_args(argv)
     summary = write_report(args.runs, args.output, quant_dir=args.quant, candidate=args.candidate, resamples=args.resamples,
                            seed=args.seed, title=args.title, figures=not args.no_figures, overwrite=args.overwrite,
-                           quantized=args.quantized)
+                           quantized=args.quantized, quant_general_dir=args.quant_general)
     print(json.dumps({label: {"seeds": g["seeds"]} for label, g in summary["groups"].items()}))
 
 

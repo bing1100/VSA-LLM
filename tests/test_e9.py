@@ -414,7 +414,7 @@ def plan_root(tmp_path: Path) -> dict:
 def _plan(plan_root: dict, **kw) -> list[Path]:
     return e9_plan.write_stage("main", hosts=kw.pop("hosts", list(e9_plan.E9_HOSTS)), models=kw.pop("models", list(e9_plan.MODELS)),
                                seeds=kw.pop("seeds", [1]), data_root=plan_root["data"], counts_ontology=plan_root["counts"],
-                               root=plan_root["root"], **kw)
+                               root=plan_root["root"], track=kw.pop("track", "wordnet"), **kw)
 
 
 def test_e9_plan_grid(plan_root) -> None:
@@ -433,8 +433,9 @@ def test_e9_plan_grid(plan_root) -> None:
     c0 = configs["SmolLM2-360M-full-C0p-s2"]
     assert c0["model"]["host_mode"] == "train" and c0["train"]["host_lr"] == 3e-5 and not c0["train"]["save_trainable_only"]
     c2, c5 = configs["SmolLM2-135M-full-C2-s1"]["channel"], configs["SmolLM2-360M-full-C5-s1"]["channel"]
-    assert c2["mode"] == "free" and c2["free_dimension"] > 0 and c2["gate_bias"] == -2.0
-    assert (c5["mode"], c5["composition"], c5["context_window"], c5["gate_bias"]) == ("compose", "attentive", 8, -2.0)
+    assert c2["mode"] == "free" and c2["free_dimension"] > 0 and c2["gate_bias"] == 0.0          # the engagement-check recipe
+    assert (c5["mode"], c5["composition"], c5["context_window"], c5["gate_bias"]) == ("compose", "attentive", 8, 0.0)
+    assert c0["train"]["lr"] == 1e-3 and configs["SmolLM2-360M-full-C5-s1"]["e9_track"] == "wordnet"
     lora = _plan(plan_root, mode="lora", gate_bias=0.0, lora_rank=64, tokens=10_000_000, models=["C5"], hosts=["SmolLM2-360M"])
     c = yaml.safe_load(lora[0].read_text())
     assert lora[0].stem == "SmolLM2-360M-lora-C5-s1" and c["model"]["lora_rank"] == 64 and c["train"]["host_lr"] == 2e-4
@@ -450,7 +451,7 @@ def test_e9_plan_grid(plan_root) -> None:
 def test_e9_plan_chains_evaluations_after_training(plan_root, tmp_path) -> None:
     paths = _plan(plan_root, hosts=["SmolLM2-135M"])
     queue = tmp_path / "jobs"
-    queued = e9_plan.queue_jobs(paths, "main", 22, root=plan_root["root"], queue_dir=queue)
+    queued = e9_plan.queue_jobs(paths, "main", 22, root=plan_root["root"], queue_dir=queue, track="wordnet")
     assert len(queued) == 4 + 4 * 6 + 2
     jobs = {p.stem: json.loads(p.read_text()) for p in queue.glob("*.json")}
     train = jobs["main-SmolLM2-135M-full-C5-s1"]
@@ -468,9 +469,10 @@ def test_e9_plan_chains_evaluations_after_training(plan_root, tmp_path) -> None:
     assert quant["priority"] == 24 and quant["command"][2] == "vsa_embed.experiments.e4_quant" and "--resume" in quant["command"]
     assert sum(1 for x in quant["command"] if x.endswith("-s1") and "runs" in x) == 4
     assert jobs["main-report-s1"]["priority"] == 25 and jobs["main-report-s1"]["command"][2] == "vsa_embed.experiments.e9_report"
-    assert e9_plan.queue_jobs(paths, "main", 22, root=plan_root["root"], queue_dir=queue) == []      # idempotent
+    assert e9_plan.queue_jobs(paths, "main", 22, root=plan_root["root"], queue_dir=queue, track="wordnet") == []      # idempotent
     seeds = _plan(plan_root, hosts=["SmolLM2-135M"], seeds=[2, 3])
-    again = e9_plan.queue_jobs(seeds, "main", 22, root=plan_root["root"], queue_dir=queue, int4_probes="card660,wic")
+    again = e9_plan.queue_jobs(seeds, "main", 22, root=plan_root["root"], queue_dir=queue, int4_probes="card660,wic",
+                               track="wordnet")
     assert "main-quant-s2-3" in again and not any("P0" in name for name in again)
     subset = json.loads((queue / "main-SmolLM2-135M-full-C5-s2-probes-int4.json").read_text())["command"]
     assert subset[subset.index("--probes") + 1] == "card660,wic"
@@ -585,3 +587,189 @@ def test_r9_report_statistics_on_synthetic_inputs(tmp_path) -> None:
     assert d2["gap"]["P0"]["int8-B"]["after_heldout"]["gain_change"]["mean"] == pytest.approx(-0.05, abs=1e-9)
     report = (tmp_path / "report" / "report.md").read_text()
     assert "negative = the channel's advantage grows" in report and "single seed" in report
+
+
+# -- 7. tracks (e9_tracks): wording, WP-C7 zero-shot items, plan and quantization on another corpus ------------------
+
+from vsa_embed.experiments import e9_tracks as tracks  # noqa: E402
+from vsa_embed.tracks.common import RelationTemplates  # noqa: E402
+
+TRACK_TEMPLATES = {
+    "hypernym": RelationTemplates(["{x} is a kind of", "Every {x} is a type of", "Asked what {x} is, we say: a"], "{x} is a {y}."),
+    "part_meronym": RelationTemplates(["{x} has a", "One part of {x} is the"], "{x} comes with a {y} inside."),
+}
+
+
+def _toy_lexicon() -> "tracks.TrackLexicon":
+    texts = {a: a.partition(":")[2].split(".")[0].replace("_", " ") for a in ATOMS if a.startswith("synset:")}
+    return tracks.TrackLexicon("toy", TRACK_TEMPLATES, texts, category_relations=("hypernym",),
+                               kept_relations=frozenset({"hypernym", "lexname", "pos"}), edit_relations=("part_meronym", "hypernym"),
+                               article_relations=frozenset({"part_meronym"}))
+
+
+def test_track_lexicon_wording() -> None:
+    lex = _toy_lexicon()
+    assert lex.prompts("*", "hypernym") == ["{x} is a kind of", "Every {x} is a type of"]
+    assert lex.statements("*", "hypernym") == ["Asked what {x} is, we say: a"]            # third paraphrase, answer format
+    assert lex.statement_answer("hypernym", "canine") == " canine"
+    assert lex.statements("*", "part_meronym") == ["{x} comes with a"]                     # statement prefix, its suffix kept
+    assert lex.answer("part_meronym", "engine") == " an engine"
+    assert lex.statement_answer("part_meronym", "lid") == " a lid inside."
+    assert lex.prompts("*", "lexname") is None and lex.hierarchy("synset:feline.n.01") is None
+    assert lex.display_surface("glass jar", "Glass Jar") == "Glass Jar" and lex.display_surface("jar", "Glass Jar") == "jar"
+    assert lex.plausible_edit("x", "synset:tail.n.01", "synset:wheel.n.01") and not lex.plausible_edit("x", "synset:tail.n.01", "pos:n")
+
+
+def test_track_items_on_a_toy_track(world, tmp_path) -> None:
+    lex = _toy_lexicon()
+    new = edit.build_new_word_items(world["root"] / "ontology.pt", tmp_path / "new", tokenizer_name="gpt2", count=4, min_subtokens=1,
+                                    contamination_texts=SENTENCES, lexicon=lex)
+    assert new["lexicon"] == "toy" and "all resampled edges" in new["construction"]["rule"]
+    _, concepts, prompts = edit.load_item_dir(tmp_path / "new", edit.SCHEMA_NEW)
+    view = edit.OntologyView(world["ontology"], world["table"], lex)
+    index = view.edge_index()
+    for c in concepts:
+        category = (view.relation_id["hypernym"], view.atomic_id[c["category"]])
+        together = set(index[category])
+        for r, f in edit.resolve_frame(c["resampled"], view.relation_id, view.atomic_id):
+            together &= index.get((r, f), set())
+        assert not together and c["pos"] == "*"                         # no entry states the whole combination
+    entail = [p for p in prompts if p["test"] == "entailment"]
+    assert entail and all(p["relation"].startswith("corrupted_") and len(p["candidates"]) == 2 for p in entail)
+    assert all(p["null"] == "this" for p in prompts)
+    statements = [p for p in prompts if p["test"] == "statement" and p["relation"] == "part_meronym"]
+    assert statements and all(c.endswith(" inside.") and c.startswith((" a ", " an ")) for p in statements for c in p["candidates"])
+    edits = edit.build_edit_items(world["root"] / "ontology.pt", tmp_path / "edits", tokenizer_name="gpt2", count=6, min_subtokens=1,
+                                  lexicon=lex)
+    assert edits["lexicon"] == "toy"
+    _, concepts, prompts = edit.load_item_dir(tmp_path / "edits", edit.SCHEMA_EDITS)
+    edited = [c for c in concepts if c["role"] == "edited"]
+    assert edited and all(c["relation"] in {"part_meronym", "hypernym"} and c["new"].split(":")[0] == c["old"].split(":")[0]
+                          for c in edited)
+
+
+def _write_wpc7(path: Path) -> None:
+    rows, entail = [], []
+    facts = [("aardvark", "hypernym", ["mammal", "canine", "feline", "vehicle"], 0), ("acetaminophen", "hypernym",
+             ["vehicle", "analgesic", "canine", "container"], 1), ("ant bear", "part_meronym", ["wheel", "lid", "tail", "engine"], 2),
+             ("timber wolf", "hypernym", ["canine", "feline", "vehicle", "mammal"], 0)]
+    for g, (surface, relation, choices, label) in enumerate(facts):
+        split = "train" if surface == "timber wolf" else "heldout"
+        for k, prompt in enumerate(["{x} is a kind of", "Every {x} is a type of", "What is {x}? A"]):
+            rows.append({"choices": [" " + c for c in choices], "concept": surface, "group": f"t-zp-{g:06d}", "id": f"t-zp-{g:06d}-p{k}",
+                         "label": label, "paraphrase": k, "prompt": prompt.format(x=surface), "relation": relation, "split": split,
+                         "surface": surface, "task": "zeroshot_property"})
+        right, wrong = choices[label], choices[(label + 1) % 4]
+        for value, filler in ((1, right), (0, wrong)):
+            entail.append({"concept": surface, "id": f"t-ze-{g:06d}-{value}", "label": value, "pair": f"t-ze-{g:06d}",
+                           "relation": relation, "split": split, "statement": f"{surface} is a kind of {filler}.",
+                           "surface": surface, "task": "zeroshot_entailment"})
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "zeroshot_property.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+    (path / "zeroshot_entailment.jsonl").write_text("".join(json.dumps(r) + "\n" for r in entail))
+
+
+def test_wpc7_items_and_track_zero_shot(world, tmp_path) -> None:
+    _write_wpc7(tmp_path / "wpc7")
+    concepts, items = tracks.convert_wpc7_items(tmp_path / "wpc7")
+    assert len(concepts) == 4 and len(items) == 8
+    prop = next(i for i in items if i["test"] == "property" and i["concept"] == "wpc7-acetaminophen")
+    assert prop["templates"] == ["{x} is a kind of", "Every {x} is a type of", "What is {x}? A"] and prop["gold"] == 1
+    pair = next(i for i in items if i["test"] == "entailment" and i["concept"] == "wpc7-ant bear")
+    assert pair["templates"] == ["{x} is a kind of"] and pair["candidates"] == [" tail.", " engine."] and pair["gold"] == 0
+    run = common.open_run(world["runs"]["C5"], device="cpu", batch_size=8)
+    fillers = run.composer.schedule.fillers.clone()
+    evaluation = tracks.evaluate_track_zeroshot(run, tmp_path / "wpc7", fit_entries=20, log=lambda m: None)
+    assert evaluation["sources"] == ["own", "none", "mean_row", "random_frame"]
+    assert torch.equal(run.composer.schedule.fillers, fillers)                          # frames restored
+    assert {r["split"] for r in evaluation["resolved"].values()} == {"heldout", "train"}
+    assert all(r["linked"] for r in evaluation["resolved"].values())
+    flat = lambda source: [v for r in evaluation["results"][source]["prompts"] for t in r["pmi"] for v in t]
+    assert flat("own") != flat("random_frame")
+    summary = tracks.summarize_track_zeroshot(evaluation, resamples=50)
+    assert summary["split_counts"]["heldout"] == 3 and set(summary["sources"]["own"]) == {"linked", "synthetic", "heldout"}
+    assert summary["sources"]["own"]["heldout"]["property"]["n"] == 3
+    offsets, relations = world["ontology"]["offsets"], world["ontology"]["relations"]
+    frames = tracks.random_frames(world["ontology"], [0, 2], seed=1)
+    assert [r for r, _ in frames[0]] == relations[offsets[0]:offsets[1]].tolist()
+    with tracks.replaced_frames(run.channel, frames) as applied:
+        assert applied and run.composer.schedule.fillers[offsets[0]:offsets[1]].tolist() == [f for _, f in frames[0]]
+    assert torch.equal(run.composer.schedule.fillers, fillers)
+    with pytest.raises(ValueError, match="relations"):
+        with tracks.replaced_frames(run.channel, {0: [(0, 1)]}):
+            pass
+    c0 = tracks.evaluate_track_zeroshot(common.open_run(world["runs"]["C0p"], device="cpu"), tmp_path / "wpc7", log=lambda m: None)
+    assert c0["sources"] == ["own"]
+    out = tmp_path / "zs"
+    tracks.main(["zeroshot", "--run", str(world["runs"]["C5"]), "--track", "t5", "--items", str(tmp_path / "wpc7"), "--alias-table",
+                 str(world["root"] / "alias_table.json"), "--output", str(out), "--device", "cpu", "--resamples", "50",
+                 "--fit-entries", "20", "--quantize", "int8"])
+    document = json.loads((out / "summary.json").read_text())
+    assert document["track"] == "t5" and document["source"]["quantization"]["variant"] == "int8-A"
+    vectors = e9_report.zeroshot_items(out)                                           # the report reads it like E5.4 output
+    assert vectors["property"][1].size == 4 and "# E9 track zero-shot" in (out / "report.md").read_text()
+
+
+def test_e4_quant_on_another_corpus(world, tmp_path) -> None:
+    from vsa_embed.experiments import e4_quant
+    out = tmp_path / "quant-general"
+    e4_quant.main(["--runs", str(world["runs"]["C5"]), str(world["runs"]["C0p"]), "--output", str(out), "--bits", "8", "--device", "cpu",
+                   "--resamples", "100", "--baseline", "C0'", "--eval-corpus", str(world["root"] / "train")])
+    result = json.loads((out / "quant.json").read_text())
+    assert all(r["eval_corpus"] == str(world["root"] / "train") for r in result["runs"])
+    assert yaml.safe_load((out / "resolved_config.yaml").read_text())["eval_corpus"] == str(world["root"] / "train")
+    assert all(r["ref_check"].get("paired") is False for r in result["runs"])           # other windows than the runs' own
+
+
+def test_e9_plan_tracks(plan_root, tmp_path) -> None:
+    t5 = _plan(plan_root, track="t5", hosts=["SmolLM2-135M"], channel_lr=5e-4)
+    configs = {p.stem: yaml.safe_load(p.read_text()) for p in t5}
+    c5 = configs["SmolLM2-135M-full-C5-s1"]
+    assert c5["e9_track"] == "t5" and c5["data"]["eval"] == str(plan_root["data"] / "eval") and c5["train"]["lr"] == 5e-4
+    t1 = _plan(plan_root, track="t1", hosts=["SmolLM2-135M"], models=["C5"])
+    c = yaml.safe_load(t1[0].read_text())
+    assert c["data"]["eval"] == str(plan_root["data"] / "eval-pubmed") and c["eval"]["windows"] == 2048
+    queue = tmp_path / "jobs"
+    alias = tmp_path / "t5.json"
+    queued = e9_plan.queue_jobs(t5, "t5", 22, track="t5", root=plan_root["root"], queue_dir=queue, alias_table=alias)
+    assert "t5-quant-general-s1" in queued and len(queued) == 4 + 4 * 6 + 3
+    jobs = {p.stem: json.loads(p.read_text()) for p in queue.glob("*.json")}
+    for suffix in ("probes", "edit-int4", "zeroshot"):
+        command = jobs[f"t5-SmolLM2-135M-full-C5-s1-{suffix}"]["command"]
+        assert command[command.index("--alias-table") + 1] == str(alias)
+    assert jobs["t5-SmolLM2-135M-full-C5-s1-zeroshot"]["command"][2] == "vsa_embed.experiments.e9_tracks"
+    edit_command = jobs["t5-SmolLM2-135M-full-C5-s1-edit"]["command"]
+    assert edit_command[edit_command.index("--new-items") + 1].endswith("new-words-t5-smollm2-v1")
+    general = jobs["t5-quant-general-s1"]["command"]
+    assert general[general.index("--eval-corpus") + 1].endswith("t5-glossary/v1/eval-general")
+    assert general[general.index("--output") + 1].endswith("quant-general/t5") and "--quant-general" in jobs["t5-report-s1"]["command"]
+    t1_jobs = e9_plan.evaluation_jobs(Path("run"), tracks.TRACKS["t1"], alias_table=alias)
+    assert {s for s, _, _ in t1_jobs} == {"probes", "probes-int4", "edit", "edit-int4"}            # T1 has no zero-shot items
+    for track in ("t5", "t4", "t1", "wordnet"):
+        for folder in e9_plan.dimension3_items(track):
+            assert (Path(__file__).resolve().parents[1] / folder / "manifest.json").exists()
+
+
+def test_r9_report_with_general_text(tmp_path) -> None:
+    test_r9_report_statistics_on_synthetic_inputs(tmp_path)               # writes runs/ and quant/ under tmp_path
+    summary = e9_report.write_report([tmp_path / "runs"], tmp_path / "report2", quant_dir=tmp_path / "quant", resamples=200,
+                                     figures=False, quant_general_dir=tmp_path / "quant")
+    general = summary["groups"]["host · full"]["general_text"]
+    assert general["available"] and general["gap"]["C0'"]["int8-A"]["all"]["gain_bf16"]["mean"] == pytest.approx(-0.1, abs=0.01)
+    assert "### General text" in (tmp_path / "report2" / "report.md").read_text()
+
+
+def _t5_available() -> bool:
+    spec = tracks.TRACKS["t5"]
+    root = Path(__file__).resolve().parents[1]
+    return spec.ontology.exists() and (root / spec.config).exists() and (spec.data_root / "docs" / "glossary.json").exists()
+
+
+@pytest.mark.skipif(not _t5_available(), reason="T5 corpus not on this machine")
+def test_t5_alias_table_replays_exactly(monkeypatch) -> None:
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+    table = tracks.track_alias_table(tracks.TRACKS["t5"])
+    ontology = torch.load(tracks.TRACKS["t5"].ontology, weights_only=False)
+    assert table.digest() == ontology["alias_table_sha256"] and len(table.entry_concepts) == ontology["entry_count"]
+    lexicon = tracks.track_lexicon(tracks.TRACKS["t5"], ontology)
+    assert lexicon.text("type:process") == "process" and any(t.startswith("the ") for t in lexicon.texts.values())

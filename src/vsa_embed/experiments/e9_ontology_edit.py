@@ -59,11 +59,20 @@ is reported as such (the contrast that matters for a frozen-weight edit).
 Every evaluation can run on the quantized model (`--quantize int8|int4`, `--quantize-channel` =
 variant B; as `e4_quant`, output head FP).
 
+**Wording (lexicons).** The builders take a lexicon: `WordNetLexicon` (default; E5.4 templates, WordNet
+ancestors, lexicographer-file edits, the pairwise new-combination rule) or `e9_tracks.TrackLexicon` for a
+track ontology (T5/T4/T1: the track's own relation templates and filler names; the third paraphrase or the
+statement as the held-out wording; true vs corrupted statements for entailment; edits within the same
+filler type; a new combination = no entry holds the category edge together with all resampled edges,
+because small categorical pools make every pair exist). Track runs pass the evaluation alias table
+(`--alias-table`, written by `e9_tracks alias-table`).
+
     python -m vsa_embed.experiments.e9_ontology_edit items --kind new --ontology ONT --tokenizer TOK --output DIR
         [--count 300] [--contamination-corpus TRAIN] [--reserved-names E5_ITEMS_DIR ...]
     python -m vsa_embed.experiments.e9_ontology_edit items --kind edits --ontology ONT --tokenizer TOK --output DIR [--count 200]
     python -m vsa_embed.experiments.e9_ontology_edit evaluate --run RUN --new-items DIR --edit-items DIR --output OUT
-        [--quantize int4 [--quantize-channel]] [--sources own,none,mean_row,random_frame]
+        [--quantize int4 [--quantize-channel]] [--sources own,none,mean_row,random_frame] [--alias-table JSON]
+    python -m vsa_embed.experiments.e9_tracks items --track t5|t4|t1 --kind new|edits --output DIR     (track lexicons)
 
 Item directories (committed under `experiments/e9-retrofit/items/`): `manifest.json`, `concepts.jsonl`
 and `items.jsonl` in the E5.4 item format (`id`, `concept`, `test`, `relation`, `templates` with
@@ -124,12 +133,101 @@ STATEMENT_TEMPLATES: dict[tuple[str, str], list[str]] = {
 
 # -- shared ontology views ---------------------------------------------------------------------------
 
+class WordNetLexicon:
+    """How items are worded for the WordNet (C3) ontology — the E5.4 conventions: part of speech from
+    the synset name, `zs.TEMPLATES` for properties, `STATEMENT_TEMPLATES` for held-out wordings,
+    WordNet ancestors for entailment, and edits that keep the filler's lexicographer file and are
+    neither an ancestor of the concept nor a descendant of the old filler. Other ontologies plug in an
+    object with the same methods (`e9_tracks.TrackLexicon`)."""
+
+    name = "wordnet"
+    category_relations = CATEGORY_RELATIONS
+    kept_relations = KEPT_RELATIONS
+    donor_pos = frozenset({"n", "v"})
+    null_surface = zs.NULL_SURFACE
+    edit_rule = ("new filler: same relation, same part of speech, same WordNet lexicographer file as the old filler, "
+                 "not an ancestor of the concept, not a descendant of the old filler, not already in the frame "
+                 "(frequency-weighted); control: another filler drawn by the same rule")
+
+    def __init__(self, wordnet: Any = None) -> None:
+        if wordnet is None:
+            from nltk.corpus import wordnet
+        self.wordnet = wordnet
+        self._lexnames: dict[str, str | None] = {}
+        self._concept_ancestors: dict[str, set[str]] = {}
+
+    def entry_pos(self, ontology: dict[str, Any], table: AliasTable) -> list[str]:
+        names = ontology.get("concept_names")
+        return [names[c[0]].rsplit(".", 2)[1] if names is not None and c else "?" for c in table.entry_concepts]
+
+    def text(self, atom: str) -> str | None:
+        return zs._filler_text(atom)
+
+    def prompts(self, pos: str, relation: str) -> list[str] | None:
+        return zs.TEMPLATES.get((pos, relation))
+
+    def statements(self, pos: str, relation: str) -> list[str] | None:
+        return STATEMENT_TEMPLATES.get((pos, relation))
+
+    def answer(self, relation: str, text: str) -> str:
+        return " " + text
+
+    def statement_answer(self, relation: str, text: str) -> str:
+        return " " + text
+
+    def hierarchy(self, atom: str) -> dict[str, int] | None:
+        """Ancestor name → distance of a category filler (None: no hierarchy; entailment then uses
+        corrupted statements)."""
+        kind, _, value = atom.partition(":")
+        return zs._ancestors(self.wordnet.synset(value)) if kind == "synset" else {}
+
+    def hierarchy_text(self, name: str) -> str:
+        return zs._first_lemma(name)
+
+    def entailment_templates(self, pos: str) -> list[str]:
+        return zs.ENTAILMENT_TEMPLATES[pos]
+
+    def lexname(self, atom: str) -> str | None:
+        if atom not in self._lexnames:
+            kind, _, value = atom.partition(":")
+            try:
+                self._lexnames[atom] = self.wordnet.synset(value).lexname() if kind == "synset" else None
+            except Exception:
+                self._lexnames[atom] = None
+        return self._lexnames[atom]
+
+    def edit_edge(self, view: "OntologyView", entry: int) -> tuple[int, int] | None:
+        """The entry's single templated category edge (entries with several are skipped)."""
+        category_ids = {view.relation_id[r] for r in self.category_relations if r in view.relation_id}
+        found = [(r, f) for r, f in view.frame(entry) if r in category_ids]
+        if len(found) != 1:
+            return None
+        r, f = found[0]
+        return (r, f) if self.prompts(view.pos[entry], view.relation_names[r]) is not None and view.text(f) \
+            and self.lexname(view.atomic_names[f]) else None
+
+    def plausible_edit(self, concept: str, old: str, new: str) -> bool:
+        if self.lexname(new) != self.lexname(old):
+            return False
+        if concept not in self._concept_ancestors:
+            self._concept_ancestors[concept] = set(zs._ancestors(self.wordnet.synset(concept)))
+        value = new.partition(":")[2]
+        if value in self._concept_ancestors[concept]:
+            return False
+        try:
+            return old.partition(":")[2] not in zs._ancestors(self.wordnet.synset(value))
+        except Exception:
+            return False
+
+
 @dataclasses.dataclass
 class OntologyView:
-    """Readable access to an ontology's entry frames (entries = link entries of the alias table)."""
+    """Readable access to an ontology's entry frames (entries = link entries of the alias table);
+    part of speech and filler texts come from the lexicon (WordNet conventions by default)."""
 
     ontology: dict[str, Any]
     table: AliasTable
+    lexicon: Any = None
 
     def __post_init__(self) -> None:
         o = self.ontology
@@ -140,10 +238,14 @@ class OntologyView:
         self.atomic_names: list[str] = list(o["atomic_names"])
         self.relation_id = {name: i for i, name in enumerate(self.relation_names)}
         self.atomic_id = {name: i for i, name in enumerate(self.atomic_names)}
-        names = o.get("concept_names")
-        self.pos = [names[c[0]].rsplit(".", 2)[1] if names is not None and c else "?" for c in self.table.entry_concepts]
+        if self.lexicon is not None:
+            self.pos = self.lexicon.entry_pos(o, self.table)
+        else:
+            names = o.get("concept_names")
+            self.pos = [names[c[0]].rsplit(".", 2)[1] if names is not None and c else "?" for c in self.table.entry_concepts]
         self.heldout = {int(e) for e in o.get("heldout_entries", ())}
         self.frequency = np.asarray(o["train_frequency"]) if o.get("train_frequency") is not None else None
+        self._texts: dict[int, str | None] = {}
 
     @property
     def entry_count(self) -> int:
@@ -157,7 +259,10 @@ class OntologyView:
         return [[self.relation_names[r], self.atomic_names[f]] for r, f in frame]
 
     def text(self, filler: int) -> str | None:
-        return zs._filler_text(self.atomic_names[filler])
+        if filler not in self._texts:
+            atom = self.atomic_names[filler]
+            self._texts[filler] = self.lexicon.text(atom) if self.lexicon is not None else zs._filler_text(atom)
+        return self._texts[filler]
 
     def edge_index(self) -> dict[tuple[int, int], set[int]]:
         """(relation, filler) → entries whose frame holds that edge."""
@@ -261,39 +366,48 @@ def _distractors(rng: random.Random, pool: Sequence[str], exclude: set[str], k: 
 def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str, count: int = 300, distractors: int = 4,
                          seed: int = 0, min_subtokens: int = 2, wordnet: Any = None, alias_table: Path | None = None,
                          contamination_texts: Iterable[str] = (), reserved_names: Iterable[str] = (),
-                         name_seed: int = 11) -> dict[str, Any]:
-    """Item directory for (a): new concepts with invented names and new-combination frames."""
+                         name_seed: int = 11, lexicon: Any = None, prefix: str = "e9n") -> dict[str, Any]:
+    """Item directory for (a): new concepts with invented names and new-combination frames.
+
+    `lexicon` words the items (default: `WordNetLexicon`, the E5.4 conventions); track ontologies
+    pass `e9_tracks.TrackLexicon` (the track's own relation templates and filler names)."""
     from transformers import AutoTokenizer
     if wordnet is None:
         from nltk.corpus import wordnet
+    lexicon = lexicon or WordNetLexicon(wordnet)
     ontology = torch.load(ontology_path, weights_only=False)
     table, table_info = cp.resolve_alias_table(ontology, Path(ontology_path), alias_table=alias_table)
-    view = OntologyView(ontology, table)
+    view = OntologyView(ontology, table, lexicon)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     rng = random.Random(seed)
     index = view.edge_index()
     pools = view.filler_pools()
-    category_ids = {view.relation_id[r] for r in CATEGORY_RELATIONS if r in view.relation_id}
-    kept_ids = {view.relation_id[r] for r in KEPT_RELATIONS if r in view.relation_id}
+    category_ids = {view.relation_id[r] for r in lexicon.category_relations if r in view.relation_id}
+    kept_ids = {view.relation_id[r] for r in lexicon.kept_relations if r in view.relation_id}
+    synthetic = {int(e) for e in ontology.get("synthetic_entries", ())}
+    # "pairwise": no entry holds the category edge with any resampled edge (WordNet, whose fillers are
+    # many); "frame": no entry holds the category edge with all resampled edges together (track ontologies
+    # with small categorical pools, where every (type, area) pair exists).
+    pairwise = getattr(lexicon, "combination", "pairwise") == "pairwise"
     # Readable filler texts per (POS, relation name) for distractors (as E5.4).
     texts: dict[tuple[str, str], set[str]] = defaultdict(set)
     for (pos, r), counter in pools.items():
         name = view.relation_names[r]
-        if (pos, name) in zs.TEMPLATES:
+        if lexicon.prompts(pos, name) is not None:
             texts[(pos, name)] |= {t for t in (view.text(f) for f in counter) if t}
     text_pools = {key: sorted(values) for key, values in texts.items()}
 
     def templated(pos: str, r: int, f: int) -> bool:
-        return (pos, view.relation_names[r]) in zs.TEMPLATES and view.text(f) is not None
+        return lexicon.prompts(pos, view.relation_names[r]) is not None and view.text(f) is not None
 
     eligible = []
     for e in range(view.entry_count):
-        if len(table.entry_concepts[e]) != 1 or e in view.heldout or view.pos[e] not in {"n", "v"}:
+        if len(table.entry_concepts[e]) != 1 or e in view.heldout or e in synthetic or view.pos[e] not in lexicon.donor_pos:
             continue
         frame = view.frame(e)
         categories = [(r, f) for r, f in frame if r in category_ids and templated(view.pos[e], r, f)]
         others = [(r, f) for r, f in frame if r not in kept_ids]
-        if categories and any((view.pos[e], view.relation_names[r]) in zs.TEMPLATES for r, _ in others):
+        if categories and any(lexicon.prompts(view.pos[e], view.relation_names[r]) is not None for r, _ in others):
             eligible.append(e)
     order = eligible[:]
     rng.shuffle(order)
@@ -314,10 +428,10 @@ def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: 
                 new_frame.append((r, f)); continue
             current = {x for _, x in frame} | {x for _, x in new_frame}
             category_text = view.text(category[1])
-            needs_text = (pos, view.relation_names[r]) in zs.TEMPLATES
+            needs_text = lexicon.prompts(pos, view.relation_names[r]) is not None
             choice = _weighted_choice(
                 rng, pools[(pos, r)], current | {f},
-                lambda x, r=r, needs_text=needs_text: not (with_category & index.get((r, x), set()))
+                lambda x, r=r, needs_text=needs_text: (not pairwise or not (with_category & index.get((r, x), set())))
                 and (not needs_text or (view.text(x) is not None and view.text(x) != category_text)))
             if choice is None:
                 ok = False; break
@@ -325,7 +439,10 @@ def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: 
         if not ok:
             rejected["no filler"] += 1; continue
         key = frozenset(new_frame)
-        if key in frames_seen or not any(templated(pos, r, f) for r, f in resampled):
+        together = set(with_category)                  # entries holding the category and every resampled edge
+        for edge_ in ([] if pairwise else resampled):
+            together &= index.get(edge_, set())
+        if key in frames_seen or not any(templated(pos, r, f) for r, f in resampled) or (not pairwise and together):
             rejected["combination exists"] += 1; continue
         frames_seen.add(key)
         random_frame = [(r, _weighted_choice(rng, pools[(pos, r)], set())) for r, _ in new_frame]
@@ -343,17 +460,17 @@ def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: 
     concept_names = ontology.get("concept_names")
     concepts, items = [], []
     noun_pool, verb_pool = text_pools.get(("n", "hypernym"), []), text_pools.get(("v", "hypernym"), [])
+    exclude_ancestors = set(lexicon.category_relations) | {"lexname"}
     for i, (spec, surface) in enumerate(zip(built, surfaces)):
-        cid = f"e9n-{i:04d}"
+        cid = f"{prefix}-{i:04d}"
         pos, category = spec["pos"], spec["category"]
-        kind, _, category_synset = view.atomic_names[category[1]].partition(":")
-        ancestors = zs._ancestors(wordnet.synset(category_synset)) if kind == "synset" else {}
-        ancestor_texts = {zs._first_lemma(a) for a in ancestors} | {view.text(category[1])}
+        ancestors = lexicon.hierarchy(view.atomic_names[category[1]])
+        ancestor_texts = {lexicon.hierarchy_text(a) for a in (ancestors or {})} | {view.text(category[1])}
         gold: dict[str, list[str]] = defaultdict(list)
         kinds: dict[str, str] = {}
         for r, f in spec["frame"]:
             name, text = view.relation_names[r], view.text(f)
-            if text and (pos, name) in zs.TEMPLATES:
+            if text and lexicon.prompts(pos, name) is not None:
                 gold[name].append(text)
                 kinds.setdefault(name, "resampled" if (r, f) in spec["resampled"] else "category")
         concepts.append({"concept": cid, "surface": surface, "entry": None, "synthetic": True, "pos": pos,
@@ -364,44 +481,75 @@ def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: 
                          "degree": len(spec["frame"]), "gold": dict(gold), "definition": None})
         for relation in sorted(gold):
             right = gold[relation][0]
-            exclude = set(gold[relation]) | {surface} | (ancestor_texts if relation in {"hypernym", "instance_hypernym", "lexname"} else set())
-            for test, templates in (("property", zs.TEMPLATES[(pos, relation)]), ("statement", STATEMENT_TEMPLATES[(pos, relation)])):
+            exclude = set(gold[relation]) | {surface} | (ancestor_texts if relation in exclude_ancestors else set())
+            for test, templates, answer in (("property", lexicon.prompts(pos, relation), lexicon.answer),
+                                            ("statement", lexicon.statements(pos, relation), lexicon.statement_answer)):
+                if not templates:
+                    continue
                 wrong = _distractors(rng, text_pools.get((pos, relation), []), exclude, distractors)
                 if wrong is None:
                     continue
                 candidates = [right] + wrong
                 rng.shuffle(candidates)
                 items.append({"id": f"{cid}-{test}-{relation}", "concept": cid, "test": test, "relation": relation,
-                              "edge_kind": kinds[relation], "templates": templates, "null": zs.NULL_SURFACE,
-                              "candidates": [" " + c for c in candidates], "gold": candidates.index(right)})
-        deep = sorted(a for a, d in ancestors.items() if d in (1, 2))      # 2–3 levels above the new concept
-        for rank, ancestor in enumerate(rng.sample(deep, min(2, len(deep)))):
-            right = zs._first_lemma(ancestor)
-            negatives = [t for t in (noun_pool if pos == "n" else verb_pool) if t not in ancestor_texts and t != right]
-            if not negatives:
-                continue
-            candidates = [right, rng.choice(negatives)]
-            rng.shuffle(candidates)
-            items.append({"id": f"{cid}-entailment-{rank}", "concept": cid, "test": "entailment",
-                          "relation": f"ancestor_depth_{ancestors[ancestor] + 1}", "edge_kind": "category",
-                          "templates": zs.ENTAILMENT_TEMPLATES[pos], "null": zs.NULL_SURFACE,
-                          "candidates": [" " + c for c in candidates], "gold": candidates.index(right)})
+                              "edge_kind": kinds[relation], "templates": templates, "null": lexicon.null_surface,
+                              "candidates": [answer(relation, c) for c in candidates], "gold": candidates.index(right)})
+        if ancestors is not None:
+            # An ancestor 2–3 levels above the new concept vs a non-ancestor (E5.4 entailment).
+            deep = sorted(a for a, d in ancestors.items() if d in (1, 2))
+            for rank, ancestor in enumerate(rng.sample(deep, min(2, len(deep)))):
+                right = lexicon.hierarchy_text(ancestor)
+                negatives = [t for t in (noun_pool if pos == "n" else verb_pool) if t not in ancestor_texts and t != right]
+                if not negatives:
+                    continue
+                candidates = [right, rng.choice(negatives)]
+                rng.shuffle(candidates)
+                items.append({"id": f"{cid}-entailment-{rank}", "concept": cid, "test": "entailment",
+                              "relation": f"ancestor_depth_{ancestors[ancestor] + 1}", "edge_kind": "category",
+                              "templates": lexicon.entailment_templates(pos), "null": lexicon.null_surface,
+                              "candidates": [lexicon.answer("hypernym", c) for c in candidates], "gold": candidates.index(right)})
+        else:
+            # No hierarchy: a true frame statement vs a corrupted one (same relation, wrong filler), as the
+            # WP-C7 `zeroshot_entailment` items.
+            usable = [r for r in sorted(gold) if lexicon.statements(pos, r)]
+            for relation in rng.sample(usable, min(2, len(usable))):
+                negatives = [t for t in text_pools.get((pos, relation), []) if t not in set(gold[relation]) | {surface}]
+                if not negatives:
+                    continue
+                right = gold[relation][0]
+                candidates = [right, rng.choice(negatives)]
+                rng.shuffle(candidates)
+                items.append({"id": f"{cid}-entailment-{relation}", "concept": cid, "test": "entailment",
+                              "relation": f"corrupted_{relation}", "edge_kind": kinds[relation],
+                              "templates": lexicon.statements(pos, relation), "null": lexicon.null_surface,
+                              "candidates": [lexicon.statement_answer(relation, c) for c in candidates],
+                              "gold": candidates.index(right)})
     degrees = Counter(len(s["frame"]) for s in built)
     donor_degrees = Counter(len(view.frame(e)) for e in eligible)
-    manifest = {"scenario": "e9_new_words", "contamination_free": True,
+    manifest = {"scenario": "e9_new_words", "contamination_free": True, "lexicon": lexicon.name,
                 "description": "new concepts with invented names and frames that are new combinations of existing atomics "
                                "and relations (zero-shot insertion by ontology editing)",
                 "ontology": str(ontology_path), "ontology_alias_sha256": table.digest(), "alias_table": table_info,
                 "tokenizer": tokenizer_name, "min_subtokens": min_subtokens, "seed": seed, "name_seed": name_seed,
-                "count": count, "distractors": distractors, "null_surface": zs.NULL_SURFACE, "checks": checks,
+                "count": count, "distractors": distractors, "null_surface": lexicon.null_surface, "checks": checks,
                 "construction": {"donors_eligible": len(eligible), "donors_tried": sum(rejected.values()) + len(built),
-                                 "rejected": dict(rejected), "kept_relations": sorted(KEPT_RELATIONS),
+                                 "rejected": dict(rejected), "kept_relations": sorted(lexicon.kept_relations),
                                  "rule": "category edges of a real donor kept; every other filler resampled (frequency-weighted, "
                                          "same relation and part of speech) so that no existing entry has the category edge "
                                          "together with any resampled edge; donors are not held out",
                                  "degree_histogram": dict(sorted(degrees.items())),
                                  "eligible_donor_degree_histogram": dict(sorted(donor_degrees.items()))},
                 "statement_templates": "STATEMENT_TEMPLATES (held-out wordings, never the property templates)"}
+    if lexicon.name != "wordnet":                    # WordNet manifests stay as they were
+        if not pairwise:
+            manifest["construction"]["rule"] = ("category edges of a real donor kept; every other filler resampled (frequency-weighted, "
+                                                "same relation) so that no existing entry has the category edge together with all "
+                                                "resampled edges and no entry has the same frame; donors are neither held out nor "
+                                                "synthetic")
+        manifest["statement_templates"] = "the track's held-out wording (third paraphrase or statement; never a property template)"
+        manifest["entailment"] = "true vs corrupted frame statement (the ontology has no hierarchy the items use)"
+    else:
+        del manifest["lexicon"]
     return _write_items(out_dir, SCHEMA_NEW, manifest, concepts, items)
 
 
@@ -409,42 +557,39 @@ def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: 
 
 def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str, count: int = 200, heldout_fraction: float = 0.5,
                      neighbors: int = 2, seed: int = 0, min_subtokens: int = 2, wordnet: Any = None,
-                     alias_table: Path | None = None) -> dict[str, Any]:
-    """Item directory for (b): one hypernym edge of existing concepts changed to a same-type filler."""
+                     alias_table: Path | None = None, lexicon: Any = None) -> dict[str, Any]:
+    """Item directory for (b): one category edge of existing concepts changed to a same-type filler
+    (`lexicon`: WordNet hypernyms by default; tracks edit the relation their lexicon names)."""
     from transformers import AutoTokenizer
-    if wordnet is None:
+    if wordnet is None and lexicon is None:
         from nltk.corpus import wordnet
+    lexicon = lexicon or WordNetLexicon(wordnet)
     ontology = torch.load(ontology_path, weights_only=False)
     table, table_info = cp.resolve_alias_table(ontology, Path(ontology_path), alias_table=alias_table)
-    view = OntologyView(ontology, table)
+    view = OntologyView(ontology, table, lexicon)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     rng = random.Random(seed)
     names = ontology["concept_names"]
-    category_ids = {view.relation_id[r] for r in CATEGORY_RELATIONS if r in view.relation_id}
     pools = view.filler_pools()
-    lexnames: dict[int, str | None] = {}
-
-    def lexname(filler: int) -> str | None:
-        if filler not in lexnames:
-            kind, _, value = view.atomic_names[filler].partition(":")
-            try:
-                lexnames[filler] = wordnet.synset(value).lexname() if kind == "synset" else None
-            except Exception:
-                lexnames[filler] = None
-        return lexnames[filler]
+    synthetic = {int(e) for e in ontology.get("synthetic_entries", ())}
+    edges: dict[int, tuple[int, int] | None] = {}
 
     def edge(e: int) -> tuple[int, int] | None:
-        """The entry's single templated category edge (entries with several are skipped)."""
-        found = [(r, f) for r, f in view.frame(e) if r in category_ids]
-        if len(found) != 1:
-            return None
-        r, f = found[0]
-        return (r, f) if (view.pos[e], view.relation_names[r]) in zs.TEMPLATES and view.text(f) and lexname(f) else None
+        if e not in edges:
+            edges[e] = lexicon.edit_edge(view, e)
+        return edges[e]
 
-    single = [e for e in range(view.entry_count) if len(table.entry_concepts[e]) == 1 and view.pos[e] in {"n", "v"}
-              and edge(e) is not None]
+    single = [e for e in range(view.entry_count) if len(table.entry_concepts[e]) == 1 and view.pos[e] in lexicon.donor_pos
+              and e not in synthetic and edge(e) is not None]
     surfaces = canonical_surfaces(table, tokenizer, min_subtokens, single)
     linkable = [e for e in single if e in surfaces and surfaces[e]["linkable"]]
+
+    def shown(e: int) -> str:
+        """The surface shown in prompts: the canonical alias, in the concept's own casing when the lexicon
+        keeps it (track names are title case in their text; WordNet aliases stay lower case)."""
+        return lexicon.display_surface(surfaces[e]["surface"], names[table.entry_concepts[e][0]]) \
+            if hasattr(lexicon, "display_surface") else surfaces[e]["surface"]
+
     frequency = view.frequency if view.frequency is not None else np.zeros(view.entry_count)
     held = [e for e in linkable if e in view.heldout]
     seen = [e for e in linkable if e not in view.heldout and frequency[e] >= 1]
@@ -453,22 +598,14 @@ def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str,
     edits: list[dict[str, Any]] = []
     for e in chosen:
         r, old = edge(e)
-        synset = wordnet.synset(names[table.entry_concepts[e][0]])
-        concept_ancestors = set(zs._ancestors(synset))
-        old_synset = view.atomic_names[old].partition(":")[2]
-        old_text, surface = view.text(old), surfaces[e]["surface"]
+        concept = names[table.entry_concepts[e][0]]
+        old_text, surface = view.text(old), shown(e)
         frame_fillers = {f for _, f in view.frame(e)}
 
         def plausible(x: int) -> bool:
-            value = view.atomic_names[x].partition(":")[2]
-            if lexname(x) != lexname(old) or value in concept_ancestors or not view.text(x):
+            if not view.text(x) or view.text(x) in {old_text, surface}:
                 return False
-            if view.text(x) in {old_text, surface}:
-                return False
-            try:
-                return old_synset not in zs._ancestors(wordnet.synset(value))
-            except Exception:
-                return False
+            return lexicon.plausible_edit(concept, view.atomic_names[old], view.atomic_names[x])
 
         new = _weighted_choice(rng, pools[(view.pos[e], r)], frame_fillers | {old}, plausible)
         control = None if new is None else _weighted_choice(
@@ -499,7 +636,7 @@ def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str,
         for x in picked:
             xr, xf = edge(x)
             nid = f"e9e-nb-{x}"
-            neighbour_concepts.setdefault(x, {"concept": nid, "role": "neighbour", "entry": x, "surface": surfaces[x]["surface"],
+            neighbour_concepts.setdefault(x, {"concept": nid, "role": "neighbour", "entry": x, "surface": shown(x),
                                               "pos": view.pos[x], "source_concept": names[table.entry_concepts[x][0]],
                                               "relation": view.relation_names[xr], "true": view.atomic_names[xf],
                                               "true_text": view.text(xf), "status": cp.entry_status([x], view.heldout, view.frequency)})
@@ -507,18 +644,23 @@ def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str,
             true_text = view.text(xf)
             if true_text == new_text:
                 continue
+            x_relation = view.relation_names[xr]
             items.append({"id": f"{cid}-neighbourhood-{x}", "concept": nid, "edit": cid, "test": "neighbourhood",
-                          "relation": view.relation_names[xr], "templates": zs.TEMPLATES[(pos, view.relation_names[xr])],
-                          "null": zs.NULL_SURFACE, "candidates": [" " + true_text, " " + new_text], "gold": 0})
+                          "relation": x_relation, "templates": lexicon.prompts(pos, x_relation),
+                          "null": lexicon.null_surface,
+                          "candidates": [lexicon.answer(x_relation, true_text), lexicon.answer(x_relation, new_text)], "gold": 0})
         concepts.append({"concept": cid, "role": "edited", "entry": e, "surface": d["surface"], "pos": pos,
                          "source_concept": names[table.entry_concepts[e][0]], "status": status, "relation": relation,
                          "old": view.atomic_names[d["old"]], "new": view.atomic_names[d["new"]],
                          "control": view.atomic_names[d["control"]], "old_text": old_text, "new_text": new_text,
                          "control_text": control_text, "neighbours": neighbour_ids})
-        for test, templates in (("efficacy", zs.TEMPLATES[(pos, relation)]), ("paraphrase", STATEMENT_TEMPLATES[(pos, relation)])):
+        for test, templates, answer in (("efficacy", lexicon.prompts(pos, relation), lexicon.answer),
+                                        ("paraphrase", lexicon.statements(pos, relation), lexicon.statement_answer)):
+            if not templates:
+                continue
             items.append({"id": f"{cid}-{test}", "concept": cid, "edit": cid, "test": test, "relation": relation,
-                          "templates": templates, "null": zs.NULL_SURFACE, "candidates": [" " + old_text, " " + new_text],
-                          "gold": 0})
+                          "templates": templates, "null": lexicon.null_surface,
+                          "candidates": [answer(relation, old_text), answer(relation, new_text)], "gold": 0})
     concepts += [neighbour_concepts[x] for x in sorted(neighbour_concepts)]
     statuses = Counter(c["status"] for c in concepts if c["role"] == "edited")
     manifest = {"scenario": "e9_edits", "description": "one hypernym edge of existing concepts replaced by a same-type filler "
@@ -529,10 +671,14 @@ def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str,
                 "selection": "single-concept noun/verb entries with exactly one templated hypernym/instance-hypernym edge whose "
                              "canonical alias has ≥ ℓ_min subtokens; seeded sample of held-out and seen (training frequency ≥ 1) "
                              "entries",
-                "rule": "new filler: same relation, same part of speech, same WordNet lexicographer file as the old filler, "
-                        "not an ancestor of the concept, not a descendant of the old filler, not already in the frame "
-                        "(frequency-weighted); control: another filler drawn by the same rule",
+                "rule": lexicon.edit_rule,
                 "candidates": "efficacy/paraphrase [old, new]; neighbourhood [true, edited concept's new]; gold = index 0"}
+    if lexicon.name != "wordnet":                    # WordNet manifests stay as they were
+        manifest.update(lexicon=lexicon.name, description="one relation-filler edge of existing concepts replaced by a "
+                        "same-type filler (knowledge editing through the ontology)",
+                        selection=f"single-concept entries (synthetic entries excluded) with exactly one templated edge of the "
+                                  f"first of {list(lexicon.edit_relations)} they have, whose canonical alias has ≥ ℓ_min "
+                                  "subtokens; seeded sample of held-out and seen (training frequency ≥ 1) entries")
     return _write_items(out_dir, SCHEMA_EDITS, manifest, concepts, items)
 
 
@@ -934,14 +1080,15 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
               "new_items": str(args.new_items) if args.new_items else None,
               "edit_items": str(args.edit_items) if args.edit_items else None, "sources": requested,
               "fit_entries": args.fit_entries, "seed": args.seed, "resamples": args.resamples, "quantize": args.quantize,
-              "quantize_channel": bool(args.quantize_channel), "group_size": args.group_size}
+              "quantize_channel": bool(args.quantize_channel), "group_size": args.group_size,
+              "alias_table": str(args.alias_table) if args.alias_table else None}
     if not args.new_items and not args.edit_items:
         raise ValueError("pass --new-items and/or --edit-items")
     if args.overwrite:
         clear_output(args.output)
     git_at_start = start_output(args.output, config)
     run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size, quantize=args.quantize,
-                   quantize_channel=args.quantize_channel, group_size=args.group_size)
+                   quantize_channel=args.quantize_channel, group_size=args.group_size, alias_table=args.alias_table)
     header = {"source": run.describe(), "new_items": config["new_items"], "edit_items": config["edit_items"]}
     new_summary = edit_summary = None
     document: dict[str, Any] = {**header}
@@ -1001,6 +1148,8 @@ def main(argv: list[str] | None = None) -> None:
     ev.add_argument("--run", type=Path, required=True); ev.add_argument("--output", type=Path, required=True)
     ev.add_argument("--new-items", type=Path, default=None); ev.add_argument("--edit-items", type=Path, default=None)
     ev.add_argument("--checkpoint", default="final.pt")
+    ev.add_argument("--alias-table", type=Path, default=None,
+                    help="the run's evaluation alias table (tracks; e9_tracks alias-table), else resolved from the ontology")
     ev.add_argument("--sources", default="", help="comma-separated subset of " + ",".join(NEW_SOURCES))
     ev.add_argument("--fit-entries", type=int, default=4000); ev.add_argument("--seed", type=int, default=0)
     ev.add_argument("--resamples", type=int, default=2000)

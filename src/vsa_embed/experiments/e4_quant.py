@@ -2,7 +2,10 @@
 
     python -m vsa_embed.experiments.e4_quant --runs <run dir or root> [...] --output <dir>
         [--bits 8 4] [--variants A B] [--group-size auto] [--baseline C0] [--references C2 ...]
-        [--resamples 10000] [--seed 0] [--windows N] [--eval-batch N] [--resume] [--report-only]
+        [--resamples 10000] [--seed 0] [--windows N] [--eval-batch N] [--resume] [--report-only] [--eval-corpus DIR]
+
+`--eval-corpus` (opt-in) evaluates every run on another token corpus than its `data.eval` — E9 uses a
+track's general-text `eval-general` for locality and general-text quantization damage.
 
 Every folder under `--runs` holding `final.pt` and `metrics.jsonl` is a trained run: from scratch,
 or continued pretraining, whose `final.pt` holds only the trainable parameters (`load_final` reloads
@@ -197,8 +200,11 @@ def _strata_arrays(sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]]) -
 
 
 def evaluate_run(run_dir: Path, out_dir: Path, *, bits: Sequence[int], variants: Sequence[str], group_size: str | int,
-                 device: torch.device, windows: int | None = None, eval_batch: int | None = None) -> dict[str, Any]:
-    """Evaluate one run as `ref` and every quantized variant; write `quant.json` and `windows.npz`."""
+                 device: torch.device, windows: int | None = None, eval_batch: int | None = None,
+                 eval_corpus_path: Path | None = None) -> dict[str, Any]:
+    """Evaluate one run as `ref` and every quantized variant; write `quant.json` and `windows.npz`.
+    `eval_corpus_path` evaluates on another corpus than the run's `data.eval` (e.g. a track's
+    general-text `eval-general`: locality and general-text quantization damage)."""
     final = torch.load(run_dir / "final.pt", weights_only=False, map_location="cpu")
     config = resolve_config(final["config"])
     del final
@@ -206,6 +212,8 @@ def evaluate_run(run_dir: Path, out_dir: Path, *, bits: Sequence[int], variants:
         config["eval"]["windows"] = int(windows)
     if eval_batch:
         config["eval"]["batch"] = int(eval_batch)
+    if eval_corpus_path is not None:
+        config["data"]["eval"] = str(eval_corpus_path)
     eval_corpus = TokenCorpus.open(Path(config["data"]["eval"]))
     ontology = torch.load(config["data"]["ontology"], weights_only=False) if config["data"].get("ontology") else None
     heldout = set(ontology["heldout_entries"]) if ontology else set()
@@ -214,6 +222,8 @@ def evaluate_run(run_dir: Path, out_dir: Path, *, bits: Sequence[int], variants:
     starts = eval_windows(eval_corpus, count=config["eval"]["windows"], length=config["model"]["seq_len"])
     record: dict[str, Any] = {"run": str(run_dir), "id": run_id(run_dir), "windows": len(starts),
                               "channel": config["channel"]["mode"], "variants": {}}
+    if eval_corpus_path is not None:                 # recorded only when it differs from the run's own corpus
+        record["eval_corpus"] = str(eval_corpus_path)
     run = load_run(run_dir)
     record.update(condition=run.condition, seed=run.seed, model=run.model, cohort=list(run.cohort))
     arrays: dict[str, np.ndarray] = {}
@@ -477,10 +487,13 @@ def render(summary: dict[str, Any], *, title: str, records: list[dict[str, Any]]
 def run(runs: Sequence[Path], output: Path, *, bits: Sequence[int] = (8, 4), variants: Sequence[str] = ("A", "B"),
         group_size: str | int = "auto", baseline: str = "C0", references: Sequence[str] = ("C2",), resamples: int = 10_000,
         seed: int = 0, windows: int | None = None, eval_batch: int | None = None, device: str = "cuda",
-        resume: bool = False, report_only: bool = False, title: str = "D4.3 post-training quantization (E4.4)") -> dict[str, Any]:
+        resume: bool = False, report_only: bool = False, title: str = "D4.3 post-training quantization (E4.4)",
+        eval_corpus: Path | None = None) -> dict[str, Any]:
     config = {"runs": [str(p) for p in runs], "bits": list(bits), "variants": list(variants), "group_size": group_size,
               "baseline": baseline, "references": list(references), "resamples": resamples, "seed": seed,
               "windows": windows, "eval_batch": eval_batch, "device": device, "title": title}
+    if eval_corpus is not None:                      # opt-in: recorded only when used
+        config["eval_corpus"] = str(eval_corpus)
     target = torch.device(device if torch.cuda.is_available() else "cpu")
     if 4 in bits and target.type != "cuda" and not report_only:
         raise RuntimeError("INT4 (tile-packed) needs CUDA; use --bits 8 on CPU")
@@ -496,7 +509,7 @@ def run(runs: Sequence[Path], output: Path, *, bits: Sequence[int] = (8, 4), var
             if resume and (out_dir / "quant.json").exists():
                 continue
             record = evaluate_run(path, out_dir, bits=bits, variants=variants, group_size=group_size, device=target,
-                                  windows=windows, eval_batch=eval_batch)
+                                  windows=windows, eval_batch=eval_batch, eval_corpus_path=eval_corpus)
             print(json.dumps({"run": record["id"], **{v: {"ppl": round(r["ppl"], 3), "seconds": r["seconds"]}
                                                       for v, r in record["variants"].items()}}), flush=True)
     records = [json.loads(p.read_text()) for p in sorted((output / "runs").glob("*/quant.json"))]
@@ -525,12 +538,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--resume", action="store_true", help="reuse the output folder; skip runs already evaluated")
     parser.add_argument("--report-only", action="store_true", help="re-analyse the evaluated runs in --output")
     parser.add_argument("--title", default="D4.3 post-training quantization (E4.4)")
+    parser.add_argument("--eval-corpus", type=Path, default=None,
+                        help="evaluate every run on this corpus instead of its data.eval (e.g. a track's eval-general)")
     args = parser.parse_args(argv)
     group_size: str | int = args.group_size if args.group_size == "auto" else int(args.group_size)
     summary = run(args.runs, args.output, bits=args.bits, variants=args.variants, group_size=group_size, baseline=args.baseline,
                   references=args.references, resamples=args.resamples, seed=args.seed, windows=args.windows,
                   eval_batch=args.eval_batch, device=args.device, resume=args.resume, report_only=args.report_only,
-                  title=args.title)
+                  title=args.title, eval_corpus=args.eval_corpus)
     print(json.dumps({label: {c: {v: round(row["ppl"], 3) for v, row in e["variants"].items()} for c, e in cohort["conditions"].items()}
                       for label, cohort in summary["cohorts"].items()}))
 

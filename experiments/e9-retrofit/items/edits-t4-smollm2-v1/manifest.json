@@ -1,0 +1,41 @@
+{
+  "schema": "e9-edits/1",
+  "scenario": "e9_edits",
+  "description": "one relation-filler edge of existing concepts replaced by a same-type filler (knowledge editing through the ontology)",
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+  "ontology_alias_sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a",
+  "alias_table": {
+    "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t4.json",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 252825,
+    "sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a"
+  },
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "min_subtokens": 2,
+  "seed": 0,
+  "count": 200,
+  "heldout_fraction": 0.5,
+  "neighbours": 2,
+  "edited_status": {
+    "frequent": 3,
+    "heldout": 100,
+    "mid": 11,
+    "rare": 86
+  },
+  "selection": "single-concept entries (synthetic entries excluded) with exactly one templated edge of the first of ['has_functional_parent', 'has_role', 'is_a'] they have, whose canonical alias has \u2265 \u2113_min subtokens; seeded sample of held-out and seen (training frequency \u2265 1) entries",
+  "rule": "edited relation: the first of ['has_functional_parent', 'has_role', 'is_a'] with exactly one templated edge; new filler: same relation, same filler type, not already in the frame, another name (frequency-weighted); control: another filler drawn by the same rule",
+  "candidates": "efficacy/paraphrase [old, new]; neighbourhood [true, edited concept's new]; gold = index 0",
+  "lexicon": "t4",
+  "counts": {
+    "concepts": 597,
+    "items": 800,
+    "efficacy": 200,
+    "neighbourhood": 400,
+    "paraphrase": 200
+  }
+}
