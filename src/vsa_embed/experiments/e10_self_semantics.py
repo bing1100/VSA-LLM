@@ -1224,7 +1224,7 @@ def part_dream(config: dict[str, Any], seed: int, every: int) -> list[dict[str, 
     before = _dream_eval(world, composer, injected, ctx, correct)
     total = section["post_steps"]
     settings = discovery_settings(config).dream
-    passes = total // every if every > 0 else 0
+    passes = total // abs(every) if every else 0
     log = []
     start = time.time()
     if not every:
@@ -1333,7 +1333,7 @@ def part_continual(config: dict[str, Any], seed: int, condition: str) -> list[di
             if stage > 0 and arriving.numel():
                 composer.unpin(arriving)
             if condition == "plastic":
-                composer.add_blank_slot()
+                composer.add_blank_slot(init_mass=settings.slot_init_mass)
                 train_composer(composer, ctx.train_concepts, ctx.train_targets, steps=section["steps_per_stage"],
                                lr=config["model"]["lr"])
             else:

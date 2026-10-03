@@ -118,6 +118,9 @@ def summarize_c(rows: list[dict]) -> dict[str, Any]:
                                                                 "accepted_slots", "proposed_slots")}
             entry["ari_minus_permuted"] = _ci([_num(r.get("ari_gold_edges")) - _num(r.get("permuted_ari_mean")) for r in rs])
             entry["permuted_p_max"] = max((_num(r.get("permuted_ari_p")) for r in rs), default=float("nan"))
+            from vsa_embed.statistics import holm_adjust
+            pvals = [_num(r.get("permuted_ari_p")) for r in rs if r.get("permuted_ari_p") is not None]
+            entry["permutation_holm_max_p"] = max(holm_adjust(pvals)) if pvals else float("nan")
             rels = defaultdict(list)
             for r in rs:
                 for name, v in (r.get("per_relation") or {}).items():
@@ -428,6 +431,9 @@ def verdicts(summary: dict[str, Any]) -> dict[str, Any]:
     if c:
         out["(ii) blank slots align with hidden relations above chance (ARI − permuted, additive)"] = {
             mode: bool(_sig(v["methods"]["additive"]["ari_minus_permuted"])) for mode, v in c.items() if "additive" in v["methods"]}
+        out["(ii′) same, per-seed permutation test (Holm over seeds; added after the first run, reported alongside)"] = {
+            mode: bool(v["methods"]["additive"].get("permutation_holm_max_p", 1.0) < 0.05) for mode, v in c.items()
+            if "additive" in v["methods"]}
     d = summary.get("d", {})
     if d:
         out["(iii) self-acceptance beats random acceptance at the matched rate (edges)"] = {
@@ -496,10 +502,10 @@ def render_report(summary: dict[str, Any], config: dict[str, Any]) -> str:
     if c:
         for mode, cm in c.items():
             L += [f"## (c) Blank-relation discovery — hidden relations {mode}", "",
-                  "| Method | ARI (gold edges) | ARI − permuted | mean best Jaccard | detection P | detection R | accepted / proposed slots | test fit |",
-                  "|---|---|---|---|---|---|---|---|"]
+                  "| Method | ARI (gold edges) | ARI − permuted | permutation p (Holm, max over seeds) | mean best Jaccard | detection P | detection R | accepted / proposed slots | test fit |",
+                  "|---|---|---|---|---|---|---|---|---|"]
             for m, e in cm["methods"].items():
-                L.append(f"| {m} | {_fmt(e['ari_gold_edges'])} | {_fmt(e['ari_minus_permuted'])} | {_fmt(e['mean_best_jaccard'])} | "
+                L.append(f"| {m} | {_fmt(e['ari_gold_edges'])} | {_fmt(e['ari_minus_permuted'])} | {_fmt(e.get('permutation_holm_max_p'))} | {_fmt(e['mean_best_jaccard'])} | "
                          f"{_fmt(e['detection_precision'])} | {_fmt(e['detection_recall'])} | "
                          f"{_fmt(e['accepted_slots'], 1)} / {_fmt(e['proposed_slots'], 1)} | {_fmt(e['test_fit'], 4)} |")
             L.append("")
