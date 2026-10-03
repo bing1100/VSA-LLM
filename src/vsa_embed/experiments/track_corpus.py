@@ -209,7 +209,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     paths, data = config["paths"], config["data"]
     data_root = Path(paths["data_root"]).expanduser()
     data_root.mkdir(parents=True, exist_ok=True)
-    items_dir = Path(config["items_dir"])
+    items_dir = Path(config["items_dir"]).expanduser()      # may live with the data (e.g. a relink whose items are not committed)
     track: Track = load_track(config["track"], config, data_root)
     general = [str(Path(p).expanduser()) for p in paths["general_shards"]]
     _verify(general, paths.get("general_shard_sha256"))

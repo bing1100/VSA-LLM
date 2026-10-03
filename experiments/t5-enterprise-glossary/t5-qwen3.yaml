@@ -1,8 +1,9 @@
 # T5 enterprise glossaries with the Qwen3 tokenizer (WP-Qwen, E9 on Qwen3-0.6B/1.7B/4B-Base): the same generator
 # seed, documents, glossary, holdout and zero-shot terms as t5.yaml (SmolLM2), relinked and retokenized with the Qwen3
 # base tokenizer (shared by all three sizes; ids need uint32). The holdout is pinned to the SmolLM2 build's hash; the
-# alias-table digest must equal it too (5cae33ad…, checked after the build). Items are written inside the run folder
-# so the committed SmolLM2 items stay untouched (the WP-C7 zero-shot items are tokenizer-independent and must match).
+# alias-table digest must equal it too (5cae33ad…, checked after the build). Items go next to the data (not committed):
+# they equal the committed SmolLM2 items byte for byte except the training-frequency annotations of
+# term_relation_probe (tokenizer-dependent counts), so E9 uses the committed WP-C7 zero-shot items for both hosts.
 # Build: PYTHONPATH=src python -m vsa_embed.experiments.track_corpus \
 #   --config experiments/t5-enterprise-glossary/t5-qwen3.yaml --output experiments/t5-enterprise-glossary/runs/v1-qwen3
 experiment: t5-enterprise-glossary-qwen3
@@ -10,7 +11,7 @@ track: t5
 seed: 20261005
 tokenizer: Qwen/Qwen3-0.6B-Base
 workers: 3
-items_dir: experiments/t5-enterprise-glossary/runs/v1-qwen3/items
+items_dir: ~/data/vsa-llm/tracks/t5-glossary/v1-qwen3/items
 paths:
   data_root: ~/data/vsa-llm/tracks/t5-glossary/v1-qwen3
   general_shards:
