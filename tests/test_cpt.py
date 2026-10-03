@@ -111,6 +111,26 @@ def test_trainable_only_checkpoints_resume_and_reload(setup, tmp_path: Path, mon
     torch.testing.assert_close(state["model.transformer.wte.weight"], host["transformer.wte.weight"])
 
 
+def test_probe_loader_reads_trainable_only_checkpoints(setup, tmp_path: Path, monkeypatch) -> None:
+    """`channel_probes.load_run` on a LoRA run saved trainable-only (the failure of the cpt-pilot probe jobs:
+    "Missing key(s) … model.model.embed_tokens.weight") and on an evaluation-only C0' (an empty state)."""
+    from vsa_embed.evaluation import channel_probes as cp
+    torch.set_num_threads(1)
+    monkeypatch.setattr(lm, "build_model", tiny_host)
+    table = AliasTable.from_pairs([("hydroxychloroquine", 0), ("new york", 1), ("acetaminophen", 2), ("cat", 3)],
+                                  holdout=[2], include_holdout=True)
+    cp.save_alias_table(table, tmp_path / "alias_table.json")
+    extra = {"train": {"save_trainable_only": True, "host_lr": 1e-3}, "channel": {"context_window": 4}}
+    lm.train(config(setup["root"], "compose", "lora", **extra), tmp_path / "lora")
+    adapter = cp.load_run(tmp_path / "lora", device="cpu", alias_table=tmp_path / "alias_table.json")
+    expected = lm.load_final(tmp_path / "lora" / "final.pt").state_dict()
+    assert adapter.info["trainable_only_checkpoint"] and set(adapter.model.state_dict()) == set(expected)
+    for key, value in adapter.model.state_dict().items():
+        torch.testing.assert_close(value, expected[key])
+    lm.train(config(setup["root"], "none", "frozen", train={"eval_only": True}), tmp_path / "c0p")
+    assert cp.load_run(tmp_path / "c0p", device="cpu", alias_table=tmp_path / "alias_table.json").model.channel is None
+
+
 def test_full_state_runs_are_unchanged_by_the_new_options(setup, tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(lm, "build_model", tiny_host)
     lm.train(config(setup["root"], "free", "lora"), tmp_path / "full")

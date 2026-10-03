@@ -1,0 +1,41 @@
+{
+  "schema": "e9-edits/1",
+  "scenario": "e9_edits",
+  "description": "one hypernym edge of existing concepts replaced by a same-type filler (knowledge editing through the ontology)",
+  "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+  "ontology_alias_sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+  "alias_table": {
+    "source": "wordnet",
+    "holdout_names": "/home/bhux/workplace/VSA-LLM/.claude/worktrees/agent-a93d062c2c29e57de/experiments/c3-general-corpus/runs/v1/holdout_concepts.txt",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 147306,
+    "sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15"
+  },
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "min_subtokens": 2,
+  "seed": 0,
+  "count": 200,
+  "heldout_fraction": 0.5,
+  "neighbours": 2,
+  "edited_status": {
+    "frequent": 11,
+    "heldout": 100,
+    "mid": 40,
+    "rare": 49
+  },
+  "selection": "single-concept noun/verb entries with exactly one templated hypernym/instance-hypernym edge whose canonical alias has \u2265 \u2113_min subtokens; seeded sample of held-out and seen (training frequency \u2265 1) entries",
+  "rule": "new filler: same relation, same part of speech, same WordNet lexicographer file as the old filler, not an ancestor of the concept, not a descendant of the old filler, not already in the frame (frequency-weighted); control: another filler drawn by the same rule",
+  "candidates": "efficacy/paraphrase [old, new]; neighbourhood [true, edited concept's new]; gold = index 0",
+  "counts": {
+    "concepts": 600,
+    "items": 800,
+    "efficacy": 200,
+    "neighbourhood": 400,
+    "paraphrase": 200
+  }
+}

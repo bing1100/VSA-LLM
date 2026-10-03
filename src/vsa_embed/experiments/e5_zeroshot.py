@@ -49,6 +49,11 @@ text-evidence maps of external scenarios.
     python -m vsa_embed.experiments.e5_zeroshot items --scenario c3_synthetic --ontology ONT --output DIR
     python -m vsa_embed.experiments.e5_zeroshot items --scenario c6_devtools --benchmark BENCH --output DIR
     python -m vsa_embed.experiments.e5_zeroshot evaluate --run RUN --items DIR --output OUT [--sources …]
+        [--quantize int8|int4 [--quantize-channel]]
+
+`--quantize` repeats the evaluation on the run after the post-training weight-only quantization of
+`e4_quant` (output head FP; `--quantize-channel` = its variant B with the channel quantized too); the
+baseline rows are then fitted against the quantized model's own rows (E9 dimensions 1 and 3).
 """
 
 from __future__ import annotations
@@ -72,8 +77,8 @@ from ..evaluation import channel_probes as cp
 from ..span_channel import AliasTable, CausalLinker, normalize_alias
 from ..statistics import holm_adjust
 from ..training.lm import AFTER_WINDOW
-from .e5_common import (E5Run, canonical_surfaces, entry_rows, finish_output, fmt, fmt_ci, forward_tokens, json_ready,
-                        open_run, override_rows, start_output, status_of, write_json)
+from .e5_common import (E5Run, canonical_surfaces, clear_output, entry_rows, finish_output, fmt, fmt_ci, forward_tokens,
+                        json_ready, open_run, override_rows, start_output, status_of, write_json)
 
 SCHEMA = "e5-zeroshot-items/1"
 STRUCTURE_SOURCES = ("own", "none", "random", "mean_row", "surface_mean", "graph_projection")
@@ -937,7 +942,8 @@ def summarize(evaluation: dict[str, Any], *, resamples: int = 2000, seed: int = 
 def render(summary: dict[str, Any], header: dict[str, Any]) -> str:
     source = header["source"]
     manifest = header["manifest"]
-    lines = [f"# E5.4 zero-shot insertion — {manifest['scenario']} — {source['condition']} seed {source['seed']} ({source['size']})", "",
+    quantized = f", {source['quantization']['variant']}" if source.get("quantization") else ""
+    lines = [f"# E5.4 zero-shot insertion — {manifest['scenario']} — {source['condition']} seed {source['seed']} ({source['size']}{quantized})", "",
              f"Run `{source['run']}` (channel `{source['channel_mode']}`); items `{header['items']}` "
              f"({manifest['counts']['concepts']} concepts, {manifest['counts']['items']} prompt items; contamination-free on "
              f"pretrained hosts: **{manifest['contamination_free']}**). Linked concepts: {summary['linked_concepts']} of "
@@ -971,8 +977,14 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     config = {"experiment": "e5.4-zero-shot", "run": str(args.run), "checkpoint": args.checkpoint, "items": str(args.items),
               "sources": requested, "fit_entries": args.fit_entries, "contexts": args.contexts, "windows": args.windows,
               "seed": args.seed, "resamples": args.resamples, "generator_steps": args.generator_steps}
+    quantize = getattr(args, "quantize", None)
+    if quantize:                               # recorded only when used (earlier configs resolve as before)
+        config.update(quantize=quantize, quantize_channel=bool(args.quantize_channel), group_size=args.group_size)
+    if getattr(args, "overwrite", False):
+        clear_output(args.output)
     git_at_start = start_output(args.output, config)
-    run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size)
+    run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size, quantize=quantize,
+                   quantize_channel=bool(getattr(args, "quantize_channel", False)), group_size=getattr(args, "group_size", "auto"))
     evaluation = evaluate(run, args.items, sources=requested, fit_entries=args.fit_entries, contexts=args.contexts,
                           windows=args.windows, seed=args.seed, generator_steps=args.generator_steps)
     summary = summarize(evaluation, resamples=args.resamples, seed=args.seed)
@@ -1035,7 +1047,14 @@ def main(argv: list[str] | None = None) -> None:
     ev.add_argument("--generator-steps", type=int, default=1500)
     ev.add_argument("--seed", type=int, default=0); ev.add_argument("--resamples", type=int, default=2000)
     ev.add_argument("--batch-size", type=int, default=64); ev.add_argument("--device", default=None)
+    ev.add_argument("--quantize", choices=["int8", "int4"], default=None,
+                    help="evaluate after post-training weight-only quantization as in e4_quant (int4 needs CUDA)")
+    ev.add_argument("--quantize-channel", action="store_true", help="with --quantize: variant B (channel quantized too)")
+    ev.add_argument("--group-size", default="auto", help="INT4 group size, or auto (as e4_quant)")
+    ev.add_argument("--overwrite", action="store_true", help="replace the result files of a previous evaluation in --output")
     args = parser.parse_args(argv)
+    if args.command == "evaluate" and args.quantize_channel and not args.quantize:
+        parser.error("--quantize-channel needs --quantize")
     if args.command == "items":
         print(json.dumps(run_items(args), indent=2, default=str))
     else:

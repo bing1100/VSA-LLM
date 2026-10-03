@@ -28,7 +28,14 @@ Every item records the link status of the entry injected at the position the pro
 metric is also reported per status subset (E4.3). Per-item values go to a gzipped sidecar next to
 the output so two runs can be compared item by item (`--compare`, paired bootstrap).
 
+Runs saved with `train.save_trainable_only` (frozen or LoRA hosts, evaluation-only C0') hold no
+frozen host weights; the host is rebuilt from the Hugging Face cache and the trainable state loaded
+on top (`training.lm.load_model_state`, as `load_final`). `--quantize int8|int4` evaluates the run
+after the post-training weight-only quantization of `e4_quant` (output head FP; `--quantize-channel`
+= its variant B), so every probe can be repeated on the quantized model (E9).
+
     python -m vsa_embed.evaluation.channel_probes --run RUN [--probes all|lambada,wic,…] [--fast] --output RUN/probes.json
+    python -m vsa_embed.evaluation.channel_probes --run RUN --quantize int4 [--quantize-channel] --output RUN/probes-int4.json
     python -m vsa_embed.evaluation.channel_probes --host gpt2 --output OUT/probes.json
     python -m vsa_embed.evaluation.channel_probes --compare A/probes.json B/probes.json [--output diff.json]
 """
@@ -283,14 +290,45 @@ def run_tokenizer(config: dict[str, Any]) -> tuple[str, str]:
     return name or config["model"].get("pretrained") or "gpt2", boundary
 
 
+QUANTIZE_BITS = {"int8": 8, "int4": 4}
+
+
+def quantize_model(model: torch.nn.Module, quantize: str | int, *, channel: bool = False,
+                   group_size: str | int = "auto") -> dict[str, Any]:
+    """Post-training weight-only quantization of a loaded `ChannelLM`, exactly as `e4_quant` (D4.3):
+    LoRA merged, the host's linear layers INT8 (per row) or INT4 (group-wise, tile-packed; CUDA
+    only) with torchao, input embedding and output head kept 16-bit; `channel=True` is variant B
+    (the span channel and P1 context quantized too, simulated round-to-nearest), else variant A
+    (channel FP16). Returns the record `e4_quant` keeps per variant (bits, group size, layers)."""
+    from ..experiments.e4_quant import quantize_channel, quantize_host
+    from .quantization import auto_group_size
+    bits = QUANTIZE_BITS[quantize] if isinstance(quantize, str) else int(quantize)
+    if bits not in (8, 4):
+        raise ValueError("quantize must be int8 or int4")
+    if bits == 4 and next(model.parameters()).device.type != "cuda":
+        raise RuntimeError("INT4 (tile-packed) needs the model on CUDA; use int8 on CPU")
+    size = auto_group_size(model.model) if group_size == "auto" else int(group_size)
+    info: dict[str, Any] = {"variant": f"int{bits}-{'B' if channel else 'A'}", "bits": bits, "group_size": size,
+                            "channel_quantized": bool(channel), **quantize_host(model, bits, size)}
+    if channel:
+        info["channel_tensors"] = sorted(quantize_channel(model, bits, size))
+    return info
+
+
 def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.device | str | None = None,
              ontology_path: Path | None = None, alias_table: Path | None = None, holdout_names: Path | None = None,
-             batch_size: int = 32, max_length: int = 256, layer: int = -1) -> ChannelModelAdapter:
-    """Rebuild a trained run's `ChannelLM` (any condition) with its tokenizer and evaluation linker."""
+             batch_size: int = 32, max_length: int = 256, layer: int = -1, quantize: str | int | None = None,
+             quantize_channel: bool = False, group_size: str | int = "auto") -> ChannelModelAdapter:
+    """Rebuild a trained run's `ChannelLM` (any condition) with its tokenizer and evaluation linker.
+
+    `quantize` ("int8" / "int4") applies `quantize_model` after loading (`quantize_channel`: variant
+    B); the record is kept under `info["quantization"]` (None = the run as trained, bf16 autocast)."""
+    if quantize_channel and not quantize:
+        raise ValueError("quantize_channel needs quantize")
     from transformers import AutoTokenizer
 
     from ..integrations.transformers import ChannelLM
-    from ..training.lm import build_channel, build_model, resolve_config
+    from ..training.lm import build_channel, build_model, load_model_state, resolve_config
 
     run_dir = Path(run_dir)
     state = torch.load(run_dir / checkpoint, weights_only=False, map_location="cpu")
@@ -307,8 +345,11 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
         restore_composer_schedule(channel.composer, state["composer_schedule"])
     host_mode = config["model"]["host_mode"] if config["model"]["pretrained"] else "train"
     model = ChannelLM(base, channel, context=context, host_mode=host_mode, lora_rank=int(config["model"]["lora_rank"]))
-    model.load_state_dict(state["model"])
+    # A trainable-only state (frozen or LoRA hosts, `train.save_trainable_only`; an evaluation-only C0')
+    # omits the frozen host weights, which `build_model` has just reloaded from the Hugging Face cache.
+    load_model_state(model, state["model"], trainable_only=bool(state.get("trainable_only", False)))
     model.to(device).eval()
+    quantization = quantize_model(model, quantize, channel=quantize_channel, group_size=group_size) if quantize else None
     tokenizer_name, boundary = run_tokenizer(config)
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     linker, heldout, frequency, table_info = None, frozenset(), None, None
@@ -326,6 +367,10 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
             "boundary": boundary, "min_subtokens": int(config["data"]["min_subtokens"]),
             "ontology": str(ontology_path) if ontology_path else None, "alias_table": table_info,
             "heldout_entries": len(heldout), "parameters": sum(p.numel() for p in model.parameters())}
+    if state.get("trainable_only"):          # new keys only where they apply (headers of earlier outputs unchanged)
+        info["trainable_only_checkpoint"] = True
+    if quantization:
+        info["quantization"] = quantization
     return ChannelModelAdapter(model, tokenizer, device, layer=layer, batch_size=batch_size, max_length=max_length,
                                linker=linker, heldout_entries=heldout, train_frequency=frequency, info=info)
 
@@ -1109,7 +1154,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--resamples", type=int, default=2000); parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--allow-different-settings", action="store_true", help="--compare outputs of different settings")
+    parser.add_argument("--quantize", choices=sorted(QUANTIZE_BITS), default=None,
+                        help="post-training weight-only quantization of the run as in e4_quant (int4 needs CUDA)")
+    parser.add_argument("--quantize-channel", action="store_true", help="with --quantize: variant B (channel quantized too)")
+    parser.add_argument("--group-size", default="auto", help="INT4 group size, or auto (as e4_quant)")
     args = parser.parse_args(argv)
+    if (args.quantize or args.quantize_channel) and not args.run:
+        parser.error("--quantize applies to --run")
+    if args.quantize_channel and not args.quantize:
+        parser.error("--quantize-channel needs --quantize")
     if args.compare:
         comparison = compare_outputs(*args.compare, resamples=args.resamples, seed=args.seed,
                                      allow_different_settings=args.allow_different_settings)
@@ -1130,7 +1183,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.run:
         adapter = load_run(args.run, checkpoint=args.checkpoint, device=device, ontology_path=args.ontology,
                            alias_table=args.alias_table, holdout_names=args.holdout_names, batch_size=args.batch_size,
-                           layer=args.layer)
+                           layer=args.layer, quantize=args.quantize, quantize_channel=args.quantize_channel,
+                           group_size=args.group_size)
         model_info = adapter.info
     else:
         adapter = host_adapter(args.host, device, batch_size=args.batch_size, layer=args.layer)

@@ -1,0 +1,41 @@
+{
+  "schema": "e9-edits/1",
+  "scenario": "e9_edits",
+  "description": "one relation-filler edge of existing concepts replaced by a same-type filler (knowledge editing through the ontology)",
+  "ontology": "/home/bhux/data/vsa-llm/t1/mesh-pubmed-gpt2-v1/hosts/smollm2/ontology.pt",
+  "ontology_alias_sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a",
+  "alias_table": {
+    "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t1.json",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 173258,
+    "sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a"
+  },
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "min_subtokens": 2,
+  "seed": 0,
+  "count": 200,
+  "heldout_fraction": 0.5,
+  "neighbours": 2,
+  "edited_status": {
+    "frequent": 16,
+    "heldout": 100,
+    "mid": 44,
+    "rare": 40
+  },
+  "selection": "single-concept entries (synthetic entries excluded) with exactly one templated edge of the first of ['parent', 'pharmacological_action'] they have, whose canonical alias has \u2265 \u2113_min subtokens; seeded sample of held-out and seen (training frequency \u2265 1) entries",
+  "rule": "edited relation: the first of ['parent', 'pharmacological_action'] with exactly one templated edge; new filler: same relation, same filler type, not already in the frame, another name (frequency-weighted); control: another filler drawn by the same rule",
+  "candidates": "efficacy/paraphrase [old, new]; neighbourhood [true, edited concept's new]; gold = index 0",
+  "lexicon": "t1",
+  "counts": {
+    "concepts": 593,
+    "items": 800,
+    "efficacy": 200,
+    "neighbourhood": 400,
+    "paraphrase": 200
+  }
+}

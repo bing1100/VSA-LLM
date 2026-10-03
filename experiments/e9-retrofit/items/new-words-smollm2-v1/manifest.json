@@ -1,0 +1,86 @@
+{
+  "schema": "e9-new-words/1",
+  "scenario": "e9_new_words",
+  "contamination_free": true,
+  "description": "new concepts with invented names and frames that are new combinations of existing atomics and relations (zero-shot insertion by ontology editing)",
+  "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+  "ontology_alias_sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+  "alias_table": {
+    "source": "wordnet",
+    "holdout_names": "/home/bhux/workplace/VSA-LLM/.claude/worktrees/agent-a93d062c2c29e57de/experiments/c3-general-corpus/runs/v1/holdout_concepts.txt",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 147306,
+    "sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15"
+  },
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "min_subtokens": 2,
+  "seed": 0,
+  "name_seed": 11,
+  "count": 300,
+  "distractors": 4,
+  "null_surface": "thing",
+  "checks": {
+    "names": 364,
+    "rejected_candidates": 0,
+    "checked_against": [
+      "wordnet lemmas",
+      "alias table words",
+      "tokenizer vocabulary",
+      "contamination texts"
+    ],
+    "contamination_chars": 90908706,
+    "reserved_names": 400,
+    "reserved_clashes": 0
+  },
+  "construction": {
+    "donors_eligible": 21102,
+    "donors_tried": 301,
+    "rejected": {
+      "combination exists": 1
+    },
+    "kept_relations": [
+      "hypernym",
+      "instance_hypernym",
+      "lexname",
+      "pos"
+    ],
+    "rule": "category edges of a real donor kept; every other filler resampled (frequency-weighted, same relation and part of speech) so that no existing entry has the category edge together with any resampled edge; donors are not held out",
+    "degree_histogram": {
+      "4": 187,
+      "5": 89,
+      "6": 14,
+      "7": 4,
+      "8": 3,
+      "11": 1,
+      "16": 2
+    },
+    "eligible_donor_degree_histogram": {
+      "4": 13148,
+      "5": 6006,
+      "6": 1072,
+      "7": 373,
+      "8": 170,
+      "9": 93,
+      "10": 77,
+      "11": 51,
+      "12": 22,
+      "13": 20,
+      "14": 10,
+      "15": 6,
+      "16": 54
+    }
+  },
+  "statement_templates": "STATEMENT_TEMPLATES (held-out wordings, never the property templates)",
+  "counts": {
+    "concepts": 300,
+    "items": 2602,
+    "entailment": 600,
+    "property": 1001,
+    "statement": 1001
+  }
+}

@@ -265,6 +265,28 @@ class FrameComposer(nn.Module):
         self.atomic_count = self.atomics.shape[0]
         return torch.arange(start, self.atomic_count, device=self.atomics.device)
 
+    def add_concepts(self, frames: Sequence[Iterable[tuple[int, int]]]) -> Tensor:
+        """Append concepts with the given frames over existing atomics and relations; returns their ids.
+
+        Zero-shot insertion (E9): a new concept's vector is composed from the trained dictionary by
+        the same rule as every other concept, and no existing concept's vector changes. The induced
+        factor has no per-concept parameters; the hybrid factor's `δ` grows by zero rows (the value
+        of a concept never trained); the free factor cannot transfer, so it is refused.
+        """
+        if self.mode == "attentive" and self.concept_factor == "free":
+            raise ValueError("a free concept factor has no row for an unseen concept")
+        new = FrameSchedule.from_frames(frames)
+        self._check_schedule(new)
+        old, start = self.schedule, self.schedule.concept_count
+        device = self.frame_offsets.device
+        self.frame_offsets = torch.cat([old.offsets, new.offsets[1:].to(device) + old.offsets[-1]])
+        self.frame_relations = torch.cat([old.relations, new.relations.to(device)])
+        self.frame_fillers = torch.cat([old.fillers, new.fillers.to(device)])
+        if self.mode == "attentive" and self.concept_factor == "hybrid":
+            self.delta = nn.Parameter(torch.cat([self.delta.detach(), self.delta.new_zeros(new.concept_count, self.delta.shape[1])]),
+                                      requires_grad=self.delta.requires_grad)
+        return torch.arange(start, start + new.concept_count, device=device)
+
     def add_relation_copies(self, sources: Tensor, offsets: Tensor | None = None) -> Tensor:
         """Append relations copied from `sources` (plus optional `offsets` on their vector).
 
