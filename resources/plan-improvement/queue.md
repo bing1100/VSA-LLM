@@ -42,7 +42,7 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 32 | D1 E1 contextual composition on frozen anchors | D | A6, B1, B3, C3 | queued |
 | 33 | D2 E2 mapping × operator frontier | D | A6, B1, B2, C2 | done (`runs/v2`; gate partial: induced ≥ salience, not > binary; operators tie with random_fixed — [gates.md](gates.md)) |
 | 34 | D3 E3 developmental recovery on WordNet | D | D2, D0.2 | queued |
-| 34a | S0 sanity pilot (author request 2026-10-02; not a gate) | D | C3, WP-E4R, WP-host | running |
+| 34a | S0 sanity pilot (author request 2026-10-02; not a gate) | D | C3, WP-E4R, WP-host | done ([R1](../../reports/R1-sanity-pilot.md): small consistent gain on linked text for VSA channels; CARD-660 held-out 0.10 → 0.33; CPT setup uninformative) |
 | 35 | D4.0 harness shake-out; freeze training recipe | D | B7, B8, B11, B14, C3 | todo |
 | 36 | D4.8 early no-channel baselines | D | D4.0 | todo |
 | 37 | G2 pre-registration (`preregistration.md`, escalation rule) | gate | D1–D3, C4 | todo |

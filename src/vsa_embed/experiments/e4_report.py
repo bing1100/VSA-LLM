@@ -158,7 +158,7 @@ def load_run(path: Path) -> Run:
             windows = {s: (sums[i], counts[i]) for i, s in enumerate(data["strata"])}
             starts = data["starts"]
     rows = [json.loads(line) for line in (path / "metrics.jsonl").read_text().splitlines() if line.strip()]
-    speeds = [r["tokens_per_s"] for r in rows if r.get("type") == "train" and r.get("tokens_per_s")]
+    speeds = [r.get("train_tokens_per_s") or r["tokens_per_s"] for r in rows if r.get("type") == "train" and r.get("tokens_per_s")]
     condition = match["condition"] if match else path.name
     condition = "C0'" if condition == "C0p" else condition         # C0' is written C0p in CPT file names
     return Run(path=path, config=config, condition=condition,
