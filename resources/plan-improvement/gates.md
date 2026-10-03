@@ -80,3 +80,11 @@ Env `vsa-repro`: Python 3.12.4, torch 2.11.0+cu128, transformers 4.54.0, numpy 2
 ## T1-open holdout re-frozen before any training (2026-10-02)
 
 The T1-open slice build (`experiments/t1-open-clinical/runs/slice-v1`) pinned holdout `fd4244ea…`, but the full build produced `1c477afd…`: the slice config capped `eval_general_docs`, which feeds the chars-per-token calibration of the 50/50 PubMed/general mix, so the training stream (and its frequency pre-sample) differed by one document. No run had used either holdout, so the track holdout is re-frozen from the full config (`t1.yaml` pins `1c477afd…`; slice-v1 marked stale). Rule 2 of tasks.md (freeze before the first run that could see it) holds.
+
+## D1 (E1) — contextual composition on frozen GPT-2 anchors (2026-10-03)
+
+**Inputs.** `experiments/e1-contextual-composition/runs/v1` (SemCor, 690 polysemous lemmas, 45,470 sentences, layer 12, 3 seeds). **Gate (experiments.md E1): FAIL.** M1 with the host-state query (P2) beats static M0 on held-out lemmas — variance explained +0.69 [+0.42, +0.96] and context MRR +0.051 [+0.049, +0.053] — but absolute variance explained stays negative (−2.8) and the attention's sense accuracy is below the most-frequent-sense baseline (−0.25 [−0.29, −0.21]). Operators tie again (hrr ≈ diagonal ≈ random_fixed ≈ untyped). Reading: on frozen anchors, a context query improves composition relative to static bundling but does not align with WordNet senses; consistent with E2 and E10.1, frozen-host targets are the wrong regime. Carried to G2 as evidence that context helps (M1 kept for E4 C5) but not as a sense-alignment claim.
+
+## D4.0 recipe sweep (2026-10-03)
+
+`experiments/e4-small-lm/runs/recipe` (C0, 50M, 100M tokens, seed 1): final loss by tokens/step × peak lr — 262k: 5.63 / 5.99 / 5.98 (lr 1e-3 / 2e-3 / 4e-3); 131k: 4.88 / 5.16 / 5.19; **65k: 4.42 / 4.29 / 4.79**. The pilot recipe (262k, 1e-3) is 1.3 nats worse than the best setting at the same tokens: the S0 pilot ran in an under-trained regime, and its effect sizes should be re-measured under the frozen recipe. Two 32k-tokens/step runs (lr 1e-3, 2e-3) are queued before the recipe is frozen.
