@@ -438,8 +438,9 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     if 0 not in evaluated:
         run_eval(0)
     model.train()
-    started = time.monotonic()
+    started, logged_step, train_seconds = time.monotonic(), step, 0.0
     while step < total_steps:
+        step_started = time.monotonic()
         lr = _lr(step, total_steps, warmup_steps, train_cfg["lr"], train_cfg["min_lr_ratio"])
         for group in optimizer.param_groups:
             group["lr"] = lr * group.get("lr_scale", 1.0)
@@ -470,11 +471,15 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                 log({"type": "card", "step": step, **{k: v for k, v in card.items() if k != "direction"}})
         step += 1
         tokens = step * tokens_per_step
+        train_seconds += time.monotonic() - step_started
         if step % train_cfg["log_every"] == 0 or step == total_steps:
-            elapsed = time.monotonic() - started
+            elapsed, done = time.monotonic() - started, (step - logged_step) * tokens_per_step
+            # `tokens_per_s`: wall clock since the last log (evaluations and checkpoints included);
+            # `train_tokens_per_s`: optimizer steps only. Both count the steps actually taken since the last
+            # log (the final row used to assume a full `log_every` interval).
             log({"type": "train", "step": step, "tokens": tokens, "loss": total_loss, "lr": lr,
-                 "tokens_per_s": train_cfg["log_every"] * tokens_per_step / max(elapsed, 1e-9)})
-            started = time.monotonic()
+                 "tokens_per_s": done / max(elapsed, 1e-9), "train_tokens_per_s": done / max(train_seconds, 1e-9)})
+            started, logged_step, train_seconds = time.monotonic(), step, 0.0
         due = [t for t in schedule if t <= tokens and t not in evaluated]
         if due:
             run_eval(max(due)); evaluated.update(due)
