@@ -141,7 +141,8 @@ def representations(run: E5Run, counts: np.ndarray | None, *, max_items: int | N
                 # structure alone predicts, before any training.
                 from ..training.lm import build_channel
                 torch.manual_seed(int(run.config["seed"]))
-                fresh, _ = build_channel(run.config, run.ontology, run.channel.gate.in_features // 2)
+                fresh, _ = build_channel(run.config, run.ontology, run.channel.gate.in_features // 2,
+                                         host=run.adapter.model.model)
                 out["concept_rows_init"] = {"ids": entries, "x": entry_rows(fresh, torch.as_tensor(entries)).numpy(), "y": y}
     return out
 

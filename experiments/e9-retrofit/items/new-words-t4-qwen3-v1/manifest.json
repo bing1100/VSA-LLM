@@ -1,0 +1,107 @@
+{
+  "schema": "e9-new-words/1",
+  "scenario": "e9_new_words",
+  "contamination_free": true,
+  "lexicon": "t4",
+  "description": "new concepts with invented names and frames that are new combinations of existing atomics and relations (zero-shot insertion by ontology editing)",
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1-qwen3/ontology.pt",
+  "ontology_alias_sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a",
+  "alias_table": {
+    "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t4.json",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 252825,
+    "sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a"
+  },
+  "tokenizer": "Qwen/Qwen3-0.6B-Base",
+  "min_subtokens": 2,
+  "seed": 0,
+  "name_seed": 11,
+  "count": 300,
+  "distractors": 4,
+  "null_surface": "this",
+  "checks": {
+    "names": 364,
+    "rejected_candidates": 0,
+    "checked_against": [
+      "wordnet lemmas",
+      "alias table words",
+      "tokenizer vocabulary",
+      "contamination texts"
+    ],
+    "contamination_chars": 87972717,
+    "reserved_names": 299,
+    "reserved_clashes": 0
+  },
+  "construction": {
+    "donors_eligible": 40085,
+    "donors_tried": 322,
+    "rejected": {
+      "combination exists": 22
+    },
+    "kept_relations": [
+      "branch",
+      "charge",
+      "contains_element",
+      "is_a"
+    ],
+    "rule": "category edges of a real donor kept; every other filler resampled (frequency-weighted, same relation) so that no existing entry has the category edge together with all resampled edges and no entry has the same frame; donors are neither held out nor synthetic",
+    "degree_histogram": {
+      "3": 14,
+      "4": 3,
+      "5": 3,
+      "6": 30,
+      "7": 48,
+      "8": 74,
+      "9": 38,
+      "10": 35,
+      "11": 19,
+      "12": 7,
+      "13": 12,
+      "14": 7,
+      "15": 4,
+      "16": 1,
+      "18": 1,
+      "20": 2,
+      "21": 1,
+      "24": 1
+    },
+    "eligible_donor_degree_histogram": {
+      "3": 811,
+      "4": 382,
+      "5": 422,
+      "6": 3416,
+      "7": 6814,
+      "8": 8384,
+      "9": 6506,
+      "10": 4481,
+      "11": 3136,
+      "12": 2057,
+      "13": 1269,
+      "14": 797,
+      "15": 555,
+      "16": 362,
+      "17": 225,
+      "18": 140,
+      "19": 75,
+      "20": 56,
+      "21": 45,
+      "22": 30,
+      "23": 24,
+      "24": 98
+    }
+  },
+  "statement_templates": "the track's held-out wording (third paraphrase or statement; never a property template)",
+  "entailment": "true vs corrupted frame statement (the ontology has no hierarchy the items use)",
+  "counts": {
+    "concepts": 300,
+    "items": 2022,
+    "entailment": 600,
+    "property": 711,
+    "statement": 711
+  }
+}

@@ -6,7 +6,11 @@ outputs mirror `c3_corpus.py`, so the trainer and the E4 tooling read them uncha
 different tokenizers), `feasibility_strict` (WP-T1's criteria, reported in addition to `FEASIBILITY`) and
 `linker.alias_normalization` (`span_channel.ALIAS_NORMALIZATIONS`; "identifier" keeps `_` in code-symbol
 aliases — then `ontology.pt` records the mode, `alias_table.json` is written next to it, and the report
-compares linking with the default mode).
+compares linking with the default mode), `data.holdout_names` (a `holdout_concepts.txt` of another build: the
+holdout is read instead of chosen from this tokenizer's presample, so a relink for another host tokenizer keeps
+the frozen holdout of a presample-chosen track, e.g. T4 for Qwen3; pin it with `expected_holdout_sha256`).
+Tokenizers that normalize their input (Qwen: NFC) are decode-checked against the normalized text, and every
+corpus manifest records the tokenizer fingerprint (`tokenizer_sha256`).
 
 1. `track.prepare()` writes the domain documents (`docs/eval.jsonl.gz`, `docs/train.jsonl.gz`).
 2. Ontology adapter → frames and aliases. The track's synthetic concepts (invented names, frames
@@ -167,14 +171,15 @@ def _take(texts: Iterator[str], limit: int) -> list[str]:
 
 
 def build_part(texts: Iterator[str], out_dir: Path, *, table: AliasTable, max_tokens: int, request: dict[str, Any],
-               **build: Any) -> dict[str, Any]:
+               tokenizer_sha256: str | None = None, **build: Any) -> dict[str, Any]:
     """`build_corpus` with resumption only if the earlier build had the same request (sources and
-    token budget) as well as the same alias table; otherwise the directory is rebuilt."""
+    token budget) as well as the same alias table; otherwise the directory is rebuilt. `tokenizer_sha256`
+    (the tokenizer fingerprint) is recorded in the manifest, where the trainer checks it against its host."""
     manifest_path = out_dir / "manifest.json"
     if manifest_path.exists() and json.loads(manifest_path.read_text()).get("request") != request:
         manifest_path.unlink()
-    return build_corpus(texts, out_dir, table=table, max_tokens=max_tokens, extra_manifest={"request": request},
-                        reuse=True, **build)
+    extra = {"request": request, **({"tokenizer_sha256": tokenizer_sha256} if tokenizer_sha256 else {})}
+    return build_corpus(texts, out_dir, table=table, max_tokens=max_tokens, extra_manifest=extra, reuse=True, **build)
 
 
 def _metadata_scalars(metadata: dict[str, Any]) -> dict[str, Any]:
@@ -208,13 +213,22 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     paths, data = config["paths"], config["data"]
     data_root = Path(paths["data_root"]).expanduser()
     data_root.mkdir(parents=True, exist_ok=True)
-    items_dir = Path(config["items_dir"])
+    items_dir = Path(config["items_dir"]).expanduser()      # may live with the data (e.g. a relink whose items are not committed)
     track: Track = load_track(config["track"], config, data_root)
     general = [str(Path(p).expanduser()) for p in paths["general_shards"]]
     _verify(general, paths.get("general_shard_sha256"))
     tokenizer_name = config["tokenizer"]
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     eos, vocab_size, workers = tokenizer.eos_token_id, len(tokenizer), int(config["workers"])
+    # A tokenizer that normalizes its input (Qwen: NFC) is decode-checked against the normalized text (as
+    # host_corpus); SmolLM2 and GPT-2 have no normalizer, so their builds pass nothing and are unchanged. Every
+    # corpus records the tokenizer fingerprint (`TokenCorpus` manifests; the trainer refuses another host's).
+    from vsa_embed.data.corpus import tokenizer_fingerprint
+    from vsa_embed.experiments.host_corpus import tokenizer_normalization
+    normalization_form = tokenizer_normalization(tokenizer)
+    fingerprint = tokenizer_fingerprint(tokenizer)
+    encode = dict(tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size, tokenizer_sha256=fingerprint,
+                  **({"normalization": normalization_form} if normalization_form else {}))
 
     # 1. domain documents.
     documents_summary = track.prepare()
@@ -240,11 +254,19 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     for alias, entry in base_table.alias_to_entry.items():
         entry_length[entry] = max(entry_length.get(entry, 0), alias_lengths[alias])
     fixed = track.fixed_holdout(ontology)
-    if fixed is None:
+    frozen = data.get("holdout_names")       # opt-in: the holdout another tokenizer's build froze (its holdout_concepts.txt)
+    if fixed is None and frozen:
+        index = {name: i for i, name in enumerate(ontology.concept_names)}
+        names = sorted(n for n in Path(frozen).expanduser().read_text().splitlines() if n)
+        missing = [n for n in names if n not in index]
+        if missing:
+            raise ValueError(f"{len(missing)} frozen held-out concepts are not in the ontology (e.g. {missing[:3]})")
+        holdout = {"concepts": sorted(index[n] for n in names), "names": names, "sha256": names_sha256(names),
+                   "eligible_entries": None, "chosen_entries": [], "method": f"frozen names ({frozen})"}
+    elif fixed is None:
         presample_dir = data_root / "presample"
         build_part(track.documents("train"), presample_dir, table=base_table, max_tokens=int(data["presample_tokens"]),
-                   request={"source": "domain train presample", "max_tokens": int(data["presample_tokens"])},
-                   tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size)
+                   request={"source": "domain train presample", "max_tokens": int(data["presample_tokens"])}, **encode)
         counts = Counter(TokenCorpus.open(presample_dir).spans["entry"].tolist())
         synthetic_entries_base = {base_table.alias_to_entry[a.lower()] for c in synthetic for a in c.aliases
                                   if a.lower() in base_table.alias_to_entry}
@@ -274,7 +296,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     real_heldout_entries = sorted(set(heldout_entries) - set(synthetic_entries))
 
     # 4. corpora.
-    build = dict(tokenizer_name=tokenizer_name, eos_id=eos, workers=workers, vocab_size=vocab_size)
+    build = encode
     eval_manifest = build_part(track.documents("eval"), data_root / "eval", table=full, max_tokens=int(data["eval_tokens"]),
                                request={"source": "domain eval", "max_tokens": int(data["eval_tokens"])}, **build)
     general_skip, general_eval_docs = int(data["general_skip_docs"]), int(data["general_eval_docs"])
@@ -296,7 +318,8 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         parts.append(data_root / "train-general")
     mix = {"domain_tokens": domain_manifest["tokens"], "general_tokens": general_manifest["tokens"] if general_manifest else 0}
     mix["domain_fraction"] = mix["domain_tokens"] / max(1, mix["domain_tokens"] + mix["general_tokens"])
-    train_manifest = concat_corpora(parts, data_root / "train", extra_manifest={"mix": mix}, reuse=True)
+    train_manifest = concat_corpora(parts, data_root / "train", extra_manifest={"mix": mix, "tokenizer_sha256": fingerprint},
+                                    reuse=True)
 
     # 5. channel ontology, cardinality, feasibility.
     train_corpus, eval_corpus = TokenCorpus.open(data_root / "train"), TokenCorpus.open(data_root / "eval")

@@ -327,8 +327,7 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
         raise ValueError("quantize_channel needs quantize")
     from transformers import AutoTokenizer
 
-    from ..integrations.transformers import ChannelLM
-    from ..training.lm import build_channel, build_model, load_model_state, resolve_config
+    from ..training.lm import build_channel, build_model, channel_scale_record, load_model_state, resolve_config, wrap_host
 
     run_dir = Path(run_dir)
     state = torch.load(run_dir / checkpoint, weights_only=False, map_location="cpu")
@@ -338,13 +337,14 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
     ontology_path = Path(ontology_source) if ontology_source else None
     ontology = torch.load(ontology_path, weights_only=False) if ontology_path else None
     base = build_model(config)
-    channel, context = build_channel(config, ontology, base.get_input_embeddings().weight.shape[1])
+    # `host`: a `channel.scale_to_host` run builds its scale buffer here; the state loaded below restores the trained value.
+    channel, context = build_channel(config, ontology, base.get_input_embeddings().weight.shape[1], host=base)
     if channel is not None and ontology is not None:
         channel.set_unseen(ontology["heldout_entries"])
     if channel is not None and channel.composer is not None and state.get("composer_schedule"):
         restore_composer_schedule(channel.composer, state["composer_schedule"])
     host_mode = config["model"]["host_mode"] if config["model"]["pretrained"] else "train"
-    model = ChannelLM(base, channel, context=context, host_mode=host_mode, lora_rank=int(config["model"]["lora_rank"]))
+    model = wrap_host(config, base, channel, context)
     # A trainable-only state (frozen or LoRA hosts, `train.save_trainable_only`; an evaluation-only C0')
     # omits the frozen host weights, which `build_model` has just reloaded from the Hugging Face cache.
     load_model_state(model, state["model"], trainable_only=bool(state.get("trainable_only", False)))
@@ -369,6 +369,8 @@ def load_run(run_dir: Path, *, checkpoint: str = "final.pt", device: torch.devic
             "heldout_entries": len(heldout), "parameters": sum(p.numel() for p in model.parameters())}
     if state.get("trainable_only"):          # new keys only where they apply (headers of earlier outputs unchanged)
         info["trainable_only_checkpoint"] = True
+    if (scale := channel_scale_record(channel)) is not None:
+        info["channel_host_scale"] = scale["scale"]
     if quantization:
         info["quantization"] = quantization
     return ChannelModelAdapter(model, tokenizer, device, layer=layer, batch_size=batch_size, max_length=max_length,

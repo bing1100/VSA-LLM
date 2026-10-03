@@ -23,15 +23,16 @@ from ..span_channel import SpanChannel
 class LoRALinear(nn.Module):
     """`y = W x + (α / r) · B A x` with `B` zero-initialised (identity at start)."""
 
-    def __init__(self, base: nn.Module, rank: int = 16, alpha: float = 32.0) -> None:
+    def __init__(self, base: nn.Module, rank: int = 16, alpha: float = 32.0, *, dtype: torch.dtype | None = None) -> None:
         super().__init__()
         weight = base.weight
         # GPT-2 uses Conv1D with weight (in, out); nn.Linear uses (out, in).
         self.transposed = type(base).__name__ == "Conv1D"
         in_features, out_features = (weight.shape if self.transposed else weight.shape[::-1])
         self.base, self.rank, self.scale = base, rank, alpha / rank
-        self.lora_a = nn.Parameter(torch.randn(rank, in_features, dtype=weight.dtype, device=weight.device) / math.sqrt(in_features))
-        self.lora_b = nn.Parameter(torch.zeros(out_features, rank, dtype=weight.dtype, device=weight.device))
+        dtype = dtype or weight.dtype       # `dtype`: adapters in another precision than a 16-bit host (float32)
+        self.lora_a = nn.Parameter(torch.randn(rank, in_features, dtype=dtype, device=weight.device) / math.sqrt(in_features))
+        self.lora_b = nn.Parameter(torch.zeros(out_features, rank, dtype=dtype, device=weight.device))
 
     def forward(self, x: Tensor) -> Tensor:
         return self.base(x) + self.scale * F.linear(F.linear(x, self.lora_a.to(x.dtype)), self.lora_b.to(x.dtype))
@@ -41,15 +42,16 @@ LORA_TARGETS = ("q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", 
 
 
 def add_lora(model: nn.Module, *, rank: int = 16, alpha: float = 32.0,
-             targets: Iterable[str] = LORA_TARGETS) -> list[nn.Parameter]:
-    """Replace target projections by `LoRALinear`; returns the new trainable parameters."""
+             targets: Iterable[str] = LORA_TARGETS, dtype: torch.dtype | None = None) -> list[nn.Parameter]:
+    """Replace target projections by `LoRALinear`; returns the new trainable parameters (`dtype`: the
+    adapters' dtype, default the host weights')."""
     targets = set(targets)
     params: list[nn.Parameter] = []
     for name, module in list(model.named_modules()):
         for child_name, child in list(module.named_children()):
             if child_name in targets and hasattr(child, "weight") and child.weight.ndim == 2 \
                     and not isinstance(child, LoRALinear):
-                wrapped = LoRALinear(child, rank, alpha)
+                wrapped = LoRALinear(child, rank, alpha, dtype=dtype)
                 setattr(module, child_name, wrapped)
                 params += [wrapped.lora_a, wrapped.lora_b]
     return params
@@ -81,7 +83,7 @@ class ChannelLM(nn.Module):
 
     def __init__(self, model: nn.Module, channel: SpanChannel | None = None, *,
                  context: CausalLocalContext | None = None, host_mode: str = "train",
-                 lora_rank: int = 16, loss_chunk: int = 2048) -> None:
+                 lora_rank: int = 16, loss_chunk: int = 2048, adapter_dtype: torch.dtype | None = None) -> None:
         super().__init__()
         if host_mode not in {"train", "frozen", "lora"}:
             raise ValueError("host_mode must be train, frozen or lora")
@@ -91,7 +93,7 @@ class ChannelLM(nn.Module):
             for parameter in self.model.parameters():
                 parameter.requires_grad_(False)
         if host_mode == "lora":
-            add_lora(self.model, rank=lora_rank)
+            add_lora(self.model, rank=lora_rank, dtype=adapter_dtype)
 
     @property
     def base(self) -> nn.Module:

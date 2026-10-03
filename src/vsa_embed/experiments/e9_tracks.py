@@ -11,6 +11,10 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
   (open decision 12); no synthetic concepts.
 - `wordnet` — the C3 WordNet host corpus (the original E9 design).
 
+Host tokenizer families (WP-Qwen): every track is built for SmolLM2 (`data_root`) and, relinked with the same
+ontology, alias table and holdout, for the Qwen3 base tokenizer (`TrackSpec.for_family("qwen3")`, `QWEN3_ROOTS`);
+the WP-C7 zero-shot items and the alias table are tokenizer-independent and shared.
+
 Each track gives the trainer its corpora (`data.train`, `data.eval`, `data.ontology`), a general-text
 corpus for locality and general-text quantization damage (`eval-general`; none for WordNet, whose
 evaluation corpus is general text), the evaluation alias table, the wording of the dimension-3 items
@@ -32,7 +36,7 @@ frames replaced by random frames of equal degree, same relations, fillers drawn 
 from each relation's fillers).
 
     python -m vsa_embed.experiments.e9_tracks alias-table --track t5 [--output PATH]
-    python -m vsa_embed.experiments.e9_tracks items --track t5 --kind new|edits --output DIR
+    python -m vsa_embed.experiments.e9_tracks items --track t5 --kind new|edits [--family qwen3] --output DIR
     python -m vsa_embed.experiments.e9_tracks zeroshot --run RUN --track t5 --output OUT [--quantize int4]
 """
 
@@ -44,7 +48,7 @@ import json
 import random
 import time
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
 
@@ -91,6 +95,17 @@ class TrackSpec:
     category_relations: tuple[str, ...] = ("is_a",)
     kept_relations: tuple[str, ...] = ("is_a",)
     edit_relations: tuple[str, ...] = ("is_a",)
+    family: str = "smollm2"                  # host tokenizer family of `data_root` (`cpt_plan.HOSTS[...]["corpus"]`)
+    family_roots: dict[str, Path] = field(default_factory=dict, compare=False)   # other families' corpus roots
+
+    def for_family(self, family: str) -> "TrackSpec":
+        """The track on another host tokenizer family: the same ontology, alias table, holdout, WP-C7 items and
+        relation choices, with the corpora (`data_root`) relinked for that tokenizer (e.g. `qwen3`)."""
+        if family == self.family:
+            return self
+        if family not in self.family_roots:
+            raise ValueError(f"{self.name} has no {family} corpora (known: {', '.join([self.family, *self.family_roots])})")
+        return replace(self, family=family, data_root=self.family_roots[family])
 
     @property
     def ontology(self) -> Path:
@@ -114,31 +129,39 @@ class TrackSpec:
 
 
 DATA = Path("~/data/vsa-llm").expanduser()
+# Qwen3 corpora of each track (WP-Qwen): the same builders with the Qwen3 base tokenizer (`Qwen/Qwen3-0.6B-Base`,
+# shared by the 0.6B/1.7B/4B hosts). T5 is built (`experiments/t5-enterprise-glossary/t5-qwen3.yaml`); the others
+# are built by the commands of `resources/plan-improvement/execution.md` (E9 on Qwen3).
+QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
+               "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1"}
 TRACKS: dict[str, TrackSpec] = {
     "t5": TrackSpec("t5", "T5 enterprise glossary", DATA / "tracks/t5-glossary/v1",
                     config=Path("experiments/t5-enterprise-glossary/t5.yaml"), items_dir=Path("experiments/t5-enterprise-glossary/items"),
                     holdout_names=Path("experiments/t5-enterprise-glossary/items/holdout_concepts.txt"),
-                    category_relations=("is_a",), kept_relations=("is_a",), edit_relations=("owned_by", "area", "status")),
+                    category_relations=("is_a",), kept_relations=("is_a",), edit_relations=("owned_by", "area", "status"),
+                    family_roots={"qwen3": QWEN3_ROOTS["t5"]}),
     "t4": TrackSpec("t4", "T4 chemistry", DATA / "tracks/t4-chemistry/v1", config=Path("experiments/t4-chemistry/t4.yaml"),
                     items_dir=Path("experiments/t4-chemistry/items"),
                     holdout_names=Path("experiments/t4-chemistry/items/holdout_concepts.txt"),
                     category_relations=("is_a",), kept_relations=("is_a", "branch", "charge", "contains_element"),
-                    edit_relations=("has_functional_parent", "has_role", "is_a")),
+                    edit_relations=("has_functional_parent", "has_role", "is_a"), family_roots={"qwen3": QWEN3_ROOTS["t4"]}),
     "t1": TrackSpec("t1", "T1-open (MeSH + PubMed)", DATA / "t1/mesh-pubmed-gpt2-v1/hosts/smollm2", eval_split="eval-pubmed",
                     windows=2048, config=Path("experiments/t1-open-clinical/t1.yaml"),
                     holdout_names=Path("experiments/t1-open-clinical/runs/v1/holdout_concepts.txt"),
                     category_relations=("parent",), kept_relations=("parent", "branch_top", "branch_second"),
-                    edit_relations=("parent", "pharmacological_action")),
+                    edit_relations=("parent", "pharmacological_action"), family_roots={"qwen3": QWEN3_ROOTS["t1"]}),
     "wordnet": TrackSpec("wordnet", "WordNet general (C3)", DATA / "c3/wordnet-smollm2-v1", general_split=None,
                          category_relations=edit.CATEGORY_RELATIONS, kept_relations=tuple(sorted(edit.KEPT_RELATIONS)),
-                         edit_relations=edit.CATEGORY_RELATIONS),
+                         edit_relations=edit.CATEGORY_RELATIONS, family_roots={"qwen3": QWEN3_ROOTS["wordnet"]}),
 }
+FAMILY_TOKENIZERS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-0.6B-Base"}
 
 
-def track_spec(name: str) -> TrackSpec:
+def track_spec(name: str, family: str = "smollm2") -> TrackSpec:
+    """A track's spec; `family` selects the host tokenizer family's corpora (default: the SmolLM2 ones)."""
     if name not in TRACKS:
         raise ValueError(f"unknown track {name!r}; choose from {', '.join(TRACKS)}")
-    return TRACKS[name]
+    return TRACKS[name].for_family(family)
 
 
 # -- the track ontology replay and its alias table ------------------------------------------------------------
@@ -562,13 +585,14 @@ def run_zeroshot(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def run_items(args: argparse.Namespace) -> dict[str, Any]:
-    spec = track_spec(args.track)
+    family = getattr(args, "family", "smollm2")
+    spec = track_spec(args.track, family)
     if args.output.exists() and any(args.output.iterdir()):
         raise FileExistsError(f"{args.output} is not empty")
     ontology = torch.load(spec.ontology, weights_only=False)
     alias_table = ensure_alias_table(spec)
     lexicon = lexicon_for(spec, ontology)
-    tokenizer = args.tokenizer
+    tokenizer = args.tokenizer or FAMILY_TOKENIZERS[family]
     if args.kind == "new":
         texts = edit._contamination_texts([spec.data_root / "train"], tokenizer, args.contamination_tokens)
         reserved = edit._reserved_names(args.reserved_names)
@@ -589,7 +613,10 @@ def main(argv: list[str] | None = None) -> None:
     table.add_argument("--track", required=True, choices=sorted(TRACKS)); table.add_argument("--output", type=Path, default=None)
     items = sub.add_parser("items", help="dimension-3 items (new words or edits) on a track ontology")
     items.add_argument("--track", required=True, choices=sorted(TRACKS)); items.add_argument("--kind", required=True, choices=["new", "edits"])
-    items.add_argument("--output", type=Path, required=True); items.add_argument("--tokenizer", default="HuggingFaceTB/SmolLM2-135M")
+    items.add_argument("--output", type=Path, required=True)
+    items.add_argument("--family", default="smollm2", choices=sorted(FAMILY_TOKENIZERS),
+                       help="host tokenizer family: its corpora (ontology, contamination text) and default tokenizer")
+    items.add_argument("--tokenizer", default=None, help="default: the family's (SmolLM2-135M; Qwen3-0.6B-Base)")
     items.add_argument("--count", type=int, default=None); items.add_argument("--seed", type=int, default=0)
     items.add_argument("--min-subtokens", type=int, default=2); items.add_argument("--name-seed", type=int, default=11)
     items.add_argument("--contamination-tokens", type=int, default=20_000_000)
