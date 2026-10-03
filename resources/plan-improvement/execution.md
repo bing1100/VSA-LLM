@@ -255,3 +255,20 @@ PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track wordnet --ki
   - The channel's effect passes through recurrent state rather than attention in 3/4 of the layers.
   - The checkpoint is a natively multimodal base, used here text-only.
   - INT4 tinygemm has not been tried on the new layer shapes.
+
+## 3-day GPU block (author request 2026-10-03, ≈ 72 GPU-h, measured costs)
+
+Measured: SmolLM2 E9 block (360M + 135M, one track, one seed, with evaluations) ≈ 6.5 GPU-h; Qwen3 training per 50M-token LoRA run 0.6B 1.7 h, 1.7B 3.2 h, 4B 11.4 h (memory probe `experiments/e9-retrofit/memory/qwen3-v1`).
+
+| Order | Block | Priority | GPU-h |
+|---|---|---|---:|
+| running | Qwen3-1.7B + 0.6B on T5, seed 1 (`t5-qwen3`) | 26–29 | ≈ 18 |
+| 0 | E3 (D3, developmental WordNet) | 30 | ≈ 2 |
+| 1 | SmolLM2 on T5, seeds 2–3 | 31–34 | ≈ 13 |
+| 2 | SmolLM2 on T4 chemistry, seed 1 | 35–38 | ≈ 6.5 |
+| 3 | SmolLM2 on T1-open (PubMed/MeSH), seed 1 | 39–42 | ≈ 7 |
+| 4 | SmolLM2 on WordNet general (negative control), seed 1 | 43–46 | ≈ 6.5 |
+| 5 | Qwen3-1.7B + 0.6B on T5, seed 2 | 47–50 | ≈ 18 |
+| 6 | E7 D7.1 authoring quality | 60 | ≈ 1 |
+
+Not in this block (author decision pending): Qwen3-4B (≈ 11.4 h per run; a lite P0/C0′/C5 at 25M tokens ≈ 15 h), Qwen3.5 (separate transformers 5.18 environment), the committed E4 core (D4.0 shake-out → D4.8/D4.7/D4.9/D4.1) and E10.2, which follow once the recipe sweep is analyzed.
