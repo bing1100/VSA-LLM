@@ -1,0 +1,164 @@
+# E10.0 self-learned semantics (H-H) on a planted synthetic ontology. CPU only, single-threaded jobs.
+# resources/plan-improvement/execution.md §E10 (incl. the additions of 2026-10-02: E10.4–E10.8).
+experiment: e10-self-semantics
+stage: E10.0
+seeds: [101, 202, 303]
+dev_seed: 7                 # hyper-parameters were chosen on this seed only; it is not reported
+num_threads: 1
+workers: 4
+parts: [a, b, c, d, e, seed, dream, variety, continual]
+
+world:
+  kind: synthetic
+  dimension: 64
+  roots: 4
+  branching: [3, 4, 5]      # 4 + 12 + 48 + 240 = 304 concepts
+  attributes: 40
+  wholes: 40
+  parts: 100
+  groups: 15
+  members: 60
+  similar_pairs_per_family: 2
+  regions: 4
+  countries_per_region: 3
+  cities_per_country: 3
+  salience_std: 0.3
+  jitter_std: 0.15
+  observations: 12          # train 0-3, validation (self-test) 4-7, audit 8-11; new words infer 0-7, eval 8-11
+  observation_noise: 0.6
+  prior_cosine: 0.8         # atomic / relation priors: noisy stand-ins for pretrained vectors
+  split_fractions: [0.13, 0.13, 0.13]   # validation, test, new-word concepts (rest: training)
+  audit_observations: 4
+
+model:
+  operator: hrr
+  relation_scaling: true    # per-relation log-scale (transferable part of the mapping)
+  scale_free: true          # unit-norm relation operators, mean-centred log-scales (removes the L1 scale loophole)
+  lr: 0.02
+
+learn:                      # default learnability for parts b-e and the add-ons: everything learnable + L2-to-prior
+  atomics: l2
+  relations: l2
+  mapping: l2
+  frames: l2
+  atomic_l2: 1.0
+  relation_l2: 1.0
+  mapping_l2: 0.1
+  frame_l1: 0.02
+  frame_l2: 0.0
+  assignment_entropy: 0.01
+  slot_group_l1: 0.0
+  gate_max: 2.0
+  mass_floor: 1.0           # zero unless a concept's total edge mass is < 1 (only concepts made of candidates)
+  mass_floor_weight: 1.0
+
+selftest:
+  resamples: 1000
+  alpha: 0.025              # two-sided 95% percentile bootstrap; accept iff lower bound > 0
+  propose_mass: 0.1         # candidate edges at or above this mass are proposed as hypotheses
+
+discovery:
+  steps_per_round: 800
+  min_assignment: 0.5
+  min_mass: 0.25
+  resamples: 1000
+  alpha: 0.025
+  patience: 1
+  max_rounds: 5
+  enforce_rule: true
+  hypothesis_limit: 400
+  rule_limit: 5000
+  trajectory_every: 100
+  riddle_full: true
+  slot_init_mass: 0.1
+  absorb: true
+  refine: false            # dev seeds: the held-out-tested pre-consolidation split over-splits (kept as an option)
+  hypotheses: {min_overlap: 0.2, min_symmetry: 0.1, max_antisymmetry: 0.05, min_transitivity: 0.2, min_two_paths: 3,
+               min_functional: 0.8}
+
+dream_settings:
+  refit_steps: 150
+  min_split_members: 8
+  split_epsilon: 0.3
+  merge_cosine: 0.3
+  merge_margin: 0.0
+
+a:                          # learnability ablation: full 3^4 grid
+  erasure: 0.3
+  spurious: 0.05
+  distractors: 2
+  settings: [fixed, l2, free]
+  steps: 1500
+  chunk: 27
+
+b:                          # erasure & recovery
+  rates: [0.1, 0.3, 0.5, 0.7]
+  distractors: 2
+  steps: 1500
+  acceptance_rates: [0.3, 0.5]
+
+c:                          # blank-relation discovery
+  modes: [absent, collapsed]
+  hidden: [has_part, similar_to, located_in]
+  coverage: 0.7
+  distractor_ratio: 1.0
+  max_slots: 20
+  collapse: {meronym: [part_of, member_of]}
+  methods: [additive, additive_norule, all_at_once, m3, stem_cell, oracle]
+  all_at_once_slots: 5
+  stem_cell_pool: 20
+  m3_schedule: [0.3, 0.5]   # warm-up and growth fractions of the matched step budget
+  m3:
+    beta: 0.9
+    screen_every: 200
+    activity_percentile: 0.25
+    coherence_threshold: 0.6
+    max_candidates: 16
+    min_usages: 6
+    min_contributions: 40
+    max_splits_per_round: 4
+    growth_budget: 1.0
+    cooldown: 400
+    epsilon: 0.05
+    permutations: 199
+    p_value: 0.01
+    merge_cosine: 0.98
+    route_unobserved: parent
+
+e:                          # new-word frame inference
+  k: [1, 2, 4, 8]
+  max_edges: 12
+  threshold: 0.2
+
+seed_ontology:              # E10.4
+  conditions: [empty, core, noisy, curated30, full]
+  coverage: 0.7
+  distractor_ratio: 1.0
+  max_slots: 12
+  max_rounds: 9
+  patience: 2
+  settle_steps: 800
+  core_levels: 2
+  core_relations: [is_a, part_of, has_attribute]
+  full_steps: 1500
+
+dream:                      # E10.5
+  every: [0, 1200, 600, 300, -300]   # 0 = off; -300 = utility-threshold revisit only (no dreaming), every 300 steps
+  post_steps: 1200
+  passes_for_off: 4
+  consolidate_steps: 1500
+  wrong_edge_rate: 0.1
+  wrong_slot_edges: 40
+
+variety:                    # E10.7
+  views: [1, 2, 4, 8]
+  sources: 16
+  artifact_strength: 0.5
+  erasure: 0.3
+  distractors: 2
+  steps: 1500
+
+continual:                  # E10.8
+  conditions: [additive, additive_dream, plastic, all_at_once]
+  order: [similar_to, has_part, located_in]
+  steps_per_stage: 800
