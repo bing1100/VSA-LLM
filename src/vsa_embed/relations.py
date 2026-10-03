@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 
 import torch
@@ -222,6 +223,64 @@ class OrthogonalRelation(RelationTransform):
         return torch.einsum("...ed,...e->...d", self.matrices()[relation_ids], vectors)
 
 
+class TranslationRelation(RelationTransform):
+    """TransE-style translation `T_r(x) = x + t_r` (WP-PQ1 operator ablation, C5tr).
+
+    Affine, not a binding: a bundle `Σ_e (a_e + t_{r_e})` separates into a bag of fillers plus a bag of
+    relation offsets, so which filler went with which relation is lost. Offsets start like HRR roles
+    (`N(0, 1/d)`, norm ≈ 1, the scale of a normalized atomic), so relations are distinguishable at step 0.
+    """
+
+    family = "translation"
+
+    def __init__(self, relation_count: int, dimension: int) -> None:
+        super().__init__(relation_count, dimension)
+        self.offsets = nn.Parameter(torch.randn(relation_count, dimension) / dimension**0.5)
+
+    def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        self._validate(relation_ids, vectors)
+        return vectors + self.offsets[relation_ids]
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        # The linear part of an affine map is the identity (its vector-Jacobian product).
+        self._validate(relation_ids, vectors)
+        return vectors
+
+
+class UnitaryHRRRelation(RelationTransform):
+    """HRR binding with unitary roles: every role's spectrum has unit magnitude, so binding is an exactly
+    orthogonal circulant operator (norm-preserving; its inverse is the involution).
+
+    Parametrized by the phases of the interior frequencies, drawn uniformly at random; the DC and (even
+    dimension) Nyquist bins must be real, so they carry fixed random signs. `random_fixed:unitary_hrr`
+    freezes the phases: a fixed random orthogonal operator per relation (WP-PQ1, C5rf).
+    """
+
+    family = "unitary_hrr"
+
+    def __init__(self, relation_count: int, dimension: int) -> None:
+        super().__init__(relation_count, dimension)
+        bins = dimension // 2 + 1
+        real_bins = 2 if dimension % 2 == 0 else 1          # DC, and Nyquist for an even dimension
+        self.phases = nn.Parameter((torch.rand(relation_count, bins - real_bins) * 2 - 1) * math.pi)
+        self.register_buffer("edge_signs", torch.where(torch.rand(relation_count, real_bins) < 0.5, -1.0, 1.0))
+        self.algebra = HRRAlgebra()
+
+    def role_vectors(self) -> Tensor:
+        interior = torch.polar(torch.ones_like(self.phases), self.phases)
+        dc = self.edge_signs[:, :1].to(interior.dtype)
+        parts = [dc, interior] + ([self.edge_signs[:, 1:].to(interior.dtype)] if self.edge_signs.shape[1] > 1 else [])
+        return torch.fft.irfft(torch.cat(parts, -1), n=self.dimension)
+
+    def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        self._validate(relation_ids, vectors)
+        return self.algebra.bind(self.role_vectors()[relation_ids], vectors)
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        self._validate(relation_ids, vectors)
+        return self.algebra.unbind(vectors, self.role_vectors()[relation_ids])
+
+
 def create_relation_transform(
     family: str, relation_count: int, dimension: int, *, rank: int = 8
 ) -> RelationTransform:
@@ -235,6 +294,8 @@ def create_relation_transform(
         "low_rank_identity": lambda: LowRankRelation(relation_count, dimension, rank, identity_init=True),
         "low_rank_tied": lambda: TiedLowRankRelation(relation_count, dimension, rank),
         "orthogonal": lambda: OrthogonalRelation(relation_count, dimension),
+        "translation": lambda: TranslationRelation(relation_count, dimension),
+        "unitary_hrr": lambda: UnitaryHRRRelation(relation_count, dimension),
     }
     try:
         return factories[family]()
