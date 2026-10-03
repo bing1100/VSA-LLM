@@ -329,6 +329,22 @@ def test_quantizer_numerics() -> None:
     assert error(quant.gptq_quantize_weight(weight, hessian, 32)) < error(quant.int4_fake_quantize(weight, 32))
     codes = quant.int4_fake_quantize(weight, 32).reshape(48, 2, 32)
     assert max(len(torch.unique(g)) for g in codes.reshape(-1, 32)) <= 16                   # 4-bit grid per group
+    # calibration statistics are float32 even inside the forward's bf16 autocast region (a bf16 Gram matrix is not PSD)
+    layer = torch.nn.Sequential(torch.nn.Linear(64, 64), torch.nn.Linear(64, 8))
+
+    def forward(step):
+        with torch.autocast("cpu", dtype=torch.bfloat16):
+            step(lambda: layer(x[:256]))
+
+    stats = quant._collect([("1", layer[1])], forward, "gptq", 64, 0)
+    with torch.no_grad(), torch.autocast("cpu", dtype=torch.bfloat16):
+        hidden = layer[0](x[:256])
+    hidden = hidden.float()
+    assert torch.allclose(stats["1"]["H"], hidden.T @ hidden, rtol=1e-5, atol=1e-4)            # float32, not bf16
+    assert float(torch.linalg.eigvalsh(stats["1"]["H"].double()).min()) > -1e-6 * float(stats["1"]["H"].diag().max())
+    singular = torch.zeros(16, 16)
+    singular[0, 0] = 1.0                                                                   # rank 1: needs more damping
+    assert torch.isfinite(quant._damped_inverse_cholesky(singular, 0.0 + 1e-12)).all()
     hqq = quant.hqq_fake_quantize(weight, 32)
     assert float((hqq - weight).abs().mean()) <= float((quant.int4_fake_quantize(weight, 32) - weight).abs().mean()) * 1.05
 

@@ -545,7 +545,8 @@ def claim_b_controls(group: Group, rescores: dict[str, dict[int, dict[str, Any]]
     if candidate not in rescores:
         return {"available": False}
     variants = {v for found in rescores[candidate].values() for v in found["sums"]}
-    quantizers = [q for q in CONTROL_QUANTIZERS if q in variants]
+    quantizers = [q for q in CONTROL_QUANTIZERS if q in variants] + sorted(
+        v for v in variants if v.startswith("int") and not v.endswith("-off") and v not in CONTROL_QUANTIZERS)
     if "ref" not in variants or not quantizers:
         return {"available": False}
     result: dict[str, Any] = {"available": True, "quantizers": quantizers, "references": {}}

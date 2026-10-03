@@ -385,6 +385,15 @@ manuscript wording are WP-PQ2.
 | PQ1-g | dimension 3 for the arms | bf16 only, no probes; C6 arms have no row for an invented word (new words read the mean source row = a no-information control) |
 | PQ1-h | arms run in the base stages (`t5`, `t4`) | one report per track covers base runs, arms and rescoring; priority 51 (evaluations 52, e4_quant 53, report 54) |
 
+**Smoke (2026-10-03, real T5 data, SmolLM2-135M, 2 training steps, 8 evaluation windows; CPU, plus ≤ 1.2 GB GPU
+checks).** Every arm (C5rf, C5ut, C5tr, C5sh, C6m, C6d, C6g) plus P0 / C0′ / C2 / C5 trains and evaluates through the
+plan's own configs; `e9_rescore` reproduces each run's evaluation windows exactly (max |Δ window sum| 0.0 on all 11
+runs) and adds the filler strata (805 of 3,806 after-span targets are filler tokens); the simulated quantizers, channel
+off and `-emb` run on the CPU, and torchao `int4-A` / `int4-A-off` / `int4-A-emb`, HQQ, NF4, GPTQ (22 s) and AWQ (16 s)
+on CUDA; the report renders all four new sections. The GPU smoke caught one bug, fixed: calibration statistics computed
+inside the forward's bf16 autocast were bf16 Gram matrices (not PSD); they are now float32 (tested), and the GPTQ inverse
+is computed in float64 with escalating damping.
+
 **Measured costs** (T5 seed-1 block, RTX 3090): training per 50M-token run SmolLM2-360M 68 min, 135M 31 min; one
 evaluation pass over the 1,024 windows (≈ 1M targets) 24 s / 12 s at bf16, 66 s / 35 s with torchao INT4; per-run
 zero-shot + editing at bf16 ≈ 3 / 1.7 min; the R9 report ≈ 22 min. Estimates: `e9_rescore` light (`ref`, `int4-A`)

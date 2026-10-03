@@ -273,6 +273,12 @@ def _write_windows(path: Path, strata: list[str], starts: list[int], counts: np.
     temporary.replace(path)
 
 
+def _write_record(path: Path, record: dict[str, Any]) -> None:
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(record, indent=2, default=str) + "\n")
+    temporary.replace(path)
+
+
 def load_rescore(folder: Path) -> dict[str, Any] | None:
     """`{"strata", "starts", "count", "sums": {variant: strata × windows}, "record"}` of a rescore folder, or None."""
     path = Path(folder) / "windows.npz"
@@ -351,6 +357,7 @@ def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[s
             sums[v["name"]] = these
             record["variants"][v["name"]] = {"strata": results, "quantization": info, "channel_off": v["off"],
                                              "seconds": round(time.monotonic() - began + (prepared if v is ordered[0] else 0), 2)}
+            _write_record(output / "rescore.json", record)            # every variant as it finishes (a resumed job keeps it)
             _write_windows(output / "windows.npz", strata, starts, counts, sums)
             print(json.dumps({"run": record["id"], "variant": v["name"], "all": results["all"]["loss"],
                               "seconds": record["variants"][v["name"]]["seconds"]}), flush=True)
@@ -361,7 +368,7 @@ def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[s
         record["ref_check"] = reference_check(run_dir, strata, starts, sums["ref"], counts)
     if not has_channel:
         record["off_variants"] = "a run without a channel answers -off with its plain variant"
-    (output / "rescore.json").write_text(json.dumps(record, indent=2, default=str) + "\n")
+    _write_record(output / "rescore.json", record)
     settings = {"run": str(run_dir), "variants": list(variants), "fillers": str(fillers) if fillers else None,
                 "group_size": group_size, "calibration_windows": calibration_windows, "calibration_corpus": calibration_corpus,
                 "eval_batch": eval_batch, "device": device}

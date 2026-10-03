@@ -314,6 +314,22 @@ def nf4_fake_quantize(w: Tensor, block_size: int = 64, scaler_block_size: int = 
     return out.flatten()[:w.numel()].reshape(w.shape).float()
 
 
+def _damped_inverse_cholesky(H: Tensor, damp: float, *, retries: int = 4) -> Tensor:
+    """Upper Cholesky factor of `(H + λ I)⁻¹` with `λ = damp · mean(diag H)`, in float64; `λ` grows tenfold while the
+    factorization fails (an ill-conditioned Hessian of few calibration rows)."""
+    H64 = H.double()
+    eye = torch.eye(H.shape[0], device=H.device, dtype=torch.float64)
+    mean = torch.mean(torch.diag(H64))
+    for attempt in range(retries + 1):
+        try:
+            lower = torch.linalg.cholesky(H64 + damp * 10 ** attempt * mean * eye)
+            return torch.linalg.cholesky(torch.cholesky_inverse(lower), upper=True).float()
+        except torch.linalg.LinAlgError:
+            if attempt == retries:
+                raise
+    raise AssertionError("unreachable")
+
+
 def gptq_quantize_weight(w: Tensor, hessian: Tensor, group_size: int, *, damp: float = 0.01, block: int = 128,
                          act_order: bool = True) -> Tensor:
     """GPTQ on the `rtn` grid (static groups: each group's scale and zero from the original weights)."""
@@ -332,15 +348,14 @@ def gptq_quantize_weight(w: Tensor, hessian: Tensor, group_size: int, *, damp: f
     group_of = torch.arange(columns, device=W.device) // group_size
     perm = torch.argsort(torch.diag(H), descending=True) if act_order else torch.arange(columns, device=W.device)
     W, H = W[:, perm], H[perm][:, perm]
-    H += damp * torch.mean(torch.diag(H)) * torch.eye(columns, device=W.device)
-    Hinv = torch.linalg.cholesky(torch.cholesky_inverse(torch.linalg.cholesky(H)), upper=True)
+    Hinv = _damped_inverse_cholesky(H, damp)
+    scales, zeros = scale[:, group_of[perm]], zero[:, group_of[perm]]       # per (permuted) column
     Q = torch.zeros_like(W)
     for i1 in range(0, columns, block):
         i2 = min(i1 + block, columns)
         W1, Err1, Hinv1 = W[:, i1:i2].clone(), torch.zeros_like(W[:, i1:i2]), Hinv[i1:i2, i1:i2]
         for i in range(i2 - i1):
-            g = group_of[perm[i1 + i]]
-            s, z = scale[:, g], zero[:, g]
+            s, z = scales[:, i1 + i], zeros[:, i1 + i]
             col = W1[:, i]
             q = ((col / s).round() + z).clamp(0, 15)
             deq = (q - z) * s
@@ -388,14 +403,17 @@ def _collect(linears: list[tuple[str, nn.Linear]], forward: Callable, scheme: st
             if "input_key" not in entry:
                 entry["input_key"] = (x.data_ptr(), tuple(x.shape))
             x = x.reshape(-1, x.shape[-1]).float()
-            if scheme == "gptq":
-                entry["H"] = entry.get("H", 0) + x.T @ x
-            else:
-                entry["abs"] = entry.get("abs", 0) + x.abs().sum(0)
-                rows = entry.setdefault("rows", [])
-                if sum(r.shape[0] for r in rows) < samples:
-                    keep = min(x.shape[0], max(1, samples // 8))
-                    rows.append(x[torch.randperm(x.shape[0], generator=generator)[:keep].to(x.device)])
+            # The hooks run inside the forward's autocast region: without this, `x.T @ x` would be computed in bf16
+            # (a Gram matrix with negative eigenvalues).
+            with torch.autocast(device_type=x.device.type, enabled=False):
+                if scheme == "gptq":
+                    entry["H"] = entry.get("H", 0) + x.T @ x
+                else:
+                    entry["abs"] = entry.get("abs", 0) + x.abs().sum(0)
+                    rows = entry.setdefault("rows", [])
+                    if sum(r.shape[0] for r in rows) < samples:
+                        keep = min(x.shape[0], max(1, samples // 8))
+                        rows.append(x[torch.randperm(x.shape[0], generator=generator)[:keep].to(x.device)])
             entry["n"] += x.shape[0]
             fired.add(name)
             if len(fired) == len(linears):
