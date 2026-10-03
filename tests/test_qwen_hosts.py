@@ -403,6 +403,34 @@ def test_memory_probe_recommendation_prefers_the_fastest_fitting_fp32_setting() 
     assert "Qwen3-4B-Base" not in e9_memory.recommend(rows, budget_gib=10.0)
 
 
+def test_memory_probe_writes_a_run_folder_the_plan_reads(tmp_path, monkeypatch) -> None:
+    from vsa_embed.experiments import e9_memory, e9_plan
+
+    def fake_measure(host, *, host_dtype, checkpointing, device, steps, data_root, log):
+        rows = [{"host": host, "host_dtype": host_dtype, "checkpointing": checkpointing, "kind": "train", "micro_batch": m, "ok": True,
+                 "tokens_per_s": 1000.0 * m * (0.75 if checkpointing else 1.0), "peak_gib": None, "peak_reserved_gib": None}
+                for m in (1, 2)]
+        rows.append({"host": host, "host_dtype": host_dtype, "checkpointing": checkpointing, "kind": "eval", "eval_batch": 4, "ok": True,
+                     "peak_gib": None, "peak_reserved_gib": None})
+        for row in rows:
+            log(json.dumps(row))
+        return rows
+
+    monkeypatch.setattr(e9_memory, "measure_setting", fake_measure)
+    out = tmp_path / "memory"
+    e9_memory.main(["--output", str(out), "--hosts", "Qwen3-0.6B-Base", "Qwen3-4B-Base", "--device", "cpu", "--budget-gib", "22"])
+    for name in ("memory.json", "recommendation.json", "report.md", "manifest.json", "resolved_config.yaml", "rows.jsonl"):
+        assert (out / name).exists(), name
+    memory = e9_plan.load_memory_report(out / "recommendation.json")
+    four = memory["Qwen3-4B-Base"]["lora"]
+    assert (four["micro_batch"], four["gradient_checkpointing"], four["host_dtype"], four["eval_batch"]) == (2, False, "float32", 4)
+    plan = e9_plan.host_plan("Qwen3-4B-Base", "lora", memory=memory)
+    assert plan["micro"]["lora"] == 2 and "gradient_checkpointing" not in plan["model"] and plan["source"] == "memory probe"
+    assert "| Qwen3-0.6B-Base | 2 × 32 |" in (out / "report.md").read_text()
+    assert yaml.safe_load((out / "resolved_config.yaml").read_text())["settings"]["Qwen3-4B-Base"][3] == {"host_dtype": "bfloat16",
+                                                                                                        "checkpointing": True}
+
+
 @pytest.mark.skipif(not QWEN3, reason="Qwen3 tokenizer not cached")
 def test_memory_probe_config_is_the_e9_c5_run() -> None:
     from vsa_embed.experiments import e9_memory, e9_tracks

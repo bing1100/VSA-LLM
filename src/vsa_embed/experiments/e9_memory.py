@@ -246,8 +246,8 @@ def main(argv: list[str] | None = None) -> None:
     device = torch.device(args.device)
     total = _gib(torch.cuda.get_device_properties(device).total_memory) if device.type == "cuda" else 0.0
     budget = args.budget_gib if args.budget_gib is not None else total - 1.5
-    config = {"experiment": "e9-memory-qwen3", "hosts": args.hosts, "settings": {h: SETTINGS[h] for h in args.hosts},
-              "micro_batches": list(MICRO_BATCHES), "eval_batches": list(EVAL_BATCHES), "steps": args.steps, "budget_gib": budget,
+    settings = {h: [{"host_dtype": d, "checkpointing": c} for d, c in SETTINGS[h]] for h in args.hosts}
+    config = {"experiment": "e9-memory-qwen3", "hosts": args.hosts, "settings": settings, "micro_batches": list(MICRO_BATCHES), "eval_batches": list(EVAL_BATCHES), "steps": args.steps, "budget_gib": budget,
               "sequence": 1024, "model": "C5", "lora_rank": 64, "track": "t5", "family": "qwen3",
               "data_root": str(args.data_root) if args.data_root else None}
     git_at_start = prepare_output_dir(args.output)
