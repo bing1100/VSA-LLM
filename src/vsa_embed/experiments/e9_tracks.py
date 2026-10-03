@@ -131,7 +131,7 @@ class TrackSpec:
 DATA = Path("~/data/vsa-llm").expanduser()
 # Qwen3 corpora of each track (WP-Qwen): the same builders with the Qwen3 base tokenizer (`Qwen/Qwen3-0.6B-Base`,
 # shared by the 0.6B/1.7B/4B hosts). T5 is built (`experiments/t5-enterprise-glossary/t5-qwen3.yaml`); the others
-# are built by the commands in `experiments/e9-retrofit/README-qwen3.md`.
+# are built by the commands of `resources/plan-improvement/execution.md` (E9 on Qwen3).
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1"}
 TRACKS: dict[str, TrackSpec] = {

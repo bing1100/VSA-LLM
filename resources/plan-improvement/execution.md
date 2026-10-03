@@ -174,3 +174,55 @@ Ladder (each step has gold because relations are hidden on purpose):
 Report: `reports/R10-self-learned-semantics.md`. E10.0/E10.1 start now (CPU / backfill GPU); E10.2/E10.3 after G3 and E9/E7.
 
 **E9 engagement check (2026-10-02, `runs/e9-check`, SmolLM2-360M, 10M tokens, WordNet general corpus).** Full fine-tuning (host lr 3e-5) and LoRA-64 (2e-4), gate bias 0 and −2: C5 ends identical to C0′ to four decimals in every stratum (all 2.5806, inside 0.916, after 2.470, held-out 2.516). The channel is open (gate ≈ 0.48, injection ≈ 15% of an embedding-row norm) but the host neutralizes it: a pretrained host already models general WordNet vocabulary (inside-span loss 0.92 nats), so it is not rare/OOD for the host. **Decision:** E9 recipe = full fine-tuning, host lr 3e-5, gate bias 0, 50M tokens; primary corpora are vocabularies genuinely new or rare for the host — T5 synthetic enterprise glossary (contamination-free) first, then T4 chemistry and T1-open — with WordNet general as the secondary/negative-control corpus (still measured for the quantization gap).
+
+**E9 on Qwen3 (WP-Qwen, author request 2026-10-03).** Modern hosts are stronger paper evidence than SmolLM2, so E9 also runs on Qwen3-0.6B/1.7B/4B-Base (downloads and hashes: `~/data/vsa-llm/DATA_SOURCES.md` §13). The recipe is LoRA r = 64 at host lr 2e-4 plus the VSA channel, with channel lr 1e-3, gate bias 0, 50M tokens, 65,536 tokens per step and the same T5 test set. Open decisions 42–46 apply.
+
+- **Hosts (`cpt_plan.HOSTS`).**
+  - Widths are 1024, 2048 and 2560; every host has a tied 151,936-row embedding, and the chunked LM loss never builds full logits.
+  - `add_lora` finds q/k/v/o/gate/up/down in each layer (7 per layer).
+  - Qwen3-4B uses non-reentrant gradient checkpointing.
+  - New opt-in keys: `channel.scale_to_host` (`host_scale_fraction` 0.3), `model.host_dtype` (bf16 host, float32 adapters) and `model.checkpoint_use_reentrant`. Their defaults leave every recorded run unchanged.
+- **Corpora.**
+  - **T5 (built):** `experiments/t5-enterprise-glossary/t5-qwen3.yaml` → `runs/v1-qwen3`, with data in `~/data/vsa-llm/tracks/t5-glossary/v1-qwen3`.
+    - Sizes: 100.0M Qwen3 tokens (domain 43.9M, general 56.1M), eval 2.76M tokens, eval-general 2.17M; uint32 ids, NFC.
+    - Unchanged from the SmolLM2 build: the generated documents (decompressed sha256), glossary, entries and frames, alias table `5cae33ad…`, holdout `e7313dce…` and zero-shot set `40738889…`. The training-frequency strata also match (662 unseen / 693 rare / 1,979 mid / 866 frequent).
+    - Feasible at ℓ_min = 2 with 256 windows. At 1,024 windows: 326 held-out entries / 6,864 spans and 600 rare entries / 4,850 spans.
+    - The WP-C7 items are byte-identical; only the frequency annotations of `term_relation_probe` differ. E9 therefore reads the committed zero-shot items for both host families.
+    - Dimension-3 items: `experiments/e9-retrofit/items/{new-words,edits}-t5-qwen3-v1` (items identical to SmolLM2's; the Qwen3 checks pass).
+  - **T4:** `t4-qwen3.yaml`. The holdout chosen by the SmolLM2 presample is read through the new `data.holdout_names` key and pinned to `b58e504f…`.
+  - **T1-open:** `t1-qwen3.yaml`, a host relink `hosts/qwen3`. The GPT-2-presample holdout is pinned.
+  - **WordNet:** `host_corpus --host qwen3`.
+  - Commands for these three are below.
+- **Memory probe (`e9_memory`).** The real E9 C5 run (LoRA 64, `scale_to_host`, T5 Qwen3 batches, sequence 1024) at micro-batches 1/2/4/8.
+  - Settings: fp32 for every host; with and without checkpointing for 1.7B and 4B; a bf16 host for 4B.
+  - It writes `recommendation.json`, which `e9_plan` reads, choosing per host the fastest setting under the budget with an fp32 host.
+  - It is one GPU job that needs the whole GPU (≈ 15 min). Queue it first; generate the E9 Qwen3 configs only after its `recommendation.json` exists.
+- **E9 Qwen3 stage (`e9_plan`).** The family is chosen by the hosts.
+  - Stage `<track>-qwen3`, priority 26: evaluations at 27, `e4_quant` at 28, report at 29.
+  - Every model of a host shares that host's dtype and settings.
+  - Evaluation jobs use batch 16/8/4 and INT4 probes without WSD.
+  - Each block gets its own stage, because quant and report job names are idempotent per stage.
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+# 1. memory/throughput probe (one GPU job, whole GPU)
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name e9-qwen3-memory-probe --priority 26 --no-resume -- \
+  $PY -m vsa_embed.experiments.e9_memory --output experiments/e9-retrofit/memory/qwen3-v1
+# 2. after experiments/e9-retrofit/memory/qwen3-v1/recommendation.json exists: the 1.7B + 0.6B block (P0, C0′, C2, C5; seed 1)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-1.7B-Base Qwen3-0.6B-Base --host-mode lora --lora-rank 64 --queue
+# 3. later: Qwen3-4B, single seed, its own stage (consider --tokens 25000000 or --models P0 C0p C5; decision 45)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-4B-Base --host-mode lora --lora-rank 64 --stage t5-qwen3-4b --queue
+# corpora for the later tracks (CPU; WordNet and T1 ≥ 1 h with 3–4 workers)
+PYTHONPATH=src $PY -m vsa_embed.experiments.track_corpus --config experiments/t4-chemistry/t4-qwen3.yaml --output experiments/t4-chemistry/runs/v1-qwen3
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t4 --kind new --family qwen3 --output experiments/e9-retrofit/items/new-words-t4-qwen3-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t4 --kind edits --family qwen3 --output experiments/e9-retrofit/items/edits-t4-qwen3-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.t1_open_corpus --config experiments/t1-open-clinical/t1-qwen3.yaml --output experiments/t1-open-clinical/runs/v1-qwen3
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t1 --kind new --family qwen3 --output experiments/e9-retrofit/items/new-words-t1-qwen3-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track t1 --kind edits --family qwen3 --output experiments/e9-retrofit/items/edits-t1-qwen3-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.host_corpus --host qwen3 --c3-run experiments/c3-general-corpus/runs/v2 --workers 3
+PYTHONPATH=src $PY -m vsa_embed.experiments.e5_zeroshot items --scenario c3_synthetic --ontology ~/data/vsa-llm/c3/wordnet-qwen3-v1/ontology.pt \
+  --tokenizer Qwen/Qwen3-0.6B-Base --output experiments/e5-explainability/items/c3-synthetic-qwen3-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track wordnet --kind new --family qwen3 \
+  --reserved-names experiments/e5-explainability/items/c3-synthetic-qwen3-v1 --output experiments/e9-retrofit/items/new-words-qwen3-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_tracks items --track wordnet --kind edits --family qwen3 --output experiments/e9-retrofit/items/edits-qwen3-v1
+```
