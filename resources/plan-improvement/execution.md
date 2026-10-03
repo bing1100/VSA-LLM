@@ -318,6 +318,103 @@ PYTHONPATH=src $PYQ -m vsa_embed.experiments.e9_tracks items --track t4 --kind n
 PYTHONPATH=src $PYQ -m vsa_embed.experiments.e9_tracks items --track t4 --kind edits --family qwen3_5 --output experiments/e9-retrofit/items/edits-t4-qwen3_5-v1
 ```
 
+## E9 paper-quality controls, dimensions 1–2 (WP-PQ1, 2026-10-03)
+
+Response to `manuscript/novelty-check-2026-10.md` for claims A and B (§2.2 wording audit; §2.5 A-B1/A-B2/A-B4 same-site
+and text baselines, A-B5 lexical overlap, A-B6 operator/specificity; §3.4 B-B2 channel off, B-B3 quantizers, B-B6 DiD
+reporting, B-B7 quantized embedding; §6.5 item 1 KnowLA-style KGE). Dimension 3 (editing baselines), E10 and the
+manuscript wording are WP-PQ2.
+
+- **Arms** (`e9_plan --models …`; same recipe, test set, seeds and channel site/gate as C5; opt-in, defaults unchanged):
+
+  | Arm | What changes vs C5 | Answers |
+  |---|---|---|
+  | `C5rf` | operator `random_fixed:unitary_hrr`: a fixed random orthogonal (unit-spectrum circulant) operator per relation, never trained | does *learning* the binding matter (claims rule 7: "compositional parameter sharing" if C5 ≈ C5rf) |
+  | `C5ut` | operator `untyped`: no binding, the concept vector bundles its filler atomics (attention keys still see relation ids) | does relation binding matter at all |
+  | `C5tr` | operator `translation` `x + t_r` (TransE-style, `relations.AFFINE_FAMILIES`; affine, so not a binding) | multiplicative binding vs additive relation offsets |
+  | `C5sh` | `frames: shuffled`: each entry reads another entry's frame (a seeded derangement) | frame content vs a generic "domain term here" signal |
+  | `C6m` | rows = subtoken mean of the pretrained host's input embeddings over the term's aliases (FVT / Hewitt), frozen | the default "add the term as a token" initializer, as a same-site zero-shot competitor (A-B1 i / A-B2) |
+  | `C6d` | rows = frozen host's last-layer state, mean-pooled over the entry's verbalized frame ("It is a process. It is owned by the …"; name excluded) | a text encoder of the same frame information (A-B1 ii / A-B4) |
+  | `C6g` | rows = TransE embedding (d 256, L1, self-adversarial negatives) of the entry in the track ontology | KnowLA / map-tuning per-concept KG vectors at our site (§6.5 item 1) |
+
+  C6 rows go through a trained GELU MLP `source → h → d` with `h·(source + d)` matched to C5's dictionary-plus-projector
+  budget (the C2 budget), at the C5 gate and site (`channel.mode: source`); tables are whitened per dimension over the
+  non-held-out entries and unit-normalized, built by `e9_rowsource` into `~/data/vsa-llm/e9/row-sources/<track>-<family>/`
+  (the verbalization table `verbalized.jsonl.gz` beside them records the encoded text). Held-out terms get rows from
+  the same source (their aliases, frames and triples exist), so the C6 arms are fair zero-shot competitors, unlike C2.
+- **Filler / non-filler split** (claim A's copy concern): `X_filler` = targets in the 8-token window after a span that
+  belong to an occurrence (starting after the span) of a token sequence verbalizing a filler of *that span's* frame
+  (aliases of a concept-filler, lexicon wording, value; article stripped; as written / lower / capitalized; ± leading
+  space), `X_nonfiller` = the rest, for every after-span stratum (held-out, rare, unseen, 3+-subtoken, …). Filler tables
+  per track and tokenizer (`e9_rescore fillers`, `~/data/vsa-llm/e9/filler-tables/`). The same masks are the trainer's
+  opt-in `eval.filler_strata` and `e9_rescore`'s re-scoring of finished `final.pt` files on the run's own windows
+  (`RUN/rescore/`; the old strata replay the run's `eval_windows.npz` exactly — tested). On T5 about 19–23% of the
+  after-span targets are filler tokens (eval sample of 64 windows).
+- **Claim-B controls** (`e9_rescore` variants, all paired by window with the run's other variants): `ref-off` /
+  `int4-A-off` (the channel switched off: what the C5-trained host weights do alone, B-B2); `int4-hqq`, `int4-nf4`
+  (torchao algorithms, NF4 bit-exact with `NF4Tensor`), `int4-gptq` (act-order, static groups, 1% damping, block-
+  sequential, 64 calibration windows of the run's in-domain training mix), `int4-awq` (activation-aware scale search, no
+  clip search), `int4-rtn` (the same grid without calibration), all simulated as dequantized weights; `int4-A-emb` (the
+  input-embedding table at 4 bits too; a tied head keeps 16 bits; `-embhead` quantizes both). torchao 0.18's own GPTQ /
+  AWQ prototypes target the plain `Int4Tensor` layout (needs `mslk`, which has no usable release here) — not used.
+- **Report** (`e9_report`, new sections when their inputs exist): operator ablation (`C5 − arm` and `arm − C0′` per
+  stratum, Holm over arms), same-site row sources (the same, `after_heldout` first), filler / non-filler table (gain on
+  each part, share of targets and of the gain on filler tokens), claim-B table (absolute nats in the four cells, gaps,
+  `DiD = gap@q − gap@bf16`, `DiD off`, the channel's own DiD; paired window bootstraps; Holm over quantizers).
+- **Job chaining.** Arms at priority P: training; at P + 1 the `pq` evaluations (track zero-shot and editing at bf16; C5sh
+  without the `random_frame` source and the edit items, which do not apply to shuffled frames) and `e9_rescore` (`ref`,
+  `int4-A`); no `e4_quant` (the rescoring has `int4-A`); missing C6 tables are built by a job at P queued before the
+  training jobs (GPU: seconds for T5, minutes for T4). `--rescore all` also rescores P0 / C0′ / C2 / C5 with the
+  `controls` variants. A batch with arms gets its own quant/report job names (`…-s1-2-3-pq`), so it never collides with a
+  queued base batch.
+
+**Decisions (WP-PQ1).**
+
+| # | Decision | Taken |
+|---|---|---|
+| PQ1-a | C5rf's operator | `random_fixed:unitary_hrr` (exactly orthogonal, as asked), not E2/E4's `random_fixed:hrr` (random non-unitary roles); both are frozen HRR-family binding, so the comparison with E4 C8 stays close |
+| PQ1-b | C5ut keeps relation-typed attention keys | as the program's `untyped` operator everywhere (only the binding is removed); a relation-blind bag is C3t-style and not run |
+| PQ1-c | C6 projector | 2-layer GELU MLP matched to C5's dictionary + projector (C2's budget); the C6 table is a non-persistent buffer (re-read from its file, counted in deployment bytes) |
+| PQ1-d | C6d text and layer | the verbalized frame with subject "It" (no name), last hidden layer, mean over tokens; natural definitions (T4 ChEBI, T1 MeSH scope notes) not used, so every track encodes exactly the frame C5 composes |
+| PQ1-e | C6g graph | transductive TransE over all entries' frames (held-out included, as C5 reads their frames); an atomic naming a concept is that concept's entry |
+| PQ1-f | the opt-in `eval.filler_strata` is not set by `e9_plan` | every run keeps identical strata lists (e4_quant / report pairing unchanged); the split comes from `e9_rescore` for all runs alike |
+| PQ1-g | dimension 3 for the arms | bf16 only, no probes; C6 arms have no row for an invented word (new words read the mean source row = a no-information control) |
+| PQ1-h | arms run in the base stages (`t5`, `t4`) | one report per track covers base runs, arms and rescoring; priority 51 (evaluations 52, e4_quant 53, report 54) |
+
+**Measured costs** (T5 seed-1 block, RTX 3090): training per 50M-token run SmolLM2-360M 68 min, 135M 31 min; one
+evaluation pass over the 1,024 windows (≈ 1M targets) 24 s / 12 s at bf16, 66 s / 35 s with torchao INT4; per-run
+zero-shot + editing at bf16 ≈ 3 / 1.7 min; the R9 report ≈ 22 min. Estimates: `e9_rescore` light (`ref`, `int4-A`)
+≈ 2 / 1 min per run; controls (9 variants incl. GPTQ / AWQ calibration) ≈ 9 / 5 min per run.
+
+**Budgeted plan** (GPU-h; ≥ 3 seeds on the decisive comparisons C5 vs C5rf / C5ut / C5sh / C6m / C6d / C6g on T5 and
+T4 with SmolLM2-360M; C5tr rides along with 3 seeds, first to drop):
+
+| Tier | Block | Runs | GPU-h |
+|---|---|---|---:|
+| 0 | rescoring of the base runs (filler split + claim-B controls): T5 SmolLM2 360M + 135M seeds 1–3, T4 360M seeds 1–3 (+ 135M seed 1) | 34 | ≈ 4 |
+| 1 | T5, SmolLM2-360M: 7 arms × seeds 1–3 (+ `pq` evaluations, light rescoring, tables, report) | 21 | ≈ 26 |
+| 2 | T4, SmolLM2-360M: base C0′ / C2 / C5 seeds 2–3 (full evaluations, e4_quant) + 7 arms × seeds 1–3 | 6 + 21 | ≈ 36 |
+| 3 (optional) | size trend: T5, SmolLM2-135M, 7 arms × seeds 1–3 | 21 | ≈ 13 |
+
+Tiers 0–2 ≈ 66 GPU-h; with Tier 3 ≈ 79 GPU-h. Dropping C5tr saves ≈ 2.6 GPU-h per track and host.
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+# Tier 1 + Tier 0 for T5 (360M): arms × 3 seeds; P0/C0p/C2/C5 already exist or are queued (their jobs are skipped by
+# name) and get the controls rescoring through --rescore all
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --stage t5 --hosts SmolLM2-360M \
+  --models P0 C0p C2 C5 C5rf C5ut C5tr C5sh C6m C6d C6g --seeds 1 2 3 --rescore all --priority 51 --queue
+# Tier 0 for the T5 135M base runs (filler split and claim-B controls for the size trend)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_rescore queue --stage t5 --priority 51 --models P0 C0p C2 C5
+# Tier 2 + Tier 0 for T4 (360M): base seeds 2–3, arms × 3 seeds, rescoring of every base run (seed 1 is queued at 35–38)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t4 --stage t4 --hosts SmolLM2-360M \
+  --models P0 C0p C2 C5 C5rf C5ut C5tr C5sh C6m C6d C6g --seeds 1 2 3 --rescore all --priority 51 --queue
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_rescore queue --stage t4 --priority 51 --models P0 C0p C2 C5
+# Tier 3 (optional): T5, SmolLM2-135M arms
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --stage t5 --hosts SmolLM2-135M \
+  --models C5rf C5ut C5tr C5sh C6m C6d C6g --seeds 1 2 3 --priority 51 --queue
+```
+
 ## 3-day GPU block (author request 2026-10-03, ≈ 72 GPU-h, measured costs)
 
 Measured: SmolLM2 E9 block (360M + 135M, one track, one seed, with evaluations) ≈ 6.5 GPU-h; Qwen3 training per 50M-token LoRA run 0.6B 1.7 h, 1.7B 3.2 h, 4B 11.4 h (memory probe `experiments/e9-retrofit/memory/qwen3-v1`).

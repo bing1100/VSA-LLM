@@ -230,17 +230,19 @@ def train_transe(graph: dict[str, Any], *, dimension: int = KGE_DIMENSION, gamma
                  temperature: float = 1.0, seed: int = 0, device: torch.device | str = "cpu",
                  log_every: int = 1000) -> tuple[Tensor, dict[str, Any]]:
     """TransE (score `γ − ‖h + r − t‖₁`) with self-adversarial negative sampling (head and tail corruption alternate);
-    entity vectors in a sparse table (SparseAdam). Returns (entity vectors, record with the loss and a raw MRR / hits@10
+    entity and relation vectors trained with Adam. Returns (entity vectors, record with the loss and a raw MRR / hits@10
     of tail prediction on up to 2,000 training triples)."""
     generator = torch.Generator().manual_seed(seed)
     torch.manual_seed(seed)
     heads, relations, tails = graph["heads"], graph["relations"], graph["tails"]
     count, entities = heads.numel(), int(graph["entities"])
     bound = (gamma + 2.0) / dimension
-    entity = nn.Embedding(entities, dimension, sparse=True).to(device)
+    entity = nn.Embedding(entities, dimension).to(device)
     relation = nn.Embedding(int(graph["relation_count"]), dimension).to(device)
     nn.init.uniform_(entity.weight, -bound, bound); nn.init.uniform_(relation.weight, -bound, bound)
-    optimizers = [torch.optim.SparseAdam(list(entity.parameters()), lr=lr), torch.optim.Adam(relation.parameters(), lr=lr)]
+    # Dense Adam: a sparse table's gradient coalescing (≈ batch × negatives rows per step) costs more than a dense
+    # update of the whole table at these sizes (≤ 10⁵ entities).
+    optimizers = [torch.optim.Adam(list(entity.parameters()) + list(relation.parameters()), lr=lr)]
     steps = int(min(max_steps, max(min_steps, math.ceil(epochs * count / batch))))
     h_all, r_all, t_all = heads.to(device), relations.to(device), tails.to(device)
     losses: list[float] = []
@@ -346,7 +348,8 @@ def build_for_track(track: str, kind: str, *, host: str | None = None, family: s
     if kind != "kge":
         from transformers import AutoModelForCausalLM, AutoTokenizer
         pretrained = HOSTS[host]["pretrained"]
-        model = AutoModelForCausalLM.from_pretrained(pretrained, local_files_only=True, torch_dtype=torch.float32)
+        from ..training.lm import dtype_kwargs
+        model = AutoModelForCausalLM.from_pretrained(pretrained, local_files_only=True, **dtype_kwargs(torch.float32))
         tokenizer = AutoTokenizer.from_pretrained(FAMILY_TOKENIZERS[family], local_files_only=True)
         meta.update(pretrained=pretrained, tokenizer=FAMILY_TOKENIZERS[family])
     lexicon = lexicon_for(spec, ontology) if kind == "definition" else None

@@ -229,6 +229,7 @@ class TranslationRelation(RelationTransform):
     Affine, not a binding: a bundle `Σ_e (a_e + t_{r_e})` separates into a bag of fillers plus a bag of
     relation offsets, so which filler went with which relation is lost. Offsets start like HRR roles
     (`N(0, 1/d)`, norm ≈ 1, the scale of a normalized atomic), so relations are distinguishable at step 0.
+    Not linear, so it is built by `create_composition_operator`, not `create_relation_transform`.
     """
 
     family = "translation"
@@ -294,10 +295,22 @@ def create_relation_transform(
         "low_rank_identity": lambda: LowRankRelation(relation_count, dimension, rank, identity_init=True),
         "low_rank_tied": lambda: TiedLowRankRelation(relation_count, dimension, rank),
         "orthogonal": lambda: OrthogonalRelation(relation_count, dimension),
-        "translation": lambda: TranslationRelation(relation_count, dimension),
         "unitary_hrr": lambda: UnitaryHRRRelation(relation_count, dimension),
     }
     try:
         return factories[family]()
     except KeyError as error:
         raise ValueError(f"unsupported relation family {family!r}; choose from {sorted(factories)}") from error
+
+
+# Affine (not linear) operator families: usable as composition operators, kept out of `create_relation_transform`,
+# whose families are all linear (the adjoint identity `⟨T x, y⟩ = ⟨x, Tᵀ y⟩` holds for each of them).
+AFFINE_FAMILIES = {"translation": TranslationRelation}
+
+
+def create_composition_operator(family: str, relation_count: int, dimension: int, *, rank: int = 8) -> RelationTransform:
+    """The relation operator of a frame composer: a linear family (`create_relation_transform`) or an affine one
+    (`AFFINE_FAMILIES`)."""
+    if family in AFFINE_FAMILIES:
+        return AFFINE_FAMILIES[family](relation_count, dimension)
+    return create_relation_transform(family, relation_count, dimension, rank=rank)

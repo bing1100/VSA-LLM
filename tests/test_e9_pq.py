@@ -19,7 +19,7 @@ from vsa_embed.compose import FrameComposer, FrameSchedule
 from vsa_embed.data.corpus import TokenCorpus, build_corpus
 from vsa_embed.evaluation import quantization as quant
 from vsa_embed.experiments import e9_plan, e9_report, e9_rescore, e9_rowsource
-from vsa_embed.relations import create_relation_transform
+from vsa_embed.relations import create_composition_operator, create_relation_transform
 from vsa_embed.row_sources import FillerIndex, frames_digest, load_source_table, standardize_rows
 from vsa_embed.span_channel import AliasTable
 import vsa_embed.training.lm as lm
@@ -134,7 +134,7 @@ def test_unitary_and_translation_operators() -> None:
         y = transform(ids, x)
         assert torch.allclose(y.norm(dim=-1), x.norm(dim=-1), atol=1e-5)          # orthogonal: norm-preserving
         assert torch.allclose(transform.adjoint(ids, y), x, atol=1e-5)            # adjoint = inverse
-    translation = create_relation_transform("translation", 2, 8)
+    translation = create_composition_operator("translation", 2, 8)
     x = torch.randn(3, 8)
     assert torch.allclose(translation(torch.tensor([1, 1, 0]), x) - x, translation.offsets[torch.tensor([1, 1, 0])])
     assert torch.equal(translation.adjoint(torch.tensor([1, 1, 0]), x), x)

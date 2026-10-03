@@ -27,7 +27,7 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 
 from .algebra import normalize
-from .relations import create_relation_transform
+from .relations import create_composition_operator
 
 
 @dataclass(frozen=True)
@@ -106,8 +106,9 @@ class FrameComposer(nn.Module):
 
     `mode="bundle"` is M0. `mode="attentive"` is M1 with the concept factor chosen by
     `concept_factor` ∈ {"induced", "free", "hybrid"} (M2). `operator` is any relation family of
-    `create_relation_transform` (`hrr`, `hrr_identity`, `diagonal`, `low_rank_identity`,
-    `orthogonal`, ...), `untyped` (no binding) or `random_fixed:<family>` (bound, never trained).
+    `create_relation_transform` (`hrr`, `hrr_identity`, `unitary_hrr`, `diagonal`, `low_rank_identity`,
+    `orthogonal`, ...), the affine `translation` (`relations.AFFINE_FAMILIES`), `untyped` (no binding) or
+    `random_fixed:<family>` (bound, never trained).
     """
 
     def __init__(
@@ -136,7 +137,7 @@ class FrameComposer(nn.Module):
         family, frozen = operator, False
         if operator.startswith("random_fixed"):
             family, frozen = (operator.split(":", 1)[1] if ":" in operator else "hrr"), True
-        self.transform = create_relation_transform("additive" if family == "untyped" else family,
+        self.transform = create_composition_operator("additive" if family == "untyped" else family,
                                                    relation_count, dimension, rank=rank)
         if frozen:
             self.transform.requires_grad_(False)
