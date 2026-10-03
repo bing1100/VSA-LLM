@@ -263,12 +263,12 @@ def evaluate_rows(run: E5Run, setup: dict[str, Any], *, lexicon: Any, fit_entrie
                                           manifest=setup["manifest"], items_dir=Path("."), fit_entries=fit_entries, contexts=0,
                                           seed=seed, log=log)
         info.update(fit_info)
-        if lexicon is not None and channel.mode == "compose":
+        if lexicon is not None:
             definition, definition_info = definition_rows(run, setup, lexicon=lexicon, fit_entries=fit_entries, seed=seed)
             info.update(definition_info)
             if definition:
                 rows["definition_encoder"] = definition
-        elif lexicon is None:
+        else:
             info["definition_encoder"] = "no lexicon for this run"
     results = {"own": _score_new(run, setup, setup["items"], None)}
     for source in ROW_SOURCES:

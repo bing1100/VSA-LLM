@@ -160,6 +160,15 @@ def test_weight_editors_on_the_host(evaluations) -> None:
     assert rome == {"before", "after", "control"} and "ontology" not in edits and "channel_off" not in edits
 
 
+def test_row_sources_on_the_free_table(world, items) -> None:
+    run = common.open_run(world["runs"]["C2"], device="cpu", batch_size=8, max_length=64)
+    out = dim3.evaluate(run, new_items=items["new"], edit_items=items["edits"], methods=["rows", "transplant", "channel_off"],
+                        resamples=50, fit_entries=20, new_limit=3, log=lambda _: None)["document"]
+    assert set(out["skipped"]) == {"transplant", "channel_off"} and "edits" not in out
+    rows = out["new_words"]["rows"]
+    assert {"own", "surface_mean"} <= set(rows["sources"]) and rows["info"]["fit_entries"] > 0
+
+
 def test_weights_restored_after_editing(world, items, evaluations) -> None:
     run, out = evaluations["C0p"]
     _, concepts, edit_items = edit.load_item_dir(items["edits"], edit.SCHEMA_EDITS)
