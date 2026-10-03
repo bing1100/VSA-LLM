@@ -348,8 +348,12 @@ manuscript wording are WP-PQ2.
   space), `X_nonfiller` = the rest, for every after-span stratum (held-out, rare, unseen, 3+-subtoken, …). Filler tables
   per track and tokenizer (`e9_rescore fillers`, `~/data/vsa-llm/e9/filler-tables/`). The same masks are the trainer's
   opt-in `eval.filler_strata` and `e9_rescore`'s re-scoring of finished `final.pt` files on the run's own windows
-  (`RUN/rescore/`; the old strata replay the run's `eval_windows.npz` exactly — tested). On T5 about 19–23% of the
-  after-span targets are filler tokens (eval sample of 64 windows).
+  (`RUN/rescore/`; the old strata replay the run's `eval_windows.npz` exactly — tested). Share of filler tokens among the
+  after-span targets (first 256 evaluation windows): T5 18.6% (`after`), 21.1% held-out, 22.0% rare-seen, 23.9% unseen;
+  T4 3.7%, 0.8% held-out, 10.3% rare-seen, 28.9% unseen (T4's text is mostly PubMed abstracts and ChEBI definitions).
+  Tables built: filler tables T5 and T4 (SmolLM2 tokenizer); row sources T5 (FVT and definition for both SmolLM2 hosts,
+  TransE: raw training tail MRR 0.73, hits@10 1.00) and T4 FVT for both hosts; T4 definition and TransE tables are built
+  by the queued jobs (minutes on the GPU).
 - **Claim-B controls** (`e9_rescore` variants, all paired by window with the run's other variants): `ref-off` /
   `int4-A-off` (the channel switched off: what the C5-trained host weights do alone, B-B2); `int4-hqq`, `int4-nf4`
   (torchao algorithms, NF4 bit-exact with `NF4Tensor`), `int4-gptq` (act-order, static groups, 1% damping, block-

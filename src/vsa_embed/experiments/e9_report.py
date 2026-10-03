@@ -663,15 +663,15 @@ def render_pq(pq: dict[str, Any], candidate: str) -> list[str]:
                   "quantized too. Paired window bootstraps, pooled over common seeds.", ""]
         for reference, block in controls["references"].items():
             lines += [f"**{candidate} vs {reference}**", "",
-                      "| Stratum | q | ref bf16 | cand bf16 | ref q | cand q | gap bf16 | gap q | DiD [95% CI] | DiD off [95% CI] | channel DiD [95% CI] |",
-                      "|---|---|---:|---:|---:|---:|---|---|---|---|---|"]
+                      "| Stratum | n | q | ref bf16 | cand bf16 | ref q | cand q | gap bf16 | gap q | DiD [95% CI] | DiD off [95% CI] | channel DiD [95% CI] |",
+                      "|---|---:|---|---:|---:|---:|---:|---|---|---|---|---|"]
             for stratum in CONTROL_STRATA:
                 for q in controls["quantizers"]:
                     entry = block.get(q, {}).get(stratum)
                     if entry is None:
                         continue
                     cells, did = entry["cells"], entry["did"]
-                    lines.append(f"| {stratum} | {q} | {cells['reference_bf16']:.4f} | {cells['candidate_bf16']:.4f} | "
+                    lines.append(f"| {stratum} | {entry['targets']} | {q} | {cells['reference_bf16']:.4f} | {cells['candidate_bf16']:.4f} | "
                                  f"{cells['reference_q']:.4f} | {cells['candidate_q']:.4f} | {_fmt(did['gain_bf16']['mean'])} | "
                                  f"{_fmt(did['gain_quantized']['mean'])} | {_ci(did['gain_change'])} | "
                                  f"{_ci((entry.get('did_off') or {}).get('gain_change'))} | {_ci((entry.get('channel') or {}).get('gain_change'))} |")

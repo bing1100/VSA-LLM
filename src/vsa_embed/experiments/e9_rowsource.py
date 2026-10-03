@@ -182,6 +182,7 @@ def definition_rows(model: nn.Module, tokenizer: Any, texts: Sequence[str], *, d
                     batch_size: int = 32, max_length: int = 256, layer: int = -1) -> Tensor:
     """Mean over tokens of the host's hidden state at `layer` (default: the last) for each text; the host is frozen."""
     model = model.to(device).eval()
+    backbone = getattr(model, "base_model", model)                         # no LM head: hidden states only
     order = sorted(range(len(texts)), key=lambda i: len(texts[i]))         # similar lengths per batch
     out = torch.zeros(len(texts), model.get_input_embeddings().weight.shape[1])
     pad = tokenizer.pad_token_id if tokenizer.pad_token_id is not None else (tokenizer.eos_token_id or 0)
@@ -195,7 +196,7 @@ def definition_rows(model: nn.Module, tokenizer: Any, texts: Sequence[str], *, d
             ids[row, :len(tokens)] = torch.tensor(tokens); mask[row, :len(tokens)] = 1
         ids, mask = ids.to(device), mask.to(device)
         with torch.autocast(torch.device(device).type, dtype=torch.bfloat16, enabled=torch.device(device).type == "cuda"):
-            hidden = model(input_ids=ids, attention_mask=mask, output_hidden_states=True).hidden_states[layer].float()
+            hidden = backbone(input_ids=ids, attention_mask=mask, output_hidden_states=True).hidden_states[layer].float()
         pooled = (hidden * mask[..., None]).sum(1) / mask.sum(1, keepdim=True)
         out[torch.tensor(index)] = pooled.cpu()
     return out
@@ -349,9 +350,12 @@ def build_for_track(track: str, kind: str, *, host: str | None = None, family: s
         from transformers import AutoModelForCausalLM, AutoTokenizer
         pretrained = HOSTS[host]["pretrained"]
         from ..training.lm import dtype_kwargs
-        model = AutoModelForCausalLM.from_pretrained(pretrained, local_files_only=True, **dtype_kwargs(torch.float32))
+        # The definition encoder runs the frozen host in bf16 on CUDA (inference only; half the memory); FVT rows read the
+        # float32 embedding table.
+        weights = torch.bfloat16 if kind == "definition" and torch.device(device).type == "cuda" else torch.float32
+        model = AutoModelForCausalLM.from_pretrained(pretrained, local_files_only=True, **dtype_kwargs(weights))
         tokenizer = AutoTokenizer.from_pretrained(FAMILY_TOKENIZERS[family], local_files_only=True)
-        meta.update(pretrained=pretrained, tokenizer=FAMILY_TOKENIZERS[family])
+        meta.update(pretrained=pretrained, tokenizer=FAMILY_TOKENIZERS[family], host_weights=str(weights).replace("torch.", ""))
     lexicon = lexicon_for(spec, ontology) if kind == "definition" else None
     record = build_table(kind, ontology=ontology, output=path, table=table, lexicon=lexicon, model=model, tokenizer=tokenizer,
                          device=device, meta=meta, verbalization_path=path.parent / "verbalized.jsonl.gz" if kind == "definition" else None,
