@@ -753,15 +753,39 @@ def plot_group(label: str, g: dict[str, Any], out: Path, slug: str, *, candidate
     return figures
 
 
+# ---------------------------------------------------------------- dimension-3 baselines (WP-PQ2; opt-in `--dim3-baselines`)
+
+
+def dimension3_baselines(group: Group, *, candidate: str, resamples: int, seed: int) -> dict[str, Any]:
+    """The `e9_dim3_baselines` evaluations of the group's runs (`RUN/dim3-baselines`): in-context frames and IKE, ROME /
+    MEMIT / AlphaEdit on the host weights, frame transplant, channel-off audit, intra-entity locality, row sources; and the
+    candidate's ontology edit vs every other model × method, paired over edit items (`e9_dim3_baselines.stage_summary`)."""
+    from . import e9_dim3_baselines as dim3
+    runs = {model: {s: run.path for s, run in by_seed.items()} for model, by_seed in group.models.items()}
+    return dim3.stage_summary(runs, candidate=candidate, resamples=resamples, seed=seed)
+
+
+def render_dimension3_baselines(summary: dict[str, Any]) -> list[str]:
+    from . import e9_dim3_baselines as dim3
+    lines = ["", "## Dimension-3 baselines (claim C; novelty check §4.4)", ""]
+    for label, g in summary["groups"].items():
+        if "dimension3_baselines" in g:
+            lines += [f"### {label}", ""] + dim3.render_stage(g["dimension3_baselines"], heading="####")
+    return lines
+
+
 # ---------------------------------------------------------------- CLI
 
 
 def write_report(runs_dirs: Sequence[Path], output: Path, *, quant_dir: Path | None = None, candidate: str = "C5",
                  resamples: int = 10_000, seed: int = 0, title: str = "R9 — retrofit × quantization (E9)", figures: bool = True,
-                 overwrite: bool = False, quantized: str = "int4", quant_general_dir: Path | None = None) -> dict[str, Any]:
+                 overwrite: bool = False, quantized: str = "int4", quant_general_dir: Path | None = None,
+                 dim3_baselines: bool = False) -> dict[str, Any]:
     config = {"runs": [str(p) for p in runs_dirs], "quant": str(quant_dir) if quant_dir else None, "candidate": candidate,
               "resamples": resamples, "seed": seed, "title": title, "quantized": quantized,
               "quant_general": str(quant_general_dir) if quant_general_dir else None}
+    if dim3_baselines:                                # opt-in key (configs of earlier reports unchanged)
+        config["dim3_baselines"] = True
     if overwrite and output.exists():
         for path in [*output.glob("figures/*.png"), *(output / n for n in ("report.md", "summary.json", "resolved_config.yaml", "manifest.json"))]:
             if path.is_file():
@@ -772,8 +796,12 @@ def write_report(runs_dirs: Sequence[Path], output: Path, *, quant_dir: Path | N
     runs = discover(runs_dirs)
     if not runs:
         raise FileNotFoundError(f"no run folders (metrics.jsonl) under {', '.join(map(str, runs_dirs))}")
-    summary, _ = analyze(runs, load_quant(quant_dir), candidate=candidate, resamples=resamples, seed=seed, quantized=quantized,
-                         quant_general=load_quant(quant_general_dir) if quant_general_dir else None)
+    summary, groups = analyze(runs, load_quant(quant_dir), candidate=candidate, resamples=resamples, seed=seed, quantized=quantized,
+                              quant_general=load_quant(quant_general_dir) if quant_general_dir else None)
+    if dim3_baselines:
+        for group in groups:
+            summary["groups"][group.label]["dimension3_baselines"] = dimension3_baselines(
+                group, candidate=candidate, resamples=min(resamples, 10_000), seed=seed)
     plots: dict[str, dict[str, str]] = {}
     if figures:
         (output / "figures").mkdir(exist_ok=True)
@@ -781,7 +809,10 @@ def write_report(runs_dirs: Sequence[Path], output: Path, *, quant_dir: Path | N
             slug = re.sub(r"[^A-Za-z0-9]+", "-", label).strip("-").lower() or f"group-{i}"
             plots[label] = plot_group(label, g, output, slug, candidate=candidate)
     (output / "summary.json").write_text(json.dumps(summary, indent=2, default=_json_default) + "\n")
-    (output / "report.md").write_text(render(summary, plots, title=title))
+    text = render(summary, plots, title=title)
+    if dim3_baselines:
+        text += "\n".join(render_dimension3_baselines(summary)) + "\n"
+    (output / "report.md").write_text(text)
     write_run_metadata(output, config, git_at_start=git_at_start, runs=len(runs), groups=list(summary["groups"]))
     return summary
 
@@ -798,10 +829,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--overwrite", action="store_true", help="regenerate into an existing report folder")
     parser.add_argument("--quantized", default="int4", help="label of the per-run quantized evaluations (probes-<q>.json, edit-<q>, …)")
     parser.add_argument("--quant-general", type=Path, default=None, help="e4_quant output on the track's general-text corpus")
+    parser.add_argument("--dim3-baselines", action="store_true",
+                        help="add the dimension-3 baselines section (RUN/dim3-baselines of e9_dim3_baselines; WP-PQ2)")
     args = parser.parse_args(argv)
     summary = write_report(args.runs, args.output, quant_dir=args.quant, candidate=args.candidate, resamples=args.resamples,
                            seed=args.seed, title=args.title, figures=not args.no_figures, overwrite=args.overwrite,
-                           quantized=args.quantized, quant_general_dir=args.quant_general)
+                           quantized=args.quantized, quant_general_dir=args.quant_general, dim3_baselines=args.dim3_baselines)
     print(json.dumps({label: {"seeds": g["seeds"]} for label, g in summary["groups"].items()}))
 
 
