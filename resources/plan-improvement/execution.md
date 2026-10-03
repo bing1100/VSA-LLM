@@ -269,8 +269,10 @@ separate environment; the pinned `vsa-repro` is unchanged. Open decisions 47–5
   forward then fails); `integrations.linear_attention.install_device_dispatch` (applied by `build_model` to linear-attention
   hosts) sends CUDA tensors to the kernels and CPU tensors to the PyTorch reference and counts the calls. Every Qwen3.5 run
   prints and records `linear_attention_kernels` (bound implementations, calls per implementation, interpreter) in its manifest.
-  A tiny GPU smoke (`linear_attention_smoke`) ran the fast path (18 + 18 fast calls) at 1.8× the reference speed with matching
-  gradients (cosine 0.9999); the memory probe measures the full-size speed-up (`train-reference` row).
+  A GPU smoke at the 0.8B host's layer shapes (`linear_attention_smoke`, `experiments/e9-retrofit/env/kernel-smoke-shapes-v1`)
+  ran every Gated DeltaNet call on the fast path at 2.3× the reference speed (forward+backward) with matching gradients
+  (cosine 0.9999); the memory probe measures the full-size speed-up (`train-reference` row). End to end on CPU, the real
+  Qwen3.5-0.8B trains through `training.lm` (186 adapters) and reloads through `channel_probes.load_run` with INT8.
 - **Hosts (`cpt_plan.HOSTS`).** Width 2048 / 1024, tied 248,320-row heads, a `python` field (`~/venvs/vsa-qwen35/bin/python`) so
   every job of these hosts — training, evaluations, `e4_quant`, report — runs in the venv and every other host's with the
   pinned interpreter (`cpt_plan.pinned_python`, also when planning from the venv). New opt-in keys, absent elsewhere:

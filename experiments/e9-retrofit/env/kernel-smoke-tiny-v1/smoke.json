@@ -1,0 +1,147 @@
+{
+  "host": "tiny",
+  "device": "cuda:0",
+  "batch": 2,
+  "length": 512,
+  "reps": 5,
+  "lora_rank": 8,
+  "tiny_config": {
+    "vocab_size": 4096,
+    "hidden_size": 256,
+    "intermediate_size": 512,
+    "num_hidden_layers": 4,
+    "num_attention_heads": 4,
+    "num_key_value_heads": 2,
+    "head_dim": 64,
+    "linear_num_key_heads": 4,
+    "linear_num_value_heads": 4,
+    "linear_key_head_dim": 64,
+    "linear_value_head_dim": 64,
+    "max_position_embeddings": 4096,
+    "tie_word_embeddings": true,
+    "layer_types": [
+      "linear_attention",
+      "linear_attention",
+      "linear_attention",
+      "full_attention"
+    ]
+  },
+  "kernels": {
+    "status": {
+      "modeling_qwen3_5": {
+        "functions": {
+          "torch_chunk_gated_delta_rule": {
+            "kernel": "fla.chunk_gated_delta_rule",
+            "bound": "fast",
+            "implementation": "fla.ops.gated_delta_rule.chunk.chunk_gated_delta_rule",
+            "dispatch": true
+          },
+          "torch_recurrent_gated_delta_rule": {
+            "kernel": "fla.fused_recurrent_gated_delta_rule",
+            "bound": "fast",
+            "implementation": "fla.ops.gated_delta_rule.fused_recurrent.fused_recurrent_gated_delta_rule",
+            "dispatch": true
+          },
+          "causal_conv1d_fn": {
+            "kernel": "causal_conv1d.causal_conv1d_fn",
+            "bound": "fast",
+            "implementation": "causal_conv1d.causal_conv1d_interface.causal_conv1d_fn",
+            "dispatch": true
+          },
+          "causal_conv1d_update": {
+            "kernel": "causal_conv1d.causal_conv1d_update",
+            "bound": "fast",
+            "implementation": "causal_conv1d.causal_conv1d_interface.causal_conv1d_update",
+            "dispatch": true
+          }
+        },
+        "packages": {
+          "fla": "0.5.2",
+          "causal_conv1d": "1.7.0"
+        },
+        "fast_path_bound": true
+      }
+    }
+  },
+  "lora_coverage": {
+    "layers": 4,
+    "adapters": 31,
+    "by_type": {
+      "linear_attention": {
+        "layers": 3,
+        "adapters": 24,
+        "per_layer": [
+          8
+        ]
+      },
+      "full_attention": {
+        "layers": 1,
+        "adapters": 7,
+        "per_layer": [
+          7
+        ]
+      }
+    },
+    "targets": [
+      "down_proj",
+      "gate_proj",
+      "in_proj_a",
+      "in_proj_b",
+      "in_proj_qkv",
+      "in_proj_z",
+      "k_proj",
+      "o_proj",
+      "out_proj",
+      "q_proj",
+      "up_proj",
+      "v_proj"
+    ],
+    "uncovered_mixers": []
+  },
+  "agreement": {
+    "loss_abs_diff": 0.000102996826171875,
+    "hidden_max_abs_diff": 0.06775487959384918,
+    "hidden_rel_rms": 0.012051197700202465,
+    "grad_cosine": 0.999853789806366,
+    "grad_cosine_min": 0.9990338683128357,
+    "grad_rel_norm_diff": 0.01745893433690071
+  },
+  "speedup": 1.5815560503879733,
+  "forward_speedup": 1.2186834314382389,
+  "paths": [
+    {
+      "path": "reference",
+      "loss": 8.358263969421387,
+      "warmup_s": 0.47002657991833985,
+      "forward_s": 0.01438518799841404,
+      "step_s": 0.0380952269770205,
+      "tokens_per_s": 26880.007845016622,
+      "calls": {
+        "causal_conv1d_fn": {
+          "reference": 18
+        },
+        "torch_chunk_gated_delta_rule": {
+          "reference": 18
+        }
+      },
+      "peak_gib": 0.2008500099182129
+    },
+    {
+      "path": "fast",
+      "loss": 8.358160972595215,
+      "warmup_s": 0.46980068599805236,
+      "forward_s": 0.011803875910118222,
+      "step_s": 0.024087181081995368,
+      "tokens_per_s": 42512.23904176223,
+      "calls": {
+        "causal_conv1d_fn": {
+          "fast": 18
+        },
+        "torch_chunk_gated_delta_rule": {
+          "fast": 18
+        }
+      },
+      "peak_gib": 0.14916038513183594
+    }
+  ]
+}

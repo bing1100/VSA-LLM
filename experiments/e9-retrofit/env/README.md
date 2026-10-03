@@ -60,19 +60,29 @@ CAUSAL_CONV1D_FORCE_BUILD=TRUE MAX_JOBS=4 TORCH_CUDA_ARCH_LIST=8.6 \
   (`fast_path_bound`), package versions, the interpreter, and the calls per implementation. The memory probe
   (`e9_memory`) records `kernel_calls` per training row and times one micro-batch-1 step on the reference path
   (`train-reference`) for the full-size speed comparison.
-- `linear_attention_smoke` runs the same forward/backward on both paths. A tiny check (random 4-layer Qwen3.5 text
-  model: 3 Gated DeltaNet + 1 full-attention layer, width 256, batch 2 × 512, bf16 autocast, LoRA on every projection)
-  on the RTX 3090, run beside a training job (0.33 GiB peak):
+- `linear_attention_smoke` runs the same forward/backward on both paths (random 4-layer Qwen3.5 text model: 3 Gated
+  DeltaNet + 1 full-attention layer; bf16 autocast, fp32 weights, LoRA on every projection), on the RTX 3090 beside a
+  running queue job (allocator capped at 1–1.8 GiB). Run folders in this directory:
 
-| path | forward s | forward+backward s | tokens/s | calls |
-|---|---:|---:|---:|---|
-| reference (PyTorch) | 0.0113 | 0.0277 | 36,930 | causal_conv1d_fn 18, chunk_gated_delta_rule 18 (reference) |
-| fast (fla + causal-conv1d) | 0.0073 | 0.0151 | 67,614 | the same 18 + 18 (fast) |
+| run | shapes | path | forward s | fwd+bwd s | tokens/s | peak GiB | calls (per path) |
+|---|---|---|---:|---:|---:|---:|---|
+| `kernel-smoke-shapes-v1` | the 0.8B host's layers (width 1024, 16 × 128 linear heads, 8 × 256 attention heads), 1 × 1024 | reference | 0.0371 | 0.1109 | 9,233 | 1.37 | conv 18, delta rule 18 |
+| | | **fast** | 0.0229 | 0.0487 | 21,036 | 1.00 | conv 18, delta rule 18 |
+| `kernel-smoke-tiny-v1` | width 256, 4 × 64 heads, 2 × 512 | reference | 0.0144 | 0.0381 | 26,880 | 0.20 | conv 18, delta rule 18 |
+| | | **fast** | 0.0118 | 0.0241 | 42,512 | 0.15 | conv 18, delta rule 18 |
 
-  Speed-up 1.8× at this toy size (launch-bound; the probe measures the real one). Agreement: |Δloss| 1.0e-4, LoRA
-  gradient cosine 0.99985 (min per tensor 0.9990); final hidden states differ by 1.2% relative RMS — the reference
-  computes the delta rule in fp32, fla in bf16 with fp32 accumulation. The first fast step compiles and autotunes the
-  Triton kernels (≈ 50 s, cached in `~/.triton`). On CPU only the reference path exists (2×512: 0.155 s per step).
+  Speed-up of forward+backward 2.3× at the real layer shapes (1.6× at the toy size, launch-bound); the memory probe
+  measures it for the full hosts. Agreement fast vs reference (real shapes): |Δloss| 5.5e-4, LoRA gradient cosine 0.99985
+  (min per tensor 0.9985), final hidden states 1.9% relative RMS apart — the reference computes the delta rule in fp32,
+  fla in bf16 with fp32 accumulation; training and every evaluation of these hosts run on CUDA, so on one path. The first
+  fast step compiles and autotunes the Triton kernels (≈ 55 s, cached in `~/.triton`). On CPU only the reference path
+  exists.
+- **End-to-end (CPU, real Qwen3.5-0.8B-Base, reference path):** the `e9_plan` C5 config (T5 Qwen3.5 corpus, LoRA r = 64,
+  `scale_to_host`) for 2 optimizer steps of 1 × 1024 tokens through `training.lm.train` — the corpus fingerprint check
+  passes; 186 adapters (8 in each of the 18 Gated DeltaNet layers, 7 in each of the 6 full-attention layers; the
+  default targets would give 96 and leave all 18 linear-attention mixers frozen); host row norm 0.631, channel scale 0.164
+  (unscaled injection 1.8× an embedding row); loss on 2 windows 2.679 → 2.484 — then `channel_probes.load_run` with
+  INT8 (186 adapters merged, 186 linear layers quantized, none skipped) and a scoring forward (80 s wall, peak RSS 19 GB).
 - **INT8 / INT4 PTQ** (`e4_quant`'s path, `channel_probes.quantize_model`) on a tiny Qwen3.5 with 16-row `in_proj_a/b`
   (as the real hosts): all 31 linear layers quantized, none skipped (group size 128); bf16 loss 8.3659 → INT8 8.3655,
   INT4 (tile-packed tinygemm) 8.3714; the quantized model runs on the fast kernels.
