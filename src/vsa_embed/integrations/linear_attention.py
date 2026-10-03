@@ -8,9 +8,10 @@ at import, whatever the device, so with the kernels installed a CPU forward fail
 `install_device_dispatch()` replaces the four module-level functions of `modeling_qwen3_5` by dispatchers: the
 fast kernel for CUDA inputs, the reference implementation otherwise. It counts the calls of each implementation
 (`kernel_calls()`), so a run can show which path actually ran; `kernel_status()` records what transformers bound
-(implementation module, package versions). The reference path is the one transformers runs without the packages,
-so CPU results are unchanged; on CUDA the fast kernels compute the same function (checked by
-`tests/test_qwen35_hosts.py` and the GPU smoke in `experiments/e9-retrofit/env/`).
+(implementation module, package versions); `reference_only()` forces the reference on every device (speed and
+agreement checks). The reference path is the one transformers runs without the packages, so CPU results are
+unchanged; on CUDA the fast kernels compute the same function to bf16 precision (fla runs the delta rule in bf16 with
+fp32 accumulation, the reference in fp32; `linear_attention_smoke`, `experiments/e9-retrofit/env/kernel-smoke-*`).
 
 `is_linear_attention_host(model)` tells such hosts apart (`config.layer_types` holds `linear_attention`);
 `lora_layer_coverage(model)` counts LoRA adapters per decoder layer (every layer must have its token mixer adapted).
