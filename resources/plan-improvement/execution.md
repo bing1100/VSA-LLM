@@ -117,3 +117,15 @@ New names not new semantics; one frozen holdout per track; freeze the linker bef
 | 32 | E7 compute-matched control counts discovery + authoring + verification FLOPs (≈ +27M tokens over 25M) | WP-E7 | now | as implemented (the stronger control) |
 | 33 | E7 text controls budget: matched tokens; teacher edges go through the same verification; defaults min_validation 6, min_documents 3, 1,000 candidates | WP-E7 | now | as implemented |
 | 34 | E7 reading slice: documents after the C3 GPT-2 training corpus (doc ≥ 1,070,634), disjoint from every C3/host training corpus (CPT runs sample windows over all 130M host tokens, so a token-offset slice would overlap D4.4) | WP-E7 | now | as implemented |
+
+## E9 — retrofit × quantization (author request 2026-10-02)
+
+Two applicability questions on pretrained hosts, tested on one fixed test set: (1) does a VSA ontology channel trained jointly with a pretrained model improve it on long-token, rare and unseen words; (2) does that gain survive weight quantization of the model (and does quantization hurt these words more than general text)?
+
+- **Hosts:** SmolLM2-360M (primary), SmolLM2-135M (size trend); Qwen2.5-0.5B after open decision 1 (channel scale).
+- **Models:** P0 original host (evaluation only); C0′ continued training without the channel (same tokens, same trainable host parameters); C2 continued training + capacity-matched free per-concept table; C5 continued training + attentive VSA channel (WordNet ontology, C3 holdout).
+- **Training:** an engagement check first (the S0 CPT pilot with frozen/LoRA-16 host barely moved the loss in 25M tokens): full fine-tuning (host lr ≈ 3e-5) vs LoRA r = 64, gate bias −2 vs 0, 10M tokens, C5 vs C0′. The setting where training moves the linked strata fixes the recipe; then 50M tokens, seed 1 first, then seeds 2–3.
+- **Fixed test set:** the host eval corpus strata (`inside`, `after_len2`, `after_len3plus`, `after_rare_seen`, `after_unseen`, `after_heldout`, `unlinked`, `all`) with per-window losses; probe subsets by status (CARD-660, Rare Words, BLESS, WiC, WSD; channel_probes); contamination-free unseen words (E5.4 `c3-synthetic-smollm2-v1`, invented names); LAMBADA and general-text loss for locality.
+- **Quantization:** every model at bf16, INT8, INT4 (torchao weight-only, output head FP), C5 with the channel in FP16 (variant A) and quantized (variant B) — `e4_quant`.
+- **Readout:** (1) C5 − C0′ and C5 − C2 per stratum at bf16; (2) quantization damage per stratum (INT4 − bf16) for P0, C0′, C2, C5, and the retained gain (C5 − C0′ at INT4 vs at bf16) — difference-in-differences with paired window bootstraps.
+- **Budget:** ≈ 1 GPU-h check + ≈ 4 h seed 1 + ≈ 6 h seeds 2–3 + ≈ 1 h quantization/probes; counted against D4.4/D4.3. Report: `reports/R9-retrofit-quantization.md`.
