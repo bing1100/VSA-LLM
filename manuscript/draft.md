@@ -746,6 +746,8 @@ Baselines on the identical items and metric code (novelty check C-B1–C-B6; bei
 
 Composition and validity controls `[[C-B4/C-B5: frame transplant (term A given term B's frame: do A's predictions follow B?); channel-off audit (gate 0 on the edited terms: the edit must revert); edit-to-random-filler null; intra-entity locality (the edited term's other relations stay put)]]`. New-word rows without gradient at the same site `[[C-B3: subtoken-mean (FVT-style) and definition-encoder rows; verbalized frame in context as the text-evidence upper bound, reported separately from structure-only results]]`.
 
+*Implementation check of the weight editors* (not a result). The baselines are minimal re-implementations of ROME, MEMIT and AlphaEdit for LLaMA-style MLPs (`vsa_embed.knowledge_editing`; EasyEdit's LLaMA-7B hyper-parameters, layers scaled to depth) and evaluation-only jobs on the trained runs (`e9_plan --dim3-baselines`). On four well-known facts of the unmodified SmolLM2-135M (`experiments/e9-retrofit/dim3-toy/smollm2-135m-v1`), each editor turns all four efficacy margins positive; paraphrases follow in 4/4 (ROME) and 3/4 (MEMIT, AlphaEdit) cases, and the neighbour keeps its fact in 2/4 (ROME), 4/4 (MEMIT) and 3/4 (AlphaEdit) cases.
+
 Recommended wording (novelty check §4.5): "After joint training, the model's behaviour on a concept can be changed without any weight update by editing the frame from which its bound concept vector is composed. A frame written for an invented word improves property selection over equal-degree random-frame and no-frame controls (0.25 vs 0.19 at 360M; chance 0.20). Replacing one relation–filler edge of a term seen in training shifts predictions toward the new fact (+0.69 log-odds) while preserving neighbourhood specificity. Edits do not transfer to terms unseen in training." Editing a non-weight store is not presented as a new paradigm (Verga et al. 2021; Wang et al. 2024; Zhao et al. 2025; Hernandez et al. 2024; Zhang et al. 2023), and nothing here is "first".
 
 ### 5.9 Explanations, sense alignment and zero-shot rows *(pending: `[[R5]]`)*
@@ -769,7 +771,7 @@ Recommended wording (novelty check §4.5): "After joint training, the model's be
 | EntiGraph-style synthetic CPT | | | | |
 | `[[G2/E7: SPA/QA CPT; self-authored notes through the same filter; verbalized-frames CPT]]` | | | | |
 
-### 5.11 E10 — a learnable ontology with self-tested structure edits *(synthetic protocol; WordNet negative; baselines pending: `[[R10]]`)*
+### 5.11 E10 — a learnable ontology with self-tested structure edits *(synthetic protocol; WordNet negative; baselines narrow it)*
 
 **Setup** ([R10](../reports/R10-self-learned-semantics.md)). The concept-to-edge mapping of the composer becomes learnable: asserted edges keep a mass pulled toward 1 by L2 (the curated prior), candidate edges start at mass 0 under L1, and atomics and relations are pulled toward their priors. The model proposes structure edits:
 - candidate edges;
@@ -792,17 +794,22 @@ The world is built from the learner's own HRR family, with priors at cosine 0.8 
 
 **E10.1, WordNet on frozen GPT-2 anchors (3 seeds, 3,000 concepts): most of it does not transfer.** Erased-edge recovery AUC 0.589 at 30% erasure; self-acceptance ≈ random (edges 0.46 vs 0.45; slots 0.35 vs 0.37); new-word frame F1 0.007 vs 0.267 for nearest-neighbour frames; the *fixed* ontology has the best zero-shot fit (0.149 vs 0.094); revision repairs 7–12% of wrong edges with 8–12% damage. Frozen anchors are the regime already refuted for row fitting (01a–01c, E2), so the decisive test is joint LM training `[[E10.2]]`.
 
-**Baselines** (novelty check D-B1–D-B9; being run by WP-PQ2 on the E10.0 world, 3 seeds):
+**Baselines** (novelty check D-B1, D-B2, D-B4, D-B5; R10 "E10 baselines", `runs/e10.0-baselines-v2`, the same worlds, pools and seeds; mean [95% t] over 3 seeds):
 
 | Question | Our protocol | Baseline | Result |
 |---|---|---|---|
-| property identification | held-out hypothesis tests vs random tails | AMIE-style Horn rules (PCA confidence); IterE-style operator scores with closure | `[[R10: D-B1]]` |
-| erased-edge recovery | learnable candidate masses | TransE / RotatE / ComplEx on the observed graph | `[[R10: D-B2]]` |
-| false discoveries | accepted slots and adopted rules | a world with no hidden relation (null world) | `[[R10: D-B4]]` |
-| validation reuse | one validation split for every self-test | fresh splits per test or a sample-splitting correction | `[[R10: D-B5]]` |
+| erased-edge recovery (AUC, 10–70% erased) | learnable candidate masses: 0.984–0.989 | TransE / RotatE / ComplEx / IterE-style / AMIE closure on the observed graph | 0.54–0.77, below at every level (CIs exclude 0) |
+| | | no learning: correlate a concept's training observations with prior-bound candidates | **0.91–0.92**: learning adds ≈ +0.07; the edges are decodable from the training signal |
+| property identification | held-out hypothesis tests on captured pairs: 5/5 (absent), 3/3 (collapsed) correct | AMIE-style Horn rules on the same pairs | the same correct identifications (5/5, 3/3), more false adoptions (2/7, 3/6); on the observed graph AMIE ranks every planted axiom at AUC 0.999 |
+| | | IterE-style reading of the operators | RotatE phases: precision 1.0, recall 0.33; the learned HRR role vectors: AUC 0.45 (chance) |
+| false discoveries | accepted slots | worlds with no hidden relation | **2.67 [1.23, 4.10]** and **4.33 [2.90, 5.77]** false slots per run, in every run; acceptance rate as in the real world |
+| validation reuse | one split for every self-test | a fresh split per test; a t-test; Holm over proposals | a fresh split changes nothing (0.93 vs 0.92 acceptance); the edge test accepts 40–45% of proposed distractors; Holm accepts 3–4% of all proposals |
+| WordNet recovery (E10.1, 30% erased) | 0.589 [0.527, 0.651] | ComplEx | 0.628 [0.618, 0.638] (Δ CI includes 0) |
 | relation discovery | blank slots | clustering / TransG / IRM at the same slot budget | `[[D-B3]]` |
 
-Recommended wording (novelty check §5.6): "We make the ontology mapping of the channel learnable under an L2 pull toward the curated prior. The model proposes structure edits … Each edit is accepted only if it improves fit on held-out observations relative to a matched control. In a planted synthetic ontology this recovers erased edges, discovers hidden relations at about half of oracle alignment, identifies symmetric and inverse relations without labels by testing logical-property hypotheses on held-out pairs, and repairs injected errors. On WordNet with frozen GPT-2 anchors these effects largely do not transfer; the joint-LM test is pending." Every part has precedent (§2, "Learning ontology structure"); the claim is the protocol, and no E10 sentence enters the abstract before E10.2.
+Reading: the planted-world successes are real but mostly not specific to the protocol. Recovery decodes edges present in the training signal, identification matches standard rule mining, and the slot acceptance test has no false-discovery control. A null-calibrated acceptance test (refit-based or MDL, with the null world as its pre-registered check) comes before any discovery claim. By the pre-written framing rule (identification matched by rule mining; null worlds accepted at the real-world rate), E10 is reported as a negative / methods result, not as a protocol claim.
+
+Wording after the baselines (claims ledger E10.D1): "… In a planted synthetic ontology it recovers erased edges present in its training signal, identifies symmetric and inverse relations from captured pairs as well as rule mining, and repairs injected errors; its acceptance test is not calibrated against a null world. On WordNet with frozen GPT-2 anchors these effects do not transfer." It replaces the novelty check's §5.6 wording: "We make the ontology mapping of the channel learnable under an L2 pull toward the curated prior. The model proposes structure edits … Each edit is accepted only if it improves fit on held-out observations relative to a matched control. In a planted synthetic ontology this recovers erased edges, discovers hidden relations at about half of oracle alignment, identifies symmetric and inverse relations without labels by testing logical-property hypotheses on held-out pairs, and repairs injected errors. On WordNet with frozen GPT-2 anchors these effects largely do not transfer; the joint-LM test is pending." Every part has precedent (§2, "Learning ontology structure"); the claim is the protocol, and no E10 sentence enters the abstract before E10.2.
 
 ### 5.12 Application tracks *(cardinality final; results pending: `[[R7]]`)*
 
