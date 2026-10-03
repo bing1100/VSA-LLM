@@ -334,3 +334,11 @@ Measured: SmolLM2 E9 block (360M + 135M, one track, one seed, with evaluations) 
 | 6 | E7 D7.1 authoring quality | 60 | ≈ 1 |
 
 Not in this block (author decision pending): Qwen3-4B (≈ 11.4 h per run; a lite P0/C0′/C5 at 25M tokens ≈ 15 h), Qwen3.5 (separate transformers 5.18 environment), the committed E4 core (D4.0 shake-out → D4.8/D4.7/D4.9/D4.1) and E10.2, which follow once the recipe sweep is analyzed.
+
+## After the novelty check (2026-10-03)
+
+`manuscript/novelty-check-2026-10.md`: the method is novel with narrowed wording; claim C's general framing ("edit a symbolic store instead of weights") is pre-empted (Facts-as-Experts, KBLaM, REMEDI, LMLM) — the bound-edge editing mechanism is new; claim B's headline is not supported without controls; claim D is novel only as a protocol and stays out of the abstract until E10.2; avoid the bare name "semantic channel". Queued/being built in response:
+
+- **WP-PQ1** (E9 dimensions 1–2): operator/specificity ablation of C5 (random_fixed, untyped, translation, shuffled frames); same-site row-source baselines (subtoken-mean / FVT, definition encoder, KG embedding; parameter-matched); filler vs non-filler loss split (the copy concern on templated T5 text) incl. rescoring finished runs; quantization controls (channel off at INT4, GPTQ/AWQ/HQQ/NF4 beyond RTN, quantized embeddings, difference-in-differences). Queued at priority 51 with ≥ 3 seeds on the decisive comparisons (T5 and T4, SmolLM2-360M).
+- **WP-PQ2** (E9 dimension 3, E10, manuscript): in-context upper bound (verbalized frame / definition; IKE), ROME/MEMIT(/AlphaEdit) on the same edit items, frame-transplant and channel-off audits; E10 baselines (rule mining, IterE-style induction, KG link prediction, no-hidden-relation world, validation-reuse control); manuscript renaming and claim wording; `manuscript/paper-readiness.md` audit of every experiment.
+- **Qwen blocks:** Qwen3-4B on T5 (priority 56, ≈ 34 GPU-h training + evaluations); Qwen3.5-2B/0.8B on T5 in the `~/venvs/vsa-qwen35` environment (probe at 52, block queued automatically after it, ≈ 20–25 GPU-h).
