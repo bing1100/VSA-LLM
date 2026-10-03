@@ -1,0 +1,43 @@
+# Lock file of the Qwen3.5 environment (WP-Qwen35, 2026-10-03): ~/venvs/vsa-qwen35, a venv created with
+#   /home/bhux/anaconda3/envs/vsa-repro/bin/python -m venv --system-site-packages ~/venvs/vsa-qwen35
+# over the pinned conda env vsa-repro (Python 3.12.4), which is not changed by any of this. The packages below are
+# installed in the venv only (pip --no-deps, so nothing inherited is upgraded); they shadow vsa-repro's copies of
+# transformers / tokenizers / huggingface_hub / safetensors. Notes, build recipe and checks: README.md (this folder).
+#
+# Recreate:
+#   ~/venvs/vsa-qwen35/bin/pip install --no-deps -r experiments/e9-retrofit/env/qwen35-requirements.txt
+# (causal-conv1d has no wheel for torch 2.11: build it from the sdist as in README.md and install that wheel.)
+
+# -- installed in the venv (pip freeze --path ~/venvs/vsa-qwen35/lib/python3.12/site-packages) ----------------------
+transformers==5.18.0
+tokenizers==0.23.2
+huggingface_hub==1.33.0
+safetensors==0.8.0
+flash-linear-attention==0.5.2
+fla-core==0.5.2
+einops==0.8.1
+# causal-conv1d 1.7.0, built locally from the PyPI sdist (sha256 3202758494eaa7b597ce1c282dfa188889506bfcb92cad3c407d26736bfcd32b)
+# for torch 2.11.0+cu128 / sm_86 with nvcc 12.8.93; wheel kept at ~/venvs/wheels/:
+causal_conv1d @ file:///home/bhux/venvs/wheels/causal_conv1d-1.7.0-cp312-cp312-linux_x86_64.whl#sha256=25dd9d29548a32d2b805476eab09a8bdbfd326e38f95eb8013eda41ba8fcd08f
+ninja==1.13.0
+annotated-doc==0.0.5
+anyio==4.15.1
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+markdown-it-py==4.2.0
+mdurl==0.1.2
+rich==15.0.0
+shellingham==1.5.4
+typer==0.27.2
+
+# -- inherited from vsa-repro, unchanged (the ones the Qwen3.5 path depends on) -----------------------------------------
+# torch==2.11.0+cu128            (CUDA 12.8 runtime: nvidia-cuda-runtime-cu12==12.8.90, nvidia-cublas-cu12==12.8.4.1)
+# triton==3.6.0                  (flash-linear-attention's kernels; bundled ptxas)
+# torchao==0.18.0                (INT8 / INT4 weight-only PTQ, e4_quant; the same torch, so the same build)
+# numpy==2.2.6  PyYAML==6.0.2  nltk==3.8.1  pyarrow==25.0.1  scipy==1.18.1  pytest==9.1.1
+# vsa_embed (editable) — jobs run with PYTHONPATH=src from the repository root
+#
+# -- not installed on purpose ----------------------------------------------------------------------------------------
+# kernels (Hugging Face hub kernels): absent, so transformers binds flash-linear-attention / causal-conv1d directly and
+#   never downloads kernel code; vsa_embed.integrations.linear_attention relies on that binding.

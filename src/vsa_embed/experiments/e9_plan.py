@@ -5,6 +5,8 @@
         [--seeds 1] [--models P0 C0p C2 C5] [--no-evals] [--int4-probes SUBSET] [--queue] [--priority 22]
     python -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-1.7B-Base Qwen3-0.6B-Base --host-mode lora
         --lora-rank 64 [--memory-report PATH] [--micro-batch N] [--channel-scale auto|on|off] [--queue]
+    python -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3.5-2B-Base Qwen3.5-0.8B-Base --host-mode lora
+        --lora-rank 64 [--queue]
 
 writes one YAML per (host, model, seed) under `experiments/e9-retrofit/configs/<stage>/` (stem
 `<host>-<mode>-<model>-s<seed>`; mode `full` for a fully trained host, `lora`, or `frozen` for P0; the stage
@@ -33,6 +35,15 @@ evaluation batch per host come from the memory probe's `recommendation.json` (`e
 from the provisional `cpt_plan.HOSTS` values; the per-run evaluations get smaller batches
 (`EVAL_JOB_BATCH`: 151,936-entry logits) and INT4 probes without WSD by default (open decision 41); default
 priority 26.
+
+**Qwen3.5 hosts** (WP-Qwen35: Qwen3.5-2B-Base, Qwen3.5-0.8B-Base; family `qwen3_5`, stage `<track>-qwen35`, default
+priority 52): the Qwen3 recipe with LoRA on every projection of the hybrid layers (`model.lora_targets:
+linear_attention`) and loss chunks of 1,024 rows (`cpt_plan.HOSTS`); corpora and items of the Qwen3.5 tokenizer
+(`e9_tracks.QWEN35_ROOTS`, `items/{new-words,edits}-<track>-qwen3_5-v1`); memory settings from
+`experiments/e9-retrofit/memory/qwen3_5-v1/recommendation.json` when present. Every job of these hosts (training,
+evaluations, `e4_quant`, report) runs with the host's `python` — the separate environment `~/venvs/vsa-qwen35`
+(transformers 5.18, flash-linear-attention, causal-conv1d) — and every other host's with the pinned interpreter
+(`stage_python`; also when planned from the Qwen3.5 environment); one interpreter per stage.
 
 Models (one fixed test set per track):
 
@@ -65,13 +76,15 @@ from typing import Any
 import yaml
 
 from vsa_embed.experiments.cpt_plan import HOSTS as CPT_HOSTS
+from vsa_embed.experiments.cpt_plan import host_python, pinned_python
 from vsa_embed.experiments.e4_plan import conditions, matched_sizes
 from vsa_embed.experiments.e9_tracks import TRACKS, TrackSpec, ensure_alias_table, track_spec
 
 ROOT = Path("experiments/e9-retrofit")
 E9_HOSTS = ("SmolLM2-360M", "SmolLM2-135M")
 QWEN3_HOSTS = ("Qwen3-1.7B-Base", "Qwen3-0.6B-Base", "Qwen3-4B-Base")
-ALL_HOSTS = E9_HOSTS + QWEN3_HOSTS
+QWEN35_HOSTS = ("Qwen3.5-2B-Base", "Qwen3.5-0.8B-Base")
+ALL_HOSTS = E9_HOSTS + QWEN3_HOSTS + QWEN35_HOSTS
 MODELS = ("P0", "C0p", "C2", "C5")
 MODE_LABELS = {"train": "full", "lora": "lora", "frozen": "frozen"}
 HOST_LR = {"train": 3.0e-5, "lora": 2.0e-4}
@@ -79,7 +92,7 @@ HOST_LR = {"train": 3.0e-5, "lora": 2.0e-4}
 # that; P0 (frozen, evaluation only) as the C4 frozen-host measurement. Qwen3 (LoRA only): the provisional
 # `cpt_plan.HOSTS` values, replaced by the memory probe's recommendation when it exists.
 MICRO_BATCH = {"SmolLM2-360M": {"train": 4, "lora": 4, "frozen": 8}, "SmolLM2-135M": {"train": 8, "lora": 8, "frozen": 16},
-               **{host: dict(CPT_HOSTS[host]["micro_batch"]) for host in QWEN3_HOSTS}}
+               **{host: dict(CPT_HOSTS[host]["micro_batch"]) for host in QWEN3_HOSTS + QWEN35_HOSTS}}
 BASE = {
     "model": {"size": "pretrained", "seq_len": 1024, "gradient_checkpointing": False},
     "train": {"lr": 1.0e-3, "min_lr_ratio": 0.1, "warmup_tokens": 2_500_000, "weight_decay": 0.1, "log_every": 10,
@@ -95,22 +108,38 @@ ZEROSHOT_ITEMS = Path("experiments/e5-explainability/items/c3-synthetic-smollm2-
 ZEROSHOT_SOURCES = "own,none,random,mean_row,surface_mean,graph_projection"     # structure-only (E5.4)
 PRIORITY = 22
 QWEN_PRIORITY = 26
+QWEN35_PRIORITY = 52
 INT4_PROBES_NO_WSD = "lambada,wic,card660,rare_words,bless,hyperlex"           # open decision 41
 MEMORY_REPORT = ROOT / "memory" / "qwen3-v1" / "recommendation.json"
-# Per host tokenizer family: default host mode, queue priority, INT4 probe subset, channel keys of C2/C5, stage suffix.
+QWEN35_MEMORY_REPORT = ROOT / "memory" / "qwen3_5-v1" / "recommendation.json"
+# Per host tokenizer family: default host mode, queue priority, INT4 probe subset, channel keys of C2/C5, stage suffix,
+# default memory-probe report.
 FAMILIES: dict[str, dict[str, Any]] = {
-    "smollm2": {"mode": "train", "priority": PRIORITY, "int4_probes": "all", "channel": {}, "suffix": ""},
+    "smollm2": {"mode": "train", "priority": PRIORITY, "int4_probes": "all", "channel": {}, "suffix": "",
+                "memory_report": MEMORY_REPORT},
     "qwen3": {"mode": "lora", "priority": QWEN_PRIORITY, "int4_probes": INT4_PROBES_NO_WSD,
-              "channel": {"scale_to_host": True}, "suffix": "-qwen3"},
+              "channel": {"scale_to_host": True}, "suffix": "-qwen3", "memory_report": MEMORY_REPORT},
+    # Qwen3.5 (WP-Qwen35): the Qwen3 recipe; jobs run with the Qwen3.5 environment's interpreter (`cpt_plan.host_python`)
+    "qwen3_5": {"mode": "lora", "priority": QWEN35_PRIORITY, "int4_probes": INT4_PROBES_NO_WSD,
+                "channel": {"scale_to_host": True}, "suffix": "-qwen35", "memory_report": QWEN35_MEMORY_REPORT},
 }
-# Batch of the per-run probe / zero-shot / editing jobs (their prompts produce full 151,936-entry logits).
-EVAL_JOB_BATCH = {"Qwen3-0.6B-Base": 16, "Qwen3-1.7B-Base": 8, "Qwen3-4B-Base": 4}
+# Batch of the per-run probe / zero-shot / editing jobs (their prompts produce full 151,936- or 248,320-entry logits).
+EVAL_JOB_BATCH = {"Qwen3-0.6B-Base": 16, "Qwen3-1.7B-Base": 8, "Qwen3-4B-Base": 4, "Qwen3.5-0.8B-Base": 16, "Qwen3.5-2B-Base": 8}
 # Throughput model for estimates before the memory probe: tokens/s ≈ R / (6 N), with R calibrated on the
 # engagement check's SmolLM2-360M LoRA-64 run (12.4k tokens/s at 362M parameters ⇒ R ≈ 27 TFLOP/s); gradient
 # checkpointing adds a forward pass (× 3/4).
 EFFECTIVE_FLOPS = 6 * 361.8e6 * 12_400
 HOST_PARAMETERS = {"SmolLM2-135M": 134.5e6, "SmolLM2-360M": 361.8e6, "Qwen3-0.6B-Base": 596.0e6, "Qwen3-1.7B-Base": 2.032e9,
-                   "Qwen3-4B-Base": 4.022e9}
+                   "Qwen3-4B-Base": 4.022e9, "Qwen3.5-0.8B-Base": 752.4e6, "Qwen3.5-2B-Base": 1.8818e9}   # Qwen3.5: text weights
+
+
+def stage_python(hosts: list[str]) -> str:
+    """The interpreter of a stage's jobs: the hosts' `python` (the Qwen3.5 environment) or the pinned one (`cpt_plan.pinned_python`);
+    one per stage."""
+    pythons = {host_python(h) for h in hosts}
+    if len(pythons) != 1:
+        raise ValueError(f"the hosts of one stage must run with one interpreter (got {sorted(pythons)})")
+    return pythons.pop()
 
 
 def host_family(host: str) -> str:
@@ -345,13 +374,16 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     """Training jobs at `priority` (default: the hosts' family's, 22 SmolLM2 / 26 Qwen3); per-run evaluations
     at +1, `e4_quant` over the runs at +2, the R9 report at +3. Names are idempotent: a job that exists is left
     alone (P0, shared by seed batches). Track runs get the evaluation alias table (written here once if
-    `alias_table` is not given). The tokenizer family (corpora, items) is read from the configs."""
+    `alias_table` is not given). The tokenizer family (corpora, items) is read from the configs, and every job
+    runs with the hosts' interpreter (`stage_python`: the Qwen3.5 environment for Qwen3.5 hosts, else the pinned one)."""
     from vsa_embed.jobqueue import DEFAULT_DIR, add
     configs = {path: yaml.safe_load(Path(path).read_text()) for path in paths}
     families = {c.get("e9_family", "smollm2") for c in configs.values()} or {"smollm2"}
     if len(families) != 1:
         raise ValueError("one E9 stage per host tokenizer family")
     family = families.pop()
+    hosts = [h for h in (_config_host(c) for c in configs.values()) if h is not None]
+    python = stage_python(hosts) if hosts else pinned_python()
     spec = track_spec(track, family)
     priority = FAMILIES[family]["priority"] if priority is None else int(priority)
     int4_probes = FAMILIES[family]["int4_probes"] if int4_probes is None else int4_probes
@@ -372,21 +404,23 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     for path in paths:
         run_dir = root / "runs" / stage / path.stem
         run_dirs.append(run_dir)
-        submit(f"{stage}-{path.stem}", [sys.executable, "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(run_dir)],
+        submit(f"{stage}-{path.stem}", [python, "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(run_dir)],
                priority, min_free_gb=20)
         if evals:
             batch = EVAL_JOB_BATCH.get(_config_host(configs[path]) or "")
-            for suffix, command, retry in evaluation_jobs(run_dir, spec, alias_table=alias_table, int4_probes=int4_probes,
-                                                          batch_size=batch):
+            for suffix, command, retry in evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
+                                                          int4_probes=int4_probes, batch_size=batch):
                 submit(f"{stage}-{path.stem}-{suffix}", command, priority + 1, min_free_gb=5, resume_args=retry)
     if evals and run_dirs:
         seeds = sorted({int(p.stem.rsplit("-s", 1)[1]) for p in paths if "-P0-" not in p.stem}) or [1]
         batch = f"s{'-'.join(map(str, seeds))}"
-        submit(f"{stage}-quant-{batch}", quant_command(stage, run_dirs, root=root), priority + 2, min_free_gb=5, resume_args=[])
+        submit(f"{stage}-quant-{batch}", quant_command(stage, run_dirs, python=python, root=root), priority + 2, min_free_gb=5,
+               resume_args=[])
         if spec.general_corpus is not None:
-            submit(f"{stage}-quant-general-{batch}", quant_command(stage, run_dirs, root=root, eval_corpus=spec.general_corpus),
+            submit(f"{stage}-quant-general-{batch}",
+                   quant_command(stage, run_dirs, python=python, root=root, eval_corpus=spec.general_corpus),
                    priority + 2, min_free_gb=5, resume_args=[])
-        submit(f"{stage}-report-{batch}", report_command(stage, root=root, general=spec.general_corpus is not None),
+        submit(f"{stage}-report-{batch}", report_command(stage, python=python, root=root, general=spec.general_corpus is not None),
                priority + 3, min_free_gb=1, resume_args=[])
     return queued
 
@@ -417,11 +451,11 @@ def describe_plan(paths: list[Path], plans: dict[str, dict[str, Any]]) -> list[s
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--track", default="t5", choices=sorted(TRACKS), help="corpus, ontology and items (default t5)")
-    parser.add_argument("--stage", default=None, help="run-folder stage name (default: the track; <track>-qwen3 for Qwen3 hosts)")
+    parser.add_argument("--stage", default=None, help="run-folder stage name (default: the track; <track>-qwen3 / <track>-qwen35 for Qwen3 / Qwen3.5 hosts)")
     parser.add_argument("--hosts", nargs="+", default=list(E9_HOSTS), choices=list(ALL_HOSTS))
     parser.add_argument("--models", nargs="+", default=list(MODELS), choices=list(MODELS))
     parser.add_argument("--host-mode", default=None, choices=sorted(HOST_LR),
-                        help="train = full fine-tuning; lora (default: train for SmolLM2, lora for Qwen3)")
+                        help="train = full fine-tuning; lora (default: train for SmolLM2, lora for Qwen3 and Qwen3.5)")
     parser.add_argument("--lora-rank", type=int, default=64)
     parser.add_argument("--host-lr", type=float, default=None, help="default 3e-5 (train) / 2e-4 (lora)")
     parser.add_argument("--channel-lr", type=float, default=1.0e-3, help="train.lr (the channel; the host takes --host-lr)")
@@ -433,20 +467,21 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--sequences-per-step", type=int, default=64)
     parser.add_argument("--windows", type=int, default=None, help="evaluation windows (default and minimum: the track's)")
     parser.add_argument("--data-root", type=Path, default=None, help="override the track's corpus root")
-    parser.add_argument("--memory-report", type=Path, default=MEMORY_REPORT,
-                        help="the memory probe's recommendation.json (used if it exists)")
+    parser.add_argument("--memory-report", type=Path, default=None,
+                        help="the memory probe's recommendation.json (used if it exists; default: the family's, "
+                             f"{MEMORY_REPORT} for SmolLM2/Qwen3, {QWEN35_MEMORY_REPORT} for Qwen3.5)")
     parser.add_argument("--micro-batch", type=int, default=None, help="override the micro-batch of the trained runs")
     parser.add_argument("--overrides", default="{}", help="JSON merged into every config")
     parser.add_argument("--no-evals", action="store_true", help="queue training only (no chained evaluations)")
     parser.add_argument("--int4-probes", default=None,
                         help="probe subset of the INT4 probe jobs (default: all for SmolLM2; "
-                             f"{INT4_PROBES_NO_WSD} for Qwen3 — WSD is the slowest)")
+                             f"{INT4_PROBES_NO_WSD} for Qwen3 and Qwen3.5 — WSD is the slowest)")
     parser.add_argument("--queue", action="store_true"); parser.add_argument("--priority", type=int, default=None,
-                                                                             help="default 22 (SmolLM2) / 26 (Qwen3)")
+                                                                             help="default 22 (SmolLM2) / 26 (Qwen3) / 52 (Qwen3.5)")
     args = parser.parse_args(argv)
     family = stage_family(args.hosts)
     stage = args.stage or f"{args.track}{FAMILIES[family]['suffix']}"
-    memory = load_memory_report(args.memory_report)
+    memory = load_memory_report(args.memory_report or FAMILIES[family]["memory_report"])
     paths = write_stage(stage, hosts=args.hosts, models=args.models, seeds=args.seeds, track=args.track, mode=args.host_mode,
                         lora_rank=args.lora_rank, host_lr=args.host_lr, gate_bias=args.gate_bias, tokens=args.tokens,
                         sequences_per_step=args.sequences_per_step, windows=args.windows, channel_lr=args.channel_lr,

@@ -230,7 +230,11 @@ def test_cpt_hosts_match_their_checkpoints() -> None:
     from vsa_embed.experiments import cpt_plan
     for host, settings in cpt_plan.HOSTS.items():
         try:
-            hf = transformers.AutoConfig.from_pretrained(settings["pretrained"], local_files_only=True)
+            # the text config (a multimodal Qwen3.5 checkpoint keeps width and rows there; other configs return themselves)
+            hf = transformers.AutoConfig.from_pretrained(settings["pretrained"], local_files_only=True).get_text_config()
         except OSError:
             pytest.skip(f"{settings['pretrained']} not cached")
+        except ValueError:          # an architecture this transformers does not know: only hosts with their own environment
+            assert settings.get("python"), host
+            continue
         assert (hf.hidden_size, hf.vocab_size) == (settings["width"], settings["vocab_size"]), host

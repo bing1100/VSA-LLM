@@ -53,6 +53,9 @@ HOSTS: dict[str, dict[str, Any]] = {
     # Qwen3 base models: Qwen2.5's byte-level BPE plus 4 added tokens (ids 151,665–151,668): another fingerprint.
     "qwen3": {"tokenizer": "Qwen/Qwen3-0.6B-Base",
               "models": ["Qwen/Qwen3-0.6B-Base", "Qwen/Qwen3-1.7B-Base", "Qwen/Qwen3-4B-Base"]},
+    # Qwen3.5 base models (WP-Qwen35): a tokenizer of their own (248,077 ids, NFC); transformers ≥ 5 reads it, so their
+    # corpora are built with the Qwen3.5 environment (`cpt_plan.QWEN35_PYTHON`).
+    "qwen3_5": {"tokenizer": "Qwen/Qwen3.5-0.8B-Base", "models": ["Qwen/Qwen3.5-0.8B-Base", "Qwen/Qwen3.5-2B-Base"]},
 }
 DEFAULTS = {"train_tokens": 130_000_000, "min_subtokens": 2, "eval_min_subtokens": 1, "workers": 6}
 FREQUENCY_BINS = (("heldout", None, None), ("unseen", 0, 1), ("rare", 1, 10), ("mid", 10, 100), ("frequent", 100, None))
@@ -254,7 +257,8 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     for model in config["models"]:
         if model != tokenizer_name and tokenizer_fingerprint(AutoTokenizer.from_pretrained(model, local_files_only=True)) != fingerprint:
             raise ValueError(f"{model} does not share the tokenizer of {tokenizer_name}")
-        model_vocab_sizes[model] = int(AutoConfig.from_pretrained(model, local_files_only=True).vocab_size)
+        # the text config's rows (a multimodal Qwen3.5 config keeps them in `text_config`; others return themselves)
+        model_vocab_sizes[model] = int(AutoConfig.from_pretrained(model, local_files_only=True).get_text_config().vocab_size)
         if model_vocab_sizes[model] < vocab_size:
             raise ValueError(f"{model} has {model_vocab_sizes[model]} embedding rows < {vocab_size} tokenizer ids")
     eos = tokenizer.eos_token_id

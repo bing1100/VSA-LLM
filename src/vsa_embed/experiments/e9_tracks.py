@@ -12,7 +12,8 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
 - `wordnet` — the C3 WordNet host corpus (the original E9 design).
 
 Host tokenizer families (WP-Qwen): every track is built for SmolLM2 (`data_root`) and, relinked with the same
-ontology, alias table and holdout, for the Qwen3 base tokenizer (`TrackSpec.for_family("qwen3")`, `QWEN3_ROOTS`);
+ontology, alias table and holdout, for the Qwen3 base tokenizer (`TrackSpec.for_family("qwen3")`, `QWEN3_ROOTS`)
+and the Qwen3.5 one (`"qwen3_5"`, `QWEN35_ROOTS`; WP-Qwen35, built and read with the Qwen3.5 environment);
 the WP-C7 zero-shot items and the alias table are tokenizer-independent and shared.
 
 Each track gives the trainer its corpora (`data.train`, `data.eval`, `data.ontology`), a general-text
@@ -134,27 +135,31 @@ DATA = Path("~/data/vsa-llm").expanduser()
 # are built by the commands of `resources/plan-improvement/execution.md` (E9 on Qwen3).
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1"}
+# Qwen3.5 corpora (WP-Qwen35): the same builders with the Qwen3.5 base tokenizer (`Qwen/Qwen3.5-0.8B-Base`, shared by the
+# 0.8B/2B hosts), run with the Qwen3.5 environment. T5 is built (`experiments/t5-enterprise-glossary/t5-qwen35.yaml`).
+QWEN35_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen35", "t4": DATA / "tracks/t4-chemistry/v1-qwen35",
+                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3_5", "wordnet": DATA / "c3/wordnet-qwen3_5-v1"}
 TRACKS: dict[str, TrackSpec] = {
     "t5": TrackSpec("t5", "T5 enterprise glossary", DATA / "tracks/t5-glossary/v1",
                     config=Path("experiments/t5-enterprise-glossary/t5.yaml"), items_dir=Path("experiments/t5-enterprise-glossary/items"),
                     holdout_names=Path("experiments/t5-enterprise-glossary/items/holdout_concepts.txt"),
                     category_relations=("is_a",), kept_relations=("is_a",), edit_relations=("owned_by", "area", "status"),
-                    family_roots={"qwen3": QWEN3_ROOTS["t5"]}),
+                    family_roots={"qwen3": QWEN3_ROOTS["t5"], "qwen3_5": QWEN35_ROOTS["t5"]}),
     "t4": TrackSpec("t4", "T4 chemistry", DATA / "tracks/t4-chemistry/v1", config=Path("experiments/t4-chemistry/t4.yaml"),
                     items_dir=Path("experiments/t4-chemistry/items"),
                     holdout_names=Path("experiments/t4-chemistry/items/holdout_concepts.txt"),
                     category_relations=("is_a",), kept_relations=("is_a", "branch", "charge", "contains_element"),
-                    edit_relations=("has_functional_parent", "has_role", "is_a"), family_roots={"qwen3": QWEN3_ROOTS["t4"]}),
+                    edit_relations=("has_functional_parent", "has_role", "is_a"), family_roots={"qwen3": QWEN3_ROOTS["t4"], "qwen3_5": QWEN35_ROOTS["t4"]}),
     "t1": TrackSpec("t1", "T1-open (MeSH + PubMed)", DATA / "t1/mesh-pubmed-gpt2-v1/hosts/smollm2", eval_split="eval-pubmed",
                     windows=2048, config=Path("experiments/t1-open-clinical/t1.yaml"),
                     holdout_names=Path("experiments/t1-open-clinical/runs/v1/holdout_concepts.txt"),
                     category_relations=("parent",), kept_relations=("parent", "branch_top", "branch_second"),
-                    edit_relations=("parent", "pharmacological_action"), family_roots={"qwen3": QWEN3_ROOTS["t1"]}),
+                    edit_relations=("parent", "pharmacological_action"), family_roots={"qwen3": QWEN3_ROOTS["t1"], "qwen3_5": QWEN35_ROOTS["t1"]}),
     "wordnet": TrackSpec("wordnet", "WordNet general (C3)", DATA / "c3/wordnet-smollm2-v1", general_split=None,
                          category_relations=edit.CATEGORY_RELATIONS, kept_relations=tuple(sorted(edit.KEPT_RELATIONS)),
-                         edit_relations=edit.CATEGORY_RELATIONS, family_roots={"qwen3": QWEN3_ROOTS["wordnet"]}),
+                         edit_relations=edit.CATEGORY_RELATIONS, family_roots={"qwen3": QWEN3_ROOTS["wordnet"], "qwen3_5": QWEN35_ROOTS["wordnet"]}),
 }
-FAMILY_TOKENIZERS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-0.6B-Base"}
+FAMILY_TOKENIZERS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-0.6B-Base", "qwen3_5": "Qwen/Qwen3.5-0.8B-Base"}
 
 
 def track_spec(name: str, family: str = "smollm2") -> TrackSpec:
@@ -616,7 +621,7 @@ def main(argv: list[str] | None = None) -> None:
     items.add_argument("--output", type=Path, required=True)
     items.add_argument("--family", default="smollm2", choices=sorted(FAMILY_TOKENIZERS),
                        help="host tokenizer family: its corpora (ontology, contamination text) and default tokenizer")
-    items.add_argument("--tokenizer", default=None, help="default: the family's (SmolLM2-135M; Qwen3-0.6B-Base)")
+    items.add_argument("--tokenizer", default=None, help="default: the family's (SmolLM2-135M; Qwen3-0.6B-Base; Qwen3.5-0.8B-Base)")
     items.add_argument("--count", type=int, default=None); items.add_argument("--seed", type=int, default=0)
     items.add_argument("--min-subtokens", type=int, default=2); items.add_argument("--name-seed", type=int, default=11)
     items.add_argument("--contamination-tokens", type=int, default=20_000_000)

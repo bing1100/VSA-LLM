@@ -40,6 +40,9 @@ from vsa_embed.experiments.host_corpus import default_paths
 
 ROOT = Path("experiments/e4-small-lm")
 C3_ONTOLOGY = Path("~/data/vsa-llm/c3/wordnet-gpt2-v1/ontology.pt").expanduser()
+# The separate environment of the Qwen3.5 hosts (transformers 5.18 + flash-linear-attention + causal-conv1d over the
+# pinned vsa-repro; lock file experiments/e9-retrofit/env/qwen35-requirements.txt).
+QWEN35_PYTHON = str(Path("~/venvs/vsa-qwen35/bin/python").expanduser())
 
 # Micro-batches from the C4 memory/throughput table (experiments/b6-host-memory/runs/3090-v1): frozen
 # hosts as measured; LoRA measured on SmolLM2-135M at 8 (9.5 GiB), halved for the larger hosts.
@@ -62,7 +65,34 @@ HOSTS: dict[str, dict[str, Any]] = {
     "Qwen3-4B-Base": {"pretrained": "Qwen/Qwen3-4B-Base", "corpus": "qwen3", "width": 2560, "vocab_size": 151936,
                       "micro_batch": {"frozen": 2, "lora": 1}, "eval_batch": 2,
                       "model": {"gradient_checkpointing": True, "checkpoint_use_reentrant": False}},
+    # Qwen3.5 base hosts (WP-Qwen35; natively multimodal `Qwen3_5ForConditionalGeneration` checkpoints, loaded text-only
+    # as `Qwen3_5ForCausalLM`, which needs transformers ≥ 5: they run with the `python` of the separate environment
+    # `~/venvs/vsa-qwen35`, every other host with the pinned one). 24 layers, 18 Gated DeltaNet linear-attention + 6
+    # gated full-attention; tied 248,320-row embeddings (a 248,077-id tokenizer of its own, fingerprint 4d765ac5…);
+    # LoRA on every projection of every layer (`lora_targets: linear_attention`: in_proj_qkv/z/a/b and out_proj
+    # besides q/k/v/o/gate/up/down — 8 adapters per linear-attention layer, 7 per full-attention layer); loss chunks of
+    # 1,024 rows (the head is 1.6× Qwen3's). Micro-batches provisional until the memory probe (`e9_memory`).
+    "Qwen3.5-0.8B-Base": {"pretrained": "Qwen/Qwen3.5-0.8B-Base", "corpus": "qwen3_5", "width": 1024, "vocab_size": 248320,
+                          "micro_batch": {"frozen": 8, "lora": 4}, "eval_batch": 8,
+                          "model": {"lora_targets": "linear_attention", "loss_chunk": 1024}, "python": QWEN35_PYTHON},
+    "Qwen3.5-2B-Base": {"pretrained": "Qwen/Qwen3.5-2B-Base", "corpus": "qwen3_5", "width": 2048, "vocab_size": 248320,
+                        "micro_batch": {"frozen": 4, "lora": 2}, "eval_batch": 4,
+                        "model": {"lora_targets": "linear_attention", "loss_chunk": 1024}, "python": QWEN35_PYTHON},
 }
+
+
+def pinned_python() -> str:
+    """The interpreter of hosts without a `python`: this one, or — when this is a host environment (the Qwen3.5 venv,
+    built `--system-site-packages` over the pinned env) — the pinned interpreter that environment is built on."""
+    environments = {Path(s["python"]).parents[1] for s in HOSTS.values() if s.get("python")}
+    if Path(sys.prefix) in environments and sys.prefix != sys.base_prefix:
+        return str(Path(sys.base_prefix) / "bin" / "python")
+    return sys.executable
+
+
+def host_python(host: str) -> str:
+    """The interpreter a host's jobs run with: its `python` (the Qwen3.5 environment) or the pinned one."""
+    return HOSTS[host].get("python") or pinned_python()
 BASE = {
     "model": {"size": "pretrained", "seq_len": 1024, "lora_rank": 16, "gradient_checkpointing": False},
     "train": {"lr": 1.0e-3, "min_lr_ratio": 0.1, "warmup_tokens": 2_500_000, "weight_decay": 0.1,
@@ -195,8 +225,10 @@ def queue_jobs(paths: list[Path], stage: str, priority: int, *, root: Path = ROO
     for path in paths:
         name = f"{stage}-{path.stem}"
         output = root / "runs" / stage / path.stem
+        pretrained = (yaml.safe_load(Path(path).read_text()).get("model") or {}).get("pretrained")
+        python = next((host_python(h) for h, s in HOSTS.items() if s["pretrained"] == pretrained), pinned_python())
         try:
-            add(DEFAULT_DIR, [sys.executable, "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(output)],
+            add(DEFAULT_DIR, [python, "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(output)],
                 name=name, priority=priority, min_free_gb=20, env={"PYTHONPATH": "src"})
             queued.append(name)
         except FileExistsError:
