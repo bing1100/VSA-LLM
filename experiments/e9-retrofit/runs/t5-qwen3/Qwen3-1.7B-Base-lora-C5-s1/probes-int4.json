@@ -1,0 +1,841 @@
+{
+  "schema": "channel-probes/1",
+  "model": {
+    "run": "experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1",
+    "checkpoint": "final.pt",
+    "experiment": "e9-t5-qwen3-Qwen3-1.7B-Base-lora-C5-s1",
+    "seed": 1,
+    "channel": "compose",
+    "channel_settings": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "scale_to_host": true,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "size": "pretrained",
+    "pretrained": "Qwen/Qwen3-1.7B-Base",
+    "host_mode": "lora",
+    "tokenizer": "Qwen/Qwen3-0.6B-Base",
+    "boundary": "prefix",
+    "min_subtokens": 2,
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+    "alias_table": {
+      "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t5.json",
+      "holdout_known": true,
+      "checks": {
+        "entry_concepts": true,
+        "digest": true,
+        "heldout_entries": true
+      },
+      "aliases": 4319,
+      "sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415"
+    },
+    "heldout_entries": 560,
+    "parameters": 1722024187,
+    "trainable_only_checkpoint": true,
+    "channel_host_scale": 0.2898087501525879,
+    "quantization": {
+      "variant": "int4-A",
+      "bits": 4,
+      "group_size": 128,
+      "channel_quantized": false,
+      "lora_merged": 196,
+      "head_tied": true,
+      "linear_quantized": 196,
+      "linear_skipped": []
+    }
+  },
+  "probes_run": [
+    "lambada",
+    "wic",
+    "card660",
+    "rare_words",
+    "bless",
+    "hyperlex"
+  ],
+  "fast": false,
+  "settings": {
+    "lambada_limit": null,
+    "wic_train_limit": null,
+    "wsd_dataset": "ALL",
+    "wsd_train_cap": 100,
+    "wsd_steps": 200,
+    "seed": 0,
+    "l2": 0.01,
+    "steps": 400,
+    "bless_test_fraction": 0.3,
+    "hyperlex_split": "lexical",
+    "ridge_grid": [
+      1.0,
+      10.0,
+      100.0,
+      1000.0,
+      10000.0
+    ],
+    "noun_template": "The {x} is a kind of {y}",
+    "noun_null": "thing",
+    "verb_template": "To {x} is a way to {y}",
+    "verb_null": "do",
+    "batch_size": 8,
+    "max_length": 256,
+    "layer": -1,
+    "word_prefix": "The word"
+  },
+  "probes_root": "/home/bhux/data/vsa-llm/probes",
+  "data_sha256": {
+    "lambada/data/lambada_test_en.jsonl": "4aa8d02cd17c719165fc8a7887fddd641f43fcafa4b1c806ca8abc31fabdb226",
+    "wic/train/train.data.txt": "3a56ff8285ca9703d6c91dfb7cc79760171899c560bb6a8698fa4559a71b160d",
+    "wic/train/train.gold.txt": "3f614ca12c03a90fecc34471d8ae666f924a3c657b5620fcfb46d9b2b50bb7b2",
+    "wic/dev/dev.data.txt": "1c360246ffa3904fc1d8f6f16bb7ae0d7980a1a27e9200e9b43c32fd35af11e7",
+    "wic/dev/dev.gold.txt": "665ee959c2cf7db2a4255b7a049bdfa165b970482145cfd2ac456007d4dcf1d6",
+    "card660.tsv": "0cfae4d9ee596c4dd745a138f49c99e74c31a8e171bc4108b62d243607a6c1a8",
+    "rw/rw/rw.txt": "f38941b02b85cf20e9d857ab4ee06ee0dfcb1c9ce0df6c546f1134fc5e625dae",
+    "bless/bless-gems/BLESS.txt": "567a38c461d4fd2234dcefb08d6e6487f53ab9662601fbd804fbb4b8bc2ca1df",
+    "hyperlex/hyperlex-all.txt": "582297878d7ab4d08b284291fdd828c686757dc2c8a9db062416c87bda73923c",
+    "hyperlex/splits/lexical/hyperlex_training_all_lexical.txt": "e6f40fb9019c7662e3f47e62f97f19c7d07644becfbfe8eb53a271bfa67493c2",
+    "hyperlex/splits/lexical/hyperlex_dev_all_lexical.txt": "0bdd4ca7e49fce4b04a97fe0eb1fae9586f3e85981a7f739785a8224ef4a6c22",
+    "hyperlex/splits/lexical/hyperlex_test_all_lexical.txt": "7fdfe8bde217bf0c935da347929e0e07213edb1b5d7695427451305c2e3dbc32"
+  },
+  "timing": {
+    "load_seconds": 3.66,
+    "probe_seconds": 300.1,
+    "peak_gpu_gib": 3.75
+  },
+  "provenance": {
+    "schema_version": 2,
+    "created_at": "2026-10-04T06:29:19.872262+00:00",
+    "git_sha": "797ceaf4874d7fba0233bc0d8e3c85bdd4f9f3f0",
+    "git_dirty": false,
+    "git_state_recorded_at": "run end",
+    "python": "3.12.4",
+    "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+    "packages": {
+      "torch": "2.11.0+cu128",
+      "transformers": "4.54.0",
+      "nltk": "3.8.1",
+      "PyYAML": "6.0.2",
+      "numpy": "2.2.6",
+      "safetensors": "0.5.3",
+      "vsa-embed": "0.1.0.dev0"
+    },
+    "device": "cuda",
+    "cuda_device": "NVIDIA GeForce RTX 3090",
+    "torch_num_threads": 6,
+    "argv": [
+      "/home/bhux/workplace/VSA-LLM/src/vsa_embed/evaluation/channel_probes.py",
+      "--run",
+      "experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1",
+      "--alias-table",
+      "/home/bhux/data/vsa-llm/e9/alias-tables/t5.json",
+      "--quantize",
+      "int4",
+      "--probes",
+      "lambada,wic,card660,rare_words,bless,hyperlex",
+      "--batch-size",
+      "8",
+      "--output",
+      "experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1/probes-int4.json"
+    ],
+    "config_sha256": "9c743e8a37767240cd3c8d1620e5a9a9eba35b3299d397be32de35dd52988c54"
+  },
+  "summary": {
+    "lambada/accuracy": 0.5284300407529594,
+    "lambada/word_loss": 1.9137186516425504,
+    "lambada/n": 5153,
+    "lambada/skipped": 0,
+    "wic/prompt_accuracy": 0.5940438871473355,
+    "wic/probe_accuracy": 0.5877742946708464,
+    "wic/majority": 0.5,
+    "wic/n_dev": 638,
+    "wic/threshold": 0.9614150524139404,
+    "card660/spearman": 0.18553231506291548,
+    "card660/spearman_tied": 0.1883043649858626,
+    "card660/n": 660,
+    "rare_words/spearman": 0.3181620423614251,
+    "rare_words/spearman_tied": 0.3186027428277324,
+    "rare_words/n": 2034,
+    "bless/probe_accuracy": 0.925754060324826,
+    "bless/probe_macro_f1": 0.9247700559405492,
+    "bless/majority_accuracy": 0.46403712296983757,
+    "bless/relatum_only_accuracy": 0.9206496519721578,
+    "bless/relatum_only_macro_f1": 0.9172447061446467,
+    "bless/pair_probe_accuracy": 0.9055684454756381,
+    "bless/pair_probe_macro_f1": 0.896402438585903,
+    "bless/prompt_map": 0.3848740448592894,
+    "bless/prompt_map_test_concepts": 0.36420739591405243,
+    "bless/prompt_auc": 0.801324329328261,
+    "bless/n_pairs": 14547,
+    "bless/n_test_pairs": 4310,
+    "hyperlex/cosine_spearman": 0.05565581557718998,
+    "hyperlex/prompt_spearman": 0.39227151505409763,
+    "hyperlex/probe_spearman": 0.43249078524878715,
+    "hyperlex/cosine_spearman_test": 0.004561791648458764,
+    "hyperlex/prompt_spearman_test": 0.3819360349889274,
+    "hyperlex/ridge_alpha": 10000.0,
+    "hyperlex/n": 2616,
+    "hyperlex/n_train": 1133,
+    "hyperlex/n_dev": 85,
+    "hyperlex/n_test": 269
+  },
+  "probes": {
+    "lambada": {
+      "metrics": {
+        "accuracy": 0.5284300407529594,
+        "word_loss": 1.9137186516425504,
+        "n": 5153,
+        "skipped": 0
+      },
+      "subsets": {
+        "lambada": {
+          "heldout": {
+            "accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "word_loss": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "word_loss": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "unlinked": {
+            "accuracy": {
+              "value": 0.5284300407529594,
+              "n": 5153
+            },
+            "word_loss": {
+              "value": 1.9137186516425504,
+              "n": 5153
+            }
+          },
+          "rare": {
+            "accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "word_loss": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "word_loss": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "word_loss": {
+              "value": null,
+              "n": 0
+            }
+          }
+        }
+      },
+      "seconds": 129.58
+    },
+    "wic": {
+      "metrics": {
+        "prompt_accuracy": 0.5940438871473355,
+        "probe_accuracy": 0.5877742946708464,
+        "majority": 0.5,
+        "n_dev": 638,
+        "threshold": 0.9614150524139404
+      },
+      "split": {
+        "train": "wic/train",
+        "test": "wic/dev"
+      },
+      "subsets": {
+        "wic": {
+          "heldout": {
+            "prompt_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "prompt_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "unlinked": {
+            "prompt_accuracy": {
+              "value": 0.5940438871473355,
+              "n": 638
+            },
+            "probe_accuracy": {
+              "value": 0.5877742946708464,
+              "n": 638
+            }
+          },
+          "rare": {
+            "prompt_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "prompt_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "prompt_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            }
+          }
+        }
+      },
+      "seconds": 50.43
+    },
+    "card660": {
+      "metrics": {
+        "spearman": 0.18553231506291548,
+        "spearman_tied": 0.1883043649858626,
+        "n": 660
+      },
+      "subsets": {
+        "card660": {
+          "heldout": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "unlinked": {
+            "spearman_tied": {
+              "value": 0.1883043649858626,
+              "n": 660
+            }
+          },
+          "rare": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          }
+        }
+      },
+      "seconds": 3.62
+    },
+    "rare_words": {
+      "metrics": {
+        "spearman": 0.3181620423614251,
+        "spearman_tied": 0.3186027428277324,
+        "n": 2034
+      },
+      "subsets": {
+        "rare_words": {
+          "heldout": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "unlinked": {
+            "spearman_tied": {
+              "value": 0.3186027428277324,
+              "n": 2034
+            }
+          },
+          "rare": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "spearman_tied": {
+              "value": null,
+              "n": 0
+            }
+          }
+        }
+      },
+      "seconds": 8.22
+    },
+    "bless": {
+      "metrics": {
+        "probe_accuracy": 0.925754060324826,
+        "probe_macro_f1": 0.9247700559405492,
+        "probe_f1_by_relation": {
+          "hyper": 0.95,
+          "coord": 0.9517300299017514,
+          "mero": 0.8695098663271802,
+          "random-n": 0.9278403275332651
+        },
+        "majority_accuracy": 0.46403712296983757,
+        "relatum_only_accuracy": 0.9206496519721578,
+        "relatum_only_macro_f1": 0.9172447061446467,
+        "pair_probe_accuracy": 0.9055684454756381,
+        "pair_probe_macro_f1": 0.896402438585903,
+        "prompt_map": 0.3848740448592894,
+        "prompt_map_test_concepts": 0.36420739591405243,
+        "prompt_auc": 0.801324329328261,
+        "n_pairs": 14547,
+        "n_test_pairs": 4310
+      },
+      "split": {
+        "unit": "concept",
+        "seed": 0,
+        "test_fraction": 0.3,
+        "test_concepts": [
+          "acacia",
+          "apricot",
+          "axe",
+          "bear",
+          "beet",
+          "bomb",
+          "cathedral",
+          "cauliflower",
+          "cello",
+          "coyote",
+          "deer",
+          "dove",
+          "eagle",
+          "elm",
+          "falcon",
+          "ferry",
+          "fork",
+          "frog",
+          "glider",
+          "glove",
+          "grape",
+          "grapefruit",
+          "grasshopper",
+          "grenade",
+          "helicopter",
+          "jacket",
+          "library",
+          "lime",
+          "missile",
+          "moth",
+          "mug",
+          "oven",
+          "peach",
+          "piano",
+          "pistol",
+          "poplar",
+          "potato",
+          "radio",
+          "rake",
+          "rat",
+          "robin",
+          "saw",
+          "saxophone",
+          "scarf",
+          "sheep",
+          "shirt",
+          "shovel",
+          "sieve",
+          "spade",
+          "spear",
+          "spoon",
+          "squirrel",
+          "strawberry",
+          "swan",
+          "toaster",
+          "train",
+          "van",
+          "vulture",
+          "wardrobe",
+          "wrench"
+        ],
+        "relations": [
+          "hyper",
+          "coord",
+          "mero",
+          "random-n"
+        ],
+        "features": {
+          "probe": "[h_x; h_y]",
+          "pair_probe": "[|h_x \u2212 h_y|; h_x \u2299 h_y]",
+          "relatum_only": "h_y"
+        },
+        "template": "The {x} is a kind of {y}",
+        "null": "thing"
+      },
+      "subsets": {
+        "bless": {
+          "heldout": {
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_auc": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_auc": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "unlinked": {
+            "probe_accuracy": {
+              "value": 0.925754060324826,
+              "n": 4310
+            },
+            "probe_macro_f1": {
+              "value": 0.9247700559405492,
+              "n": 4310
+            },
+            "pair_probe_accuracy": {
+              "value": 0.9055684454756381,
+              "n": 4310
+            },
+            "pair_probe_macro_f1": {
+              "value": 0.896402438585903,
+              "n": 4310
+            },
+            "prompt_auc": {
+              "value": 0.801324329328261,
+              "n": 14547
+            }
+          },
+          "rare": {
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_auc": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_auc": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "pair_probe_macro_f1": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_auc": {
+              "value": null,
+              "n": 0
+            }
+          }
+        },
+        "bless_concepts": {
+          "heldout": {
+            "prompt_map": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "prompt_map": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "unlinked": {
+            "prompt_map": {
+              "value": 0.3848740448592894,
+              "n": 200
+            }
+          },
+          "rare": {
+            "prompt_map": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "prompt_map": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "prompt_map": {
+              "value": null,
+              "n": 0
+            }
+          }
+        }
+      },
+      "seconds": 81.38
+    },
+    "hyperlex": {
+      "metrics": {
+        "cosine_spearman": 0.05565581557718998,
+        "prompt_spearman": 0.39227151505409763,
+        "probe_spearman": 0.43249078524878715,
+        "cosine_spearman_test": 0.004561791648458764,
+        "prompt_spearman_test": 0.3819360349889274,
+        "ridge_alpha": 10000.0,
+        "ridge_dev_spearman": {
+          "1.0": 0.44333695001750434,
+          "10.0": 0.4546627198347828,
+          "100.0": 0.45166271005574526,
+          "1000.0": 0.47890709853768854,
+          "10000.0": 0.506200347113753
+        },
+        "n": 2616,
+        "n_train": 1133,
+        "n_dev": 85,
+        "n_test": 269
+      },
+      "split": {
+        "probe": "hyperlex/splits/lexical",
+        "features": "[h_x; h_y]",
+        "templates": {
+          "N": [
+            "The {x} is a kind of {y}",
+            "thing"
+          ],
+          "V": [
+            "To {x} is a way to {y}",
+            "do"
+          ]
+        }
+      },
+      "subsets": {
+        "hyperlex": {
+          "heldout": {
+            "cosine_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "cosine_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "unlinked": {
+            "cosine_spearman": {
+              "value": 0.05565581557718998,
+              "n": 2616
+            },
+            "prompt_spearman": {
+              "value": 0.39227151505409763,
+              "n": 2616
+            },
+            "probe_spearman": {
+              "value": 0.43249078524878715,
+              "n": 269
+            }
+          },
+          "rare": {
+            "cosine_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "cosine_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "cosine_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "prompt_spearman": {
+              "value": null,
+              "n": 0
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 0
+            }
+          }
+        }
+      },
+      "seconds": 26.88
+    }
+  },
+  "items_file": "probes-int4.items.json.gz",
+  "items_sha256": "5e4d3dc6b22c2762e73e55f29459be663abe53f2759d37f43f9d9bc760bb85b3"
+}

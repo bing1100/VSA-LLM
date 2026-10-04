@@ -1,0 +1,25 @@
+runs:
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-frozen-P0-s1
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C0p-s1
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C2-s1
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-frozen-P0-s1
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C0p-s1
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C2-s1
+- experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C5-s1
+bits:
+- 8
+- 4
+variants:
+- A
+- B
+group_size: auto
+baseline: C0'
+references:
+- C2
+resamples: 10000
+seed: 0
+windows: null
+eval_batch: null
+device: cuda
+title: E9 post-training quantization (t5-qwen3)

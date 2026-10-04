@@ -73,3 +73,13 @@ Controls inside C5 show the gain comes from the frame content: own frame 0.249 >
 ## Next
 
 Seeds 2–3 on T5; T4 chemistry and T1-open (natural text with rare multi-token terms); the WordNet negative control (quantization gap on known vocabulary); Qwen3-1.7B / 0.6B with LoRA (queued after the memory probe); Qwen3-4B and Qwen3.5 on the author's decision.
+
+## Addendum — Qwen3-1.7B-Base and Qwen3-0.6B-Base with LoRA (T5, seed 1)
+
+Full tables: `experiments/e9-retrofit/report/t5-qwen3/report.md`. Recipe: LoRA r = 64 (host lr 2e-4), channel lr 1e-3, gate bias 0, channel scaled to the host's embedding-row norm, 50M tokens; same test set, holdout and items as SmolLM2.
+
+**Dimension 1 (bf16), C5 − C0′ relative loss:** held-out terms **−16.9%** (1.7B) / **−20.3%** (0.6B); rare −10.8% / −8.7%; unseen −10.5% / −9.3%; 3+-subtoken −9.0% / −9.5%; ordinary domain text 0.0% / 0.0%. The free table C2 again gives nothing on held-out terms (C5 − C2 −16.9% / −21.0%). Larger than on SmolLM2 (−7.5% / −11.7% held-out), with LoRA instead of full fine-tuning.
+
+**Dimension 3 (bf16), C5 − C0′:** new invented words — property selection **+16.1 points** (1.7B), entailment +12.3, paraphrase +7.7, statement accuracy +10.3 (all Holm-significant; SmolLM2-360M: +6.1 property); the generator's contamination-free zero-shot items — property **0.49 vs 0.32** (+17.4), entailment +16.0, paraphrase +5.7. Edits: seen terms move toward the edited fact (log-odds +1.12, +0.56 beyond the control edit; edit success 0.39 → 0.475), held-out terms barely (+0.05). At INT4 the new-word advantage shrinks but stays significant (property +6.2, entailment +9.2).
+
+**Dimension 2 (INT4 RTN, channel FP16):** INT4 destroys much of every LoRA-adapted model's domain adaptation (loss +50% to +115% vs +5–12% for the original host; merged LoRA deltas are small relative to the quantization step, as the novelty check anticipated), but the adapted models stay far better than the original host. The channel's absolute advantage after held-out terms is **fully retained** (retained 1.00 at both sizes: 1.7B −0.142 → −0.143 nats; 0.6B −0.185 → −0.185), rare terms 0.78–0.98, long terms 0.97 (0.6B) to 1.75 (1.7B). So under INT4 the channel's held-out-term gain is preserved, not enlarged; the "gap grows" reading holds only for long terms at 1.7B and overall at 1.7B (3.1×), and reverses overall at 0.6B. Claim B remains a narrow measurement pending the PQ1 controls (channel off at INT4, GPTQ/AWQ, quantized embeddings).
