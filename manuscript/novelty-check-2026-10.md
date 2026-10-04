@@ -477,8 +477,8 @@ Three works not on the earlier lists rule out broader phrasings:
   - T. Yu 2025, *Encoding FHIR Medical Data for Transformers*;
   - B. Hu 2026, *Generative Synthetic Data Models for Pre-Clinical Drug Discovery*.
 
-  Neither moves to causal text LMs. The author should check that T. Yu 2025 does not already contain an HRR causal-LM variant that would count as prior disclosure.
-- **The OpenReview forum `tfyLS1cB5W`** appears in Google Scholar as *Encoding Ontologies with Holographic Reduced Representations for Transformers* (BX Hu, T Yu, T Tuinstra, R Rezai, H Bokadia, R DiMaio, …). It looks like the group's earlier, general (not medical-only) ICLR 2024 submission. The forum is still bot-blocked, so it remains unverified. If it is public and non-anonymous, cite it as the group's own prior work, not as an independent precedent.
+  Neither moves to causal text LMs. The author should check that T. Yu 2025 does not already contain an HRR causal-LM variant that would count as prior disclosure. **Resolved 2026-10-04 (author): it does not.**
+- **The OpenReview forum `tfyLS1cB5W`** appears in Google Scholar as *Encoding Ontologies with Holographic Reduced Representations for Transformers* (BX Hu, T Yu, T Tuinstra, R Rezai, H Bokadia, R DiMaio, …). It looks like the group's earlier, general (not medical-only) ICLR 2024 submission. The forum is still bot-blocked, so it remains unverified. If it is public and non-anonymous, cite it as the group's own prior work, not as an independent precedent. **Resolved 2026-10-04 (author): it is the group's own previous work.** Cite the published HRRBERT record as the group's prior work (third person for double-blind review), not as an independent precedent.
 
 ### 6.4 Terminology
 
@@ -547,8 +547,8 @@ For E10, use at most one sentence, and only as a synthetic result (§5.6); omit 
 ## 9. Unverified items (do not cite until checked)
 
 - **HRRBERT-related**
-  - OpenReview `tfyLS1cB5W` (*Encoding Ontologies with Holographic Reduced Representations for Transformers*): Scholar snippet only; forum bot-blocked.
-  - T. Yu 2025 thesis: whether it contains an HRR/VSA causal-LM variant.
+  - ~~OpenReview `tfyLS1cB5W`~~ resolved 2026-10-04: the group's own previous work (author).
+  - ~~T. Yu 2025 thesis~~ resolved 2026-10-04: no HRR/VSA causal-LM variant (author).
 - **Claim A**
   - *Beyond Initialization Loss: A Systematic Study of Token Embedding Initialization Strategies for LLM Vocabulary Extension* (Joshi et al., 2026; OpenAlex only).
   - *Post-hoc Vocabulary Expansion for Embedding Models via Definition-Learning* (ACL ARR Jan 2026; title only).

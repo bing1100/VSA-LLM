@@ -104,7 +104,7 @@ No action needed:
 - Kumar, arXiv:2606.24948 ✓
 - Dai, Heinzerling, Inui, arXiv:2604.19052 ✓
 
-**Unverified; needs the author's input:** OpenReview forum `tfyLS1cB5W`, *Encoding Ontologies with Holographic Reduced Representations for Transformers*. Search snippets list the HRRBERT author list and call it an ICLR 2024 submission; the page was blocked. If it is the group's own earlier submission of HRRBERT, the manuscript should cite only the CEUR-WS record and not count it as separate prior work.
+**Unverified; needs the author's input:** OpenReview forum `tfyLS1cB5W`, *Encoding Ontologies with Holographic Reduced Representations for Transformers*. Search snippets list the HRRBERT author list and call it an ICLR 2024 submission; the page was blocked. If it is the group's own earlier submission of HRRBERT, the manuscript should cite only the CEUR-WS record and not count it as separate prior work. **Resolved 2026-10-04 (author): it is the group's previous work; cite the CEUR-WS record only.**
 
 **Proposed wording (M1):**
 > A query-conditioned weighting of VSA-bound ontology edges with zero per-concept parameters, whose τ → ∞ limit is the static HRR bundle of HRRBERT. Text-conditioned attention over ontology or KG neighbours predates us (Dasigi et al. 2017; CokeBERT, Su et al. 2021). What differs is that edge values are role–filler bindings rather than per-entity vectors or their translations, and that the query comes causally from preceding tokens.
@@ -225,7 +225,7 @@ Already covered by existing conditions (no change needed):
 
 ### 6.3 Other items
 
-- Ask the author about OpenReview `tfyLS1cB5W` (§3) to avoid double-citing HRRBERT.
+- ~~Ask the author about OpenReview `tfyLS1cB5W`~~ resolved 2026-10-04: the group's previous work; HRRBERT is cited once.
 - Keep the keyword alerts: (i) "gradient conflict" + split / duplicate + embedding / dictionary; (ii) VSA / HRR / hyperdimensional + language model + ontology; (iii) Engram follow-ups; (iv) self-authored KG / ontology + continued pretraining.
 - Re-run this check within 30 days of submission.
 
