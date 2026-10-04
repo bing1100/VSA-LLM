@@ -39,13 +39,13 @@ GPU jobs are queued through the local job queue (B11) once it exists; until then
 | 29 | B12 `authoring.py` (M5) | B | B4, B5, B6 | done |
 | 30 | B13 `judging.py` (Claude Code judge) | B | — | done |
 | 31 | C5 LLM-judge protocol and calibration set | C | B13 | done |
-| 32 | D1 E1 contextual composition on frozen anchors | D | A6, B1, B3, C3 | done (`runs/v1`; gate FAIL on frozen anchors — gates.md; clean re-run `runs/v2` queued) |
+| 32 | D1 E1 contextual composition on frozen anchors | D | A6, B1, B3, C3 | done (`runs/v2`, clean; gate FAIL on frozen anchors — gates.md) |
 | 33 | D2 E2 mapping × operator frontier | D | A6, B1, B2, C2 | done (`runs/v2`; gate partial: induced ≥ salience, not > binary; operators tie with random_fixed — [gates.md](gates.md)) |
-| 34 | D3 E3 developmental recovery on WordNet | D | D2, D0.2 | queued |
+| 34 | D3 E3 developmental recovery on WordNet | D | D2, D0.2 | done (`runs/v2`; gate FAIL on frozen anchors — gates.md) |
 | 34c | E10 self-learned semantics (author request 2026-10-02) | D | WP-E10 | E10.0 done (H-H survives at the synthetic level); E10.1 done (does not transfer to frozen GPT-2 anchors; [R10](../../reports/R10-self-learned-semantics.md)); E10.2 (joint LM) next after the recipe is fixed |
 | 34b | E9 retrofit × quantization × ontology editing (author request 2026-10-02) | D | WP-E9 | T5 seed 1 done ([R9](../../reports/R9-retrofit-quantization.md)); 3-day block queued: Qwen3 T5 s1–2, SmolLM2 T5 s2–3, T4, T1-open, WordNet control |
 | 34a | S0 sanity pilot (author request 2026-10-02; not a gate) | D | C3, WP-E4R, WP-host | done ([R1](../../reports/R1-sanity-pilot.md): small consistent gain on linked text for VSA channels; CARD-660 held-out 0.10 → 0.33; CPT setup uninformative) |
-| 35 | D4.0 harness shake-out; freeze training recipe | D | B7, B8, B11, B14, C3 | recipe sweep done except 2 cells (32k tokens/step, queued); 65k × lr 2e-3 leads by 1.3 nats over the pilot recipe |
+| 35 | D4.0 harness shake-out; freeze training recipe | D | B7, B8, B11, B14, C3 | recipe frozen for 50M (32k tokens/step, lr 2e-3; gates.md); shake-out + 125M lr check pending |
 | 36 | D4.8 early no-channel baselines | D | D4.0 | todo |
 | 37 | G2 pre-registration (`preregistration.md`, escalation rule) | gate | D1–D3, C4 | todo |
 | 38 | C6 developer-tools benchmark | C | B5 | done (benchmark v1, leakage audit 0) |

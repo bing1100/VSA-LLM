@@ -1,0 +1,22 @@
+experiment: e1-gpt2
+host: gpt2
+semcor_root: ~/data/vsa-llm/probes/wsd/WSD_Evaluation_Framework
+selection_seed: 7
+min_per_sense: 10
+max_per_sense: 40
+max_senses: 8
+max_atomics: 8192
+heldout_lemma_fraction: 0.2
+heldout_sentence_fraction: 0.2
+dimension: 256
+steps: 4000
+batch: 256
+learning_rate: 0.003
+operator_ablation:
+- diagonal
+- random_fixed:hrr
+- untyped
+seeds:
+- 11
+- 22
+- 33

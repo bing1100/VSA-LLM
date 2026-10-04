@@ -1,0 +1,39 @@
+experiment: e3-developmental
+host: gpt2
+selection_seed: 5
+max_concepts: 6000
+max_atomics: 8192
+dimension: 256
+operator: hrr_identity
+targets:
+- atomics
+- relations
+min_usages: 4
+seeds:
+- 11
+- 22
+- 33
+schedule:
+  learning_rate: 0.01
+  batch: 512
+  warmup_steps: 300
+  growth_steps: 900
+  final_steps: 300
+developmental:
+  beta: 0.9
+  screen_every: 100
+  activity_percentile: 0.25
+  coherence_threshold: 0.6
+  max_candidates: 32
+  min_usages: 4
+  min_contributions: 20
+  max_splits_per_round: 16
+  growth_budget: 0.05
+  cooldown: 200
+  epsilon: 0.05
+  permutations: 199
+  p_value: 0.01
+  merge_cosine: 0.98
+  route_unobserved: parent
+gate:
+  false_split_rate: 0.05

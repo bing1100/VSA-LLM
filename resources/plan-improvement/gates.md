@@ -88,3 +88,15 @@ The T1-open slice build (`experiments/t1-open-clinical/runs/slice-v1`) pinned ho
 ## D4.0 recipe sweep (2026-10-03)
 
 `experiments/e4-small-lm/runs/recipe` (C0, 50M, 100M tokens, seed 1): final loss by tokens/step × peak lr — 262k: 5.63 / 5.99 / 5.98 (lr 1e-3 / 2e-3 / 4e-3); 131k: 4.88 / 5.16 / 5.19; **65k: 4.42 / 4.29 / 4.79**. The pilot recipe (262k, 1e-3) is 1.3 nats worse than the best setting at the same tokens: the S0 pilot ran in an under-trained regime, and its effect sizes should be re-measured under the frozen recipe. Two 32k-tokens/step runs (lr 1e-3, 2e-3) are queued before the recipe is frozen.
+
+## D3 (E3) — developmental recovery on WordNet, frozen GPT-2 anchors (2026-10-04)
+
+**Inputs.** `experiments/e3-developmental-wordnet/runs/v2` (operator `hrr_identity`, 3 seeds). **Gate: FAIL** for atomics and relations. Atomics: M3 splits 70.7 per run with precision 0.066, recall 0.29, ARI 0.014 and a false-split rate of 0.185 (gate ≤ 0.05); test MRR equals uniform enlargement (−0.0002 [−0.0076, +0.0072]). Relations: no policy (M3, coherence-only, random, stem-cell pool) splits anything. Reading: as E1, E2 and E10.1, frozen GPT-2 anchors do not carry the sense/relation structure the mechanisms are meant to recover; M3's E0 success (G1) does not transfer to this regime. M3 (C6) is therefore not carried into the E4 screen as a primary condition; it can be revisited in joint training (E10.2).
+
+## D1 (E1) clean re-run (2026-10-04)
+
+`runs/v2` (clean commit) reproduces v1: M1-P2 − M0 on held-out lemmas variance explained +0.66 [+0.36, +0.96], context MRR +0.051 [+0.050, +0.052], sense accuracy − MFS −0.24 [−0.29, −0.20]; gate FAIL. Cite v2.
+
+## D4.0 recipe frozen (2026-10-04)
+
+C0 at 50M × 100M tokens, final loss: 32k tokens/step 4.29 (lr 1e-3) / **4.22 (lr 2e-3)**; 65k 4.42 / 4.29 / 4.79 (lr 4e-3); 131k 4.88 / 5.16 / 5.19; 262k 5.63 / 5.99 / 5.98. **Frozen recipe for 50M from scratch: 32,768 tokens/step (micro-batch 32 × 1), peak lr 2e-3, cosine to 0.1×, warmup 5M tokens.** The 125M recipe gets a two-run lr check (1e-3, 2e-3) at the same tokens/step before D4.1. The S0 pilot (262k, 1e-3) is superseded as an effect-size estimate.
