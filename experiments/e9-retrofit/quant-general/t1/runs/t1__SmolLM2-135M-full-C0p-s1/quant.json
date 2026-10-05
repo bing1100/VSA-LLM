@@ -1,0 +1,248 @@
+{
+  "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t1/SmolLM2-135M-full-C0p-s1",
+  "id": "t1__SmolLM2-135M-full-C0p-s1",
+  "windows": 2048,
+  "channel": "none",
+  "variants": {
+    "ref": {
+      "strata": {
+        "all": {
+          "loss": 2.800134425755237,
+          "tokens": 2095104
+        },
+        "inside": {
+          "loss": 0.883484446874261,
+          "tokens": 39907
+        },
+        "after": {
+          "loss": 2.7063323374890165,
+          "tokens": 215097
+        },
+        "after_heldout": {
+          "loss": 2.7617709924624183,
+          "tokens": 27565
+        },
+        "after_rare": {
+          "loss": 2.6806928633183102,
+          "tokens": 2612
+        },
+        "after_mid": {
+          "loss": 2.687316286024836,
+          "tokens": 31094
+        },
+        "after_frequent": {
+          "loss": 2.6998063061469875,
+          "tokens": 161358
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.728236477197098,
+          "tokens": 166407
+        },
+        "after_len3plus": {
+          "loss": 2.6326419830322267,
+          "tokens": 58080
+        },
+        "after_unseen": {
+          "loss": 2.7433729361854122,
+          "tokens": 301
+        },
+        "after_rare_seen": {
+          "loss": 2.6761078381970385,
+          "tokens": 2318
+        },
+        "unlinked": {
+          "loss": 2.841818913760918,
+          "tokens": 1849724
+        }
+      },
+      "ppl": 16.44685750374524,
+      "bytes": {
+        "embedding": 56623104,
+        "head": 0,
+        "linear": 212336640,
+        "lora": 0,
+        "other": 70272,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 269030016,
+        "linear_nominal": 212336640,
+        "total_nominal": 269030016
+      },
+      "seconds": 23.55
+    },
+    "int8-A": {
+      "strata": {
+        "all": {
+          "loss": 2.803449259708587,
+          "tokens": 2095104
+        },
+        "inside": {
+          "loss": 0.8866152837329212,
+          "tokens": 39907
+        },
+        "after": {
+          "loss": 2.7089272400758437,
+          "tokens": 215097
+        },
+        "after_heldout": {
+          "loss": 2.7635185752355227,
+          "tokens": 27565
+        },
+        "after_rare": {
+          "loss": 2.685298161338701,
+          "tokens": 2612
+        },
+        "after_mid": {
+          "loss": 2.69017121164164,
+          "tokens": 31094
+        },
+        "after_frequent": {
+          "loss": 2.7024598538023756,
+          "tokens": 161358
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.7307236446845122,
+          "tokens": 166407
+        },
+        "after_len3plus": {
+          "loss": 2.6354525700088374,
+          "tokens": 58080
+        },
+        "after_unseen": {
+          "loss": 2.744768044481246,
+          "tokens": 301
+        },
+        "after_rare_seen": {
+          "loss": 2.681230120457278,
+          "tokens": 2318
+        },
+        "unlinked": {
+          "loss": 2.845215548035815,
+          "tokens": 1849724
+        }
+      },
+      "ppl": 16.501466565406183,
+      "bytes": {
+        "embedding": 56623104,
+        "head": 0,
+        "linear": 106945920,
+        "lora": 0,
+        "other": 70272,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 163639296,
+        "linear_nominal": 106479360,
+        "total_nominal": 163172736
+      },
+      "bits": 8,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 210,
+      "linear_skipped": [],
+      "seconds": 29.74
+    },
+    "int4-A": {
+      "strata": {
+        "all": {
+          "loss": 3.088069654746256,
+          "tokens": 2095104
+        },
+        "inside": {
+          "loss": 1.2314587837620905,
+          "tokens": 39907
+        },
+        "after": {
+          "loss": 2.982184587660233,
+          "tokens": 215097
+        },
+        "after_heldout": {
+          "loss": 3.0302849204791515,
+          "tokens": 27565
+        },
+        "after_rare": {
+          "loss": 3.026918096527754,
+          "tokens": 2612
+        },
+        "after_mid": {
+          "loss": 2.9713044549641814,
+          "tokens": 31094
+        },
+        "after_frequent": {
+          "loss": 2.974752437187903,
+          "tokens": 161358
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 3.0000451157004173,
+          "tokens": 166407
+        },
+        "after_len3plus": {
+          "loss": 2.921521410140781,
+          "tokens": 58080
+        },
+        "after_unseen": {
+          "loss": 3.1193465996422245,
+          "tokens": 301
+        },
+        "after_rare_seen": {
+          "loss": 3.019153557531375,
+          "tokens": 2318
+        },
+        "unlinked": {
+          "loss": 3.1303085875919865,
+          "tokens": 1849724
+        }
+      },
+      "ppl": 21.934695547122292,
+      "bytes": {
+        "embedding": 56623104,
+        "head": 0,
+        "linear": 99532800,
+        "lora": 0,
+        "other": 70272,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 156226176,
+        "linear_nominal": 59719680,
+        "total_nominal": 116413056
+      },
+      "bits": 4,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 210,
+      "linear_skipped": [],
+      "seconds": 69.74
+    }
+  },
+  "eval_corpus": "/home/bhux/data/vsa-llm/t1/mesh-pubmed-gpt2-v1/hosts/smollm2/eval-general",
+  "condition": "C0'",
+  "seed": 1,
+  "model": "HuggingFaceTB/SmolLM2-135M/train",
+  "cohort": [
+    "HuggingFaceTB/SmolLM2-135M/train",
+    50000000,
+    2048,
+    1024,
+    "/home/bhux/data/vsa-llm/t1/mesh-pubmed-gpt2-v1/hosts/smollm2/eval-pubmed",
+    "/home/bhux/data/vsa-llm/t1/mesh-pubmed-gpt2-v1/hosts/smollm2/ontology.pt",
+    2
+  ],
+  "ref_check": {
+    "available": true,
+    "paired": false,
+    "detail": "different evaluation windows"
+  }
+}

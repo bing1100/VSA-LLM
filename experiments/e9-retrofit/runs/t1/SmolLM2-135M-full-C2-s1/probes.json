@@ -1,0 +1,1042 @@
+{
+  "schema": "channel-probes/1",
+  "model": {
+    "run": "experiments/e9-retrofit/runs/t1/SmolLM2-135M-full-C2-s1",
+    "checkpoint": "final.pt",
+    "experiment": "e9-t1-SmolLM2-135M-full-C2-s1",
+    "seed": 1,
+    "channel": "free",
+    "channel_settings": {
+      "mode": "free",
+      "free_dimension": 71,
+      "gate_bias": 0.0,
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "frames": "ontology"
+    },
+    "size": "pretrained",
+    "pretrained": "HuggingFaceTB/SmolLM2-135M",
+    "host_mode": "train",
+    "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+    "boundary": "prefix",
+    "min_subtokens": 2,
+    "ontology": "/home/bhux/data/vsa-llm/t1/mesh-pubmed-gpt2-v1/hosts/smollm2/ontology.pt",
+    "alias_table": {
+      "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t1.json",
+      "holdout_known": true,
+      "checks": {
+        "entry_concepts": true,
+        "digest": true,
+        "heldout_entries": true
+      },
+      "aliases": 173258,
+      "sha256": "f47230855977391e10b5e0af7f09bcb6ddb2895f592c5c3054f2761108a9b90a"
+    },
+    "heldout_entries": 1976,
+    "parameters": 136752023
+  },
+  "probes_run": [
+    "lambada",
+    "wic",
+    "card660",
+    "rare_words",
+    "wsd",
+    "bless",
+    "hyperlex"
+  ],
+  "fast": false,
+  "settings": {
+    "lambada_limit": null,
+    "wic_train_limit": null,
+    "wsd_dataset": "ALL",
+    "wsd_train_cap": 100,
+    "wsd_steps": 200,
+    "seed": 0,
+    "l2": 0.01,
+    "steps": 400,
+    "bless_test_fraction": 0.3,
+    "hyperlex_split": "lexical",
+    "ridge_grid": [
+      1.0,
+      10.0,
+      100.0,
+      1000.0,
+      10000.0
+    ],
+    "noun_template": "The {x} is a kind of {y}",
+    "noun_null": "thing",
+    "verb_template": "To {x} is a way to {y}",
+    "verb_null": "do",
+    "batch_size": 32,
+    "max_length": 256,
+    "layer": -1,
+    "word_prefix": "The word"
+  },
+  "probes_root": "/home/bhux/data/vsa-llm/probes",
+  "data_sha256": {
+    "lambada/data/lambada_test_en.jsonl": "4aa8d02cd17c719165fc8a7887fddd641f43fcafa4b1c806ca8abc31fabdb226",
+    "wic/train/train.data.txt": "3a56ff8285ca9703d6c91dfb7cc79760171899c560bb6a8698fa4559a71b160d",
+    "wic/train/train.gold.txt": "3f614ca12c03a90fecc34471d8ae666f924a3c657b5620fcfb46d9b2b50bb7b2",
+    "wic/dev/dev.data.txt": "1c360246ffa3904fc1d8f6f16bb7ae0d7980a1a27e9200e9b43c32fd35af11e7",
+    "wic/dev/dev.gold.txt": "665ee959c2cf7db2a4255b7a049bdfa165b970482145cfd2ac456007d4dcf1d6",
+    "card660.tsv": "0cfae4d9ee596c4dd745a138f49c99e74c31a8e171bc4108b62d243607a6c1a8",
+    "rw/rw/rw.txt": "f38941b02b85cf20e9d857ab4ee06ee0dfcb1c9ce0df6c546f1134fc5e625dae",
+    "wsd/WSD_Evaluation_Framework/Training_Corpora/SemCor/semcor.data.xml": "45003c51336fcb15b9d8a6556be65eaadf5bf3285ddbae763675000e28b00753",
+    "wsd/WSD_Evaluation_Framework/Training_Corpora/SemCor/semcor.gold.key.txt": "d5bb7966417fc1861c43a3851e03aa7b762b9004d9ffe7636637420d779259af",
+    "wsd/WSD_Evaluation_Framework/Evaluation_Datasets/ALL/ALL.data.xml": "27a9da01b6d4a1e4dc7c76d15148a38eaa56cc0df371cae4416d04e541b6fe36",
+    "wsd/WSD_Evaluation_Framework/Evaluation_Datasets/ALL/ALL.gold.key.txt": "0bf2ffc38f572587c72b59ea928da676423b99b5a54bd1a83eb4848b517d3170",
+    "bless/bless-gems/BLESS.txt": "567a38c461d4fd2234dcefb08d6e6487f53ab9662601fbd804fbb4b8bc2ca1df",
+    "hyperlex/hyperlex-all.txt": "582297878d7ab4d08b284291fdd828c686757dc2c8a9db062416c87bda73923c",
+    "hyperlex/splits/lexical/hyperlex_training_all_lexical.txt": "e6f40fb9019c7662e3f47e62f97f19c7d07644becfbfe8eb53a271bfa67493c2",
+    "hyperlex/splits/lexical/hyperlex_dev_all_lexical.txt": "0bdd4ca7e49fce4b04a97fe0eb1fae9586f3e85981a7f739785a8224ef4a6c22",
+    "hyperlex/splits/lexical/hyperlex_test_all_lexical.txt": "7fdfe8bde217bf0c935da347929e0e07213edb1b5d7695427451305c2e3dbc32"
+  },
+  "timing": {
+    "load_seconds": 3.32,
+    "probe_seconds": 78.34,
+    "peak_gpu_gib": 1.95
+  },
+  "provenance": {
+    "schema_version": 2,
+    "created_at": "2026-10-05T13:22:35.833859+00:00",
+    "git_sha": "ec2924ee8788560141c56d506937e50cf8923474",
+    "git_dirty": false,
+    "git_state_recorded_at": "run end",
+    "python": "3.12.4",
+    "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+    "packages": {
+      "torch": "2.11.0+cu128",
+      "transformers": "4.54.0",
+      "nltk": "3.8.1",
+      "PyYAML": "6.0.2",
+      "numpy": "2.2.6",
+      "safetensors": "0.5.3",
+      "vsa-embed": "0.1.0.dev0"
+    },
+    "device": "cuda",
+    "cuda_device": "NVIDIA GeForce RTX 3090",
+    "torch_num_threads": 6,
+    "argv": [
+      "/home/bhux/workplace/VSA-LLM/src/vsa_embed/evaluation/channel_probes.py",
+      "--run",
+      "experiments/e9-retrofit/runs/t1/SmolLM2-135M-full-C2-s1",
+      "--alias-table",
+      "/home/bhux/data/vsa-llm/e9/alias-tables/t1.json",
+      "--output",
+      "experiments/e9-retrofit/runs/t1/SmolLM2-135M-full-C2-s1/probes.json"
+    ],
+    "config_sha256": "2da86d631742f501d266aa565d6c1a3a9331bbca850dbe558dd78140e2de7287"
+  },
+  "summary": {
+    "lambada/accuracy": 0.43178730836405976,
+    "lambada/word_loss": 2.4736468661023463,
+    "lambada/n": 5153,
+    "lambada/skipped": 0,
+    "wic/prompt_accuracy": 0.5752351097178683,
+    "wic/probe_accuracy": 0.5956112852664577,
+    "wic/majority": 0.5,
+    "wic/n_dev": 638,
+    "wic/threshold": 0.8094580173492432,
+    "card660/spearman": 0.2078508820351662,
+    "card660/spearman_tied": 0.21019920167974895,
+    "card660/n": 660,
+    "rare_words/spearman": 0.2623507477879368,
+    "rare_words/spearman_tied": 0.26251415543953904,
+    "rare_words/n": 2034,
+    "wsd/n": 7253,
+    "wsd/probe_f1": 0.7067420377774714,
+    "wsd/centroid_f1": 0.689645663863229,
+    "wsd/mfs_f1": 0.654625672135668,
+    "wsd/wn1_f1": 0.6518681924720805,
+    "wsd/backoff_items": 670,
+    "wsd/unresolved_gold": 0,
+    "bless/probe_accuracy": 0.8923433874709977,
+    "bless/probe_macro_f1": 0.8889111099994436,
+    "bless/majority_accuracy": 0.46403712296983757,
+    "bless/relatum_only_accuracy": 0.8921113689095128,
+    "bless/relatum_only_macro_f1": 0.88837146581264,
+    "bless/pair_probe_accuracy": 0.8779582366589327,
+    "bless/pair_probe_macro_f1": 0.8615584791981008,
+    "bless/prompt_map": 0.3994674367017062,
+    "bless/prompt_map_test_concepts": 0.3785354728405234,
+    "bless/prompt_auc": 0.7679097564966592,
+    "bless/n_pairs": 14547,
+    "bless/n_test_pairs": 4310,
+    "hyperlex/cosine_spearman": 0.010442264287649114,
+    "hyperlex/prompt_spearman": 0.4236633085450674,
+    "hyperlex/probe_spearman": 0.37350454049128606,
+    "hyperlex/cosine_spearman_test": 0.07721137157494913,
+    "hyperlex/prompt_spearman_test": 0.4403591588021278,
+    "hyperlex/ridge_alpha": 10000.0,
+    "hyperlex/n": 2616,
+    "hyperlex/n_train": 1133,
+    "hyperlex/n_dev": 85,
+    "hyperlex/n_test": 269
+  },
+  "probes": {
+    "lambada": {
+      "metrics": {
+        "accuracy": 0.43178730836405976,
+        "word_loss": 2.4736468661023463,
+        "n": 5153,
+        "skipped": 0
+      },
+      "subsets": {
+        "lambada": {
+          "heldout": {
+            "accuracy": {
+              "value": 0.5714285714285714,
+              "n": 7
+            },
+            "word_loss": {
+              "value": 1.5990513392857142,
+              "n": 7
+            }
+          },
+          "seen": {
+            "accuracy": {
+              "value": 0.47368421052631576,
+              "n": 38
+            },
+            "word_loss": {
+              "value": 1.364540501644737,
+              "n": 38
+            }
+          },
+          "unlinked": {
+            "accuracy": {
+              "value": 0.4312842599843383,
+              "n": 5108
+            },
+            "word_loss": {
+              "value": 2.4830963983139958,
+              "n": 5108
+            }
+          },
+          "rare": {
+            "accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "word_loss": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "accuracy": {
+              "value": 0.5714285714285714,
+              "n": 7
+            },
+            "word_loss": {
+              "value": 0.796875,
+              "n": 7
+            }
+          },
+          "frequent": {
+            "accuracy": {
+              "value": 0.45161290322580644,
+              "n": 31
+            },
+            "word_loss": {
+              "value": 1.4927230342741935,
+              "n": 31
+            }
+          }
+        }
+      },
+      "seconds": 14.41
+    },
+    "wic": {
+      "metrics": {
+        "prompt_accuracy": 0.5752351097178683,
+        "probe_accuracy": 0.5956112852664577,
+        "majority": 0.5,
+        "n_dev": 638,
+        "threshold": 0.8094580173492432
+      },
+      "split": {
+        "train": "wic/train",
+        "test": "wic/dev"
+      },
+      "subsets": {
+        "wic": {
+          "heldout": {
+            "prompt_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "seen": {
+            "prompt_accuracy": {
+              "value": 0.5833333333333334,
+              "n": 12
+            },
+            "probe_accuracy": {
+              "value": 0.6666666666666666,
+              "n": 12
+            }
+          },
+          "unlinked": {
+            "prompt_accuracy": {
+              "value": 0.5750798722044729,
+              "n": 626
+            },
+            "probe_accuracy": {
+              "value": 0.5942492012779552,
+              "n": 626
+            }
+          },
+          "rare": {
+            "prompt_accuracy": {
+              "value": null,
+              "n": 0
+            },
+            "probe_accuracy": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "prompt_accuracy": {
+              "value": 1.0,
+              "n": 1
+            },
+            "probe_accuracy": {
+              "value": 1.0,
+              "n": 1
+            }
+          },
+          "frequent": {
+            "prompt_accuracy": {
+              "value": 0.5454545454545454,
+              "n": 11
+            },
+            "probe_accuracy": {
+              "value": 0.6363636363636364,
+              "n": 11
+            }
+          }
+        }
+      },
+      "seconds": 7.52
+    },
+    "card660": {
+      "metrics": {
+        "spearman": 0.2078508820351662,
+        "spearman_tied": 0.21019920167974895,
+        "n": 660
+      },
+      "subsets": {
+        "card660": {
+          "heldout": {
+            "spearman_tied": {
+              "value": -0.4,
+              "n": 4
+            }
+          },
+          "seen": {
+            "spearman_tied": {
+              "value": 0.23253202710161455,
+              "n": 68
+            }
+          },
+          "unlinked": {
+            "spearman_tied": {
+              "value": 0.21191114455921542,
+              "n": 588
+            }
+          },
+          "rare": {
+            "spearman_tied": {
+              "value": 0.715793879938954,
+              "n": 12
+            }
+          },
+          "mid": {
+            "spearman_tied": {
+              "value": 0.21411121893552,
+              "n": 27
+            }
+          },
+          "frequent": {
+            "spearman_tied": {
+              "value": 0.06494650798981877,
+              "n": 29
+            }
+          }
+        }
+      },
+      "seconds": 0.78
+    },
+    "rare_words": {
+      "metrics": {
+        "spearman": 0.2623507477879368,
+        "spearman_tied": 0.26251415543953904,
+        "n": 2034
+      },
+      "subsets": {
+        "rare_words": {
+          "heldout": {
+            "spearman_tied": {
+              "value": 0.5,
+              "n": 5
+            }
+          },
+          "seen": {
+            "spearman_tied": {
+              "value": 0.10546026554617186,
+              "n": 63
+            }
+          },
+          "unlinked": {
+            "spearman_tied": {
+              "value": 0.2660483294333732,
+              "n": 1966
+            }
+          },
+          "rare": {
+            "spearman_tied": {
+              "value": null,
+              "n": 1
+            }
+          },
+          "mid": {
+            "spearman_tied": {
+              "value": -0.01978021978021978,
+              "n": 14
+            }
+          },
+          "frequent": {
+            "spearman_tied": {
+              "value": 0.13914601788794825,
+              "n": 48
+            }
+          }
+        }
+      },
+      "seconds": 1.73
+    },
+    "wsd": {
+      "metrics": {
+        "n": 7253,
+        "probe_f1": 0.7067420377774714,
+        "centroid_f1": 0.689645663863229,
+        "mfs_f1": 0.654625672135668,
+        "wn1_f1": 0.6518681924720805,
+        "by_dataset": {
+          "semeval2007": {
+            "n": 455,
+            "probe_f1": 0.5912087912087912,
+            "centroid_f1": 0.5758241758241758,
+            "mfs_f1": 0.5560439560439561,
+            "wn1_f1": 0.5516483516483517
+          },
+          "semeval2013": {
+            "n": 1644,
+            "probe_f1": 0.6940389294403893,
+            "centroid_f1": 0.6897810218978102,
+            "mfs_f1": 0.6405109489051095,
+            "wn1_f1": 0.6295620437956204
+          },
+          "semeval2015": {
+            "n": 1022,
+            "probe_f1": 0.7299412915851272,
+            "centroid_f1": 0.7309197651663405,
+            "mfs_f1": 0.6800391389432485,
+            "wn1_f1": 0.678082191780822
+          },
+          "senseval2": {
+            "n": 2282,
+            "probe_f1": 0.7283085013146363,
+            "centroid_f1": 0.7050832602979842,
+            "mfs_f1": 0.6669588080631026,
+            "wn1_f1": 0.6678352322524101
+          },
+          "senseval3": {
+            "n": 1850,
+            "probe_f1": 0.707027027027027,
+            "centroid_f1": 0.6756756756756757,
+            "mfs_f1": 0.6621621621621622,
+            "wn1_f1": 0.6621621621621622
+          }
+        },
+        "by_pos": {
+          "ADJ": {
+            "n": 955,
+            "probe_f1": 0.7717277486910995,
+            "centroid_f1": 0.7664921465968586,
+            "mfs_f1": 0.7403141361256544,
+            "wn1_f1": 0.743455497382199
+          },
+          "ADV": {
+            "n": 346,
+            "probe_f1": 0.8323699421965318,
+            "centroid_f1": 0.8121387283236994,
+            "mfs_f1": 0.8063583815028902,
+            "wn1_f1": 0.8092485549132948
+          },
+          "NOUN": {
+            "n": 4300,
+            "probe_f1": 0.7339534883720931,
+            "centroid_f1": 0.7204651162790697,
+            "mfs_f1": 0.6809302325581396,
+            "wn1_f1": 0.676046511627907
+          },
+          "VERB": {
+            "n": 1652,
+            "probe_f1": 0.5720338983050848,
+            "centroid_f1": 0.5393462469733656,
+            "mfs_f1": 0.5048426150121066,
+            "wn1_f1": 0.5030266343825666
+          }
+        },
+        "ambiguous": {
+          "n": 4870,
+          "probe_f1": 0.62217659137577,
+          "centroid_f1": 0.5967145790554415,
+          "mfs_f1": 0.5445585215605749,
+          "wn1_f1": 0.5408624229979466
+        },
+        "backoff_items": 670,
+        "unresolved_gold": 0
+      },
+      "split": {
+        "train": "SemCor",
+        "test": "ALL",
+        "train_cap_per_lemma_pos": 100,
+        "seed": 0,
+        "train_occurrences": 75951,
+        "lemma_pos_probes": 1562,
+        "lemma_pos_in_test": 2808,
+        "train_sentences": 25968
+      },
+      "subsets": {
+        "wsd": {
+          "heldout": {
+            "probe_f1": {
+              "value": 1.0,
+              "n": 25
+            },
+            "centroid_f1": {
+              "value": 1.0,
+              "n": 25
+            },
+            "mfs_f1": {
+              "value": 1.0,
+              "n": 25
+            },
+            "wn1_f1": {
+              "value": 1.0,
+              "n": 25
+            }
+          },
+          "seen": {
+            "probe_f1": {
+              "value": 0.8982035928143712,
+              "n": 167
+            },
+            "centroid_f1": {
+              "value": 0.8982035928143712,
+              "n": 167
+            },
+            "mfs_f1": {
+              "value": 0.8562874251497006,
+              "n": 167
+            },
+            "wn1_f1": {
+              "value": 0.8562874251497006,
+              "n": 167
+            }
+          },
+          "unlinked": {
+            "probe_f1": {
+              "value": 0.7011754708964736,
+              "n": 7061
+            },
+            "centroid_f1": {
+              "value": 0.6836142189491573,
+              "n": 7061
+            },
+            "mfs_f1": {
+              "value": 0.6486333380541,
+              "n": 7061
+            },
+            "wn1_f1": {
+              "value": 0.6458008780625973,
+              "n": 7061
+            }
+          },
+          "rare": {
+            "probe_f1": {
+              "value": null,
+              "n": 0
+            },
+            "centroid_f1": {
+              "value": null,
+              "n": 0
+            },
+            "mfs_f1": {
+              "value": null,
+              "n": 0
+            },
+            "wn1_f1": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "probe_f1": {
+              "value": 0.9166666666666666,
+              "n": 24
+            },
+            "centroid_f1": {
+              "value": 0.875,
+              "n": 24
+            },
+            "mfs_f1": {
+              "value": 0.8333333333333334,
+              "n": 24
+            },
+            "wn1_f1": {
+              "value": 0.8333333333333334,
+              "n": 24
+            }
+          },
+          "frequent": {
+            "probe_f1": {
+              "value": 0.8951048951048951,
+              "n": 143
+            },
+            "centroid_f1": {
+              "value": 0.9020979020979021,
+              "n": 143
+            },
+            "mfs_f1": {
+              "value": 0.8601398601398601,
+              "n": 143
+            },
+            "wn1_f1": {
+              "value": 0.8601398601398601,
+              "n": 143
+            }
+          }
+        }
+      },
+      "seconds": 33.84
+    },
+    "bless": {
+      "metrics": {
+        "probe_accuracy": 0.8923433874709977,
+        "probe_macro_f1": 0.8889111099994436,
+        "probe_f1_by_relation": {
+          "hyper": 0.9213197969543148,
+          "coord": 0.9223589308442935,
+          "mero": 0.8126232741617357,
+          "random-n": 0.8993424380374304
+        },
+        "majority_accuracy": 0.46403712296983757,
+        "relatum_only_accuracy": 0.8921113689095128,
+        "relatum_only_macro_f1": 0.88837146581264,
+        "pair_probe_accuracy": 0.8779582366589327,
+        "pair_probe_macro_f1": 0.8615584791981008,
+        "prompt_map": 0.3994674367017062,
+        "prompt_map_test_concepts": 0.3785354728405234,
+        "prompt_auc": 0.7679097564966592,
+        "n_pairs": 14547,
+        "n_test_pairs": 4310
+      },
+      "split": {
+        "unit": "concept",
+        "seed": 0,
+        "test_fraction": 0.3,
+        "test_concepts": [
+          "acacia",
+          "apricot",
+          "axe",
+          "bear",
+          "beet",
+          "bomb",
+          "cathedral",
+          "cauliflower",
+          "cello",
+          "coyote",
+          "deer",
+          "dove",
+          "eagle",
+          "elm",
+          "falcon",
+          "ferry",
+          "fork",
+          "frog",
+          "glider",
+          "glove",
+          "grape",
+          "grapefruit",
+          "grasshopper",
+          "grenade",
+          "helicopter",
+          "jacket",
+          "library",
+          "lime",
+          "missile",
+          "moth",
+          "mug",
+          "oven",
+          "peach",
+          "piano",
+          "pistol",
+          "poplar",
+          "potato",
+          "radio",
+          "rake",
+          "rat",
+          "robin",
+          "saw",
+          "saxophone",
+          "scarf",
+          "sheep",
+          "shirt",
+          "shovel",
+          "sieve",
+          "spade",
+          "spear",
+          "spoon",
+          "squirrel",
+          "strawberry",
+          "swan",
+          "toaster",
+          "train",
+          "van",
+          "vulture",
+          "wardrobe",
+          "wrench"
+        ],
+        "relations": [
+          "hyper",
+          "coord",
+          "mero",
+          "random-n"
+        ],
+        "features": {
+          "probe": "[h_x; h_y]",
+          "pair_probe": "[|h_x \u2212 h_y|; h_x \u2299 h_y]",
+          "relatum_only": "h_y"
+        },
+        "template": "The {x} is a kind of {y}",
+        "null": "thing"
+      },
+      "subsets": {
+        "bless": {
+          "heldout": {
+            "probe_accuracy": {
+              "value": 0.9512195121951219,
+              "n": 82
+            },
+            "probe_macro_f1": {
+              "value": 0.9483534783776524,
+              "n": 82
+            },
+            "pair_probe_accuracy": {
+              "value": 0.9634146341463414,
+              "n": 82
+            },
+            "pair_probe_macro_f1": {
+              "value": 0.940952380952381,
+              "n": 82
+            },
+            "prompt_auc": {
+              "value": 0.8654545454545455,
+              "n": 111
+            }
+          },
+          "seen": {
+            "probe_accuracy": {
+              "value": 0.9445983379501385,
+              "n": 361
+            },
+            "probe_macro_f1": {
+              "value": 0.9368729835680475,
+              "n": 361
+            },
+            "pair_probe_accuracy": {
+              "value": 0.9279778393351801,
+              "n": 361
+            },
+            "pair_probe_macro_f1": {
+              "value": 0.9049364450080104,
+              "n": 361
+            },
+            "prompt_auc": {
+              "value": 0.6421500938086304,
+              "n": 855
+            }
+          },
+          "unlinked": {
+            "probe_accuracy": {
+              "value": 0.8862167054564262,
+              "n": 3867
+            },
+            "probe_macro_f1": {
+              "value": 0.8815329596912184,
+              "n": 3867
+            },
+            "pair_probe_accuracy": {
+              "value": 0.8714765968450996,
+              "n": 3867
+            },
+            "pair_probe_macro_f1": {
+              "value": 0.8531458274638168,
+              "n": 3867
+            },
+            "prompt_auc": {
+              "value": 0.7918407234998561,
+              "n": 13581
+            }
+          },
+          "rare": {
+            "probe_accuracy": {
+              "value": 1.0,
+              "n": 2
+            },
+            "probe_macro_f1": {
+              "value": 1.0,
+              "n": 2
+            },
+            "pair_probe_accuracy": {
+              "value": 1.0,
+              "n": 2
+            },
+            "pair_probe_macro_f1": {
+              "value": 1.0,
+              "n": 2
+            },
+            "prompt_auc": {
+              "value": null,
+              "n": 8
+            }
+          },
+          "mid": {
+            "probe_accuracy": {
+              "value": 0.9333333333333333,
+              "n": 30
+            },
+            "probe_macro_f1": {
+              "value": 0.9249999999999999,
+              "n": 30
+            },
+            "pair_probe_accuracy": {
+              "value": 0.8666666666666667,
+              "n": 30
+            },
+            "pair_probe_macro_f1": {
+              "value": 0.8153846153846155,
+              "n": 30
+            },
+            "prompt_auc": {
+              "value": 0.7062204192021636,
+              "n": 109
+            }
+          },
+          "frequent": {
+            "probe_accuracy": {
+              "value": 0.9452887537993921,
+              "n": 329
+            },
+            "probe_macro_f1": {
+              "value": 0.9385887489022771,
+              "n": 329
+            },
+            "pair_probe_accuracy": {
+              "value": 0.9331306990881459,
+              "n": 329
+            },
+            "pair_probe_macro_f1": {
+              "value": 0.9097615021910797,
+              "n": 329
+            },
+            "prompt_auc": {
+              "value": 0.6124744262586729,
+              "n": 738
+            }
+          }
+        },
+        "bless_concepts": {
+          "heldout": {
+            "prompt_map": {
+              "value": 0.5205345379258423,
+              "n": 1
+            }
+          },
+          "seen": {
+            "prompt_map": {
+              "value": 0.4012200711791119,
+              "n": 7
+            }
+          },
+          "unlinked": {
+            "prompt_map": {
+              "value": 0.3987729807508418,
+              "n": 192
+            }
+          },
+          "rare": {
+            "prompt_map": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "prompt_map": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "frequent": {
+            "prompt_map": {
+              "value": 0.4012200711791119,
+              "n": 7
+            }
+          }
+        }
+      },
+      "seconds": 16.16
+    },
+    "hyperlex": {
+      "metrics": {
+        "cosine_spearman": 0.010442264287649114,
+        "prompt_spearman": 0.4236633085450674,
+        "probe_spearman": 0.37350454049128606,
+        "cosine_spearman_test": 0.07721137157494913,
+        "prompt_spearman_test": 0.4403591588021278,
+        "ridge_alpha": 10000.0,
+        "ridge_dev_spearman": {
+          "1.0": 0.28656445202043984,
+          "10.0": 0.3438675704057036,
+          "100.0": 0.37115104696294376,
+          "1000.0": 0.3987863161978561,
+          "10000.0": 0.435509562939299
+        },
+        "n": 2616,
+        "n_train": 1133,
+        "n_dev": 85,
+        "n_test": 269
+      },
+      "split": {
+        "probe": "hyperlex/splits/lexical",
+        "features": "[h_x; h_y]",
+        "templates": {
+          "N": [
+            "The {x} is a kind of {y}",
+            "thing"
+          ],
+          "V": [
+            "To {x} is a way to {y}",
+            "do"
+          ]
+        }
+      },
+      "subsets": {
+        "hyperlex": {
+          "heldout": {
+            "cosine_spearman": {
+              "value": -0.27439024390243905,
+              "n": 10
+            },
+            "prompt_spearman": {
+              "value": 0.21884599572482324,
+              "n": 10
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 2
+            }
+          },
+          "seen": {
+            "cosine_spearman": {
+              "value": -0.19561203128804183,
+              "n": 78
+            },
+            "prompt_spearman": {
+              "value": 0.36148724529394893,
+              "n": 78
+            },
+            "probe_spearman": {
+              "value": 0.5749661560353623,
+              "n": 13
+            }
+          },
+          "unlinked": {
+            "cosine_spearman": {
+              "value": 0.018785460656910353,
+              "n": 2528
+            },
+            "prompt_spearman": {
+              "value": 0.4254551323054218,
+              "n": 2528
+            },
+            "probe_spearman": {
+              "value": 0.3509356697550358,
+              "n": 254
+            }
+          },
+          "rare": {
+            "cosine_spearman": {
+              "value": null,
+              "n": 1
+            },
+            "prompt_spearman": {
+              "value": null,
+              "n": 1
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 0
+            }
+          },
+          "mid": {
+            "cosine_spearman": {
+              "value": -0.2505701261680129,
+              "n": 11
+            },
+            "prompt_spearman": {
+              "value": 0.29157251045005134,
+              "n": 11
+            },
+            "probe_spearman": {
+              "value": null,
+              "n": 2
+            }
+          },
+          "frequent": {
+            "cosine_spearman": {
+              "value": -0.16066898578864208,
+              "n": 66
+            },
+            "prompt_spearman": {
+              "value": 0.3973609557374585,
+              "n": 66
+            },
+            "probe_spearman": {
+              "value": 0.4236913042477308,
+              "n": 11
+            }
+          }
+        }
+      },
+      "seconds": 3.86
+    }
+  },
+  "items_file": "probes.items.json.gz",
+  "items_sha256": "b53d159d14a86f051a15789c65b179016b02c586d8c9f4bbbf702fbd566ed61a"
+}

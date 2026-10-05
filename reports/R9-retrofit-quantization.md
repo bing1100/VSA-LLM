@@ -1,6 +1,6 @@
 # R9 — Retrofit × quantization × ontology editing (E9)
 
-**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seed 1 (addendum below; seed 2 queued). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open and the WordNet negative control are running. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
+**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seed 1 (addendum below; seed 2 queued). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open seed 1 is in (null); the cross-track section shows the gain following the novelty of the vocabulary. The WordNet negative control is running. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
 
 **Question (author request 2026-10-02).** (1) Does a VSA ontology channel trained jointly with a pretrained model improve it on long-token, rare and out-of-distribution words? (2) Is the gap larger after weight quantization? (3) After training, can the model learn new or changed words zero-shot by editing the ontology alone?
 
@@ -111,6 +111,27 @@ Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entit
 1. Claim A survives in direction but must be stated at natural-text size: about 1–4% after unseen, rare and multi-subtoken terms, under 1% after held-out terms; T5 is a synthetic upper bound.
 2. Claim B (quantization) is weaker still: the gain is partly lost under INT4 on natural text.
 3. Claim C (zero-shot learning by editing the ontology) does not transfer to natural text at seed 1: it is a synthetic-glossary result (T5 SmolLM2 and Qwen3) until a natural-text track shows it.
+
+## T1-open — MeSH terms in PubMed (SmolLM2-360M / 135M, seed 1, 2026-10-05)
+
+Full tables: `experiments/e9-retrofit/report/t1/report.md`. MeSH descriptors linked in PubMed abstracts (open-clinical substitute for SNOMED CT / MIMIC), half general text; same recipe and protocol. Two of 30,915 MeSH entries have no frame edges and get no injection (`channel.skip_empty_frames`, opt-in; linking and strata unchanged).
+
+**The channel does nothing on T1.** C5 − C0′ relative loss [95% CI]: held-out terms +0.02% [−0.01, +0.04] (360M) / +0.01% [−0.02, +0.04] (135M); unseen +0.00% / −0.15% (both n.s.; 664 targets); rare −0.01% / +0.02% (n.s.); 3+-subtoken −0.05% / −0.13% (significant but tiny); inside +0.05% / −0.02%; unlinked 0.00%. C2 is the same. INT4 changes nothing (DiD ≤ 0.001 nats). Dimension 3: new-word property +0.000 / +0.002, entailment +0.010 / −0.002, paraphrase −0.016 / +0.015, all n.s.
+
+## Across tracks: the gain follows how new the vocabulary is to the host
+
+A simple novelty index is how much plain continued training (C0′) lowers the loss after a track's terms relative to the original host (P0): large when the terms are new to the host, small when it already models them. Seed 1, relative change after held-out / unseen / rare / 3+-subtoken terms:
+
+| Track | 360M novelty (C0′ − P0) | 360M channel gain (C5 − C0′) | 135M novelty | 135M channel gain |
+|---|---|---|---|---|
+| T5 invented glossary (synthetic) | −74 / −74 / −75 / −81% | −11.7 / −5.5 / −5.6 / −7.1% | −74 / −73 / −73 / −80% | −7.5 / −3.4 / −3.1 / −6.4% |
+| T4 chemistry (ChEBI, PubMed) | −40 / −56 / −52 / −45% | −0.4 / −2.3 / −0.9 / −1.1% | −36 / −51 / −48 / −40% | −0.6 / −3.7 / −1.6 / −1.7% |
+| T1-open (MeSH, PubMed) | −8 / −5 / −6 / −8% | +0.0 / +0.0 / −0.0 / −0.1% | −8 / −4 / −6 / −8% | +0.0 / −0.2 / +0.0 / −0.1% |
+| WordNet general (engagement check, 10M tokens) | small | 0.0% (C5 = C0′ to four decimals) | — | — |
+
+- **Ordering:** the gain is largest where the vocabulary is newest to the host (T5), smaller on T4, and zero where the host already models the terms (T1, WordNet). Within T4 the unseen stratum is both the most novel (−56%) and the most improved (−2.3%).
+- **Implication for the paper:** the channel is a tool for vocabulary that is genuinely new to the host (invented, private or fast-changing terms), not for terms already well represented in pretraining. That is the defensible scope of claim A, and it matches the host learning to ignore the channel on known vocabulary (engagement check).
+- **Caveat:** three tracks and one copy-confounded synthetic track are not a dose–response curve; T5's size also contains the copy effect. The PQ1 filler / non-filler rescoring and T4 seeds 2–3 sharpen this. A fourth natural track with genuinely new vocabulary (T2 developer tools or T3 product names) would test the ordering directly.
 
 ## Addendum — Qwen3-1.7B-Base and Qwen3-0.6B-Base with LoRA (T5, seed 1)
 

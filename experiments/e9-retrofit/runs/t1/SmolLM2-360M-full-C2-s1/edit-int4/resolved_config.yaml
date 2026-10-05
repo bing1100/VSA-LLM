@@ -1,0 +1,13 @@
+experiment: e9-ontology-edit
+run: experiments/e9-retrofit/runs/t1/SmolLM2-360M-full-C2-s1
+checkpoint: final.pt
+new_items: experiments/e9-retrofit/items/new-words-t1-smollm2-v1
+edit_items: experiments/e9-retrofit/items/edits-t1-smollm2-v1
+sources: null
+fit_entries: 4000
+seed: 0
+resamples: 2000
+quantize: int4
+quantize_channel: false
+group_size: auto
+alias_table: /home/bhux/data/vsa-llm/e9/alias-tables/t1.json
