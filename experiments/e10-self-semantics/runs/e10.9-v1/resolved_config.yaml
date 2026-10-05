@@ -1,0 +1,320 @@
+experiment: e10-self-semantics
+stage: E10.9a
+seeds:
+- 101
+- 202
+- 303
+- 404
+- 505
+dev_seed: 7
+num_threads: 1
+workers: 3
+parts:
+- a
+- b
+- c
+- d
+- e
+- seed
+- dream
+- variety
+- continual
+world:
+  kind: synthetic
+  dimension: 64
+  roots: 4
+  branching:
+  - 3
+  - 4
+  - 5
+  attributes: 40
+  wholes: 40
+  parts: 100
+  groups: 15
+  members: 60
+  similar_pairs_per_family: 2
+  regions: 4
+  countries_per_region: 3
+  cities_per_country: 3
+  salience_std: 0.3
+  jitter_std: 0.15
+  observations: 12
+  observation_noise: 0.6
+  prior_cosine: 0.8
+  split_fractions:
+  - 0.13
+  - 0.13
+  - 0.13
+  audit_observations: 4
+model:
+  operator: hrr
+  relation_scaling: true
+  scale_free: true
+  lr: 0.02
+learn:
+  atomics: l2
+  relations: l2
+  mapping: l2
+  frames: l2
+  atomic_l2: 1.0
+  relation_l2: 1.0
+  mapping_l2: 0.1
+  frame_l1: 0.02
+  frame_l2: 0.0
+  assignment_entropy: 0.01
+  slot_group_l1: 0.0
+  gate_max: 2.0
+  mass_floor: 1.0
+  mass_floor_weight: 1.0
+selftest:
+  resamples: 1000
+  alpha: 0.025
+  propose_mass: 0.1
+discovery:
+  steps_per_round: 800
+  min_assignment: 0.5
+  min_mass: 0.25
+  resamples: 1000
+  alpha: 0.025
+  patience: 1
+  max_rounds: 5
+  enforce_rule: true
+  hypothesis_limit: 400
+  rule_limit: 5000
+  trajectory_every: 100
+  riddle_full: false
+  slot_init_mass: 0.1
+  absorb: true
+  refine: false
+  hypotheses:
+    min_overlap: 0.2
+    min_symmetry: 0.1
+    max_antisymmetry: 0.05
+    min_transitivity: 0.2
+    min_two_paths: 3
+    min_functional: 0.8
+  testable_only: true
+dream_settings:
+  refit_steps: 150
+  min_split_members: 8
+  split_epsilon: 0.3
+  merge_cosine: 0.3
+  merge_margin: 0.0
+a:
+  erasure: 0.3
+  spurious: 0.05
+  distractors: 2
+  settings:
+  - fixed
+  - l2
+  - free
+  steps: 1500
+  chunk: 27
+b:
+  rates:
+  - 0.1
+  - 0.3
+  - 0.5
+  - 0.7
+  distractors: 2
+  steps: 1500
+  acceptance_rates:
+  - 0.3
+  - 0.5
+c:
+  modes:
+  - absent
+  - collapsed
+  hidden:
+  - has_part
+  - similar_to
+  - located_in
+  coverage: 0.7
+  distractor_ratio: 1.0
+  max_slots: 20
+  collapse:
+    meronym:
+    - part_of
+    - member_of
+  methods:
+  - additive
+  - additive_norule
+  - all_at_once
+  - m3
+  - stem_cell
+  - oracle
+  all_at_once_slots: 5
+  stem_cell_pool: 20
+  m3_schedule:
+  - 0.3
+  - 0.5
+  m3:
+    beta: 0.9
+    screen_every: 200
+    activity_percentile: 0.25
+    coherence_threshold: 0.6
+    max_candidates: 16
+    min_usages: 6
+    min_contributions: 40
+    max_splits_per_round: 4
+    growth_budget: 1.0
+    cooldown: 400
+    epsilon: 0.05
+    permutations: 199
+    p_value: 0.01
+    merge_cosine: 0.98
+    route_unobserved: parent
+e:
+  k:
+  - 1
+  - 2
+  - 4
+  - 8
+  max_edges: 12
+  threshold: 0.2
+seed_ontology:
+  conditions:
+  - empty
+  - core
+  - noisy
+  - curated30
+  - full
+  coverage: 0.7
+  distractor_ratio: 1.0
+  max_slots: 12
+  max_rounds: 9
+  patience: 2
+  settle_steps: 800
+  core_levels: 2
+  core_relations:
+  - is_a
+  - part_of
+  - has_attribute
+  full_steps: 1500
+dream:
+  every:
+  - 0
+  - 1200
+  - 600
+  - 300
+  - -300
+  post_steps: 1200
+  passes_for_off: 4
+  consolidate_steps: 1500
+  wrong_edge_rate: 0.1
+  wrong_slot_edges: 40
+variety:
+  views:
+  - 1
+  - 2
+  - 4
+  - 8
+  sources: 16
+  artifact_strength: 0.5
+  erasure: 0.3
+  distractors: 2
+  steps: 1500
+continual:
+  conditions:
+  - additive
+  - additive_dream
+  - plastic
+  - all_at_once
+  order:
+  - similar_to
+  - has_part
+  - located_in
+  steps_per_stage: 800
+base_config: experiments/e10-self-semantics/e10-synthetic.yaml
+dev_seeds:
+- 7
+schedule:
+  total_steps: 4000
+  reflect_every: 800
+  eval_every: 100
+budgets:
+- 0.05
+- 0.1
+- 0.2
+- 0.4
+- 0.7
+- 1.0
+rhos:
+- 1.0
+- 0.5
+- 0.25
+- 0.0
+arms:
+  P: {}
+  H: {}
+  H+R: {}
+  P+compute:
+    rho:
+    - 1.0
+  H-rand:
+    rho:
+    - 1.0
+  H-AMIE:
+    rho:
+    - 1.0
+  P-split:
+    rho:
+    - 1.0
+    - 0.0
+  A-first:
+    f:
+    - 0.2
+    - 1.0
+  A-first-forced:
+    f:
+    - 0.2
+    - 1.0
+extra_cells:
+- arms:
+  - H
+  - P+compute
+  - H-rand
+  - H-AMIE
+  rho:
+  - 0.5
+  - 0.25
+  - 0.0
+  f:
+  - 1.0
+k_sensitivity:
+  K:
+  - 400
+  - 1600
+  arms:
+  - P
+  - H
+  rho:
+  - 1.0
+  - 0.0
+  f:
+  - 0.2
+  - 1.0
+revision:
+  edges: false
+  relabel: false
+  split: false
+  merge: false
+  reopen: true
+  remove_slot: true
+amie:
+  min_support: 2
+  min_head_coverage: 0.01
+  min_pca: 0.1
+frames:
+  k:
+  - 1
+  - 2
+  - 4
+  max_edges: 12
+  threshold: 0.2
+statistics:
+  bootstrap_resamples: 10000
+  noninferiority_margin: 0.01
+  much_faster_ratio: 0.5
+base_experiment: e10-self-semantics
+base_stage: E10.0
