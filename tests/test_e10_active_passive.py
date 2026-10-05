@@ -170,6 +170,15 @@ def test_untestable_predictions_are_skipped_under_budgets_and_nothing_changes_at
     `sub_relation_of` negatives are headed by captured heads; `testable_only` skips them (opt-in)."""
     full = A.resolve(yaml.safe_load((ROOT / "experiments/e10-self-semantics/e10.9-active-passive.yaml").read_text()), root=ROOT)
     assert full["discovery"]["testable_only"] is True
+    threads = torch.get_num_threads()
+    torch.set_num_threads(1)  # as the runner does (`num_threads`): multi-threaded reductions are not bit-reproducible
+    try:
+        _check_untestable_skip(full)
+    finally:
+        torch.set_num_threads(threads)
+
+
+def _check_untestable_skip(full: dict) -> None:
     c = full["c"]
     world = e10.build_world(full, 303)
     scenario = A.graded_scenario(world, rho=1.0, hidden=c["hidden"], seed=303, coverage=c["coverage"],
