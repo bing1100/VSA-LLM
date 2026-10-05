@@ -1,0 +1,25 @@
+runs:
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-360M-frozen-P0-s1
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-360M-full-C0p-s1
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-360M-full-C2-s1
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-360M-full-C5-s1
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-frozen-P0-s1
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-full-C0p-s1
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-full-C2-s1
+- experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-full-C5-s1
+bits:
+- 8
+- 4
+variants:
+- A
+- B
+group_size: auto
+baseline: C0'
+references:
+- C2
+resamples: 10000
+seed: 0
+windows: null
+eval_batch: null
+device: cuda
+title: E9 post-training quantization (wordnet)

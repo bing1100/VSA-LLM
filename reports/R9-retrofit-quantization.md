@@ -1,6 +1,6 @@
 # R9 — Retrofit × quantization × ontology editing (E9)
 
-**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seed 1 (addendum below; seed 2 queued). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open seed 1 is in (null); the cross-track section shows the gain following the novelty of the vocabulary. The WordNet negative control is running. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
+**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seed 1 (addendum below; seed 2 queued). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open seed 1 is in (null); the cross-track section shows the gain following the novelty of the vocabulary. The WordNet negative control is null, as predicted. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
 
 **Question (author request 2026-10-02).** (1) Does a VSA ontology channel trained jointly with a pretrained model improve it on long-token, rare and out-of-distribution words? (2) Is the gap larger after weight quantization? (3) After training, can the model learn new or changed words zero-shot by editing the ontology alone?
 
@@ -118,6 +118,10 @@ Full tables: `experiments/e9-retrofit/report/t1/report.md`. MeSH descriptors lin
 
 **The channel does nothing on T1.** C5 − C0′ relative loss [95% CI]: held-out terms +0.02% [−0.01, +0.04] (360M) / +0.01% [−0.02, +0.04] (135M); unseen +0.00% / −0.15% (both n.s.; 664 targets); rare −0.01% / +0.02% (n.s.); 3+-subtoken −0.05% / −0.13% (significant but tiny); inside +0.05% / −0.02%; unlinked 0.00%. C2 is the same. INT4 changes nothing (DiD ≤ 0.001 nats). Dimension 3: new-word property +0.000 / +0.002, entailment +0.010 / −0.002, paraphrase −0.016 / +0.015, all n.s.
 
+## WordNet negative control (SmolLM2-360M / 135M, seed 1, 2026-10-05)
+
+Full tables: `experiments/e9-retrofit/report/wordnet/report.md`. General FineWeb-Edu text with WordNet multi-token words linked (C3 linker and holdout), the vocabulary the host already models. **Null, as predicted:** every term stratum within ±0.06% at both sizes (held-out −0.00% [−0.02, +0.01] at 360M); INT4 Δgain ≤ 0.0025 nats (n.s. on term strata); new-word property +0.001 / −0.003, entailment +0.003 / −0.001 (n.s.). The engagement check's "C5 = C0′" now holds at 50M tokens with intervals.
+
 ## Across tracks: the gain follows how new the vocabulary is to the host
 
 A simple novelty index is how much plain continued training (C0′) lowers the loss after a track's terms relative to the original host (P0): large when the terms are new to the host, small when it already models them. Seed 1, relative change after held-out / unseen / rare / 3+-subtoken terms:
@@ -127,7 +131,7 @@ A simple novelty index is how much plain continued training (C0′) lowers the l
 | T5 invented glossary (synthetic) | −74 / −74 / −75 / −81% | −11.7 / −5.5 / −5.6 / −7.1% | −74 / −73 / −73 / −80% | −7.5 / −3.4 / −3.1 / −6.4% |
 | T4 chemistry (ChEBI, PubMed) | −40 / −56 / −52 / −45% | −0.4 / −2.3 / −0.9 / −1.1% | −36 / −51 / −48 / −40% | −0.6 / −3.7 / −1.6 / −1.7% |
 | T1-open (MeSH, PubMed) | −8 / −5 / −6 / −8% | +0.0 / +0.0 / −0.0 / −0.1% | −8 / −4 / −6 / −8% | +0.0 / −0.2 / +0.0 / −0.1% |
-| WordNet general (engagement check, 10M tokens) | small | 0.0% (C5 = C0′ to four decimals) | — | — |
+| WordNet general (negative control, 50M tokens) | -0.6 / -0.6 / -0.8 / -0.8% | -0.00 / +0.04 / +0.01 / +0.01% | -0.3 / -0.3 / -0.3 / -0.4% | -0.00 / +0.02 / -0.06 / -0.00% |
 
 - **Ordering:** the gain is largest where the vocabulary is newest to the host (T5), smaller on T4, and zero where the host already models the terms (T1, WordNet). Within T4 the unseen stratum is both the most novel (−56%) and the most improved (−2.3%).
 - **Implication for the paper:** the channel is a tool for vocabulary that is genuinely new to the host (invented, private or fast-changing terms), not for terms already well represented in pretraining. That is the defensible scope of claim A, and it matches the host learning to ignore the channel on known vocabulary (engagement check).

@@ -1,0 +1,17 @@
+experiment: e5.4-zero-shot
+run: experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-full-C0p-s1
+checkpoint: final.pt
+items: experiments/e5-explainability/items/c3-synthetic-smollm2-v1
+sources:
+- own
+- none
+- random
+- mean_row
+- surface_mean
+- graph_projection
+fit_entries: 4000
+contexts: 4
+windows: null
+seed: 0
+resamples: 2000
+generator_steps: 1500

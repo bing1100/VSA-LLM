@@ -1,0 +1,2160 @@
+{
+  "source": {
+    "run": "experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-frozen-P0-s1",
+    "checkpoint": "final.pt",
+    "condition": "P0",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/frozen",
+    "channel_mode": "none",
+    "channel": {
+      "mode": "none",
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "gate_bias": -2.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-wordnet-SmolLM2-135M-frozen-P0-s1",
+    "run_git_sha": "7e9771973de22bb491a7ea6211169f98deb1b544",
+    "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "quantization": {
+      "variant": "int4-A",
+      "bits": 4,
+      "group_size": 64,
+      "channel_quantized": false,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 210,
+      "linear_skipped": []
+    }
+  },
+  "items": "experiments/e5-explainability/items/c3-synthetic-smollm2-v1",
+  "manifest": {
+    "schema": "e5-zeroshot-items/1",
+    "scenario": "c3_synthetic",
+    "contamination_free": true,
+    "description": "C3 held-out WordNet concepts under invented names (frames of held-out entries)",
+    "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+    "ontology_alias_sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15",
+    "alias_table": {
+      "source": "wordnet",
+      "holdout_names": "experiments/c3-general-corpus/runs/v1/holdout_concepts.txt",
+      "holdout_known": true,
+      "checks": {
+        "entry_concepts": true,
+        "digest": true,
+        "heldout_entries": true
+      },
+      "aliases": 147306,
+      "sha256": "c802b817351dc79228e92d6414f916e3c030f3f98d0ffa15b463dd730c8c3d15"
+    },
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+    "min_subtokens": 2,
+    "seed": 0,
+    "max_concepts": 400,
+    "distractors": 4,
+    "definitions": "wordnet",
+    "corpus_tests": false,
+    "synthetic_aliases": true,
+    "null_surface": "thing",
+    "checks": {
+      "names": 400,
+      "rejected_candidates": 0,
+      "checked_against": [
+        "wordnet lemmas",
+        "alias table words",
+        "tokenizer vocabulary",
+        "contamination texts"
+      ],
+      "contamination_chars": 113801532
+    },
+    "selection": "held-out single-concept noun/verb entries whose shortest alias has \u2265 \u2113_min subtokens; seeded uniform sample (identical for c3_heldout and c3_synthetic at equal seed and size)",
+    "counts": {
+      "concepts": 400,
+      "items": 1743,
+      "property": 968,
+      "entailment": 775
+    }
+  },
+  "resolved": {
+    "c3s-12": {
+      "entry": 12,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-188": {
+      "entry": 188,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-395": {
+      "entry": 395,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-417": {
+      "entry": 417,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-1440": {
+      "entry": 1440,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-1467": {
+      "entry": 1467,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-1552": {
+      "entry": 1552,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-1574": {
+      "entry": 1574,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-1809": {
+      "entry": 1809,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-1961": {
+      "entry": 1961,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-2410": {
+      "entry": 2410,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-2457": {
+      "entry": 2457,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-2766": {
+      "entry": 2766,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-2867": {
+      "entry": 2867,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-3118": {
+      "entry": 3118,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-3900": {
+      "entry": 3900,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-4385": {
+      "entry": 4385,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-4451": {
+      "entry": 4451,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-4566": {
+      "entry": 4566,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-4596": {
+      "entry": 4596,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-4855": {
+      "entry": 4855,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-4889": {
+      "entry": 4889,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-4939": {
+      "entry": 4939,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-5497": {
+      "entry": 5497,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-6150": {
+      "entry": 6150,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-6369": {
+      "entry": 6369,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-6471": {
+      "entry": 6471,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-6626": {
+      "entry": 6626,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-6756": {
+      "entry": 6756,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7144": {
+      "entry": 7144,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7471": {
+      "entry": 7471,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7601": {
+      "entry": 7601,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7871": {
+      "entry": 7871,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7915": {
+      "entry": 7915,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7952": {
+      "entry": 7952,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7980": {
+      "entry": 7980,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-7987": {
+      "entry": 7987,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-8010": {
+      "entry": 8010,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-8659": {
+      "entry": 8659,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-9312": {
+      "entry": 9312,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-9662": {
+      "entry": 9662,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-9818": {
+      "entry": 9818,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-9892": {
+      "entry": 9892,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-10775": {
+      "entry": 10775,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-10776": {
+      "entry": 10776,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-10780": {
+      "entry": 10780,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-10865": {
+      "entry": 10865,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-10883": {
+      "entry": 10883,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11015": {
+      "entry": 11015,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11050": {
+      "entry": 11050,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11243": {
+      "entry": 11243,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11253": {
+      "entry": 11253,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11273": {
+      "entry": 11273,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11313": {
+      "entry": 11313,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11466": {
+      "entry": 11466,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11658": {
+      "entry": 11658,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11683": {
+      "entry": 11683,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-11777": {
+      "entry": 11777,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-12213": {
+      "entry": 12213,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13018": {
+      "entry": 13018,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13144": {
+      "entry": 13144,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13531": {
+      "entry": 13531,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13548": {
+      "entry": 13548,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13728": {
+      "entry": 13728,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13862": {
+      "entry": 13862,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13910": {
+      "entry": 13910,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13931": {
+      "entry": 13931,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-13952": {
+      "entry": 13952,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-14035": {
+      "entry": 14035,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-14260": {
+      "entry": 14260,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-14518": {
+      "entry": 14518,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-14641": {
+      "entry": 14641,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-14915": {
+      "entry": 14915,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15244": {
+      "entry": 15244,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15257": {
+      "entry": 15257,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15314": {
+      "entry": 15314,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15444": {
+      "entry": 15444,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15460": {
+      "entry": 15460,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15581": {
+      "entry": 15581,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15781": {
+      "entry": 15781,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15953": {
+      "entry": 15953,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-15976": {
+      "entry": 15976,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16078": {
+      "entry": 16078,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16155": {
+      "entry": 16155,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16254": {
+      "entry": 16254,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16298": {
+      "entry": 16298,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16638": {
+      "entry": 16638,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16826": {
+      "entry": 16826,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16934": {
+      "entry": 16934,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-16999": {
+      "entry": 16999,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-17051": {
+      "entry": 17051,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-17140": {
+      "entry": 17140,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-17224": {
+      "entry": 17224,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-17250": {
+      "entry": 17250,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-17455": {
+      "entry": 17455,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-17588": {
+      "entry": 17588,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-18136": {
+      "entry": 18136,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-18281": {
+      "entry": 18281,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-18393": {
+      "entry": 18393,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-18394": {
+      "entry": 18394,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-18457": {
+      "entry": 18457,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-20307": {
+      "entry": 20307,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-20386": {
+      "entry": 20386,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-20573": {
+      "entry": 20573,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-21110": {
+      "entry": 21110,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-21112": {
+      "entry": 21112,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-21717": {
+      "entry": 21717,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-21961": {
+      "entry": 21961,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-22012": {
+      "entry": 22012,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-22200": {
+      "entry": 22200,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-22205": {
+      "entry": 22205,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-23006": {
+      "entry": 23006,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-23208": {
+      "entry": 23208,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-23723": {
+      "entry": 23723,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-23752": {
+      "entry": 23752,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-23779": {
+      "entry": 23779,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-23841": {
+      "entry": 23841,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-24249": {
+      "entry": 24249,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-24433": {
+      "entry": 24433,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-24778": {
+      "entry": 24778,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-25040": {
+      "entry": 25040,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-25437": {
+      "entry": 25437,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-25520": {
+      "entry": 25520,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-25928": {
+      "entry": 25928,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-26616": {
+      "entry": 26616,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-26712": {
+      "entry": 26712,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-26733": {
+      "entry": 26733,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-27023": {
+      "entry": 27023,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-27184": {
+      "entry": 27184,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-27823": {
+      "entry": 27823,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-27932": {
+      "entry": 27932,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-28376": {
+      "entry": 28376,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-28561": {
+      "entry": 28561,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-28651": {
+      "entry": 28651,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-28663": {
+      "entry": 28663,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-29463": {
+      "entry": 29463,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-29916": {
+      "entry": 29916,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-30229": {
+      "entry": 30229,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-30316": {
+      "entry": 30316,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-31079": {
+      "entry": 31079,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-31302": {
+      "entry": 31302,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-31325": {
+      "entry": 31325,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-32168": {
+      "entry": 32168,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-32344": {
+      "entry": 32344,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-32495": {
+      "entry": 32495,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-32596": {
+      "entry": 32596,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-32618": {
+      "entry": 32618,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-32754": {
+      "entry": 32754,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-33054": {
+      "entry": 33054,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-33385": {
+      "entry": 33385,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-33667": {
+      "entry": 33667,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-34196": {
+      "entry": 34196,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-34295": {
+      "entry": 34295,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-34386": {
+      "entry": 34386,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-34845": {
+      "entry": 34845,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-35509": {
+      "entry": 35509,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-35525": {
+      "entry": 35525,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-36132": {
+      "entry": 36132,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-36430": {
+      "entry": 36430,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-36592": {
+      "entry": 36592,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-36861": {
+      "entry": 36861,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-37351": {
+      "entry": 37351,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-37859": {
+      "entry": 37859,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-37944": {
+      "entry": 37944,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-38531": {
+      "entry": 38531,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-38541": {
+      "entry": 38541,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-38942": {
+      "entry": 38942,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-39206": {
+      "entry": 39206,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-39400": {
+      "entry": 39400,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-39415": {
+      "entry": 39415,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-39827": {
+      "entry": 39827,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-39988": {
+      "entry": 39988,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-40095": {
+      "entry": 40095,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-40106": {
+      "entry": 40106,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-40167": {
+      "entry": 40167,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-40651": {
+      "entry": 40651,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-40893": {
+      "entry": 40893,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-40954": {
+      "entry": 40954,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-41750": {
+      "entry": 41750,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-42230": {
+      "entry": 42230,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-42242": {
+      "entry": 42242,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-42301": {
+      "entry": 42301,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-44217": {
+      "entry": 44217,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-44455": {
+      "entry": 44455,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-44698": {
+      "entry": 44698,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-45031": {
+      "entry": 45031,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-45161": {
+      "entry": 45161,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-45432": {
+      "entry": 45432,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-45452": {
+      "entry": 45452,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-45466": {
+      "entry": 45466,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-46056": {
+      "entry": 46056,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-46887": {
+      "entry": 46887,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-46954": {
+      "entry": 46954,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-47623": {
+      "entry": 47623,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-48654": {
+      "entry": 48654,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-48818": {
+      "entry": 48818,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-48855": {
+      "entry": 48855,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-49300": {
+      "entry": 49300,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-49359": {
+      "entry": 49359,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-49525": {
+      "entry": 49525,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-49764": {
+      "entry": 49764,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-50117": {
+      "entry": 50117,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-50745": {
+      "entry": 50745,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-50958": {
+      "entry": 50958,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-51050": {
+      "entry": 51050,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-51051": {
+      "entry": 51051,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-51507": {
+      "entry": 51507,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-51710": {
+      "entry": 51710,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-51764": {
+      "entry": 51764,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-52088": {
+      "entry": 52088,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-52630": {
+      "entry": 52630,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-52673": {
+      "entry": 52673,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-52743": {
+      "entry": 52743,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-52847": {
+      "entry": 52847,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-53385": {
+      "entry": 53385,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-53597": {
+      "entry": 53597,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-53652": {
+      "entry": 53652,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-54327": {
+      "entry": 54327,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-54563": {
+      "entry": 54563,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-55006": {
+      "entry": 55006,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-55146": {
+      "entry": 55146,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-55428": {
+      "entry": 55428,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-55455": {
+      "entry": 55455,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-55527": {
+      "entry": 55527,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56034": {
+      "entry": 56034,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56068": {
+      "entry": 56068,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56184": {
+      "entry": 56184,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56322": {
+      "entry": 56322,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56336": {
+      "entry": 56336,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56384": {
+      "entry": 56384,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56412": {
+      "entry": 56412,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56530": {
+      "entry": 56530,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56623": {
+      "entry": 56623,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56728": {
+      "entry": 56728,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-56732": {
+      "entry": 56732,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-57352": {
+      "entry": 57352,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-57393": {
+      "entry": 57393,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-57840": {
+      "entry": 57840,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-57991": {
+      "entry": 57991,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-58401": {
+      "entry": 58401,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-58416": {
+      "entry": 58416,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-58429": {
+      "entry": 58429,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-58439": {
+      "entry": 58439,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-58523": {
+      "entry": 58523,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-58814": {
+      "entry": 58814,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-59116": {
+      "entry": 59116,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-59213": {
+      "entry": 59213,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-59531": {
+      "entry": 59531,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-59534": {
+      "entry": 59534,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-59751": {
+      "entry": 59751,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-60013": {
+      "entry": 60013,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-60090": {
+      "entry": 60090,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-60377": {
+      "entry": 60377,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-60660": {
+      "entry": 60660,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-60705": {
+      "entry": 60705,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-60920": {
+      "entry": 60920,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-61220": {
+      "entry": 61220,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-61637": {
+      "entry": 61637,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-61661": {
+      "entry": 61661,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-61693": {
+      "entry": 61693,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-62285": {
+      "entry": 62285,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-62335": {
+      "entry": 62335,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-62520": {
+      "entry": 62520,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-62680": {
+      "entry": 62680,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-62908": {
+      "entry": 62908,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-63023": {
+      "entry": 63023,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-63131": {
+      "entry": 63131,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-63139": {
+      "entry": 63139,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-63146": {
+      "entry": 63146,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-63412": {
+      "entry": 63412,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-63627": {
+      "entry": 63627,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-64274": {
+      "entry": 64274,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-64359": {
+      "entry": 64359,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-64451": {
+      "entry": 64451,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-64812": {
+      "entry": 64812,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-64838": {
+      "entry": 64838,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-65155": {
+      "entry": 65155,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-65291": {
+      "entry": 65291,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-65360": {
+      "entry": 65360,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-65536": {
+      "entry": 65536,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-65801": {
+      "entry": 65801,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-65941": {
+      "entry": 65941,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-66285": {
+      "entry": 66285,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-66310": {
+      "entry": 66310,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-66488": {
+      "entry": 66488,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-66492": {
+      "entry": 66492,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-67394": {
+      "entry": 67394,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-67657": {
+      "entry": 67657,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-68032": {
+      "entry": 68032,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-68914": {
+      "entry": 68914,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-69275": {
+      "entry": 69275,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-70211": {
+      "entry": 70211,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-70379": {
+      "entry": 70379,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-70831": {
+      "entry": 70831,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-70956": {
+      "entry": 70956,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-71667": {
+      "entry": 71667,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-72123": {
+      "entry": 72123,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-72322": {
+      "entry": 72322,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-72382": {
+      "entry": 72382,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-72504": {
+      "entry": 72504,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-73391": {
+      "entry": 73391,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-73400": {
+      "entry": 73400,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-74136": {
+      "entry": 74136,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-74384": {
+      "entry": 74384,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-74648": {
+      "entry": 74648,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-75043": {
+      "entry": 75043,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-75331": {
+      "entry": 75331,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-75454": {
+      "entry": 75454,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-76504": {
+      "entry": 76504,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-76631": {
+      "entry": 76631,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-76930": {
+      "entry": 76930,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-77471": {
+      "entry": 77471,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-77690": {
+      "entry": 77690,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-78146": {
+      "entry": 78146,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-79134": {
+      "entry": 79134,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-79224": {
+      "entry": 79224,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-79566": {
+      "entry": 79566,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-79908": {
+      "entry": 79908,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-80172": {
+      "entry": 80172,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-80209": {
+      "entry": 80209,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-80259": {
+      "entry": 80259,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-80305": {
+      "entry": 80305,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-80840": {
+      "entry": 80840,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-80898": {
+      "entry": 80898,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-81059": {
+      "entry": 81059,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-81274": {
+      "entry": 81274,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-81525": {
+      "entry": 81525,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-81820": {
+      "entry": 81820,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-81900": {
+      "entry": 81900,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-82053": {
+      "entry": 82053,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-82221": {
+      "entry": 82221,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-82762": {
+      "entry": 82762,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-83176": {
+      "entry": 83176,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-83247": {
+      "entry": 83247,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-83316": {
+      "entry": 83316,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-83386": {
+      "entry": 83386,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-84412": {
+      "entry": 84412,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-84539": {
+      "entry": 84539,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-84582": {
+      "entry": 84582,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85144": {
+      "entry": 85144,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85158": {
+      "entry": 85158,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85206": {
+      "entry": 85206,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85339": {
+      "entry": 85339,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85445": {
+      "entry": 85445,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85591": {
+      "entry": 85591,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85964": {
+      "entry": 85964,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-85966": {
+      "entry": 85966,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-86103": {
+      "entry": 86103,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-86233": {
+      "entry": 86233,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-86416": {
+      "entry": 86416,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-86714": {
+      "entry": 86714,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-86831": {
+      "entry": 86831,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-87474": {
+      "entry": 87474,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-87553": {
+      "entry": 87553,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-87727": {
+      "entry": 87727,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-87849": {
+      "entry": 87849,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-88044": {
+      "entry": 88044,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-88137": {
+      "entry": 88137,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-88406": {
+      "entry": 88406,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-89350": {
+      "entry": 89350,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-89566": {
+      "entry": 89566,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-89592": {
+      "entry": 89592,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-89597": {
+      "entry": 89597,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-90595": {
+      "entry": 90595,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-90647": {
+      "entry": 90647,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-91628": {
+      "entry": 91628,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-91664": {
+      "entry": 91664,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-91740": {
+      "entry": 91740,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-92002": {
+      "entry": 92002,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-92487": {
+      "entry": 92487,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-92640": {
+      "entry": 92640,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-92793": {
+      "entry": 92793,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-92916": {
+      "entry": 92916,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-92938": {
+      "entry": 92938,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-93270": {
+      "entry": 93270,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-93406": {
+      "entry": 93406,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-93413": {
+      "entry": 93413,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-93475": {
+      "entry": 93475,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-94099": {
+      "entry": 94099,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-94382": {
+      "entry": 94382,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-94945": {
+      "entry": 94945,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-94998": {
+      "entry": 94998,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-95037": {
+      "entry": 95037,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-95184": {
+      "entry": 95184,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-95226": {
+      "entry": 95226,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-96429": {
+      "entry": 96429,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-97311": {
+      "entry": 97311,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-98203": {
+      "entry": 98203,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-98410": {
+      "entry": 98410,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-98433": {
+      "entry": 98433,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-98570": {
+      "entry": 98570,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-99230": {
+      "entry": 99230,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-99311": {
+      "entry": 99311,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-99525": {
+      "entry": 99525,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-99570": {
+      "entry": 99570,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-99643": {
+      "entry": 99643,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-99760": {
+      "entry": 99760,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-100232": {
+      "entry": 100232,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-100759": {
+      "entry": 100759,
+      "linked": true,
+      "status": "heldout"
+    },
+    "c3s-101228": {
+      "entry": 101228,
+      "linked": true,
+      "status": "heldout"
+    }
+  },
+  "baselines": {},
+  "summary": {
+    "concepts": 400,
+    "linked_concepts": 400,
+    "status_counts": {
+      "heldout": 400
+    },
+    "chance": {
+      "property": 0.2,
+      "entailment": 0.5
+    },
+    "sources": {
+      "own": {
+        "linked": {
+          "property": {
+            "mean": 0.21022727272727273,
+            "n": 968
+          },
+          "entailment": {
+            "mean": 0.4974193548387097,
+            "n": 775
+          },
+          "paraphrase": {
+            "mean": 0.5092975206611571,
+            "n": 968
+          },
+          "after_loss": {
+            "mean": null,
+            "n": 0
+          },
+          "semantic_mrr": {
+            "mean": null,
+            "n": 0
+          },
+          "semantic_r10": {
+            "mean": null,
+            "n": 0
+          }
+        },
+        "all": {
+          "property": {
+            "mean": 0.21022727272727273,
+            "n": 968
+          },
+          "entailment": {
+            "mean": 0.4974193548387097,
+            "n": 775
+          },
+          "paraphrase": {
+            "mean": 0.5092975206611571,
+            "n": 968
+          },
+          "after_loss": {
+            "mean": null,
+            "n": 0
+          },
+          "semantic_mrr": {
+            "mean": null,
+            "n": 0
+          },
+          "semantic_r10": {
+            "mean": null,
+            "n": 0
+          }
+        }
+      }
+    },
+    "comparisons": []
+  },
+  "seconds": 11.539847464999184
+}
