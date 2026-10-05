@@ -6,9 +6,14 @@ left in `running` by a dead runner (crash, reboot) is re-queued; its `resume_arg
 when it runs again, so trainers continue from their last checkpoint. A job starts only if the
 disk has at least `min_free_gb` free.
 
+Lanes (opt-in): a job is in the `cpu` lane if its `lane` field says so or its name matches
+`--cpu-pattern`, else in the `gpu` lane. `run --lane gpu` skips CPU-lane jobs, so CPU-only jobs
+(reports) no longer hold the GPU; `run --lane cpu` starts a CPU-lane job only once every job ahead of
+it in priority order is done (its inputs). The default `--lane all` is the original single runner.
+
     vsa-queue add --name e4-50m-c0-s1 --priority 10 -- python -m vsa_embed.training.lm --config … --output …
     vsa-queue status
-    vsa-queue run [--once]
+    vsa-queue run [--once] [--lane all|gpu|cpu] [--cpu-pattern REGEX]
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -39,7 +45,8 @@ def _write(path: Path, job: dict[str, Any]) -> None:
 
 
 def add(queue: Path, command: list[str], *, name: str, priority: int = 100, cwd: str | None = None,
-        resume_args: list[str] | None = None, min_free_gb: float = 10.0, env: dict[str, str] | None = None) -> Path:
+        resume_args: list[str] | None = None, min_free_gb: float = 10.0, env: dict[str, str] | None = None,
+        lane: str | None = None) -> Path:
     queue.mkdir(parents=True, exist_ok=True)
     path = queue / f"{name}.json"
     if path.exists():
@@ -47,7 +54,7 @@ def add(queue: Path, command: list[str], *, name: str, priority: int = 100, cwd:
     _write(path, {"name": name, "command": command, "priority": priority, "cwd": cwd or os.getcwd(),
                   "resume_args": resume_args if resume_args is not None else ["--resume"], "env": env or {},
                   "min_free_gb": min_free_gb, "status": "pending", "attempts": 0, "created": _now(),
-                  "log": str(queue / f"{name}.log")})
+                  "log": str(queue / f"{name}.log"), **({"lane": lane} if lane else {})})
     return path
 
 
@@ -65,6 +72,22 @@ def _alive(pid: int | None) -> bool:
         return False
 
 
+def lane_of(job: dict[str, Any], cpu_pattern: str | None = None) -> str:
+    if job.get("lane"):
+        return job["lane"]
+    return "cpu" if cpu_pattern and re.search(cpu_pattern, job["name"]) else "gpu"
+
+
+def _candidates(queue: Path, lane: str, cpu_pattern: str | None) -> list[dict[str, Any]]:
+    everything = jobs(queue)
+    pending = [j for j in everything if j["status"] == "pending"
+               and (lane == "all" or lane_of(j, cpu_pattern) == lane)]
+    if lane == "cpu":  # inputs first: every job ahead in priority order must be done
+        pending = [j for j in pending
+                   if all(o["status"] == "done" for o in everything if o["priority"] < j["priority"])]
+    return pending
+
+
 def recover(queue: Path) -> list[str]:
     """Re-queue jobs marked running whose process is gone."""
     recovered = []
@@ -75,9 +98,9 @@ def recover(queue: Path) -> list[str]:
     return recovered
 
 
-def run_next(queue: Path) -> dict[str, Any] | None:
+def run_next(queue: Path, *, lane: str = "all", cpu_pattern: str | None = None) -> dict[str, Any] | None:
     recover(queue)
-    pending = [j for j in jobs(queue) if j["status"] == "pending"]
+    pending = _candidates(queue, lane, cpu_pattern)
     if not pending:
         return None
     job = pending[0]
@@ -100,11 +123,12 @@ def run_next(queue: Path) -> dict[str, Any] | None:
     return job
 
 
-def run(queue: Path, *, once: bool = False, poll_seconds: float = 30.0) -> None:
+def run(queue: Path, *, once: bool = False, poll_seconds: float = 30.0, lane: str = "all",
+        cpu_pattern: str | None = None) -> None:
     stop = {"flag": False}
     signal.signal(signal.SIGTERM, lambda *_: stop.update(flag=True))
     while not stop["flag"]:
-        job = run_next(queue)
+        job = run_next(queue, lane=lane, cpu_pattern=cpu_pattern)
         if once:
             return
         if job is None:
@@ -119,15 +143,18 @@ def main(argv: list[str] | None = None) -> None:
     add_parser.add_argument("--name", required=True); add_parser.add_argument("--priority", type=int, default=100)
     add_parser.add_argument("--min-free-gb", type=float, default=10.0)
     add_parser.add_argument("--no-resume", action="store_true", help="do not append --resume on retries")
+    add_parser.add_argument("--lane", choices=("gpu", "cpu"), default=None)
     add_parser.add_argument("command", nargs=argparse.REMAINDER)
     sub.add_parser("status")
     run_parser = sub.add_parser("run"); run_parser.add_argument("--once", action="store_true")
+    run_parser.add_argument("--lane", choices=("all", "gpu", "cpu"), default="all")
+    run_parser.add_argument("--cpu-pattern", default=None, help="regex: matching job names are CPU-lane jobs")
     retry_parser = sub.add_parser("retry"); retry_parser.add_argument("name")
     args = parser.parse_args(argv)
     if args.action == "add":
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
         print(add(args.queue, command, name=args.name, priority=args.priority, min_free_gb=args.min_free_gb,
-                  resume_args=[] if args.no_resume else None))
+                  resume_args=[] if args.no_resume else None, lane=args.lane))
     elif args.action == "status":
         for job in jobs(args.queue):
             print(f"{job['status']:8} p{job['priority']:<4} {job['name']:40} attempts={job['attempts']} "
@@ -136,7 +163,7 @@ def main(argv: list[str] | None = None) -> None:
         path = args.queue / f"{args.name}.json"
         job = json.loads(path.read_text()); job.update(status="pending", interrupted=True); _write(path, job)
     else:
-        run(args.queue, once=args.once)
+        run(args.queue, once=args.once, lane=args.lane, cpu_pattern=args.cpu_pattern)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import json
 import sys
 from pathlib import Path
 
-from vsa_embed.jobqueue import add, jobs, recover, run_next
+from vsa_embed.jobqueue import add, jobs, lane_of, recover, run_next
 
 
 def test_priority_order_logging_and_outcomes(tmp_path: Path) -> None:
@@ -36,3 +36,29 @@ def test_disk_space_blocks_a_job(tmp_path: Path) -> None:
     queue = tmp_path / "q"
     add(queue, [sys.executable, "-c", "pass"], name="big", min_free_gb=10**9)
     assert run_next(queue)["status"] == "blocked"
+
+
+def test_lanes_keep_cpu_jobs_off_the_gpu_runner_and_wait_for_inputs(tmp_path: Path) -> None:
+    queue = tmp_path / "q"
+    marker = tmp_path / "order.txt"
+    def job(name: str, priority: int, **kwargs) -> None:
+        add(queue, [sys.executable, "-c", f"open({str(marker)!r}, 'a').write('{name}\\n')"], name=name,
+            priority=priority, min_free_gb=0, **kwargs)
+    job("train", 10); job("t5-report", 20); job("train2", 30); job("flagged", 40, lane="cpu")
+    assert lane_of(jobs(queue)[1], "-report") == "cpu" and lane_of(jobs(queue)[1]) == "gpu"
+    assert run_next(queue, lane="cpu", cpu_pattern="-report") is None  # its input "train" is not done
+    assert run_next(queue, lane="gpu", cpu_pattern="-report")["name"] == "train"
+    assert run_next(queue, lane="gpu", cpu_pattern="-report")["name"] == "train2"  # report skipped
+    assert run_next(queue, lane="gpu", cpu_pattern="-report") is None
+    assert run_next(queue, lane="cpu", cpu_pattern="-report")["name"] == "t5-report"
+    assert run_next(queue, lane="cpu", cpu_pattern="-report")["name"] == "flagged"
+    assert marker.read_text().split() == ["train", "train2", "t5-report", "flagged"]
+
+
+def test_cpu_lane_waits_for_a_lower_priority_gpu_job(tmp_path: Path) -> None:
+    queue = tmp_path / "q"
+    add(queue, [sys.executable, "-c", "pass"], name="train", priority=10, min_free_gb=0)
+    add(queue, [sys.executable, "-c", "pass"], name="report", priority=20, min_free_gb=0, lane="cpu")
+    assert run_next(queue, lane="cpu") is None
+    assert run_next(queue)["name"] == "train"  # default lane "all" = the original runner
+    assert run_next(queue, lane="cpu")["name"] == "report"
