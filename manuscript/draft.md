@@ -20,7 +20,7 @@
 
 HRRBERT (Hu et al., 2024) composed SNOMED CT code embeddings from atomic and relation vectors with holographic reduced representations (HRR) and trained them jointly with an encoder over medical-code sequences, improving rare codes. We extend this to causal text language models. A deterministic, prefix-causal linker maps multi-token terms to ontology concepts. Each concept vector is bound from the concept's relation–filler edges (its ontology frame) over a shared, jointly trained dictionary, with no per-concept parameters, and can be re-weighted by a causal context query. This ontology-composed span embedding is added to the input embedding at the term's last subtoken, leaving the tokenizer unchanged. We train it from scratch (50M–125M parameters) and by joint fine-tuning into pretrained small hosts. `[[R3: from-scratch held-out and seen-rare stratified loss vs random span vectors, a free per-concept table, shuffled frames and a hashed n-gram memory, one sentence]]`
 
-On a contamination-free synthetic glossary, joint fine-tuning into SmolLM2-135M/360M lowers next-token loss after held-out terms, whose vectors are composed zero-shot from their frames, by 7.5–11.7%. On seen rare terms it beats a capacity-matched free per-concept table, and it leaves text the host already models unchanged `[[A: vs. new-token initialization and in-context frames; seeds; T4/T1]]`. Without any weight update, writing a frame for an invented word modestly improves property selection, and replacing one edge of a seen term's frame shifts predictions toward the new fact `[[C: vs. ROME/MEMIT and in-context editing]]`. `[[B: one hedged clause on INT4 only if the bit-matched and GPTQ/AWQ controls pass]]` `[[operator ablation: HRR vs random fixed → "compositional parameter sharing" framing if they tie]]`
+On a contamination-free synthetic glossary, joint fine-tuning into SmolLM2-135M/360M lowers next-token loss after held-out terms, whose vectors are composed zero-shot from their frames, by 9–13% (three seeds). On seen rare terms it beats a capacity-matched free per-concept table, and it leaves text the host already models unchanged `[[A: vs. new-token initialization and in-context frames; T4/T1]]`. Without any weight update, writing a frame for an invented word modestly improves property selection, and replacing one edge of a seen term's frame shifts predictions toward the new fact `[[C: vs. ROME/MEMIT and in-context editing]]`. `[[B: one hedged clause on INT4 only if the bit-matched and GPTQ/AWQ controls pass]]` `[[operator ablation: HRR vs random fixed → "compositional parameter sharing" framing if they tie]]`
 
 *Kept from the first-pass skeleton, for the long paper if space allows:* on planted structure each mechanism is identifiable (the context query recovers context-dependent compositions the static bundle cannot, +0.36 to +0.46 held-out cosine; ontology-induced edge weights transfer to composition-disjoint concepts, 0.976 vs 0.60–0.70 for free factors; the split test recovers every planted polysemous atomic and relation sub-type with ≤ 1% surviving false splits), and on frozen GPT-2 anchors for WordNet and MeSH relation labels carry signal but no binding operator separates from a random fixed or untyped one. All experiments fit about 400 GPU-hours on one RTX 3090 `[[compute ledger]]`.
 
@@ -63,10 +63,10 @@ The same caution applies to the channel as a whole. Any gain could come from kno
    - a first-order, usage-level split test for shared dictionary vectors, read from optimizer state and calibrated by a permutation null (M3; §3.3).
 3. **Identifiability on planted structure (E0; all gates pass)**, and a negative result on frozen anchors: on WordNet and MeSH, no operator separates from a random fixed or untyped one, although relation labels carry signal (E2).
 4. **A pre-registered, stratified test of the tax** in 50M/125M causal LMs: held-out vs seen-rare vs frequent concepts, inside vs after spans, by span length, plus a data multiplier `k(L)` with fitted curves and projections. It runs against the five controls above `[[R3]]`.
-5. **Joint fine-tuning into pretrained hosts (E9; §5.8).** On a contamination-free synthetic glossary, jointly fine-tuning ontology-composed span embeddings into SmolLM2-135M/360M lowers next-token loss after invented terms by 3–12% relative to continued training without them, by 7.5–11.7% after held-out terms whose vectors are composed zero-shot from their frames. On seen rare terms it beats a capacity-matched free per-concept table by 7–8%, and the host neutralizes it on vocabulary it already models (one seed so far) `[[A: seeds 2–3; new-token initialization, same-site frame-text vectors and in-context frames; T4/T1]]`.
+5. **Joint fine-tuning into pretrained hosts (E9; §5.8).** On a contamination-free synthetic glossary, jointly fine-tuning ontology-composed span embeddings into SmolLM2-135M/360M lowers next-token loss after invented terms by 3–13% relative to continued training without them, by 9–13% after held-out terms whose vectors are composed zero-shot from their frames (three seeds). On seen rare terms it beats a capacity-matched free per-concept table by 7.5–8%, and the host neutralizes it on vocabulary it already models `[[A: new-token initialization, same-site frame-text vectors and in-context frames; T4/T1]]`.
 6. **Two narrow pretrained-host measurements (E9; §5.8).**
-   - *Quantization.* Under INT4 round-to-nearest weight-only PTQ the embedding's advantage in a fully fine-tuned SmolLM2-135M is preserved and, as a difference-in-differences, grows; at 360M the result is mixed. A published mechanism (4-bit PTQ erases small fine-tuning deltas) predicts this for any separate module, so it is reported as a measurement, not a robustness claim `[[B: bit-matched side module, channel off at INT4, GPTQ/AWQ, ≥ 3 seeds]]`.
-   - *Ontology editing without weight updates.* After joint training, writing a frame for an invented word modestly improves property selection over random-frame and no-frame controls, and replacing one edge of a seen term's frame shifts predictions toward the new fact while preserving neighbourhood specificity. Edits do not transfer to terms unseen in training. Editing a non-weight knowledge store is not new (Verga et al. 2021; Hernandez et al. 2024; Wang et al. 2024); only the mechanism is new (one bound edge of an input-side composed vector; new words as new combinations of existing atoms), and it is a proof of concept `[[C: vs. ROME/MEMIT/AlphaEdit, IKE and in-context frames]]`.
+   - *Quantization.* Under INT4 round-to-nearest weight-only PTQ the embedding's advantage on new and rare terms is largely preserved (held-out terms 0.58× at 360M, 1.14× at 135M; three seeds); it does not grow on the target terms. A published mechanism (4-bit PTQ erases small fine-tuning deltas) predicts this for any separate module, so it is reported as a measurement, not a robustness claim `[[B: bit-matched side module, channel off at INT4, GPTQ/AWQ, ≥ 3 seeds]]`.
+   - *Ontology editing without weight updates.* After joint training, writing a frame for an invented word modestly improves property selection over random-frame and no-frame controls, and replacing one edge of a seen term's frame shifts predictions toward the new fact while preserving neighbourhood specificity. Edits transfer to terms unseen in training only at 135M. Editing a non-weight knowledge store is not new (Verga et al. 2021; Hernandez et al. 2024; Wang et al. 2024); only the mechanism is new (one bound edge of an input-side composed vector; new words as new combinations of existing atoms), and it is a proof of concept `[[C: vs. ROME/MEMIT/AlphaEdit, IKE and in-context frames]]`.
 7. **A self-tested protocol for a learnable ontology (E10; §5.11; synthetic).** The ontology mapping is learnable under an L2 pull toward the curated prior, and every structure edit (candidate edges, initially empty relation operators opened one at a time, offline revision passes) is accepted only if it improves held-out fit against a matched control. In a planted ontology this recovers erased edges, discovers hidden relations at about half of oracle alignment, identifies symmetric and inverse relations by property-hypothesis testing, and repairs injected errors. On WordNet with frozen GPT-2 anchors these effects largely do not transfer `[[R10: AMIE/IterE, KGE, null-world and reusable-holdout baselines; E10.2]]`.
 8. `[[R4–R7: continued pretraining on three hosts; explanations and zero-shot rows; self-authored ontologies (M5); six application tracks]]`.
 9. **Reproducibility and feasibility artefacts:**
@@ -661,28 +661,28 @@ The GPU timings were taken on a shared GPU and are qualitative. Training through
 
 **Equal-bytes compression** of linked single-token rows ($Pc+\delta$ at 4/2 bits) against INT4/INT2, ALBERT-factorized, QR/hash and TT tables `[[R4]]`.
 
-### 5.8 E9 — joint fine-tuning into pretrained hosts *(T5, SmolLM2, seed 1; baselines pending: `[[R9]]`)*
+### 5.8 E9 — joint fine-tuning into pretrained hosts *(T5, SmolLM2, seeds 1–3; baselines pending: `[[R9]]`)*
 
 **Setup** (§4.3; [R9](../reports/R9-retrofit-quantization.md); generated report `experiments/e9-retrofit/report/t5/report.md`).
 - Track T5: a synthetic enterprise glossary whose generated internal-style documents use invented private terms, so the host cannot have seen them (contamination-free by construction). 360 held-out terms are never linked in training; their embeddings are composed zero-shot at evaluation.
 - Test set: one fixed set of evaluation windows per track, stratified as in §4.5 (`after_heldout`, `after_unseen`, `after_rare_seen`, `after_len3plus`, `inside`, `unlinked`), plus general text (FineWeb-Edu) for locality.
 - Statistics: relative loss change vs C0′ with 95% cluster-bootstrap CIs over windows and Holm within stratum.
-- **Single seed.** Every interval below covers evaluation windows or items, not seed variance. Seeds 2–3, T4 chemistry, T1-open, the WordNet negative control and the Qwen3 hosts are queued `[[R9: seeds 1–3; T4; T1; WordNet; Qwen3]]`.
+- **Three seeds** (1–3). Intervals are cluster bootstraps over evaluation windows (or items) with paired differences pooled over seeds; the across-seed spread is given where it matters. T4 chemistry, T1-open, the WordNet negative control and Qwen3 seed 2 are running `[[R9: T4; T1; WordNet; Qwen3]]`.
 - Why T5 first: on WordNet-linked general text the host neutralized the embedding (C5 = C0′ to four decimals in every engagement-check setting), so the question only makes sense for vocabulary that is new to the host.
 
 **Dimension 1 — rare, held-out and multi-subtoken terms (claim A).**
 
 | Stratum | targets | 360M: C5 − C0′ | 360M: C5 − C2 | 135M: C5 − C0′ | 135M: C5 − C2 |
 |---|---:|---|---|---|---|
-| after held-out terms (zero-shot composed) | 50,123 | **−11.7% [−12.5, −10.9]** | **−13.8%** | **−7.5% [−8.3, −6.8]** | **−12.1%** |
-| after unseen terms | 4,907 | −5.5% [−7.2, −3.9] | −7.4% | −3.4% | −7.8% |
-| after rare terms (train freq 1–9) | 36,303 | −5.6% [−6.2, −5.0] | −7.1% | −3.1% | −7.8% |
-| after 3+-subtoken terms | 482,522 | −7.1% [−7.3, −6.9] | −7.1% | −6.4% | −7.4% |
-| inside terms | 286,528 | +0.01% (n.s.) | −0.14% | +0.22% | −0.04% |
-| unlinked domain text (locality) | 380,816 | −0.04% (n.s.) | −0.10% | −0.06% (n.s.) | −0.11% |
+| after held-out terms (zero-shot composed) | 150,369 | **−13.3% [−14.1, −12.4]** | **−15.1%** | **−9.2% [−10.0, −8.4]** | **−13.6%** |
+| after unseen terms | 14,721 | −6.6% [−8.2, −5.1] | −8.6% | −3.8% [−5.4, −2.3] | −8.0% |
+| after rare terms (train freq 1–9) | 108,909 | −6.0% [−6.6, −5.4] | −7.6% | −3.1% [−3.7, −2.5] | −7.9% |
+| after 3+-subtoken terms | 1,447,566 | −7.6% [−7.8, −7.3] | −7.5% | −6.6% [−6.8, −6.4] | −7.5% |
+| inside terms | 859,584 | +0.04% (n.s.) | +0.04% (n.s.) | +0.33% [+0.22, +0.45] | +0.19% |
+| unlinked domain text (locality) | 1,142,448 | −0.03% (n.s.) | −0.08% | −0.17% | −0.22% |
 
-- Relative to C0′ the composed embedding lowers loss after new terms by 3–12% depending on stratum, and by 7.5–11.7% after held-out terms. General-text loss changes by −0.0004 nats; lexical probes change by |Δ| ≤ 0.015.
-- **What the C2 comparison shows.** On held-out terms C2 is *worse* than C0′ (+2–5%): a free table has no row for a term it never trained, so beating it there is trivial and is not claimed. The informative comparison is on seen rare terms, where C5 beats C2 by 7.1% (360M) and 7.8% (135M).
+- Relative to C0′ the composed embedding lowers loss after new terms by 3–13% depending on stratum, and by 9.2–13.3% after held-out terms. Every seed shows the gain on every term stratum (held-out per seed: −11.7 / −13.1 / −15.0% at 360M; −7.5 / −10.6 / −9.4% at 135M). General-text loss changes by −0.0004 to −0.0007 nats; lexical probes change by |Δ| ≤ 0.015. The one measurable cost is +0.33% inside terms at 135M.
+- **What the C2 comparison shows.** On held-out terms C2 is *worse* than C0′ (+5.1% at 135M): a free table has no row for a term it never trained, so beating it there is trivial and is not claimed. The informative comparison is on seen rare terms, where C5 beats C2 by 7.6% (360M) and 7.9% (135M).
 - **The host neutralizes the embedding on vocabulary it already models** (|Δ| < 10⁻⁴ nats in the WordNet engagement check). This is a null, not a demonstrated invariance `[[minimum detectable effect]]`.
 - **Caveat: the glossary text is generated from the same ontology** whose frames the embedding receives. The gain may partly be copying of the filler words that follow a term (the lexical-overlap confound of Onoe et al. 2023). T4/T1 natural text and a split of continuation tokens into filler-verbalizing and other tokens decide this `[[A-B5: lexical-overlap split; T4/T1]]`.
 
@@ -698,40 +698,41 @@ Baselines that also give a held-out term a vector zero-shot, and that the claim 
 | composed embedding + verbalized frame in context | `[[A-B3]]` | | | | `[[n]]` |
 | shuffled / equal-degree random / type-only frames; zero-vector gate; operator ablation | `[[A-B6]]` | | | | 0 |
 
-Recommended wording once the controls are in (novelty check §2.6): "… lowers next-token loss after invented, contamination-free glossary terms by 3–12% relative to continued training without the channel. The largest reduction (7.5–11.7%) is after held-out terms … On seen rare terms it beats a capacity-matched free per-concept table by 7–8%. The host neutralizes the channel on vocabulary it already models, and unlinked text is unchanged." Add "and new-token initialization … and approaches in-context frames" only after A-B1–A-B4.
+Recommended wording once the controls are in (novelty check §2.6): "… lowers next-token loss after invented, contamination-free glossary terms by 3–13% relative to continued training without the channel. The largest reduction (9–13%) is after held-out terms … On seen rare terms it beats a capacity-matched free per-concept table by 7–8%. The host neutralizes the channel on vocabulary it already models, and unlinked text is unchanged." Add "and new-token initialization … and approaches in-context frames" only after A-B1–A-B4.
 
 **Dimension 2 — the gap under weight quantization (claim B; a narrow measurement).** torchao weight-only INT8 and INT4 (group 128, round-to-nearest); the input embedding and output head stay 16-bit; variant A keeps the composed embedding in FP16, variant B quantizes it too (A ≈ B everywhere).
-- INT8 costs every model ≤ 0.6% loss. INT4 costs the fine-tuned hosts +38% on the domain text, while general-text damage is ≈ +7.7% for every model, the original host included.
-- The gain C5 − C0′ (nats/token) at bf16 → INT4:
+- INT8 costs every model ≤ 1.4% loss. INT4 costs the fine-tuned hosts +38% (360M) and +63% (135M) on the domain text, against +5.6% / +7.7% for the original host; general-text INT4 damage is the same for every trained model.
+- The gain C5 − C0′ (nats/token) at bf16 → INT4 (three seeds), with the difference-in-differences $\mathrm{DiD}$ (negative = the advantage grows):
 
-| Stratum | 360M bf16 → INT4 | retained | 135M bf16 → INT4 | retained |
-|---|---|---:|---|---:|
-| after held-out terms | −0.101 → −0.048 | 0.47× | −0.067 → −0.107 | 1.59× |
-| after 3+-subtoken terms | −0.043 → −0.038 | 0.89× | −0.042 → −0.058 | 1.39× |
-| after rare terms | −0.047 → −0.039 | 0.84× | −0.028 → −0.031 | 1.09× |
-| unlinked domain text | −0.000 → −0.028 | — | −0.000 → −0.048 | — |
-| all tokens | −0.020 → −0.030 | 1.51× | −0.019 → −0.052 | 2.80× |
+| Stratum | 360M bf16 → INT4 | retained | DiD [95% CI] | 135M bf16 → INT4 | retained | DiD [95% CI] |
+|---|---|---:|---|---|---:|---|
+| after held-out terms | −0.115 → −0.066 | 0.58× | +0.049 [+0.043, +0.054] | −0.082 → −0.094 | 1.14× | −0.012 [−0.019, −0.005] |
+| after unseen terms | −0.058 → −0.056 | 0.97× | +0.002 (n.s.) | −0.036 → −0.029 | 0.80× | +0.007 (n.s.) |
+| after rare terms | −0.050 → −0.038 | 0.77× | +0.012 | −0.028 → −0.011 | 0.39× | +0.017 |
+| after 3+-subtoken terms | −0.045 → −0.039 | 0.85× | +0.007 | −0.043 → −0.040 | 0.93× | +0.003 |
+| unlinked domain text | −0.000 → −0.020 | — | −0.020 | −0.001 → −0.012 | — | −0.011 |
+| all tokens | −0.021 → −0.026 | 1.26× | −0.005 | −0.019 → −0.025 | 1.32× | −0.006 |
 
-- **Reading.** At 135M the advantage is preserved and grows on every stratum; at 360M the held-out advantage halves. The large all-token ratio at 135M comes from *unlinked* domain text, where the embedding is inactive: the C5-trained host weights are more INT4-robust in general, which is not the embedding recovering rare words. Ratios divide two small differences and are shown only next to the difference-in-differences $\mathrm{DiD} = (L_{C0',\mathrm{INT4}} - L_{C5,\mathrm{INT4}}) - (L_{C0',\mathrm{FP}} - L_{C5,\mathrm{FP}})$ with paired window-bootstrap CIs `[[DiD per stratum with CIs, absolute nats/token in all four cells, seeds 1–3]]`.
+- **Reading.** The advantage on new and rare terms is largely preserved under INT4 but does not grow: only held-out terms at 135M grow (1.14×). The single-seed impression that it grows on every stratum at 135M did not replicate (rare 0.39×, multi-subtoken 0.93×). The all-token ratio above 1 comes from *unlinked* domain text, where the embedding is inactive: the C5-trained host weights are more INT4-robust in general (2–4 points less damage), which is not the embedding recovering rare words. Ratios divide two small differences and are shown only next to $\mathrm{DiD} = (L_{C0',\mathrm{INT4}} - L_{C5,\mathrm{INT4}}) - (L_{C0',\mathrm{FP}} - L_{C5,\mathrm{FP}})$ with paired window-bootstrap CIs (Holm within stratum).
 - **Why it is not a robustness claim.** Four-bit PTQ pulls fully fine-tuned weights back toward the original host because small fine-tuning deltas fall below the quantization step (Zhang et al. 2025), while updates held in a separate module survive (Abitante et al. 2026). That predicts this pattern for *any* separate module.
 - Controls before any stronger wording `[[B-B1: bit-matched unstructured side module (FP16 LoRA or free table at equal bytes; C2 at the channel's precision); B-B2: channel off at INT4; B-B3: GPTQ, AWQ, NF4 with generic and in-domain calibration, and a variant that quantizes the tied embedding; B-B4: delta norms vs the INT4 step]]`.
 
-Recommended wording (novelty check §3.5): "Under INT4 weight-only round-to-nearest PTQ (embeddings and output head unquantized), the channel's loss advantage on rare, held-out and multi-subtoken domain terms in a fully fine-tuned SmolLM2-135M is preserved and, as a difference-in-differences, increases. This holds whether or not the channel itself is quantized. At 360M the result is mixed." It stays out of the abstract until B-B1–B-B3 pass with ≥ 3 seeds.
+Recommended wording (revised after three seeds; the novelty check's §3.5 growth wording is withdrawn): "Under INT4 weight-only round-to-nearest PTQ (embeddings and output head unquantized), the channel's loss advantage on new and rare domain terms in fully fine-tuned SmolLM2 hosts is largely preserved, whether or not the channel itself is quantized." It stays out of the abstract until B-B1–B-B3 pass.
 
 **Dimension 3 — changing behaviour without weight updates by editing the ontology (claim C).** After training, new words and edits change only the alias table and the composer's frame schedule.
 - *New words:* 300 invented, contamination-free names whose frames are new combinations of existing atomics and relations (the construction of ALCUNA; Yin et al. 2023). Tests: property selection among 5 options (chance 0.20), entailment (chance 0.50), paraphrase consistency, and a statement test in held-out wordings.
 - *Edits:* 200 existing terms (half held out, half seen in training), one relation–filler edge replaced by a same-type filler; ROME/MEMIT-style efficacy (ES/EM), generalization (PS/PM) and neighbourhood specificity (NS), plus a control edit to another filler of the same pool.
 
-| New words, 360M | C0′ | C5 | C5 − C0′ | 135M: C5 − C0′ |
+| New words (3 seeds) | 360M C0′ | 360M C5 | 360M C5 − C0′ | 135M C5 − C0′ |
 |---|---:|---:|---|---|
-| property selection | 0.188 | 0.249 | **+0.061 [+0.047, +0.076]** | +0.045 |
-| entailment | 0.512 | 0.537 | +0.025 (n.s.) | +0.037 (n.s.) |
-| paraphrase consistency | 0.319 | 0.387 | **+0.068** | — |
-| statement accuracy | 0.231 | 0.256 | **+0.026** | — |
+| property selection | 0.189 | 0.259 | **+0.070 [+0.057, +0.083]** | **+0.042 [+0.028, +0.055]** |
+| entailment | 0.503 | 0.534 | +0.031 [+0.003, +0.058] (Holm n.s.) | **+0.047 [+0.020, +0.073]** |
+| paraphrase consistency | 0.321 | 0.404 | **+0.084 [+0.061, +0.106]** | +0.020 (n.s.) |
+| statement accuracy | — | — | **+0.027 [+0.014, +0.041]** | **+0.036 [+0.022, +0.049]** |
 
-- Inside C5 the gain follows the frame's content: own frame 0.249 > equal-degree random frame 0.211 > no frame 0.195 ≈ mean row 0.196. It survives INT4 (0.269 vs 0.214). On the track generator's own zero-shot items, 360M C5 vs C0′: property 0.46 vs 0.35 (+0.112), entailment 0.67 vs 0.57 (+0.098), paraphrase +0.045.
+- Inside C5 the gain follows the frame's content: at 135M own frame 0.232–0.242 against 0.190–0.196 for an equal-degree random frame, no frame or the mean row, in every seed (360M seed 1: 0.249 > 0.211 > 0.195 ≈ 0.196). It survives INT4 (360M property +0.060). On the track generator's own zero-shot items, C5 − C0′ (3-seed means): property +0.125 (360M; 0.346 → 0.471) and +0.123 (135M), entailment +0.096 / +0.102.
 - The probe sits near its floor: C0′ is below chance on property selection.
-- *Edits* move the model toward the new fact for seen terms (log-odds change +0.69 [+0.34, +1.10]; +0.27 beyond the control edit; edit success 0.40 → 0.455) while neighbourhood specificity is preserved (NS 0.55; other concepts' composed rows are unchanged by construction). For held-out terms the change is +0.04 (n.s.). Edits therefore work only where the model has learned to read the embedding for that term, as edit propagation through an addressable memory would predict (Niu 2026).
+- *Edits* move the model toward the new fact for seen terms (log-odds change +0.69 [+0.34, +1.10]; +0.27 beyond the control edit; edit success 0.40 → 0.455) while neighbourhood specificity is preserved (NS 0.55; other concepts' composed rows are unchanged by construction). For held-out terms the change is +0.04 (n.s.). Over three seeds, the change beyond the control edit is +0.25 (seen) and +0.03 (held-out) at 360M, but +0.47 and +0.31 at 135M. At 360M, edits work only where the model has learned to read the embedding for that term, as edit propagation through an addressable memory would predict (Niu 2026); the smaller host reads held-out frames as well.
 
 Baselines on the identical items and metric code (novelty check C-B1–C-B6; being built by WP-PQ2):
 
