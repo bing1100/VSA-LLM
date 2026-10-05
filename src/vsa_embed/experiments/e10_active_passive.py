@@ -471,6 +471,8 @@ def _edge_auc(composer: LearnableOntologyComposer, gold: set[tuple[int, int]]) -
     _, conf = composer.edge_options(cand)
     scores = (composer.edge_masses().detach()[cand] * conf).tolist()
     labels = [(h, a) in gold for h, a in zip(composer.edge_heads()[cand].tolist(), composer.schedule.fillers[cand].tolist())]
+    if any(not math.isfinite(s) for s in scores):          # e10._auc's tie loop does not terminate on NaN
+        return float("nan")
     return e10._auc(scores, labels)
 
 
@@ -779,7 +781,11 @@ def _run_job(job: tuple, config: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def run(config: dict[str, Any], output_dir: Path, *, workers: int | None = None, log=print) -> dict[str, Any]:
+def _print(message: str) -> None:
+    print(message, flush=True)
+
+
+def run(config: dict[str, Any], output_dir: Path, *, workers: int | None = None, log=_print) -> dict[str, Any]:
     git_at_start = prepare_output_dir(output_dir)
     apply_thread_setting(config)
     todo = jobs(config)
@@ -799,10 +805,16 @@ def run(config: dict[str, Any], output_dir: Path, *, workers: int | None = None,
         for job in todo:
             done(job, _run_job(job, config))
     else:
-        with ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn")) as pool:
+        pool = ProcessPoolExecutor(max_workers=workers, mp_context=mp.get_context("spawn"))
+        try:
             futures = {pool.submit(_run_job, job, config): job for job in todo}
             for future in as_completed(futures):
                 done(futures[future], future.result())
+        except BaseException:
+            # fail fast: a plain `with` block would wait for every queued job before re-raising
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+        pool.shutdown(wait=True)
     rows = [json.loads(json.dumps(e10._jsonable(row))) for job in todo for row in results[job]]
     with (output_dir / "metrics.jsonl").open("w") as handle:
         for row in rows:

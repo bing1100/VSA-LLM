@@ -165,6 +165,28 @@ def test_random_matched_content_writes_as_much_as_the_rule(config) -> None:
     assert int((composer.origin == ORIGIN["rule"]).sum()) - before == expected["rule_added"]
 
 
+def test_untestable_predictions_are_skipped_under_budgets_and_nothing_changes_at_full_data() -> None:
+    """Regression (first E10.9 launch): at f < 1 a captured head may lack held-out observations, and the
+    `sub_relation_of` negatives are headed by captured heads; `testable_only` skips them (opt-in)."""
+    full = A.resolve(yaml.safe_load((ROOT / "experiments/e10-self-semantics/e10.9-active-passive.yaml").read_text()), root=ROOT)
+    assert full["discovery"]["testable_only"] is True
+    c = full["c"]
+    world = e10.build_world(full, 303)
+    scenario = A.graded_scenario(world, rho=1.0, hidden=c["hidden"], seed=303, coverage=c["coverage"],
+                                 distractor_ratio=c["distractor_ratio"], max_slots=c["max_slots"])
+    pool = A.observation_pool(world, 303)
+    off = copy.deepcopy(full)
+    off["discovery"]["testable_only"] = False
+    budget = A.budget_data(world, scenario, pool, 0.4, 303)
+    with pytest.raises(ValueError, match="no held-out observations"):
+        A.run_arm("H", world, scenario, budget, off, 303, reflect_every=800, evaluate=False)
+    A.run_arm("H", world, scenario, budget, full, 303, reflect_every=800, evaluate=False)
+    whole = A.budget_data(world, scenario, pool, 1.0, 303)
+    logs = [A.run_arm("H", world, scenario, whole, cfg, 303, reflect_every=800, evaluate=False)[1] for cfg in (full, off)]
+    strip = lambda log: [[{k: v for k, v in s.items() if k != "pairs"} for s in r["slots"]] for r in log["reflections"]]  # noqa: E731
+    assert json.dumps(strip(logs[0])) == json.dumps(strip(logs[1]))          # NaN-aware comparison
+
+
 def test_amie_explanation_reads_symmetry_and_inverses() -> None:
     pairs = {(0, 1), (1, 0), (2, 3), (3, 2), (4, 5)}
     assert A.amie_explanation(pairs, {"part_of": {(10, 20)}}, {"min_support": 2, "min_head_coverage": 0.01,

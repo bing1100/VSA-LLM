@@ -40,6 +40,8 @@ k_sensitivity:              # one small check of the reflection interval
 
 discovery:
   riddle_full: false        # the full-space riddle scoring is an E10.6 analysis, not part of the learner
+  testable_only: true       # under budgets some captured heads have no held-out observations: their predictions are skipped
+                            # (a no-op at f = 1, where every training concept has held-out observations)
 
 revision:                   # H+R: the E10.5 revision pass restricted to commitments (reopen / remove a crystallized relation)
   edges: false

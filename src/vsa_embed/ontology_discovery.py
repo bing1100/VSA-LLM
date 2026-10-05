@@ -87,6 +87,7 @@ class DiscoverySettings:
     refine: bool = True                # self-tested split of a new slot before it is consolidated
     max_refinements: int = 3
     riddle_full: bool = False          # also score the full hypothesis space (for the E10.6 analysis only)
+    testable_only: bool = False        # E10.9: skip hypothesis predictions headed by concepts without held-out data
     hypotheses: HypothesisSettings = field(default_factory=HypothesisSettings)
     dream: DreamSettings = field(default_factory=DreamSettings)
     namer: Callable[[dict], str] | None = None
@@ -144,14 +145,14 @@ def interpret_slot(composer: LearnableOntologyComposer, slot: int, ctx: Learning
     hypotheses = generate_hypotheses(pairs, relations, settings.hypotheses) if pairs else []
     scores = score_hypotheses(composer, column, hypotheses, pairs, relations, ctx.heldout, ctx.nodes, mass=mass,
                               tail_pool=pool, limit=settings.hypothesis_limit, resamples=settings.resamples,
-                              seed=ctx.seed + slot, alpha=settings.alpha) if pairs else []
+                              seed=ctx.seed + slot, alpha=settings.alpha, testable_only=settings.testable_only) if pairs else []
     adopted = adopt(scores)
     full_scores = []
     if settings.riddle_full and pairs:
         full = generate_hypotheses(pairs, relations, HypothesisSettings(include_all=True))
         full_scores = score_hypotheses(composer, column, full, pairs, relations, ctx.heldout, ctx.nodes, mass=mass,
                                        tail_pool=pool, limit=settings.hypothesis_limit, resamples=settings.resamples,
-                                       seed=ctx.seed + slot, alpha=settings.alpha)
+                                       seed=ctx.seed + slot, alpha=settings.alpha, testable_only=settings.testable_only)
     control = torch.tensor([ctx.nodes.atomic_of_node[t] for t in pool]) if pool else None
     decision = slot_self_test(composer, members, column, ctx.heldout, resamples=settings.resamples,
                               seed=ctx.seed + 101 * (slot + 1), alpha=settings.alpha, control_fillers=control)
