@@ -177,8 +177,118 @@ Ladder (each step has gold because relations are hidden on purpose):
 | E10.6 | riddle-style relation identification | per blank slot the model generates candidate hypotheses ("given these concept pairs, what is the relation?") and tests each by its predictions on held-out pairs/text; best explanation adopted; structural hypotheses (symmetric, transitive, functional, inverse-of-X, composition-of-X-and-Y) on synthetic/WordNet, natural-language hypotheses on the pretrained host | identifiability without labels (alignment with the hidden relation after the fact), hypothesis accuracy vs number of candidate hypotheses |
 | E10.7 | data variety vs self-confirmation bias | number of domains/sources and contexts per concept at fixed tokens | wrong self-acceptance rate on a hidden audit set vs variety |
 | E10.8 | continual additive learning | relations learned sequentially (crystallize → new blank) with dreaming between stages vs all at once | growth curve of the self-built ontology, retention of earlier relations |
+| E10.9 | passive learning paired with active self-reflection (author 2026-10-04, decision 52) | **E10.9a** (synthetic, CPU, `e10_active_passive`): P passive · H = passive + a reflection round every K steps that commits the best held-out-tested explanation of a slot as an explicit write (crystallize + rule closure / pruning) · H+R (+ revision of commitments) · H-rand (random write of the same size) · H-AMIE (AMIE explanation) · P+compute · A-first (reflection before any passive learning); structure ρ ∈ {1, 0.5, 0.25, 0} (0 = the D-B4 null world: cost of commitment); budgets f ∈ {0.05 … 1}; 5 seeds. **E10.9b** (T5 joint LM, GPU, design below) | AULC of held-out test-concept fit over the budgets (H − P at ρ = 1), observations to criterion; null-world non-inferiority of H+R and retraction of false commitments. Pre-registered in R10 "E10.9"; E10.9b is queued only if E10.9a passes the gate of decision 53. **E10.9a result (`runs/e10.9-v1`, 2026-10-04): not faster at matched data.** AULC H − P = −0.003 [−0.019, +0.013]; observations to criterion 0.60, 3 of 5 seeds ≤ 0.5. At equal gradient data reflection adds +0.021 [+0.006, +0.035] test fit at f = 1, all of it from rule-implied edges on never-observed concepts, and the content matters (H − H-rand +0.030). In the null world the false commitments are inert (±0.002) but not retracted (0 of 19). **Gate not met; E10.9b not queued** |
 
 Report: `reports/R10-self-learned-semantics.md`. E10.0/E10.1 start now (CPU / backfill GPU); E10.2/E10.3 after G3 and E9/E7.
+
+**E10.9b — passive vs hybrid inside joint LM training on T5 (implementation-ready design; queue automatically iff the E10.9a gate passes, decision 53).**
+
+*Gate.* AULC H − P > 0 at ρ = 1 with the 95% t-interval excluding 0, **and** AULC H − P+compute > 0 with its t-interval excluding 0 (R10 "E10.9 results" states whether both hold).
+
+**Outcome (2026-10-04):** neither criterion holds. H − P = −0.003 [−0.019, +0.013]; H − P+compute = −0.003 [−0.019, +0.013]. **E10.9b is not queued.** The design below stays ready in case a revised E10.9a passes.
+
+The likely lever, if E10.9a is revised: in E10.9a the self-tests' held-out split costs the hybrid as much gradient data as reflection gains (P − P-split +0.018 AULC). In LM training held-out windows are cheap relative to the corpus, so the E10.9b reflection split (1% of the stream) costs much less.
+
+*Question.* The E10.9a comparison inside joint LM training. Some T5 relations are hidden from the channel ontology the LM reads, and blank slots are given. Reflection rounds write committed relations, with their rule closures, into that ontology. Does the hybrid reach the passive learner's held-out-term loss with fewer training tokens?
+
+*Hosts and recipe.*
+- The E9 T5 recipe: SmolLM2-135M first, then SmolLM2-360M; full fine-tuning at host lr 3e-5; channel lr 1e-3; gate bias 0.
+- Attentive compose channel at d = 256, key 8, context window 8.
+- 50M tokens: 762 steps × 65,536 tokens. micro 8 × accum 8 for 135M; micro 4 × accum 16 for 360M.
+- Corpus `~/data/vsa-llm/tracks/t5-glossary/v1`, with the same batches in every arm (`sample_batch` seeds by `(data.seed, step, micro_step)`).
+
+*Ontology.* Every arm, P included, uses a derived channel ontology:
+- Two inverse relations are added: `owns` = owned_by⁻¹ and `has_part` = part_of⁻¹, headed by the filler term's entry. The documents already use the inverse wording ("{O} owns {s}").
+- Three relations are **hidden**:
+  - `owned_by`: 3,800 edges, functional, present on all 360 held-out heads; it can be restored by the closure `inverse_of:owns`;
+  - `part_of`: 844 edges; closure `inverse_of:has_part`;
+  - `depends_on`: 1,227 edges, antisymmetric, with 839 unclosed two-step paths. It has no true closure, so a wrong `transitive` adoption would show the cost of commitment.
+
+  This mirrors E10.9a, where the gain mechanism is closure edges written for heads that no observation covers. T5 itself has no symmetric relation and no materialized inverse pairs, which is why the two inverses are derived.
+- 70% of the hidden edges on training-term heads are offered as open candidates, among as many same-pool distractors. Held-out heads get no candidates: only a committed rule can restore their hidden edges.
+- **5 blank slots**: one opens at 0 tokens and one after each reflection round.
+- A **null variant** (Pn, Hn) permutes the offered pairs' tails (ρ = 0; `graded_scenario`'s draw).
+
+*Schedule.*
+- Reflection every **10M tokens** (≈ 152 steps): rounds at 10M, 20M, 30M and 40M; the last 10M are passive. This is E10.9a's K = T/5.
+- Evaluation every **2.5M tokens** on the fixed 1,024 T5 eval windows (all strata), plus before and after each round.
+- Reflection evidence comes from a **reflection split**: the last 1% of the training token stream, 256 fixed windows that mention linked entries.
+  - H and HR never take gradient on it.
+  - P and Pc train on it (matched data, as in E10.9a).
+  - The E9 eval windows are never read by learning.
+
+*Arms* (names without "-", because `e4_report.NAME` parses `<size>-<condition>-s<seed>`):
+
+| Arm | What it is |
+|---|---|
+| P | passive: learnable ontology (L2-to-prior, open candidates, slots), no reflection |
+| H | reflection rounds through `e10_active_passive.reflect` with LM-window evidence |
+| HR | H + revision of commitments (refit-free removal-utility revisit on the reflection windows, accepted iff the cluster lower bound > 0) |
+| Pc | P + extra training tokens per round equal to H's reflection forward tokens ÷ 3 (one training token ≈ 3 forward tokens), measured in H's run of the same seed |
+| Pn, Hn | null variant (ρ = 0) |
+
+*Seeds.*
+- 135M: seeds 1, 2, 3 for P, H, HR and Pc; seeds 1–3 for Pn and Hn.
+- 360M: seeds 1 and 2 for P, H and Pc, queued only if the 135M primary is positive.
+
+*Pre-registered readouts.*
+- **Primary:** the `after_heldout` loss along the token axis, as tokens-to-criterion: the smallest token count at which H's `after_heldout` loss is ≤ P's loss at 50M (linear interpolation between evaluations), as a ratio to 50M. Also the loss AULC over tokens H − P, paired over seeds and windows (`e4_report.paired_difference`).
+- **"Much faster"** = ratio ≤ 0.5.
+- **Secondary:**
+  - `after_unseen` and `after_rare_seen`;
+  - H − Pc;
+  - Hn − Pn at 50M (non-inferiority margin +0.01 nats);
+  - commitments, adopted rules and their gold verdicts against the full T5 ontology (evaluation only);
+  - general-text loss (locality).
+
+*Queue.*
+- Training at **priority 55**, evaluations at 56, report at 57 (`jobqueue add --priority 55 …`; pending work currently sits at 33–61; lower numbers run first).
+- `min_free_gb` 20.
+
+*GPU-h estimate.* Measured cost per 50M-token training job is 0.52 h for 135M and 1.11 h for 360M (`.jobs/t5-SmolLM2-*-full-*`; execution.md "E9 T5" timings). The 0.35 / 0.76 h figures quoted earlier are not in the records.
+- Reflection overhead ≈ 0.13 h per 135M run: ≤ 36M forward tokens at ≈ 80k tokens/s.
+- Twenty extra evaluations: ≈ 4 min (135M) / 8 min (360M) per run.
+- **135M:** 18 runs ≈ 12 GPU-h.
+- **360M:** 6 runs ≈ 9 GPU-h.
+- **Total ≈ 21 GPU-h.**
+
+*Reusable from E10.9a* (no LM code in them):
+- `e10_active_passive.reflect`. Its evidence is injected as `interpret=` / `revise=`; the control flow, commitment, rule enforcement and absorb are reused unchanged.
+- `ReflectionPolicy`, `amie_explanation`, `enforce_random_matched`, `hypothesis_from_name`, `graded_scenario`'s permutation logic, `to_criterion` / `aulc` / `_paired`.
+- `ontology_discovery.enforce_rule`, `own_relations`, `edge_pairs`, `tail_pool`.
+- `ontology_hypotheses.generate_hypotheses`, `pair_signatures`, `StructuralHypothesis.predict`, `describe_pairs`.
+- `self_test.cluster_lower`, `bootstrap_lower`, `adopt`, `Decision`, `HypothesisScore`.
+- `learnable_ontology.LearnableOntologyComposer`, which supports attentive mode with slot keys: `add_blank_slot`, `crystallize`, `absorb`, `reopen`, `add_edges`, `penalty`, `project_`, `EdgeTable.build`.
+
+*Not reusable as is.* `interpret_slot`, `slot_self_test`, `score_hypotheses` and `dream_pass` score edits as row deltas against target vectors (`self_test.edit_effects`; bundle mode only, `_check_bundle`). The LM has no targets, and attentive weights are not additive.
+
+*Missing code.*
+1. **`src/vsa_embed/lm_ontology.py`** (new):
+   - `derive_inverses(ontology, {"owns": "owned_by", "has_part": "part_of"})`: entry heads come from `entry_concepts` / `atomic_names`.
+   - `learnable_table(ontology, hidden, coverage, distractor_ratio, max_slots, seed, permute_fraction)` → `EdgeTable`. Factor the permutation out of `graded_scenario` into a shared helper.
+   - `lm_context(...)`: a `NodeMap` over entries and atoms, `rule_heads` = all entries.
+2. **`src/vsa_embed/lm_reflection.py`** (new):
+   - `ReflectionWindows` (fixed windows with an entry → window index; from `data/corpus.py` windows).
+   - `frame_edit_effects(model, composer, windows, edit_sets)`: per edit set, the per-window loss change, computed by temporarily adding or masking edges (hypothetical edges at the slot's median mass) and re-running the LM, without gradient under bf16 autocast, only on windows that mention the edited heads.
+   - `interpret_slot_lm(composer, slot, ctx, settings)`: the same record schema as `interpret_slot`. It scores hypotheses as predicted-pair minus random-tail contrasts, cluster-bootstrapped over heads, and runs the slot test (utility of the members plus specificity against random tails).
+   - `revisit_lm(composer, ctx, revision, *, seed, resamples, alpha)`: the same signature as `dream_pass`.
+3. **`src/vsa_embed/training/lm.py`**, opt-in keys with unchanged defaults:
+   - `channel.learnable_ontology` in `build_channel` (217–257): build a `LearnableOntologyComposer(mode="attentive")` from `learnable_table`.
+   - Loss: add `penalty() / entries in batch` next to the delta penalty (632–633); call `project_()` after `optimizer.step()`.
+   - `build_optimizer` (460–472): exempt `edge_mass`, `assignment_logits`, `slot_roles` and `slot_keys` from weight decay.
+   - `channel.reflection: {every_tokens, arm, policy}`: a hook after `step += 1` (640–645) that runs `reflect(..., interpret=interpret_slot_lm, revise=revisit_lm)` or the Pc extra steps, then `add_blank_slot`. Parameters replaced by `add_edges` are swapped into the optimizer with `developmental._replace_parameter` (112–127).
+   - `eval.every_tokens`, plus an evaluation before and after each round.
+   - Reflection rows in `metrics.jsonl`.
+   - Checkpoints save the composer's table and slot state, and **restore them unconditionally on resume.** Today the schedule is restored only with a tracker (578–579), so a changed edge count fails to load.
+4. **`load_final` (756–778) and `channel_probes.load_run` (318–370)**: rebuild the learnable composer, or export the committed frames as a plain `FrameSchedule`.
+5. **`src/vsa_embed/experiments/e10_lm_plan.py`** (new):
+   - Configs per (host, arm, seed) from `e9_plan.run_config`. The derived ontology goes under `channel.learnable_ontology`, because `run_config` overwrites `data.ontology` at line 340.
+   - Queue at 55 / 56 / 57.
+   - A report with tokens-to-criterion and AULC on `after_heldout` / `after_unseen`, and commitment verdicts.
+6. **Tests:**
+   - `frame_edit_effects` against a direct recomputation on a tiny LM;
+   - a tiny-LM end-to-end run with one reflection round;
+   - isolation: learning decisions are unchanged when the eval corpus is replaced.
 
 **E9 engagement check (2026-10-02, `runs/e9-check`, SmolLM2-360M, 10M tokens, WordNet general corpus).** Full fine-tuning (host lr 3e-5) and LoRA-64 (2e-4), gate bias 0 and −2: C5 ends identical to C0′ to four decimals in every stratum (all 2.5806, inside 0.916, after 2.470, held-out 2.516). The channel is open (gate ≈ 0.48, injection ≈ 15% of an embedding-row norm) but the host neutralizes it: a pretrained host already models general WordNet vocabulary (inside-span loss 0.92 nats), so it is not rare/OOD for the host. **Decision:** E9 recipe = full fine-tuning, host lr 3e-5, gate bias 0, 50M tokens; primary corpora are vocabularies genuinely new or rare for the host — T5 synthetic enterprise glossary (contamination-free) first, then T4 chemistry and T1-open — with WordNet general as the secondary/negative-control corpus (still measured for the quantization gap).
 

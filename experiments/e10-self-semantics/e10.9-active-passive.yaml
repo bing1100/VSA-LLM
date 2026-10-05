@@ -1,0 +1,67 @@
+# E10.9a — passive learning paired with active self-reflection (execution.md decision 52; R10 "E10.9").
+# Merged over the E10.0 config (same world, learner, self-tests and discovery settings). CPU only, single-threaded jobs.
+#   PYTHONPATH=src CUDA_VISIBLE_DEVICES= python -m vsa_embed.experiments.e10_active_passive \
+#     --config experiments/e10-self-semantics/e10.9-active-passive.yaml --output experiments/e10-self-semantics/runs/e10.9-v1
+experiment: e10-self-semantics
+stage: E10.9a
+base_config: experiments/e10-self-semantics/e10-synthetic.yaml
+seeds: [101, 202, 303, 404, 505]
+dev_seeds: [7]              # pipeline and timing checks only; nothing was tuned on the reported seeds
+num_threads: 1
+workers: 3                  # a quarter of the machine's 12 threads
+
+schedule:
+  total_steps: 4000         # T: E10.0's longest additive budget (5 rounds × 800 steps); full-batch steps at every budget
+  reflect_every: 800        # K = E10.0's steps per slot round; the first reflection after K passive steps (W = K)
+  eval_every: 100           # light checkpoints along the step axis
+
+budgets: [0.05, 0.1, 0.2, 0.4, 0.7, 1.0]   # nested prefixes of one observation order per seed
+rhos: [1.0, 0.5, 0.25, 0.0]                 # structure fraction of the offered hidden-relation pairs (0 = D-B4 null_permuted)
+
+arms:                       # where each arm runs (omitted / "all" = the whole grid)
+  P: {}
+  H: {}
+  H+R: {}
+  P+compute: {rho: [1.0]}
+  H-rand: {rho: [1.0]}
+  H-AMIE: {rho: [1.0]}
+  P-split: {rho: [1.0, 0.0]}
+  A-first: {f: [0.2, 1.0]}
+  A-first-forced: {f: [0.2, 1.0]}
+
+extra_cells:                # secondary arms at f = 1 for the weaker-structure worlds (ρ curve of the controls)
+  - {arms: [H, P+compute, H-rand, H-AMIE], rho: [0.5, 0.25, 0.0], f: [1.0]}
+
+k_sensitivity:              # one small check of the reflection interval
+  K: [400, 1600]
+  arms: [P, H]
+  rho: [1.0, 0.0]
+  f: [0.2, 1.0]
+
+discovery:
+  riddle_full: false        # the full-space riddle scoring is an E10.6 analysis, not part of the learner
+  testable_only: true       # under budgets some captured heads have no held-out observations: their predictions are skipped
+                            # (a no-op at f = 1, where every training concept has held-out observations)
+
+revision:                   # H+R: the E10.5 revision pass restricted to commitments (reopen / remove a crystallized relation)
+  edges: false
+  relabel: false
+  split: false
+  merge: false
+  reopen: true
+  remove_slot: true
+
+amie:                       # H-AMIE: AMIE defaults as in the E10 baselines
+  min_support: 2
+  min_head_coverage: 0.01
+  min_pca: 0.1
+
+frames:                     # new-word frame inference (E10.0 (e))
+  k: [1, 2, 4]
+  max_edges: 12
+  threshold: 0.2
+
+statistics:
+  bootstrap_resamples: 10000
+  noninferiority_margin: 0.01
+  much_faster_ratio: 0.5

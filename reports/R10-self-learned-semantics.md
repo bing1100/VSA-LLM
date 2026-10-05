@@ -544,3 +544,248 @@ PYTHONPATH=src CUDA_VISIBLE_DEVICES= $PY -m vsa_embed.experiments.e10_baselines 
   --config experiments/e10-self-semantics/e10-baselines-wordnet.yaml --output experiments/e10-self-semantics/runs/e10.1-baselines-v2 --workers 2
 PYTHONPATH=src $PY -m vsa_embed.experiments.e10_report --baselines experiments/e10-self-semantics/runs/e10.0-baselines-v2
 ```
+
+
+## E10.9 — passive learning paired with active self-reflection
+
+**Date:** 2026-10-04. **Status:** design and pre-registration (this part was committed before the main grid ran); results follow in "E10.9 results". **Run folder:** `experiments/e10-self-semantics/runs/e10.9-v1/`. **Code:** `vsa_embed.experiments.e10_active_passive` (config `experiments/e10-self-semantics/e10.9-active-passive.yaml`, merged over the E10.0 config), tests `tests/test_e10_active_passive.py`. Decision 52 in execution.md.
+
+**Why.** The E10 baselines found that in null worlds the slot self-test accepts 2.7–4.3 false relations per run, so claim E10.D1 became a negative / methods result. The author's response (2026-10-04, verbatim):
+
+> "the idea is that we assume after learning, there is no more null worlds - and by inventing a relation that best fit, we can now explicitly update the weights - rather than implicitly waiting for gradients to confirm - i.e. the difference between active self-reflexive learning and passive learning"
+
+> "The idea is even if there is a null world - if we first start with passive learning - then we fix actively self-reflect on what the relationship is by self-disentagling the relationship meaning - can this active learning be paired together with passive learning to have the model to be able to self-learn much faster"
+
+So the claim under test is **not** "an accepted slot proves that a relation exists". It is a speed claim:
+1. learn passively by gradient first;
+2. then reflect periodically: interpret what a slot means by testing property hypotheses;
+3. commit the best-fit explanation as an explicit weight write (crystallize, enforce the rule's closure, prune violations);
+4. continue passive learning.
+
+Does this hybrid learn much faster than passive learning alone? The null world becomes the **cost-of-commitment control**: does a wrong commitment hurt held-out prediction, and does later reflection retract it? The self-supervision principle is unchanged: no gold label, gold pair or audit observation enters learning.
+
+### E10.9a design (synthetic planted world, CPU)
+
+**World.** The E10.0 absent-mode world (304 concepts, d = 64, 12 noisy observations per concept). has_part, similar_to and located_in are hidden. 70% of their training-head edges are offered as open candidates among as many distractors (≈ 160 gold pairs among ≈ 320 offered). Blank slots are available.
+
+The **structure fraction ρ ∈ {1, 0.5, 0.25, 0}** grades the world. The tails of a random fraction 1 − ρ of the offered pairs are re-drawn exactly as D-B4's `null_permuted` world draws them: shuffled tails, never a gold pair. About ρ of the offered gold pairs survive. At ρ = 0 the table is identical to `null_permuted_scenario` (tested). The teacher, the observations and the seed ontology are the same at every ρ, so a commitment at ρ = 0 can only be wrong.
+
+**Data budgets.**
+- *The pool.* The learner-readable observations are 1,632 items: each training concept with observations 0–7, and each validation concept with observations 4–7. They are shuffled once per seed. Budget f gives every arm the same nested prefix, f ∈ {0.05, 0.1, 0.2, 0.4, 0.7, 1.0}. Audit observations (8–11) never enter.
+- *Hybrid arms* train by gradient on the prefix's training-role items (observations 0–3 of training concepts). They run every held-out test on its validation-role items (observations 4–7). At f = 1 this is exactly E10.0's data.
+- **P trains on every item of the prefix.** This is *matched data*: the observations a hybrid reads only through its tests are gradient data for P.
+- **P-split** trains on the hybrid's gradient items only. It reads fewer observations than H, and it separates the reflection effect from the cost of holding data out.
+- *Steps per observation.* Training is full batch, so every step visits every observation of the prefix once. A fixed steps-per-observation rule is therefore the same budget of T = 4,000 steps at every f. Compute per step grows with the prefix.
+
+**Shared learner and schedule.**
+- The learner is E10.0's: everything learnable with L2-to-prior, L1 0.02 on candidate masses, entropy prior 0.01, Adam lr 0.02, initial candidate mass 0.1 when a slot opens, scale-free HRR.
+- A blank slot opens at step 0 and another after every K = 800 steps. Every arm follows this schedule, so P and H have the same number of slots at every step (5 at the end). K is E10.0's round length.
+- A fresh Adam optimizer starts each round, as in E10.0.
+- Reflection rounds are at steps 800, 1,600, 2,400 and 3,200; the last 800 steps are passive in every arm.
+
+**Arms** (same world, observation order, initialization and slot schedule):
+
+| Arm | What it does |
+|---|---|
+| **P** passive | open slots and open candidates trained by gradient for the whole budget; no interpretation, no self-test, no crystallization, no rule closure |
+| **P-split** | P on the hybrid's gradient observations only (decomposition) |
+| **H** hybrid | every K steps a reflection round. For each open slot: riddle hypotheses (E10.6) generated from its captured pairs and scored on held-out pairs; the E10.0 slot self-test. If accepted: **commit** (crystallize: operator frozen, members hard-assigned) and enforce the adopted rule as an explicit write (closure edges added, violations pruned). A rejected slot stays open, with no write. Passive learning continues |
+| **H+R** | H plus the existing offline revision pass before the round's new commitments: `dream_pass` restricted to *reopen* or *remove* a committed relation, each against an equally long control refit (150 steps), accepted iff the held-out cluster-bootstrap lower bound is > 0 |
+| **H-rand** (content control) | H's schedule, acceptance and crystallization, but each adopted rule is replaced by a random write of the same size: as many random pairs added under the slot (heads among the rule heads, tails from the candidate tail pool), or as many random members pruned |
+| **H-AMIE** (generator control) | the explanation is the AMIE-style miner's best Horn rule on the captured pairs over the model's own relations (D-B1 language bias, AMIE defaults, highest PCA confidence); same acceptance, same write |
+| **P+compute** (compute control) | P plus extra gradient steps at each round, matching the composition work H's reflection spent in that round (below) |
+| **A-first** | no passive phase: the first reflection is at step 0, on the untrained model. Its members are the initial over-inclusive hypothesis (every open candidate at the initial mass). The round is gated as in H; later rounds are as in H |
+| **A-first-forced** | A-first with the step-0 commitment not gated |
+
+**Reflection step.** `reflect(composer, ctx, settings, policy)` in `e10_active_passive`. It reads only a `LearningContext` and the learnable ontology, contains no world-specific code, and is meant to be reused in E10.9b.
+
+**Compute accounting.** Every composed concept row is counted.
+- A row with gradient counts 3 units: forward plus backward ≈ 3 forwards.
+- A row without gradient counts 1 unit: held-out tests and refits' evaluations.
+- A passive step costs 3 × (concepts in the batch) units.
+- P+compute gets round(H's units in that round / (3 × P's batch)) extra steps at that round, measured in the same cell.
+- Not counted: bootstrap resampling and hypothesis generation, which are small CPU work outside the composer. Their wall time is reported as a second accounting.
+
+**Metrics** (gold and audit observations read only by evaluation code):
+- **Held-out test-concept fit.** E10.0's zero-shot metric: test concepts are never observed in any role; their rows are composed and scored against their audit observations. It is computed at T for every budget, and every 100 steps for the step axis.
+- **Hidden-edge recovery AUC** over the offered candidates (mass × assignment confidence).
+- **Hidden-relation alignment**: ARI on gold hidden-relation edges, mean best Jaccard, and framed-head Jaccard including rule-implied edges.
+- **Rule-implied unobserved edges**: recall of gold hidden-relation pairs headed by test concepts. These appear in no observation any arm reads; P cannot add them by construction.
+- **Test fit without rule edges**: an evaluation-only ablation.
+- **New-word frame F1** at k = 1/2/4 (E10.0 (e)), over seed relations plus every active slot with ≥ 2 members.
+- **Commitments**: number, false commitments (gold verdict as `_slot_decision_eval`: precision ≥ 0.5 and purity ≥ 0.7 on the offered pairs; every commitment at ρ = 0 is false), adopted rules and whether they are true, retractions and revisions.
+
+**Grid and cuts.**
+- Seeds 101, 202, 303, 404, 505. Dev seed 7 is used for pipeline and timing checks only.
+- P, H and H+R: every ρ × every f.
+- P+compute, H-rand and H-AMIE: every f at ρ = 1, and f = 1 at ρ < 1.
+- P-split: every f at ρ ∈ {1, 0}.
+- A-first and A-first-forced: f ∈ {0.2, 1} at every ρ.
+- K sensitivity: K ∈ {400, 1,600} for P and H at ρ ∈ {1, 0}, f ∈ {0.2, 1}.
+- Total: 715 arm-runs in 160 jobs, ≈ 3 CPU-h at 3 single-threaded workers. Nothing was cut for budget beyond these restrictions on the secondary arms.
+
+### Pre-registration (fixed before the main grid)
+
+**Primary.**
+- *Measure.* AULC = the area under the curve of held-out test-concept fit at T over the budget grid, divided by the grid's width (trapezoid on **linear f**, 0.05 → 1). Compare H − P at ρ = 1, paired over the 5 seeds: 95% t-interval and paired percentile bootstrap over seeds.
+- **"Faster"** iff the t-interval of AULC H − P excludes 0 on the positive side.
+- *Observations to criterion.* The smallest f at which H reaches P's f = 1 fit: linear interpolation on ln f between grid points, on the seed-mean curves, with per-seed values reported. "∞" means never reached.
+- **"Much faster"** = faster, with ratio ≤ 0.5 on the seed-mean curves and in ≥ 4 of 5 seeds.
+
+**Secondary.**
+1. AULC on the ln f axis. If it disagrees in sign with the primary, the result is reported as budget-dependent, not as "faster".
+2. Rule-implied unobserved test-head edge recovery, H − P (= H's recall; P is 0 by construction).
+3. AULC H − P+compute.
+4. AULC H − H-rand (content).
+5. AULC H − H-AMIE (generator).
+6. AULC H − P-split (reflection at equal gradient data).
+7. Null world (ρ = 0): non-inferiority of H+R vs P in test fit at f = 1, margin −0.01 (lower 95% t bound > −0.01).
+8. H+R − P-split and H − P-split at f = 1 for ρ ∈ {0, 0.25}: the cost of commitment at equal gradient data.
+9. The fraction of false commitments retracted by H+R at ρ = 0, f = 1.
+10. The ρ curve of the H − P gain (AULC and f = 1 fit, per ρ).
+11. Steps to P's final fit at f = 1 on the step axis (and on the compute axis).
+12. The K sensitivity.
+
+**Refutation readings.**
+- AULC H − P+compute has a t-interval including 0: no speed-up from reflection beyond its compute.
+- AULC H − H-rand has a t-interval including 0: the gain comes from committing and freezing, not from content.
+- H+R is not non-inferior to P at ρ ∈ {0, 0.25}: commitments are harmful where structure is weak.
+
+**E10.9b gate** (decision 53). E10.9b is queued only if AULC H − P > 0 at ρ = 1 with the 95% t-interval excluding 0, **and** AULC H − P+compute > 0 with its t-interval excluding 0.
+
+**Disclosure: the dev-seed pilot ran before this pre-registration.** On seed 7:
+- At f = 1, ρ = 1, H reached test fit 0.718 vs P 0.703 and P-split 0.694. Without its rule edges H was 0.695.
+- At f ≤ 0.1, H tied P-split and was below P (0.620 vs 0.655 at f = 0.1). No rule was adopted at those budgets, and half of H's data is held out for its tests.
+- At ρ = 0, f = 1, H was 0.693 vs P 0.703.
+- The AULC axis had not been fixed before the pilot. Because the pilot shows that the linear and ln f axes can disagree, both are reported. The primary is the literal "area over the budget grid" (linear f), and secondary 1 forbids calling a sign disagreement "faster".
+- Nothing else was changed after the pilot: world, learner, K, T, arms, thresholds and metrics are as above.
+
+**Deviations from the brief.**
+1. P trains on the held-out observations too (matched data). The brief's wording ("the first fraction f of the training observations") also allows P = P-split. Both are run, and the primary uses the matched-data P.
+2. Rejected slots stay open instead of being closed (E10.0 closes them), so the slot schedule is the same in every arm.
+3. The revision pass in H+R is restricted to committed relations: no edge removal, relabelling, split or merge. "Newer data" is read as "the model after further passive learning"; within a run the data do not change.
+4. A-first is the gated active-first variant, with the ungated one added (A-first-forced). With a gate, a step-0 round can only commit if the untrained slot passes the held-out test.
+5. Frame F1 includes active slots, not only crystallized ones, so that P is not penalized.
+
+### E10.9 results (run `experiments/e10-self-semantics/runs/e10.9-v1`, 5 seeds, CPU)
+
+**Run.** 160 jobs and 715 arm-runs on 3 single-threaded workers: 65 min wall, 3.2 CPU-h. Recorded at `f671ef2` with a clean tree. The full tables are in the run's `report.md`. Numbers below are means [95% t-interval over the 5 seeds], with a paired bootstrap over seeds where it adds information.
+
+**Verdict: at matched data, the hybrid is not faster than passive learning, so the E10.9b gate is not met.**
+- Primary: AULC (linear f) H − P at ρ = 1 is **−0.003 [−0.019, +0.013]** (bootstrap [−0.013, +0.007]).
+- On the ln f axis H is *slower*: −0.013 [−0.026, −0.001].
+- Observations to P's full-data fit: 0.60 of P's data on the seed-mean curve; per seed ∞ / 0.50 / 0.82 / 0.31 / 0.47. That is ≤ 0.5 in 3 of 5 seeds, so not "much faster".
+- E10.9b gate (decision 53):
+  - AULC H − P excludes 0: **no**;
+  - AULC H − P+compute excludes 0: **no** (−0.003 [−0.019, +0.013]).
+  - E10.9b is therefore not queued.
+
+**Test-concept fit by data budget, ρ = 1** (test concepts are never observed; they are composed only):
+
+| Arm | f = 0.05 | 0.1 | 0.2 | 0.4 | 0.7 | 1.0 | AULC (linear f) |
+|---|---|---|---|---|---|---|---|
+| P (passive, all observations) | 0.616 | 0.644 | 0.667 | 0.682 | 0.687 | 0.688 [0.673, 0.703] | 0.677 |
+| P-split (passive, hybrid's gradient data) | 0.580 | 0.613 | 0.641 | 0.662 | 0.675 | 0.679 [0.666, 0.693] | 0.660 |
+| H (hybrid) | 0.582 | 0.615 | 0.652 | 0.678 | 0.692 | **0.700** [0.696, 0.704] | 0.674 |
+| H+R (+ revision) | 0.583 | 0.617 | 0.656 | 0.682 | 0.698 | **0.703** [0.699, 0.707] | 0.679 |
+| H-rand (random write, same size) | 0.583 | 0.611 | 0.629 | 0.646 | 0.657 | 0.660 [0.632, 0.689] | 0.644 |
+| H-AMIE (AMIE explanation) | 0.583 | 0.612 | 0.656 | 0.674 | 0.694 | 0.693 [0.680, 0.707] | 0.673 |
+| P+compute | 0.616 | 0.644 | 0.667 | 0.682 | 0.687 | 0.688 | 0.677 |
+| A-first (gated) | — | — | 0.646 | — | — | 0.691 [0.679, 0.702] | — |
+| A-first-forced | — | — | 0.644 | — | — | 0.678 [0.665, 0.692] | — |
+
+**What happens, in order.**
+
+1. **Holding data out for self-tests costs as much as reflection gains.**
+   - Reflection needs a held-out split: H trains on half of the observations it reads and tests on the other half.
+   - The passive learner turns those same observations into gradient data. That is worth P − P-split = +0.018 AULC [+0.013, +0.022]: +0.035 at f = 0.05, falling to +0.009 at f = 1.
+   - At equal gradient data, reflection adds H − P-split = +0.015 AULC [−0.002, +0.031] (bootstrap [+0.005, +0.025]). At f = 1 it adds +0.021 [+0.006, +0.035]. With revision, H+R − P-split is +0.019 [+0.004, +0.035].
+   - The reflection gain grows with the budget (+0.002 at f ≤ 0.1, +0.011 at f = 0.2, +0.021 at f = 1) while the holdout cost shrinks. So H − P runs from −0.033 [−0.041, −0.025] at f = 0.05 to +0.012 [−0.004, +0.028] at f = 1. The crossing is between f = 0.4 and f = 0.7; at f = 1, H is ahead in 4 of 5 seeds.
+
+2. **The whole gain is the rule-implied edges, and they reach concepts that no observation covers.**
+   - With its rule edges removed afterwards, H's test fit is 0.681, the same as P-split (0.679).
+   - The rule edges recover 0.38 [0.18, 0.59] of the hidden-relation edges headed by test concepts, at gold precision 0.81. These edges are in no observation any arm reads, so P recovers 0 by construction.
+   - The rules that do this:
+     - `inverse_of:part_of`, adopted for has_part slots: +0.013 test fit per write;
+     - `symmetric`, adopted for similar_to slots: +0.009 per write.
+   - At f = 1, ρ = 1, H adopted 12 rules, 11 of them true of the matched relation. Closure rules first appear at f = 0.1 (in 3 of 5 seeds) and are routine from f = 0.2, once a slot has captured enough pairs; at f = 0.05 only two false prune-type rules are adopted and no closure edge is written.
+
+3. **On the step axis, passive learning stops early and the writes keep going** (ρ = 1, f = 1, seed means).
+   - P reaches 0.6885 by step 100 and never moves again; nor does P-split (0.680).
+   - H follows P-split until its first reflection, then rises at each round: 0.680 → 0.6875 at step 800 (symmetric commitments) → 0.698 at 1,600 (inverse_of:part_of) → 0.700 at 2,400.
+   - After step 100, every rise in either curve is a write. Gradient steps alone never reach H's final level, because the edges the rules add are not among the learner's candidates.
+   - "Steps to P's final fit" is 844 for H (just after its first write) and 100 for P.
+
+4. **Controls.**
+   - **P+compute ≡ P.** One reflection round composes as many rows as 0.19 passive steps (3.6 steps of wall time; H+R's refit-based revision ≈ 480 steps). Extra steps cannot move a passive learner that has plateaued. The pre-registered refutation reading "H ≈ P+compute" is formally met, but only because H ≈ P. Compute explains nothing either way.
+   - **Content matters: H − H-rand = +0.030 [+0.006, +0.054].** Each of H-rand's 10 random rule writes at f = 1 lowered test fit (−0.010 on average). They leave H-rand below P-split (0.660 vs 0.679 at f = 1). The refutation reading "H ≈ H-rand" is not met: the gain is the content of the explanation, not committing or freezing as such.
+   - **The generator does not matter: H − H-AMIE = +0.001 [−0.004, +0.007].** AMIE on the captured pairs finds the same symmetric and inverse rules, consistent with D-B1. It also adopts more false ones (3 of 11 at f = 1, vs 1 of 12 for the riddle step); one `inverse_of:part_of` on a located_in slot cost −0.022.
+   - **The passive phase is needed.**
+     - A-first's step-0 self-test rejected the untrained over-inclusive slot in **40 of 40** runs. The gate refuses to commit before passive learning, after which A-first behaves like H: 0.691 vs 0.700, +0.009 [−0.001, +0.020].
+     - Forcing the step-0 commitment (A-first-forced) locks all ≈ 300 offered candidates into one frozen, random-operator relation. Hidden-edge AUC is 0.50 (chance), no rule is adopted later, and test fit is 0.678 at every ρ: −0.010 [−0.014, −0.006] below P and −0.022 [−0.036, −0.007] below H.
+
+5. **The ρ curve: reflection pays only when the structure is intact.**
+
+   | ρ | AULC H − P (linear f) | test fit H − P at f = 1 | H+R − P at f = 1 | rules adopted / commitments (H, f = 1, 5 runs) |
+   |---|---|---|---|---|
+   | 1.0 | −0.003 [−0.019, +0.013] | +0.012 [−0.004, +0.028] | +0.015 [−0.003, +0.033] | 12 / 18 |
+   | 0.5 | −0.018 [−0.026, −0.009] | −0.007 [−0.015, −0.000] | −0.004 [−0.017, +0.009] | 3 / 20 |
+   | 0.25 | −0.018 [−0.023, −0.012] | −0.011 [−0.018, −0.004] | −0.011 [−0.017, −0.005] | 2 / 19 |
+   | 0.0 | −0.018 [−0.022, −0.014] | −0.008 [−0.013, −0.003] | −0.009 [−0.015, −0.002] | 2 / 20 |
+
+   Relative to the null world, where H − P is just the holdout cost, reflection is worth +0.015 AULC at ρ = 1 and nothing at ρ ≤ 0.5. Half the planted pairs are already too few for a closure rule to be adopted.
+
+6. **The null world (ρ = 0): wrong commitments are inert, and they are not retracted.**
+   - H commits 4.0 slots per run, every one false. That is as many as at ρ = 1, matching the D-B4 finding that the slot self-test does not control false discoveries.
+   - Only 2 of 20 false commitments got a rule, both prune-type (`antisymmetric`, `one_to_one`); no closure rule was ever adopted. The immediate effect of a committing round on test fit is 0.000.
+   - The commitments cost nothing measurable at equal gradient data: H − P-split = +0.0006 [−0.0002, +0.0014] and H+R − P-split = −0.0002 [−0.0016, +0.0012] at f = 1.
+   - **Retraction: H+R retracted 0 of 19 false commitments at f = 1** (2 of 84 over all budgets; 8 more were reopened and re-committed). The revision pass removes a relation only if removing it *improves* held-out fit. A wrong commitment that does no harm is never removed, so here the null world's false commitments persist but are inert.
+   - The pre-registered non-inferiority of H+R vs P **fails** at ρ = 0 (−0.0087 [−0.0149, −0.0024]) and ρ = 0.25 (−0.0107 [−0.0168, −0.0046]): lower bounds below −0.01. So the refutation reading "commitments harmful where structure is weak" is formally met. The decomposition (secondary 8) attributes the deficit to the held-out split (P − P-split = +0.0085 at f = 1), not to the commitments.
+
+7. **Other readouts at f = 1, ρ = 1.**
+   - Hidden-edge AUC is H 0.867 vs P 0.854.
+   - On the offered candidates, P sorts better: ARI 0.60 vs 0.42, mean best Jaccard 0.52 vs 0.45; H+R recovers to 0.54 / 0.52.
+   - Counting rule edges over all framed heads, H's relations are far more complete: Jaccard 0.47 vs 0.26.
+   - New-word frame F1 at k = 1/2/4 is H 0.40 / 0.55 / 0.65 vs P 0.45 / 0.58 / 0.66: no gain from committed relations.
+   - The reflection interval is irrelevant at full data. With K = 400 / 800 / 1,600, H scores 0.698 / 0.700 / 0.697 and P 0.687 / 0.688 / 0.688 (ρ = 1, f = 1).
+   - H+R vs H: +0.004 AULC [−0.003, +0.012]. Its observations to criterion are 0.49 on the seed-mean curve, but 3 of 5 seeds is below the pre-registered bar (≥ 4).
+
+**What it implies.**
+- **Supported, narrowly.** In the planted world, committing a held-out-tested explanation of a learned relation as an explicit write does something passive gradient learning never does here: it writes edges for concepts that no observation covers.
+  - At equal gradient data this raises zero-shot test-concept fit by +0.021 [+0.006, +0.035].
+  - It depends on the content of the explanation (random writes of the same size hurt), not on the generator (AMIE and the riddle step tie).
+  - It needs a passive phase first: the gate refuses to commit untrained slots, and a forced early commitment is harmful.
+- **Not supported.** The author's "learn much faster".
+  - At matched data, the observations the self-tests need are worth as much to a passive learner as the rules are worth to the hybrid.
+  - The hybrid gains only at large budgets (f ≥ 0.7) and only when the structure is intact (ρ = 1).
+  - The 0.5 observations-to-criterion bar is met in 3 of 5 seeds, not 4.
+- **Null world.** Wrong commitments cost nothing measurable in this world. They are not retracted either, because the revision test only removes what demonstrably hurts. "Later reflection retracts wrong commitments" is not supported.
+- **Unmeasured by design.** The world makes a wrong commitment cheap: false slots almost never adopt a closure rule, and frozen random-pair slots touch only training heads. A world where wrong closures fire would measure the cost that E10.9a cannot.
+- **What would change the matched-data verdict.**
+  - A self-test that needs no separate held-out split; the D-B4 co-adaptation problem makes in-sample tests unreliable.
+  - Or a regime where held-out evidence is free. In joint LM training, held-out text windows cost no training data, and that is the E10.9b setting. But the pre-registered gate is not met, so E10.9b stays a design (execution.md).
+
+**Human-learning comparison (a labelled qualitative analogy, not evidence; citations not verified in this session).**
+- H resembles **propose-but-verify** word learning (Trueswell, Medina, Hafri & Gleitman 2013, *Cognitive Psychology*): commit one hypothesis per word, keep it unless disconfirmed.
+- P resembles **cross-situational statistical accumulation** (Yu & Smith 2007, *Psychological Science*): keep graded associations and let co-occurrence decide.
+- E10.9a does not test which strategy humans use. What it shows is narrower:
+  - in this learner, a committed hypothesis is valuable when it licenses predictions beyond the observed pairs (closure rules), not as a faster route to the same associations;
+  - "verify" only removes hypotheses that demonstrably hurt;
+  - "verify" costs data the accumulator could have used.
+
+**Deviations and disclosures.**
+1. **The first launch of the main grid failed** at seed 303, ρ = 1, f = 0.4. Under a data budget some captured slot heads lack held-out observations, and the riddle's `sub_relation_of` negatives are headed by captured heads, so `score_hypotheses` raised. The process pool then waited for every queued job.
+   - The fix (`f671ef2`) is an opt-in `testable_only` that skips untestable predictions. It is a no-op at f = 1 and in every recorded E10 run (tested). The runner now fails fast.
+   - The partial rows of that launch (seeds 101 and 202 complete) were inspected before the fix. The fix does not depend on them, and the rerun reproduces the inspected values.
+   - Nothing else changed between the pre-registration (`decefae`) and the run.
+2. P+compute matched H's reflection work as pre-registered; it is ≈ 0.2 steps per round, so P+compute ≈ P.
+3. "Retraction" counts `remove_slot` revisions; `reopen` revisions re-commit the relation with refitted members and are reported separately.
+
+**Reproduce.**
+
+```bash
+PY=~/anaconda3/envs/vsa-repro/bin/python
+PYTHONPATH=src CUDA_VISIBLE_DEVICES= OMP_NUM_THREADS=1 $PY -m vsa_embed.experiments.e10_active_passive \
+  --config experiments/e10-self-semantics/e10.9-active-passive.yaml --output experiments/e10-self-semantics/runs/e10.9-v1 --workers 3
+PYTHONPATH=src $PY -m vsa_embed.experiments.e10_active_passive --report experiments/e10-self-semantics/runs/e10.9-v1
+```

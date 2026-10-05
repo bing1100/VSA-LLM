@@ -249,13 +249,17 @@ class HypothesisScore:
 def score_hypotheses(composer: LearnableOntologyComposer, column: int, hypotheses: Sequence[StructuralHypothesis],
                      pairs: set[Pair], relations: dict[str, set[Pair]], data: HeldOutData, nodes: NodeMap, *,
                      mass: float, tail_pool: Sequence[Hashable], limit: int = 400, resamples: int = 1000, seed: int = 0,
-                     alpha: float = 0.025) -> list[HypothesisScore]:
+                     alpha: float = 0.025, testable_only: bool = False) -> list[HypothesisScore]:
     """Test each hypothesis by its predictions on unseen pairs, scored on held-out observations.
 
     Each predicted pair `(h, t)` gets the held-out utility of adding the edge `(h, slot, t)`; a matched
     control pair `(h, t')` with a random tail gives the chance level. A prediction's contrast is
     `±(u − u_control)` (+ for "should hold", − for "should not hold"); the score is the mean contrast,
     cluster-bootstrapped over heads. A hypothesis passes if its lower bound is > 0.
+
+    `testable_only` (opt-in, E10.9): drop predictions whose head has no held-out observations instead of
+    failing. Some predictions (`sub_relation_of` negatives) are headed by the captured pairs' heads, which all
+    have held-out observations when every training concept does (E10.0–E10.8), but not under data budgets.
     """
     heads_ok = {nodes.node_of_concept[int(c)] for c in data.concepts.tolist()}
     tails_ok = set(nodes.atomic_of_node)
@@ -266,6 +270,8 @@ def score_hypotheses(composer: LearnableOntologyComposer, column: int, hypothese
         positive, negative = hypothesis.predict(pairs, relations, heads=heads_ok, tails=tails_ok, limit=limit, seed=seed + index)
         items = [(p, 1.0) for p in sorted(positive, key=repr)] + [(p, -1.0) for p in sorted(negative, key=repr)]
         items = [(p, s) for p, s in items if p[0] in nodes.concept_of_node and p[1] in nodes.atomic_of_node]
+        if testable_only:
+            items = [(p, s) for p, s in items if data.has(nodes.concept_of_node[p[0]])]
         if not items or not pool:
             scores.append(HypothesisScore(hypothesis, len(positive), len(negative), 0.0, float("-inf"), float("nan"),
                                           False, set(positive)))
