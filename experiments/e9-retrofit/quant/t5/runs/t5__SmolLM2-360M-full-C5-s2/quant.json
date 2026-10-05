@@ -1,0 +1,401 @@
+{
+  "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5-s2",
+  "id": "t5__SmolLM2-360M-full-C5-s2",
+  "windows": 1024,
+  "channel": "compose",
+  "variants": {
+    "ref": {
+      "strata": {
+        "all": {
+          "loss": 0.6372673765538608,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 1.023573108781308,
+          "tokens": 286528
+        },
+        "after": {
+          "loss": 0.5534511547183358,
+          "tokens": 482798
+        },
+        "after_heldout": {
+          "loss": 0.7546077104424678,
+          "tokens": 50123
+        },
+        "after_rare": {
+          "loss": 0.7841895251646499,
+          "tokens": 41193
+        },
+        "after_mid": {
+          "loss": 0.7478896527375288,
+          "tokens": 124227
+        },
+        "after_frequent": {
+          "loss": 0.39683921040499737,
+          "tokens": 272974
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 0.5857214288605798,
+          "tokens": 310
+        },
+        "after_len3plus": {
+          "loss": 0.5534303140622668,
+          "tokens": 482522
+        },
+        "after_unseen": {
+          "loss": 0.8115746622200237,
+          "tokens": 4907
+        },
+        "after_rare_seen": {
+          "loss": 0.7803725794885775,
+          "tokens": 36303
+        },
+        "unlinked": {
+          "loss": 0.5155206682461559,
+          "tokens": 380816
+        }
+      },
+      "ppl": 1.8913055854740652,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 629145600,
+        "lora": 0,
+        "other": 124800,
+        "channel": 2319606,
+        "channel_schedule": 68386,
+        "total": 726030232,
+        "linear_nominal": 629145600,
+        "total_nominal": 726030232
+      },
+      "seconds": 24.65
+    },
+    "int8-A": {
+      "strata": {
+        "all": {
+          "loss": 0.6408889449819675,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 1.0256744130850104,
+          "tokens": 286528
+        },
+        "after": {
+          "loss": 0.5551602048315561,
+          "tokens": 482798
+        },
+        "after_heldout": {
+          "loss": 0.7595998676020661,
+          "tokens": 50123
+        },
+        "after_rare": {
+          "loss": 0.7857889113323069,
+          "tokens": 41193
+        },
+        "after_mid": {
+          "loss": 0.7495207172679286,
+          "tokens": 124227
+        },
+        "after_frequent": {
+          "loss": 0.3979933766371179,
+          "tokens": 272974
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 0.5876883265592399,
+          "tokens": 310
+        },
+        "after_len3plus": {
+          "loss": 0.555137478976833,
+          "tokens": 482522
+        },
+        "after_unseen": {
+          "loss": 0.8138690205195637,
+          "tokens": 4907
+        },
+        "after_rare_seen": {
+          "loss": 0.7818785807358918,
+          "tokens": 36303
+        },
+        "unlinked": {
+          "loss": 0.5221713154131933,
+          "tokens": 380816
+        }
+      },
+      "ppl": 1.898167496009668,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 315955200,
+        "lora": 0,
+        "other": 124800,
+        "channel": 2319606,
+        "channel_schedule": 68386,
+        "total": 412839832,
+        "linear_nominal": 315125760,
+        "total_nominal": 412010392
+      },
+      "bits": 8,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 224,
+      "linear_skipped": [],
+      "seconds": 30.19
+    },
+    "int8-B": {
+      "strata": {
+        "all": {
+          "loss": 0.6408689280758855,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 1.0256250435575887,
+          "tokens": 286528
+        },
+        "after": {
+          "loss": 0.5551776780504929,
+          "tokens": 482798
+        },
+        "after_heldout": {
+          "loss": 0.7596903012631895,
+          "tokens": 50123
+        },
+        "after_rare": {
+          "loss": 0.7859406887398287,
+          "tokens": 41193
+        },
+        "after_mid": {
+          "loss": 0.7495897034487835,
+          "tokens": 124227
+        },
+        "after_frequent": {
+          "loss": 0.3979502571172644,
+          "tokens": 272974
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 0.5916156470775604,
+          "tokens": 310
+        },
+        "after_len3plus": {
+          "loss": 0.5551526954543329,
+          "tokens": 482522
+        },
+        "after_unseen": {
+          "loss": 0.8142530927838826,
+          "tokens": 4907
+        },
+        "after_rare_seen": {
+          "loss": 0.782000353463546,
+          "tokens": 36303
+        },
+        "unlinked": {
+          "loss": 0.5221484679393641,
+          "tokens": 380816
+        }
+      },
+      "ppl": 1.8981295009494454,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 315955200,
+        "lora": 0,
+        "other": 124800,
+        "channel": 1168869,
+        "channel_schedule": 68386,
+        "total": 411689095,
+        "linear_nominal": 315125760,
+        "total_nominal": 410859655
+      },
+      "bits": 8,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 224,
+      "linear_skipped": [],
+      "seconds": 30.18
+    },
+    "int4-A": {
+      "strata": {
+        "all": {
+          "loss": 0.8831382678750673,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 1.4087163206453646,
+          "tokens": 286528
+        },
+        "after": {
+          "loss": 0.7327618488024494,
+          "tokens": 482798
+        },
+        "after_heldout": {
+          "loss": 0.974961583518217,
+          "tokens": 50123
+        },
+        "after_rare": {
+          "loss": 0.9999496137323468,
+          "tokens": 41193
+        },
+        "after_mid": {
+          "loss": 0.9646953253057533,
+          "tokens": 124227
+        },
+        "after_frequent": {
+          "loss": 0.5447515841102025,
+          "tokens": 272974
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 0.7618488167562792,
+          "tokens": 310
+        },
+        "after_len3plus": {
+          "loss": 0.7327582110650525,
+          "tokens": 482522
+        },
+        "after_unseen": {
+          "loss": 1.0386494691342278,
+          "tokens": 4907
+        },
+        "after_rare_seen": {
+          "loss": 0.9945237579232218,
+          "tokens": 36303
+        },
+        "unlinked": {
+          "loss": 0.7584958919321437,
+          "tokens": 380816
+        }
+      },
+      "ppl": 2.418477640089355,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 194641920,
+        "lora": 0,
+        "other": 124800,
+        "channel": 2319606,
+        "channel_schedule": 68386,
+        "total": 291526552,
+        "linear_nominal": 176947200,
+        "total_nominal": 273831832
+      },
+      "bits": 4,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 224,
+      "linear_skipped": [],
+      "seconds": 66.86
+    },
+    "int4-B": {
+      "strata": {
+        "all": {
+          "loss": 0.8831018343465885,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 1.408552451407454,
+          "tokens": 286528
+        },
+        "after": {
+          "loss": 0.7329643892703315,
+          "tokens": 482798
+        },
+        "after_heldout": {
+          "loss": 0.9749969220005895,
+          "tokens": 50123
+        },
+        "after_rare": {
+          "loss": 1.000817747817344,
+          "tokens": 41193
+        },
+        "after_mid": {
+          "loss": 0.9649196824569387,
+          "tokens": 124227
+        },
+        "after_frequent": {
+          "loss": 0.5449089235819505,
+          "tokens": 272974
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 0.7565439374216141,
+          "tokens": 310
+        },
+        "after_len3plus": {
+          "loss": 0.7329638171776365,
+          "tokens": 482522
+        },
+        "after_unseen": {
+          "loss": 1.0402648567011576,
+          "tokens": 4907
+        },
+        "after_rare_seen": {
+          "loss": 0.9952914587338791,
+          "tokens": 36303
+        },
+        "unlinked": {
+          "loss": 0.7582717048616491,
+          "tokens": 380816
+        }
+      },
+      "ppl": 2.418389528020506,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 194641920,
+        "lora": 0,
+        "other": 124800,
+        "channel": 652505,
+        "channel_schedule": 68386,
+        "total": 289859451,
+        "linear_nominal": 176947200,
+        "total_nominal": 272164731
+      },
+      "bits": 4,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 224,
+      "linear_skipped": [],
+      "seconds": 66.79
+    }
+  },
+  "condition": "C5",
+  "seed": 2,
+  "model": "HuggingFaceTB/SmolLM2-360M/train",
+  "cohort": [
+    "HuggingFaceTB/SmolLM2-360M/train",
+    50000000,
+    1024,
+    1024,
+    "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval",
+    "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+    2
+  ],
+  "ref_check": {
+    "available": true,
+    "paired": true,
+    "final_tokens": 49938432,
+    "counts_equal": true,
+    "max_abs_window_sum_diff": 2.2004439119257313
+  }
+}
