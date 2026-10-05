@@ -1,0 +1,248 @@
+{
+  "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t4/SmolLM2-135M-frozen-P0-s1",
+  "id": "t4__SmolLM2-135M-frozen-P0-s1",
+  "windows": 1024,
+  "channel": "none",
+  "variants": {
+    "ref": {
+      "strata": {
+        "all": {
+          "loss": 2.753039608952587,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 0.7120821871755385,
+          "tokens": 2247
+        },
+        "after": {
+          "loss": 2.4553234346794963,
+          "tokens": 10742
+        },
+        "after_heldout": {
+          "loss": 2.3413238405362966,
+          "tokens": 874
+        },
+        "after_rare": {
+          "loss": 2.0992532815826075,
+          "tokens": 445
+        },
+        "after_mid": {
+          "loss": 2.531217435814411,
+          "tokens": 2301
+        },
+        "after_frequent": {
+          "loss": 2.454901420009653,
+          "tokens": 7543
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.505147244274338,
+          "tokens": 7077
+        },
+        "after_len3plus": {
+          "loss": 2.380668621541398,
+          "tokens": 4308
+        },
+        "after_unseen": {
+          "loss": 1.9357040723164876,
+          "tokens": 48
+        },
+        "after_rare_seen": {
+          "loss": 2.1099498867988586,
+          "tokens": 400
+        },
+        "unlinked": {
+          "loss": 2.759394353710164,
+          "tokens": 1035089
+        }
+      },
+      "ppl": 15.6902517042569,
+      "bytes": {
+        "embedding": 56623104,
+        "head": 0,
+        "linear": 212336640,
+        "lora": 0,
+        "other": 70272,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 269030016,
+        "linear_nominal": 212336640,
+        "total_nominal": 269030016
+      },
+      "seconds": 12.08
+    },
+    "int8-A": {
+      "strata": {
+        "all": {
+          "loss": 2.7561973653813845,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 0.7157249565277304,
+          "tokens": 2247
+        },
+        "after": {
+          "loss": 2.458141689836768,
+          "tokens": 10742
+        },
+        "after_heldout": {
+          "loss": 2.342180017475678,
+          "tokens": 874
+        },
+        "after_rare": {
+          "loss": 2.099817535314667,
+          "tokens": 445
+        },
+        "after_mid": {
+          "loss": 2.5325336232489994,
+          "tokens": 2301
+        },
+        "after_frequent": {
+          "loss": 2.4583581729480795,
+          "tokens": 7543
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.5081825984034714,
+          "tokens": 7077
+        },
+        "after_len3plus": {
+          "loss": 2.383036043207847,
+          "tokens": 4308
+        },
+        "after_unseen": {
+          "loss": 1.9364024996757507,
+          "tokens": 48
+        },
+        "after_rare_seen": {
+          "loss": 2.1106000208854674,
+          "tokens": 400
+        },
+        "unlinked": {
+          "loss": 2.762556611979743,
+          "tokens": 1035089
+        }
+      },
+      "ppl": 15.739876006940468,
+      "bytes": {
+        "embedding": 56623104,
+        "head": 0,
+        "linear": 106945920,
+        "lora": 0,
+        "other": 70272,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 163639296,
+        "linear_nominal": 106479360,
+        "total_nominal": 163172736
+      },
+      "bits": 8,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 210,
+      "linear_skipped": [],
+      "seconds": 14.96
+    },
+    "int4-A": {
+      "strata": {
+        "all": {
+          "loss": 3.0614763560066707,
+          "tokens": 1047552
+        },
+        "inside": {
+          "loss": 1.1042796467270488,
+          "tokens": 2247
+        },
+        "after": {
+          "loss": 2.7717191475637573,
+          "tokens": 10742
+        },
+        "after_heldout": {
+          "loss": 2.66608090367961,
+          "tokens": 874
+        },
+        "after_rare": {
+          "loss": 2.530680800020025,
+          "tokens": 445
+        },
+        "after_mid": {
+          "loss": 2.883648542879147,
+          "tokens": 2301
+        },
+        "after_frequent": {
+          "loss": 2.7557847671478446,
+          "tokens": 7543
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.805549676562831,
+          "tokens": 7077
+        },
+        "after_len3plus": {
+          "loss": 2.725728889472416,
+          "tokens": 4308
+        },
+        "after_unseen": {
+          "loss": 2.1554041703542075,
+          "tokens": 48
+        },
+        "after_rare_seen": {
+          "loss": 2.5676979494094847,
+          "tokens": 400
+        },
+        "unlinked": {
+          "loss": 3.0676276614257323,
+          "tokens": 1035089
+        }
+      },
+      "ppl": 21.35906748365358,
+      "bytes": {
+        "embedding": 56623104,
+        "head": 0,
+        "linear": 99532800,
+        "lora": 0,
+        "other": 70272,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 156226176,
+        "linear_nominal": 59719680,
+        "total_nominal": 116413056
+      },
+      "bits": 4,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 210,
+      "linear_skipped": [],
+      "seconds": 34.99
+    }
+  },
+  "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/eval-general",
+  "condition": "P0",
+  "seed": 1,
+  "model": "HuggingFaceTB/SmolLM2-135M/frozen",
+  "cohort": [
+    "HuggingFaceTB/SmolLM2-135M/frozen",
+    50000000,
+    1024,
+    1024,
+    "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/eval",
+    "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+    2
+  ],
+  "ref_check": {
+    "available": true,
+    "paired": false,
+    "detail": "different evaluation windows"
+  }
+}

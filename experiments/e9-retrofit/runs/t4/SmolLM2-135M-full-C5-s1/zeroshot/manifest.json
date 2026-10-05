@@ -1,0 +1,62 @@
+{
+  "schema_version": 2,
+  "created_at": "2026-10-05T06:53:11.730202+00:00",
+  "git_sha": "0df30d2bcd9e07f8135f4763188d9c8049ddd26a",
+  "git_dirty": false,
+  "git_state_recorded_at": "run start",
+  "python": "3.12.4",
+  "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+  "packages": {
+    "torch": "2.11.0+cu128",
+    "transformers": "4.54.0",
+    "nltk": "3.8.1",
+    "PyYAML": "6.0.2",
+    "numpy": "2.2.6",
+    "safetensors": "0.5.3",
+    "vsa-embed": "0.1.0.dev0"
+  },
+  "device": "cuda",
+  "cuda_device": "NVIDIA GeForce RTX 3090",
+  "torch_num_threads": 6,
+  "argv": [
+    "/home/bhux/workplace/VSA-LLM/src/vsa_embed/experiments/e9_tracks.py",
+    "zeroshot",
+    "--run",
+    "experiments/e9-retrofit/runs/t4/SmolLM2-135M-full-C5-s1",
+    "--track",
+    "t4",
+    "--alias-table",
+    "/home/bhux/data/vsa-llm/e9/alias-tables/t4.json",
+    "--output",
+    "experiments/e9-retrofit/runs/t4/SmolLM2-135M-full-C5-s1/zeroshot"
+  ],
+  "config_sha256": "9a78e40f0a1b25e924d9f4c5b1797ff3cd7b770700309f6195881b2e0d450084",
+  "source": {
+    "run": "experiments/e9-retrofit/runs/t4/SmolLM2-135M-full-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t4-SmolLM2-135M-full-C5-s1",
+    "run_git_sha": "0df30d2bcd9e07f8135f4763188d9c8049ddd26a",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  }
+}

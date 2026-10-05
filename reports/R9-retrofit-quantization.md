@@ -1,6 +1,6 @@
 # R9 — Retrofit × quantization × ontology editing (E9)
 
-**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seed 1 (addendum below; seed 2 queued). T4 chemistry, T1-open and the WordNet negative control are running. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
+**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seed 1 (addendum below; seed 2 queued). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open and the WordNet negative control are running. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
 
 **Question (author request 2026-10-02).** (1) Does a VSA ontology channel trained jointly with a pretrained model improve it on long-token, rare and out-of-distribution words? (2) Is the gap larger after weight quantization? (3) After training, can the model learn new or changed words zero-shot by editing the ontology alone?
 
@@ -83,6 +83,34 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 ## Next
 
 T4 chemistry and T1-open (natural text with rare multi-token terms; running now), the WordNet negative control, Qwen3 seed 2, the PQ1 controls (channel off at INT4, GPTQ/AWQ/HQQ/NF4, quantized embeddings, the C5 arm variants, 3 seeds on T5 and T4), the Qwen3.5 block, and the dimension-3 knowledge-editing baselines.
+
+## T4 chemistry — natural text (SmolLM2-360M / 135M, seed 1, 2026-10-05)
+
+Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entities (IUPAC and trivial names as multi-token aliases) in ChEBI entry texts and PubMed chemistry abstracts, half general text (FineWeb-Edu); same recipe, design and test protocol as T5. This is the test of the copy concern: T5 text is generated from the ontology the channel reads, T4 text is not (except the ChEBI entry texts, which are curated definitions). Seed 1 only; intervals are over windows/items.
+
+**Dimension 1 (bf16), C5 − C0′ relative loss [95% CI], all Holm-significant:**
+
+| Stratum | targets | 360M: C5 − C0′ | 360M: C5 − C2 | 135M: C5 − C0′ | 135M: C5 − C2 | T5 360M (3 seeds), for scale |
+|---|---:|---|---|---|---|---|
+| after held-out terms | 35,747 | −0.40% [−0.56, −0.24] | −0.15% | −0.63% [−0.85, −0.41] | −0.40% | −13.3% |
+| after unseen terms | 9,792 | **−2.32% [−2.78, −1.90]** | −2.16% | **−3.70% [−4.17, −3.23]** | −3.63% | −6.6% |
+| after rare terms | 31,458 | −0.87% [−1.03, −0.72] | −0.85% | −1.62% [−1.82, −1.43] | −1.56% | −6.0% |
+| after 3+-subtoken terms | 185,109 | −1.08% [−1.16, −1.00] | −0.84% | −1.73% [−1.83, −1.62] | −1.46% | −7.6% |
+| inside terms | 130,661 | −1.55% [−1.68, −1.42] | −1.13% | −2.03% [−2.19, −1.88] | −1.73% | +0.04% |
+| unlinked text (locality) | 739,780 | −0.01% | −0.01% | −0.03% | −0.02% | −0.03% |
+
+- **The direction replicates on natural text; the size does not.** C5 beats both C0′ and the free table on every term stratum with no locality cost, but by 0.4–3.7% instead of 6–13%. The held-out-term gain, the largest on T5, is the smallest on T4 (−0.4 / −0.6%). Most of T5's held-out effect is therefore likely the copy confound (continuations verbalize frame fillers); the filler / non-filler rescoring (PQ1) quantifies this.
+- **The gain is largest after unseen terms** (−2.3 / −3.7%) and **inside terms** (−1.6 / −2.0%; zero on T5). The inside gain is consistent with nested chemical names, where a shorter linked name ends inside a longer one and its injected vector helps predict the rest (not yet checked).
+- **On T4 the smaller host gains more** (135M > 360M on every stratum), the reverse of T5.
+
+**Dimension 2 (INT4 RTN, channel FP16):** the advantage shrinks under INT4 on every term stratum (retained 0.50–0.99×; DiD significant at 135M on inside, 3+-subtoken, rare and held-out). At 135M the held-out-term advantage reverses (C5 0.009 nats worse than C0′ at INT4). On natural text quantization does not enlarge the gap; it partly erases it.
+
+**Dimension 3 (zero-shot by ontology editing): no effect on T4.** New invented words: property selection +0.003 [−0.011, +0.015] (135M) / +0.003 (360M), entailment +0.005 / +0.025 (Holm n.s.), paraphrase −0.020 / −0.006; the WP-C7 track zero-shot items do not move either (360M property 0.626 → 0.622). Edits: log-odds change beyond the control edit +0.01 to +0.10, none significant. Probes sit far above floor here (track property 0.58–0.63), so this is a null, not a floor effect.
+
+**What T4 means for the paper (seed 1; seeds 2–3 are in the PQ1 block):**
+1. Claim A survives in direction but must be stated at natural-text size: about 1–4% after unseen, rare and multi-subtoken terms, under 1% after held-out terms; T5 is a synthetic upper bound.
+2. Claim B (quantization) is weaker still: the gain is partly lost under INT4 on natural text.
+3. Claim C (zero-shot learning by editing the ontology) does not transfer to natural text at seed 1: it is a synthetic-glossary result (T5 SmolLM2 and Qwen3) until a natural-text track shows it.
 
 ## Addendum — Qwen3-1.7B-Base and Qwen3-0.6B-Base with LoRA (T5, seed 1)
 
