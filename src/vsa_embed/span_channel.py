@@ -351,6 +351,9 @@ class SpanChannel(nn.Module):
         if mode == "compose" and composer is None:
             raise ValueError("compose mode needs a FrameComposer")
         self.mode, self.composer, self.entry_count = mode, composer, entry_count
+        # Opt-in (`channel.skip_empty_frames`): an entry whose frame has no edge gets a zero row, i.e. no
+        # injection, instead of an error. Linking and strata are untouched (T1-open has 2 such MeSH entries).
+        self.skip_empty_frames = False
         source_dimension = composer.atomics.shape[1] if mode == "compose" else model_dimension
         if mode == "source":
             # Same-site row-source baselines (WP-PQ1, C6m/C6d/C6g): a frozen per-entry source vector (subtoken
@@ -422,6 +425,14 @@ class SpanChannel(nn.Module):
     def _rows(self, spans: dict[str, Tensor], input_ids: Tensor | None = None, context: Tensor | None = None) -> Tensor:
         entries = spans["entry"]
         if self.mode == "compose":
+            if self.skip_empty_frames:
+                keep = self.composer.schedule.degrees[entries] > 0
+                if not bool(keep.all()):
+                    rows = self.projector.weight.new_zeros(entries.numel(), self.projector.out_features)
+                    if bool(keep.any()):
+                        part = self.projector(self.composer.compose(entries[keep], None if context is None else context[keep]))
+                        rows = rows.to(part.dtype).index_put((keep.nonzero().squeeze(1),), part)
+                    return rows
             return self.projector(self.composer.compose(entries, context))
         if self.mode == "source":
             return self.source_projector(self.source_rows[entries])

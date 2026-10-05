@@ -248,6 +248,7 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
         )
         channel = SpanChannel(composer, width, entry_count=entries, gate_bias=float(settings["gate_bias"]),
                               semantic_dimension=width if config["train"]["semantic_weight"] else 0)
+        channel.skip_empty_frames = bool(settings.get("skip_empty_frames", False))   # opt-in; default keeps the error
         context = CausalLocalContext(width, int(settings["key_dimension"]), window=context_window) if context_window else None
     if settings.get("scale_to_host"):                  # opt-in (open decision 1); no random draw, so the RNG stream is unchanged
         if host is None:

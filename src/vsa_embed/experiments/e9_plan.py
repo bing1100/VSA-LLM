@@ -97,6 +97,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import functools
 import json
 import sys
 from pathlib import Path
@@ -298,6 +299,15 @@ def estimate_hours(host: str, tokens: int, *, tokens_per_s: float | None = None,
     return tokens / tokens_per_s / 3600
 
 
+@functools.lru_cache(maxsize=None)
+def _has_empty_frames(ontology: str) -> bool:
+    """Whether any entry of the ontology file has a frame without edges (False if the file does not exist)."""
+    if not Path(ontology).exists():
+        return False
+    offsets = torch.as_tensor(torch.load(ontology, map_location="cpu", weights_only=False)["offsets"])
+    return bool(((offsets[1:] - offsets[:-1]) == 0).any())
+
+
 def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_root: Path, tokens: int, lora_rank: int,
                host_lr: float | None, gate_bias: float, free_dimension: int, sequences_per_step: int = 64,
                windows: int = MIN_WINDOWS, channel_lr: float = 1.0e-3, eval_split: str = "eval",
@@ -338,6 +348,8 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
     _merge(config, overrides or {})
     config["seed"] = int(seed)
     config["data"].update(train=str(data_root / "train"), eval=str(data_root / eval_split), ontology=str(data_root / "ontology.pt"))
+    if config.get("channel", {}).get("mode") == "compose" and _has_empty_frames(str(data_root / "ontology.pt")):
+        config["channel"]["skip_empty_frames"] = True      # e.g. T1-open: 2 MeSH entries without edges get no injection
     stem = f"{host}-{MODE_LABELS[host_mode]}-{model}-s{seed}"
     config["experiment"] = f"e9-{stage}-{stem}"
     return stem, config

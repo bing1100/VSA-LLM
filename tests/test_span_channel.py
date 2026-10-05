@@ -147,3 +147,25 @@ def test_dollar_signs_in_text_do_not_break_the_trie() -> None:
     text = "it cost us$ 5 in $$ cash"
     spans = linker.link(text, word_piece_offsets(text))
     assert {t.entry_concepts[s.entry] for s in spans} == {(0,), (1,)}
+
+
+def test_skip_empty_frames_injects_nothing_for_edgeless_entries_and_keeps_the_rest() -> None:
+    torch.manual_seed(0)
+    t = table()
+    # concept 2 ("york") has an empty frame; it is entry 3 (entries are unions of concepts)
+    schedule = t.entry_schedule([[(0, 0)], [(0, 1)], [], [(0, 3)], [(1, 3)], [(0, 4)]])
+    composer = FrameComposer(schedule, 5, 2, 8)
+    channel = SpanChannel(composer, 6, entry_count=len(t.entry_concepts), gate_bias=0.0)
+    spans = {"batch": torch.tensor([0, 0]), "start": torch.tensor([0, 2]), "end": torch.tensor([1, 3]),
+             "inject": torch.tensor([1, 3]), "entry": torch.tensor([3, 0]), "confidence": torch.tensor([1.0, 1.0]),
+             "length": torch.tensor([2, 2])}
+    assert schedule.degrees[3] == 0 and schedule.degrees[0] > 0
+    embeddings = torch.randn(1, 5, 6)
+    with pytest.raises(ValueError, match="at least one edge"):
+        channel(embeddings, spans)                       # default: unchanged behaviour
+    channel.skip_empty_frames = True
+    out = channel(embeddings, spans)
+    torch.testing.assert_close(out[0, 1], embeddings[0, 1])          # empty frame: no injection
+    only = {k: v[1:] for k, v in spans.items()}
+    torch.testing.assert_close(out, channel(embeddings, only))        # the other span is exactly as without it
+    assert not torch.allclose(out[0, 3], embeddings[0, 3])
