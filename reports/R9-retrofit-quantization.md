@@ -1,6 +1,6 @@
 # R9 — Retrofit × quantization × ontology editing (E9)
 
-**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seed 1 (addendum below; seed 2 queued). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open seed 1 is in (null); the cross-track section shows the gain following the novelty of the vocabulary. The WordNet negative control is null, as predicted. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
+**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seeds 1–2 (section "Qwen3 on T5 at 2 seeds"). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open seed 1 is in (null); the cross-track section shows the gain following the novelty of the vocabulary. The WordNet negative control is null, as predicted. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
 
 **Question (author request 2026-10-02).** (1) Does a VSA ontology channel trained jointly with a pretrained model improve it on long-token, rare and out-of-distribution words? (2) Is the gap larger after weight quantization? (3) After training, can the model learn new or changed words zero-shot by editing the ontology alone?
 
@@ -136,6 +136,21 @@ A simple novelty index is how much plain continued training (C0′) lowers the l
 - **Ordering:** the gain is largest where the vocabulary is newest to the host (T5), smaller on T4, and zero where the host already models the terms (T1, WordNet). Within T4 the unseen stratum is both the most novel (−56%) and the most improved (−2.3%).
 - **Implication for the paper:** the channel is a tool for vocabulary that is genuinely new to the host (invented, private or fast-changing terms), not for terms already well represented in pretraining. That is the defensible scope of claim A, and it matches the host learning to ignore the channel on known vocabulary (engagement check).
 - **Caveat:** three tracks and one copy-confounded synthetic track are not a dose–response curve; T5's size also contains the copy effect. The PQ1 filler / non-filler rescoring and T4 seeds 2–3 sharpen this. A fourth natural track with genuinely new vocabulary (T2 developer tools or T3 product names) would test the ordering directly.
+
+## Qwen3 on T5 at 2 seeds (2026-10-06)
+
+Full tables: `experiments/e9-retrofit/report/t5-qwen3/report.md` (job `t5-qwen3-report-s2`; seeds 1–2 pooled, P0 seed 1). The seed-1 addendum below is superseded where the numbers differ.
+
+| | Qwen3-0.6B (LoRA) | Qwen3-1.7B (LoRA) |
+|---|---|---|
+| **Dimension 1**, C5 − C0′ (bf16): after held-out terms | **−20.2% [−21.3, −19.1]** (per seed −20.3 / −19.9) | **−17.7% [−18.6, −16.8]** (−16.9 / −18.5) |
+| after unseen / rare / 3+-subtoken terms | −8.9% / −8.7% / −9.4% | −10.6% / −11.2% / −9.4% |
+| unlinked text | −0.02% (n.s.) | −0.01% (n.s.; +0.09% vs C2) |
+| **Dimension 2**, gain retained at INT4 (held-out / rare / unseen / 3+-subtoken / all tokens) | 0.91× / 0.79× / 1.42× (n.s.) / 0.89× / 0.25× | 1.07× (n.s.) / 1.14× (n.s.) / 1.59× / **1.70×** / 2.88× |
+| **Dimension 3**, new words, C5 − C0′: property / entailment / paraphrase / statement accuracy (points) | **+9.4 / +8.7 / +9.0 / +6.2** | **+15.8 / +12.2 / +7.9 / +10.8** |
+
+- Dimensions 1 and 3 replicate across seeds on both Qwen3 sizes, and are larger than on SmolLM2 (held-out −18 to −20% vs −9 to −13%; new-word property +9 to +16 points vs +4 to +7). These are still T5 (synthetic) numbers, i.e. upper bounds (see T4 and "Across tracks").
+- Dimension 2 stays mixed: at 1.7B the gain grows under INT4 on long terms (1.70×, DiD −0.037 [−0.040, −0.034]) and overall (2.88×), at 0.6B it shrinks overall (0.25×). Together with SmolLM2 (held-out 0.58× / 1.14×) there is no consistent direction: claim B remains "largely preserved on T5, partly lost on natural text (T4)".
 
 ## Addendum — Qwen3-1.7B-Base and Qwen3-0.6B-Base with LoRA (T5, seed 1)
 

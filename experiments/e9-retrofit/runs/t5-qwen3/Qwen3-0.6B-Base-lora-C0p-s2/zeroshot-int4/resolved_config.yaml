@@ -1,0 +1,13 @@
+experiment: e9-track-zeroshot
+track: t5
+run: experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C0p-s2
+checkpoint: final.pt
+items: experiments/t5-enterprise-glossary/items
+alias_table: /home/bhux/data/vsa-llm/e9/alias-tables/t5.json
+sources: null
+fit_entries: 4000
+seed: 0
+resamples: 2000
+quantize: int4
+quantize_channel: false
+group_size: auto
