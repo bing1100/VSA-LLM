@@ -175,7 +175,8 @@ TRACKS: dict[str, TrackSpec] = {
     # (not built). Category = the class a record is indexed under (SCR `mapped_to`) or filed under (descriptor `parent`);
     # edits change the pharmacological action where an entry has exactly one, else that class.
     "t7": TrackSpec("t7", "T7 new biomedical vocabulary (MeSH SCR + PubMed 2025-26)", DATA / "tracks/t7-newvocab/v1",
-                    eval_split="eval-pubmed", windows=2048, config=Path("experiments/t7-new-vocabulary/t7.yaml"),
+                    # 4,096 windows: the fewest that meet the held-out and rare criteria at ℓ_min 2 (runs/v1/feasibility.json)
+                    eval_split="eval-pubmed", windows=4096, config=Path("experiments/t7-new-vocabulary/t7.yaml"),
                     holdout_names=Path("experiments/t7-new-vocabulary/runs/v1/holdout_concepts.txt"),
                     category_relations=("mapped_to", "parent"),
                     kept_relations=("mapped_to", "parent", "branch_top", "branch_second", "record_class"),

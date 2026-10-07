@@ -508,15 +508,22 @@ def rowsource_jobs(configs: dict[Path, dict[str, Any]], track: str, *, python: s
 
 def job_hours(name: str, command: list[str], configs: dict[Path, dict[str, Any]]) -> float:
     """Rough GPU hours of one planned job (`--dry-run`): training from `estimate_hours` (the 6N model; SmolLM2-360M
-    ≈ 67 min per 50M tokens), P0 (evaluation only) and the per-run evaluations from `EVAL_HOURS`, `e4_quant` from
-    `QUANT_HOURS`; reports and row-source tables ≈ 0."""
+    ≈ 67 min per 50M tokens) plus the run's own stratified evaluations (windows × points, forward only), P0 (evaluation
+    only) and the per-run evaluations from `EVAL_HOURS`, `e4_quant` from `QUANT_HOURS`; reports and row-source tables ≈ 0."""
     if "vsa_embed.training.lm" in command:
         config = configs.get(Path(command[command.index("--config") + 1]), {})
         host = _config_host(config) or ""
         if config.get("train", {}).get("eval_only"):
             return EVAL_HOURS.get(host, {}).get("P0", 0.0)
-        return estimate_hours(host, int(config["train"]["total_tokens"]),
-                              checkpointing=bool(config["model"].get("gradient_checkpointing"))) if host in HOST_PARAMETERS else 0.0
+        if host not in HOST_PARAMETERS:
+            return 0.0
+        from vsa_embed.training.lm import eval_token_schedule
+        total = int(config["train"]["total_tokens"])
+        checkpointing = bool(config["model"].get("gradient_checkpointing"))
+        # the run's own evaluations (step 0 and the log-spaced schedule) at forward-only speed (≈ 3× training throughput)
+        points = 1 + len(eval_token_schedule(int(config["eval"].get("first_tokens", 10_000_000)), total))
+        evaluated = points * int(config["eval"]["windows"]) * int(config["model"]["seq_len"])
+        return estimate_hours(host, total, checkpointing=checkpointing) + estimate_hours(host, evaluated) / 3
     if "vsa_embed.experiments.e4_quant" in command:
         return QUANT_HOURS
     for host, hours in EVAL_HOURS.items():

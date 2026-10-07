@@ -271,7 +271,7 @@ def test_t7_dry_run_plans_without_queueing(tmp_path: Path) -> None:
                                 data_root=tmp_path / "t7", counts_ontology=tmp_path / "counts.pt", root=tmp_path / "e9")
     assert len(paths) == 1 + 3 * 3
     c5 = yaml.safe_load(next(p for p in paths if p.stem == "SmolLM2-360M-full-C5-s2").read_text())
-    assert c5["e9_track"] == "t7" and c5["data"]["eval"] == str(tmp_path / "t7" / "eval-pubmed") and c5["eval"]["windows"] == 2048
+    assert c5["e9_track"] == "t7" and c5["data"]["eval"] == str(tmp_path / "t7" / "eval-pubmed") and c5["eval"]["windows"] == 4096
     planned: list = []
     queue = tmp_path / "jobs"
     queued = e9_plan.queue_jobs(paths, "t7", 62, track="t7", root=tmp_path / "e9", queue_dir=queue, plan=planned)
@@ -285,7 +285,9 @@ def test_t7_dry_run_plans_without_queueing(tmp_path: Path) -> None:
     assert edit[edit.index("--new-items") + 1].endswith("new-words-t7-smollm2-v1")
     configs = {Path(p): yaml.safe_load(Path(p).read_text()) for p in paths}
     train = names["t7-SmolLM2-360M-full-C5-s1"][1]
-    assert e9_plan.job_hours("t7-SmolLM2-360M-full-C5-s1", train, configs) == pytest.approx(50e6 / 12_400 / 3600)   # ≈ 67 min
+    # ≈ 67 min of training + 7 evaluations of 4,096 windows at forward-only speed (≈ 13 min)
+    expected = (50e6 + 7 * 4096 * 1024 / 3) / 12_400 / 3600
+    assert e9_plan.job_hours("t7-SmolLM2-360M-full-C5-s1", train, configs) == pytest.approx(expected)
     p0 = names["t7-SmolLM2-360M-frozen-P0-s1"][1]
     assert e9_plan.job_hours("t7-SmolLM2-360M-frozen-P0-s1", p0, configs) == e9_plan.EVAL_HOURS["SmolLM2-360M"]["P0"]
     assert e9_plan.job_hours("t7-SmolLM2-360M-full-C5-s1-probes-int4", [], configs) == e9_plan.EVAL_HOURS["SmolLM2-360M"]["probes-int4"]

@@ -87,3 +87,10 @@ MeSH SCR names absent from general text (T7):
   entries: 5,124
   occurrences: 88,001
   verdict: "recommended (T7): the most novel natural candidate of feasible size"
+T7 as built (eval-pubmed, 512 of its 6,384 windows):
+  run: t7-SmolLM2-360M-P0
+  source: MeSH 2026 supp + PubMed 2025-26 (baseline slice + 80 update files) + FineWeb-Edu
+  licence: NLM terms; ODC-By (counts only)
+  entries: 8,184 (908 held out)
+  occurrences: 192,028 training side; 41,940 spans in eval-pubmed
+  verdict: "built: feasible at ℓ_min 2 with 4,096 windows (held-out 8,786 occ. / 411 entries ≥ 5; rare 4,337 / 1,577)"
