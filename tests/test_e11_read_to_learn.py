@@ -239,6 +239,21 @@ def test_headwords_are_link_checked(world) -> None:
     assert chosen[entries[2]][1] == "alias" and chosen[entries[2]][0] in aliases[entries[2]]   # its name links to another entry
 
 
+def test_gradient_dev_writes_the_lr_that_evaluate_reads(world, sets, tmp_path, capsys) -> None:
+    e11.main(["gradient-dev", "--run", str(world["runs"]["C0p"]), "--items", str(sets["new"]), "--output", str(tmp_path / "dev"),
+              "--primary-style", "dictionary", "--lrs", "1e-4", "1e-3", "--gradient-optimizer", "sgd", "--device", "cpu",
+              "--batch-size", "8"])
+    chosen = json.loads((tmp_path / "dev" / "gradient_lr.json").read_text())
+    assert chosen["lr"] in {1e-4, 1e-3} and set(chosen["scores"]) == {"0.0001", "0.001"} and "property" in chosen["no_update"]
+    capsys.readouterr()
+    e11.main(["evaluate", "--run", str(world["runs"]["C0p"]), "--items", str(sets["new"]), "--output", str(tmp_path / "eval"),
+              "--methods", "gradient", "--readers", "none", "--styles", "dictionary", "--gradient-lr-from",
+              str(tmp_path / "dev" / "gradient_lr.json"), "--gradient-factors", "1.0", "--gradient-optimizer", "sgd",
+              "--device", "cpu", "--batch-size", "8", "--resamples", "50"])
+    summary = json.loads((tmp_path / "eval" / "summary.json").read_text())
+    assert summary["gradient"]["lr"] == chosen["lr"] and (tmp_path / "eval" / "gradient_records.json").exists()
+
+
 def test_teacher_reads_open_licence_text_only(tmp_path) -> None:
     def read_set(licence: str) -> e11.ReadSet:
         return e11.ReadSet(tmp_path, {"licence": [licence]}, [], [{"concept": "c", "licence": licence}], [])
