@@ -1,0 +1,14 @@
+# T1c with the Qwen3 tokenizer (WP-Qwen): t1c.yaml plus one host relink, `hosts/qwen3` (the Qwen3 base tokenizer, shared
+# by Qwen3-0.6B/1.7B/4B-Base; uint32 ids, NFC decode check, fingerprint recorded). The holdout is chosen from the SmolLM2
+# reference pre-sample as in t1c.yaml (pinned hash), so it is the same; the reference corpora are reused (same alias
+# table and stream signatures; `ontology.pt` is rewritten with the same content) and only `hosts/qwen3` is built
+# (130M training tokens, as SmolLM2). Licensed outputs stay under the data root, as for t1c.yaml.
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1c_corpus --config experiments/t1c-clinical/t1c-qwen3.yaml \
+#     --output experiments/t1c-clinical/runs/v1-qwen3
+extends: t1c.yaml
+experiment: t1c-clinical-qwen3
+hosts:
+  - name: qwen3                   # e9_tracks.QWEN3_ROOTS["t1c"] = <data_root>/hosts/qwen3
+    tokenizer: Qwen/Qwen3-0.6B-Base
+    train_tokens: 130000000
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-135M, Qwen/Qwen3-0.6B-Base]

@@ -1,0 +1,117 @@
+{
+  "note": "T1c items are licensed (SNOMED CT names) and live under ~/data/vsa-llm/t1c/items/ (never committed); this file records their digests and counts only.",
+  "items": {
+    "edits-t1c-smollm2-v1": {
+      "files": {
+        "concepts.jsonl": {
+          "bytes": 192114,
+          "sha256": "9e9c41ff6d86d93211003e4c8e9f02c5b7e858c8944c49e25e75f166e2cf2404",
+          "rows": 598
+        },
+        "items.jsonl": {
+          "bytes": 236369,
+          "sha256": "6a7ea093f47f512947f9fb4d580ea9d8a499c4f5ff1869920837bd9761044a35",
+          "rows": 800
+        },
+        "manifest.json": {
+          "bytes": 1790,
+          "sha256": "ebc91266886a2a0938ba60a9a34642e54832d91fa77397825a8f180c6d009ae9",
+          "rows": null
+        }
+      },
+      "counts": {
+        "concepts": 598,
+        "items": 800,
+        "efficacy": 200,
+        "neighbourhood": 400,
+        "paraphrase": 200
+      },
+      "edited_status": {
+        "frequent": 10,
+        "heldout": 100,
+        "mid": 24,
+        "rare": 66
+      },
+      "count": 200,
+      "seed": 0,
+      "min_subtokens": 2,
+      "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+      "alias_table_sha256": "18dc1545668201cfb39dcc277ac0a6b679016cb0ec722f1e169087832c1ecd42",
+      "alias_table_checks": {
+        "entry_concepts": true,
+        "digest": true,
+        "heldout_entries": true
+      }
+    },
+    "new-words-t1c-smollm2-v1": {
+      "files": {
+        "concepts.jsonl": {
+          "bytes": 256929,
+          "sha256": "19cc5a5f1d2c2c4fc66ec1e3983f6c2812a6a2f4b3110665cf68f59050724494",
+          "rows": 300
+        },
+        "items.jsonl": {
+          "bytes": 786119,
+          "sha256": "773dab3b60aec727d277338f6bd060d39a0854f4a78882b398df50943881e2df",
+          "rows": 2200
+        },
+        "manifest.json": {
+          "bytes": 2561,
+          "sha256": "5281b20f6965c7a560dc8f5225d3310c77742e1707256177bb9ace19f6050dd2",
+          "rows": null
+        }
+      },
+      "counts": {
+        "concepts": 300,
+        "items": 2200,
+        "entailment": 600,
+        "property": 800,
+        "statement": 800
+      },
+      "checks": {
+        "names": 364,
+        "rejected_candidates": 0,
+        "contamination_chars": 78495490,
+        "reserved_names": 0,
+        "reserved_clashes": 0
+      },
+      "count": 300,
+      "seed": 0,
+      "name_seed": 11,
+      "min_subtokens": 2,
+      "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+      "alias_table_sha256": "18dc1545668201cfb39dcc277ac0a6b679016cb0ec722f1e169087832c1ecd42",
+      "alias_table_checks": {
+        "entry_concepts": true,
+        "digest": true,
+        "heldout_entries": true
+      }
+    },
+    "zeroshot-t1c-v1": {
+      "files": {
+        "manifest.json": {
+          "bytes": 900,
+          "sha256": "ef3fae353b664ec637fb359be27f2e89b7e09924807b458ca57d3cf40b37bf7b",
+          "rows": null
+        },
+        "zeroshot_entailment.jsonl": {
+          "bytes": 795086,
+          "sha256": "19c2ce918740717624626f47b57240bfb9235c6af7971efaaa14f8d9c7c03dae",
+          "rows": 2192
+        },
+        "zeroshot_property.jsonl": {
+          "bytes": 1047529,
+          "sha256": "2f556b4f5166d7dc92737724cf7951fa1bd51682fed6960e1a03ca7cc3d089c8",
+          "rows": 2192
+        }
+      },
+      "seed": 0,
+      "concepts": 600,
+      "eligible_heldout_concepts": 1654,
+      "property_groups": 1096,
+      "property_rows": 2192,
+      "entailment_rows": 2192,
+      "max_relations": 2
+    }
+  }
+}

@@ -15,3 +15,23 @@ experiments/**/runs/**/*.tmp
 
 # Credentialed / licensed clinical data (MIMIC-IV, UMLS, SNOMED CT): never commit
 /data/
+
+# T1c, the licensed clinical track (MIMIC-III notes x SNOMED CT; decision 58): only aggregates are committed.
+# E9 run folders of T1c stages keep manifest, metrics (stratum losses), resolved config and the aggregate probe
+# tables; per-window losses, per-item predictions and summaries, rescoring and editing outputs stay out of git.
+experiments/e9-retrofit/runs/t1c*/**
+!experiments/e9-retrofit/runs/t1c*/**/
+!experiments/e9-retrofit/runs/t1c*/*/manifest.json
+!experiments/e9-retrofit/runs/t1c*/*/metrics.jsonl
+!experiments/e9-retrofit/runs/t1c*/*/resolved_config.yaml
+!experiments/e9-retrofit/runs/t1c*/*/probes.json
+!experiments/e9-retrofit/runs/t1c*/*/probes-int4.json
+experiments/e9-retrofit/quant*/t1c*/runs/
+experiments/e9-retrofit/**/t1c*/**/*.npz
+experiments/e9-retrofit/**/t1c*/**/*.jsonl.gz
+experiments/e9-retrofit/**/t1c*/**/*.items.json.gz
+experiments/e9-retrofit/items/*t1c*/
+# Corpus-build outputs: holdout lists, alias tables and items belong in ~/data/vsa-llm/t1c/ (guard against misplacement).
+experiments/t1c-clinical/**/holdout_*
+experiments/t1c-clinical/**/alias_table*
+experiments/t1c-clinical/items/
