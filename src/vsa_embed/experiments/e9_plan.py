@@ -173,6 +173,14 @@ EVAL_JOB_BATCH = {"Qwen3-0.6B-Base": 16, "Qwen3-1.7B-Base": 8, "Qwen3-4B-Base": 
 EFFECTIVE_FLOPS = 6 * 361.8e6 * 12_400
 HOST_PARAMETERS = {"SmolLM2-135M": 134.5e6, "SmolLM2-360M": 361.8e6, "Qwen3-0.6B-Base": 596.0e6, "Qwen3-1.7B-Base": 2.032e9,
                    "Qwen3-4B-Base": 4.022e9, "Qwen3.5-0.8B-Base": 752.4e6, "Qwen3.5-2B-Base": 1.8818e9}   # Qwen3.5: text weights
+# `--dry-run` estimates of the non-training jobs, GPU hours (rough; from the measured SmolLM2 block of 2026-10-03: one track,
+# one seed, 360M + 135M with evaluations ≈ 6.5 GPU-h, of which training ≈ 4.6 h): the P0 evaluation, and per run the probe,
+# zero-shot and editing jobs at bf16 and INT4 (suffix → hours); `e4_quant` per stage batch.
+EVAL_HOURS = {"SmolLM2-360M": {"P0": 0.05, "probes": 0.12, "probes-int4": 0.12, "zeroshot": 0.03, "zeroshot-int4": 0.03,
+                               "edit": 0.06, "edit-int4": 0.06, "rescore": 0.15},
+              "SmolLM2-135M": {"P0": 0.03, "probes": 0.06, "probes-int4": 0.06, "zeroshot": 0.02, "zeroshot-int4": 0.02,
+                               "edit": 0.03, "edit-int4": 0.03, "rescore": 0.08}}
+QUANT_HOURS = 0.3
 
 
 def stage_python(hosts: list[str]) -> str:
@@ -498,9 +506,31 @@ def rowsource_jobs(configs: dict[Path, dict[str, Any]], track: str, *, python: s
     return sorted(jobs.items())
 
 
+def job_hours(name: str, command: list[str], configs: dict[Path, dict[str, Any]]) -> float:
+    """Rough GPU hours of one planned job (`--dry-run`): training from `estimate_hours` (the 6N model; SmolLM2-360M
+    ≈ 67 min per 50M tokens), P0 (evaluation only) and the per-run evaluations from `EVAL_HOURS`, `e4_quant` from
+    `QUANT_HOURS`; reports and row-source tables ≈ 0."""
+    if "vsa_embed.training.lm" in command:
+        config = configs.get(Path(command[command.index("--config") + 1]), {})
+        host = _config_host(config) or ""
+        if config.get("train", {}).get("eval_only"):
+            return EVAL_HOURS.get(host, {}).get("P0", 0.0)
+        return estimate_hours(host, int(config["train"]["total_tokens"]),
+                              checkpointing=bool(config["model"].get("gradient_checkpointing"))) if host in HOST_PARAMETERS else 0.0
+    if "vsa_embed.experiments.e4_quant" in command:
+        return QUANT_HOURS
+    for host, hours in EVAL_HOURS.items():
+        if f"/{host}-" in name or f"-{host}-" in name:
+            for kind, value in hours.items():
+                if name.endswith(kind):
+                    return value
+    return 0.0
+
+
 def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, track: str = "t5", evals: bool = True,
                root: Path = ROOT, queue_dir: Path | None = None, int4_probes: str | None = None,
-               alias_table: Path | None = None, rescore: str = "arms") -> list[str]:
+               alias_table: Path | None = None, rescore: str = "arms",
+               plan: list[tuple[str, int, list[str]]] | None = None) -> list[str]:
     """Training jobs at `priority` (default: the hosts' family's, 22 SmolLM2 / 26 Qwen3); per-run evaluations
     at +1, `e4_quant` over the runs at +2, the R9 report at +3. Names are idempotent: a job that exists is left
     alone (P0, shared by seed batches). Track runs get the evaluation alias table (written here once if
@@ -511,7 +541,10 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     variants) at +1, no `e4_quant` (their INT4 evaluation is the rescoring's `int4-A`); C6 arms whose row-source table
     is missing get an `e9_rowsource build` job at `priority`, queued before the training jobs (the queue runs equal
     priorities first come, first served). `rescore="all"` also rescores P0 / C0′ / C2 / C5 (the `controls` variants:
-    filler strata and the claim-B controls); `"none"` rescores nothing."""
+    filler strata and the claim-B controls); `"none"` rescores nothing.
+
+    `plan` (a list; `--dry-run`): every job is appended to it as (name, priority, command) and nothing is queued or
+    written (the alias table path is only named)."""
     from .e9_rescore import profile_variants, rescore_command
     if rescore not in {"arms", "all", "none"}:
         raise ValueError("rescore must be arms, all or none")
@@ -530,9 +563,12 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     env = {"PYTHONPATH": "src"}
     queued: list[str] = []
     if evals and alias_table is None:
-        alias_table = ensure_alias_table(spec)
+        alias_table = spec.alias_table_path if plan is not None else ensure_alias_table(spec)
 
     def submit(name: str, command: list[str], level: int, *, min_free_gb: float, resume_args: list[str] | None = None) -> None:
+        if plan is not None:
+            plan.append((name, level, command))
+            return
         try:
             add(queue, command, name=name, priority=level, min_free_gb=min_free_gb, env=env, resume_args=resume_args)
             queued.append(name)
@@ -748,7 +784,9 @@ def main(argv: list[str] | None = None) -> None:
                              f"existing configs and runs (no training; default priority {DIM3_PRIORITY}; --seeds/--models filter)")
     parser.add_argument("--dim3-weights-on-candidate", action="store_true",
                         help="with --dim3-baselines: also run ROME/MEMIT/AlphaEdit on C5's host weights (ontology edit + ROME)")
-    parser.add_argument("--dry-run", action="store_true", help="with --dim3-baselines: print the jobs and GPU estimates only")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="write the stage's configs and print the jobs --queue would add (names, priorities, commands) "
+                             "with GPU-hour estimates, without queueing (with --dim3-baselines: those jobs)")
     args = parser.parse_args(argv)
     family = stage_family(args.hosts)
     stage = args.stage or f"{args.track}{FAMILIES[family]['suffix']}"
@@ -774,6 +812,18 @@ def main(argv: list[str] | None = None) -> None:
         mode = args.host_mode or FAMILIES[family]["mode"]
         plans = {h: host_plan(h, mode, memory=memory, micro_batch=args.micro_batch) for h in args.hosts}
         print("\n".join(describe_plan(paths, plans)))
+    if args.dry_run:
+        planned: list[tuple[str, int, list[str]]] = []
+        queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
+                   rescore=args.rescore, plan=planned)
+        configs = {Path(p): yaml.safe_load(Path(p).read_text()) for p in paths}
+        total = 0.0
+        for name, level, command in sorted(planned, key=lambda job: job[1]):
+            hours = job_hours(name, command, configs)
+            total += hours
+            print(f"[{level}] {name}  ≈ {hours:.2f} GPU-h\n    {' '.join(command)}")
+        print(f"dry run: {len(planned)} job(s), ≈ {total:.1f} GPU-h (training from the 6N model; evaluations rough); nothing queued")
+        return
     if args.queue:
         queued = queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
                             rescore=args.rescore)
