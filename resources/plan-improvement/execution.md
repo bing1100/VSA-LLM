@@ -831,3 +831,110 @@ PYTHONPATH=src python -m vsa_embed.experiments.e9_plan --track t7 --hosts SmolLM
 gain should therefore be at least T4's on the term strata: after unseen terms −2.3%, after 3+-subtoken terms −1.1%
 (360M, seed 1). It should not reach T5's. A null T7 would break the novelty ordering. A T4-sized gain would replicate it
 on a second natural track whose text holds no curated definitions.
+
+## E9 frequency bias and understanding beyond copying (author request 2026-10-07; WP-UB)
+
+Pre-registration: `experiments/e9-retrofit/preregistration-understanding.md`, committed before any evaluation of these
+measures on a checkpoint (`9c6f6e2`), with dated amendments §10.1–10.4 (`6c784b8` and later).
+
+**Why.** R9's copy-concern table shows that 86–90% of the T5 gain after rare and unseen terms falls on filler tokens.
+The author's two points:
+- Copying fillers partly measures **frequency bias**, so measure that improvement properly, in HRRBERT's tradition.
+- Build items whose correct answer is **not** a filler, so copying cannot solve them.
+
+| Family | What | Primary endpoint (T5, SmolLM2-360M, seeds 1–3) |
+|---|---|---|
+| A1 | loss per half-decade log-frequency bin (1–3, 4–9, 10–31, …, ≥ 3,163; the unions are exactly the trainer's 1–9 / 10–99 / ≥ 100 strata); slope and rare–frequent gap per model; window and term-cluster bootstraps | Δgap = gap(C5) − gap(C0′) |
+| A2 | cross-validated ridge R² of log2 training frequency from concept representations (composed / free / source row, injected row, host subtoken mean, model-free references), entry bootstrap, t-SNE as in HRRBERT | R²(C2 free row) − R²(C5 composed vector) |
+| B1 | understanding items whose answer is not a filler: two-hop, type affordance, paraphrased options, reverse (filler → term, candidates in context), same/different comparison, negation (pair consistency) | composite, held-out terms, C5 − C0′ (concepts × seeds crossed model) |
+| B2 | strict non-copy stratum: no alias or content word within two hops of the frame, no relation wording | `after_heldout_strict`, C5 − C0′ |
+
+**Code** (tests: `tests/test_e9_understanding.py`, toy glossary on the CPU):
+- `e9_freqbias` (`exclusions`, `score`, `rows`, `queue`);
+- `e9_understanding` (`items`, `evaluate`, `queue`);
+- `e9_report --freqbias --understanding ITEMS [--item-seed]`.
+
+**Inputs.**
+- Items, committed: `experiments/e9-retrofit/items/understanding-{t5-smollm2,t5-qwen3,t4-smollm2,t7-smollm2}-v1`.
+- Exclusion tables: `~/data/vsa-llm/e9/exclusion-tables/`; T1c's is under `~/data/vsa-llm/t1c/` and is built by its own job.
+
+**Outputs.**
+- A1/B2: `RUN/freqbias`. A2: `RUN/freqrows`. B1: `RUN/understanding-<track>-<family>-v1`. Predictions are gzipped, about
+  4 MB per C5 run.
+- T1c run folders keep aggregates only (`.gitignore`). T1c gets no understanding items and no t-SNE.
+
+**Cost** (GPU-h at the queue's dedicated throughput, from the committed dimension-3 timings with the faster scorer; ±50%):
+
+| Block | Priority | Runs | GPU-h |
+|---|---|---|---:|
+| U1 T5 SmolLM2-360M (P0, C0′, C2, C5, 7 arms × s1–3) + 135M (P0, C0′, C2, C5 × s1–3) | 55 (rows 56, CPU) | 41 | ≈ 3.2 (rescoring 0.65, items 2.6) |
+| U2 T5 Qwen3-0.6B/1.7B (P0, C0′, C2, C5 × s1–2) | 56 (rows 57) | 14 | ≈ 3.4 (rescoring 0.8, items 2.6) |
+| U3 T4 / T1 / WordNet seed 1 (SmolLM2-360M + 135M) | 57 (rows 58) | 24 | ≈ 0.65 |
+| U4 once trained: T4 s2–3 and arms, T7, T1c | 58 (rows 59) | 27 + 14 + 20 | ≈ 2.3 |
+| Reports (CPU lane) | 59 | — | 0 |
+
+**Total ≈ 9.6 GPU-h**, plus about 20 CPU-h of row probes in the CPU lane (4–25 min per run).
+
+The priorities follow the T4/T7/E11/T1c block at 51–54. Within the same priority, jobs queued earlier run first. The run
+folders need not exist when the jobs are queued: U4 runs after its training at 51–54.
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+# (from the main checkout, after merging this branch)
+# U1 — T5 SmolLM2 (primary): A1/B2 rescoring (GPU, 55) + A2 row probes (CPU lane, 56) + B1 items (GPU, 55; C5 own,none,random_frame)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage t5 --priority 55
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_understanding queue --stage t5 --priority 55 \
+  --items experiments/e9-retrofit/items/understanding-t5-smollm2-v1
+# U2 — T5 Qwen3 seeds 1–2 (seed 3 later with --seeds 3; C5 sources own,none, §10.4)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage t5-qwen3 --seeds 1 2 --priority 56
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_understanding queue --stage t5-qwen3 --seeds 1 2 --priority 56 \
+  --items experiments/e9-retrofit/items/understanding-t5-qwen3-v1 --candidate-sources own,none
+# U3 — finished natural tracks and the negative control, seed 1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage t4 --seeds 1 --models P0 C0p C2 C5 --priority 57
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_understanding queue --stage t4 --seeds 1 --models P0 C0p C2 C5 --priority 57 \
+  --items experiments/e9-retrofit/items/understanding-t4-smollm2-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage t1 --priority 57
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage wordnet --priority 57
+# U4 — once trained (queued at 51–54): every T4 config (the seed-1 jobs above are skipped by name), T7, T1c (aggregates only, no figure)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage t4 --priority 58
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_understanding queue --stage t4 --priority 58 \
+  --items experiments/e9-retrofit/items/understanding-t4-smollm2-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage t7 --priority 58
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_understanding queue --stage t7 --priority 58 \
+  --items experiments/e9-retrofit/items/understanding-t7-smollm2-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_freqbias queue --stage t1c --priority 58 --licensed
+# Reports (CPU lane, 59): one per stage; T7 and T1c once U4 is done (T1c: --freqbias only)
+for spec in "t5 understanding-t5-smollm2-v1" "t5-qwen3 understanding-t5-qwen3-v1" "t4 understanding-t4-smollm2-v1"; do
+  set -- $spec
+  PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name $1-report-understanding --priority 59 --lane cpu --min-free-gb 0 --no-resume -- \
+    $PY -m vsa_embed.experiments.e9_report --runs experiments/e9-retrofit/runs/$1 --output experiments/e9-retrofit/report/$1-understanding \
+    --freqbias --understanding $2 --item-seed --overwrite --title "E9 $1 — frequency bias and understanding beyond copying"
+done
+for stage in t1 wordnet; do
+  PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name $stage-report-freqbias --priority 59 --lane cpu --min-free-gb 0 --no-resume -- \
+    $PY -m vsa_embed.experiments.e9_report --runs experiments/e9-retrofit/runs/$stage --output experiments/e9-retrofit/report/$stage-freqbias \
+    --freqbias --overwrite --title "E9 $stage — frequency bias"
+done
+```
+
+Each `queue` command takes `--dry-run`, which prints the jobs without queueing them. On 2026-10-07 the dry run gave:
+- U1: 41 GPU rescoring jobs, 41 CPU row-probe jobs and 41 GPU item jobs;
+- U2: 14 + 14 + 14;
+- U3: 8 + 8 per track, plus 8 T4 item jobs;
+- U4: T4 35, T7 14, T1c 20 (each job name is unique, so already-queued jobs are skipped).
+
+**Smoke** (labelled; pre-registration §9 addendum). On real checkpoints:
+- the masks replay the trainer's strata exactly;
+- a GPU composing run replays to 9 × 10⁻⁵ on the large strata, and a non-composing run bit-exactly;
+- the row probe takes 3–4 min per 135M run on the CPU;
+- the items link 695 of 695 concepts.
+
+**Open decisions for the author.**
+
+| # | Decision | Default |
+|---|---|---|
+| UB-1 | A1 primary on the absolute gap (nats), with the relative gap as the key secondary (reading (a) needs both) | as pre-registered |
+| UB-2 | B1 held-out subset = the 360 held-out + 200 generator zero-shot terms (both composed zero-shot) | as pre-registered |
+| UB-3 | Qwen3 C5 without the `random_frame` source (cost) | as §10.4; add it for seed 1 if B1's SmolLM2 reading hinges on it |
+| UB-4 | T7 items use the canonical (lower-case) alias; T7 is not trained yet | rebuild as `-v2` with MeSH display names before T7's evaluation, if the author wants |
+| UB-5 | Priorities 55–59 interleave with Qwen3 seed 3 / Qwen3-4B (55–59), behind them at equal priority | as proposed; use 54 for U1 to read A1/B1 before those |
