@@ -61,19 +61,20 @@ def _init_worker(tokenizer_name: str, revision: str, table_path: str, boundary: 
     _WORKER["normalization"] = normalization or None
 
 
-def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]], int]:
+def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np.ndarray]], int, list[int]]:
+    """(token arrays, span arrays, skipped count, batch positions of the kept documents)."""
     tokenizer, linker = _WORKER["tokenizer"], _WORKER["linker"]
     try:
         encoded = tokenizer(texts, return_offsets_mapping=True, add_special_tokens=False)
-        pairs = list(zip(texts, encoded["input_ids"], encoded["offset_mapping"]))
+        pairs = list(zip(range(len(texts)), texts, encoded["input_ids"], encoded["offset_mapping"]))
     except BaseException as error:   # the Rust tokenizer can panic on rare inputs (pyo3 PanicException)
         if isinstance(error, (KeyboardInterrupt, SystemExit)):
             raise
         pairs = []
-        for text in texts:            # retry one document at a time and skip the ones that panic
+        for index, text in enumerate(texts):   # retry one document at a time and skip the ones that panic
             try:
                 single = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
-                pairs.append((text, single["input_ids"], single["offset_mapping"]))
+                pairs.append((index, text, single["input_ids"], single["offset_mapping"]))
             except BaseException as inner:
                 if isinstance(inner, (KeyboardInterrupt, SystemExit)):
                     raise
@@ -81,14 +82,14 @@ def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np
     vocabulary = len(tokenizer)
     normalization = _WORKER.get("normalization")
     checked = []
-    for text, ids, offsets in pairs:
+    for index, text, ids, offsets in pairs:
         # Byte-level BPE is lossless: a document whose ids are out of range or do not decode back
         # to the text was corrupted by the tokenizer and is dropped (counted as skipped).
         expected = unicodedata.normalize(normalization, text) if normalization else text
         if ids and (max(ids) >= vocabulary or tokenizer.decode(ids) != expected):
             continue
-        checked.append((text, ids, offsets))
-    for text, ids, offsets in checked:
+        checked.append((index, text, ids, offsets))
+    for _, text, ids, offsets in checked:
         found = linker.link(text, offsets)
         tokens.append(np.asarray(ids, dtype=np.int64))
         spans.append({
@@ -99,7 +100,7 @@ def _encode_batch(texts: list[str]) -> tuple[list[np.ndarray], list[dict[str, np
             "length": np.asarray([s.length for s in found], dtype=np.int64),
             "confidence": np.asarray([s.confidence for s in found], dtype=np.float32),
         })
-    return tokens, spans, len(texts) - len(checked)
+    return tokens, spans, len(texts) - len(checked), [index for index, *_ in checked]
 
 
 def build_corpus(
@@ -122,6 +123,7 @@ def build_corpus(
     dtype = np.uint16 if vocab_size <= 65536 else np.uint32
     token_path = out_dir / "tokens.bin"
     position, documents, skipped_documents = 0, 0, 0
+    consumed, skipped_indices = 0, []          # input documents of finished batches; skipped input indices before the end
     span_parts: dict[str, list[np.ndarray]] = {k: [] for k in (*SPAN_FIELDS, "confidence")}
 
     def batches() -> Iterator[list[str]]:
@@ -152,11 +154,14 @@ def build_corpus(
 
     with token_path.open("wb") as handle, ProcessPoolExecutor(
             workers, mp_context=get_context("spawn"), initializer=_init_worker, initargs=initargs) as pool:
-        for tokens, spans, skipped in ordered_results(pool):
+        for tokens, spans, skipped, kept in ordered_results(pool):
             skipped_documents += skipped
-            for ids, doc_spans in zip(tokens, spans):
+            count = len(kept) + skipped
+            last = -1
+            for local, ids, doc_spans in zip(kept, tokens, spans):
                 if position >= max_tokens:
                     break
+                last = local
                 if int(ids.max(initial=0)) >= vocab_size:
                     raise ValueError(f"token id ≥ vocab_size {vocab_size}")
                 block = np.concatenate([ids, [eos_id]]).astype(dtype)
@@ -165,6 +170,12 @@ def build_corpus(
                     values = doc_spans[key]
                     span_parts[key].append(values + position if key in ("start", "end", "inject") else values)
                 position += block.size; documents += 1
+            # Skipped documents among those the corpus covers (before the last written one once the budget is met), so
+            # a mixer's per-document source log can be aligned with the written documents (`source_token_shares`).
+            covered = count if position < max_tokens else last + 1
+            kept_set = set(kept)
+            skipped_indices += [consumed + i for i in range(covered) if i not in kept_set]
+            consumed += count
             if position >= max_tokens:
                 pool.shutdown(wait=False, cancel_futures=True)
                 break
@@ -181,6 +192,7 @@ def build_corpus(
     manifest = {"tokens": int(position), "documents": documents, "dtype": np.dtype(dtype).name, "tokenizer": tokenizer_name,
                 "tokenizer_revision": revision, "alias_table_sha256": table.digest(), "boundary": boundary,
                 "spans": int(arrays["inject"].size), "eos_id": eos_id, "skipped_documents": skipped_documents,
+                **({"skipped_document_indices": skipped_indices} if skipped_documents else {}),
                 **({"normalization": normalization} if normalization else {}), **(extra_manifest or {})}
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest

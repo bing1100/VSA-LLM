@@ -288,3 +288,26 @@ def test_t1c_track_registration_keeps_licensed_paths_outside_the_repo() -> None:
     # the other tracks are unchanged
     assert e9_plan.dimension3_items("t5")[0] == e9_plan.ITEMS / "new-words-t5-smollm2-v1"
     assert e9_tracks.track_spec("t1").alias_table_path == e9_tracks.ALIAS_TABLE_DIR / "t1.json"
+
+
+# -- exact source shares when the builder skips documents ------------------------------------------------------------
+
+def test_source_shares_stay_exact_when_documents_are_skipped(tmp_path: Path) -> None:
+    import transformers
+    from vsa_embed.data.corpus import build_corpus
+    from vsa_embed.experiments.t1_open_corpus import source_token_shares
+    from vsa_embed.span_channel import AliasTable
+    qwen = transformers.AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B", local_files_only=True)
+    texts = ["first plain document about kangaroos.", "Le café de l'école.",      # not NFC: skipped
+             "a general text " * 5, "another plain document.", "tail text that is never written " * 50]
+    log = [0, 0, 1, 0, 1]
+    table = AliasTable.from_pairs([("kangaroo", 0)])
+    lengths = [len(qwen(t, add_special_tokens=False)["input_ids"]) + 1 for t in texts]
+    budget = lengths[0] + lengths[2] + lengths[3]                    # stops after the fourth input document
+    manifest = build_corpus(texts, tmp_path / "c", tokenizer_name="Qwen/Qwen2.5-0.5B", table=table, eos_id=qwen.eos_token_id,
+                            max_tokens=budget, workers=1, vocab_size=len(qwen), batch_texts=2)
+    assert manifest["skipped_documents"] == 1 and manifest["skipped_document_indices"] == [1] and manifest["documents"] == 3
+    shares = source_token_shares(tmp_path / "c", log, qwen.eos_token_id, ("mimic", "general"))
+    assert shares["exact"]
+    assert shares["tokens"] == {"mimic": lengths[0] + lengths[3], "general": lengths[2]}
+    assert shares["documents"] == {"mimic": 2, "general": 1}

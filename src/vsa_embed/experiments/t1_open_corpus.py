@@ -200,8 +200,12 @@ def source_token_shares(corpus_dir: Path, log: list[int], eos_id: int, sources: 
     corpus = TokenCorpus.open(corpus_dir)
     documents = int(corpus.manifest["documents"])
     ends = np.flatnonzero(np.asarray(corpus.tokens) == eos_id)
+    skipped = corpus.manifest.get("skipped_document_indices")
+    if skipped:                    # the builder recorded which input documents it dropped: align the log exactly
+        dropped = set(int(i) for i in skipped)
+        log = [source for index, source in enumerate(log) if index not in dropped]
     labels = np.asarray(log[:documents], dtype=np.int64)
-    exact = ends.size == documents and int(corpus.manifest.get("skipped_documents", 0)) == 0
+    exact = ends.size == documents and (int(corpus.manifest.get("skipped_documents", 0)) == 0 or skipped is not None)
     if exact:
         lengths = np.diff(np.concatenate([[-1], ends]))
         per_source = np.bincount(labels, weights=lengths, minlength=len(sources))
