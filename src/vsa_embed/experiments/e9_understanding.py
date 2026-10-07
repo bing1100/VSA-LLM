@@ -769,6 +769,39 @@ def item_prompts(item: dict[str, Any], surfaces: dict[str, str]) -> tuple[list[t
     return real, null
 
 
+@torch.no_grad()
+def continuation_logprob(adapter: cp.ModelAdapter, prefixes: Sequence[str], continuations: Sequence[str]) -> np.ndarray:
+    """Σ log p(continuation | prefix), as `e11_read_to_learn.continuation_scores` (the same batch forward, spans and
+    autocast; output logits only at the positions that predict a continuation token; texts batched by length), with the
+    output head applied in float32 (pre-registration §10.3): under bf16 autocast the head's rounding depends on the matrix
+    shape, which flips near-tie items between scorers."""
+    from torch.nn import functional as F
+    texts = [p + c for p, c in zip(prefixes, continuations)]
+    sums = np.zeros(len(texts))
+    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+    for start in range(0, len(order), adapter.batch_size):
+        chunk = order[start:start + adapter.batch_size]
+        encoded, out, head = adapter._run_batch([texts[i] for i in chunk])
+        hidden = out.hidden_states[-1]
+        mask = encoded["attention_mask"]
+        rows, cols, targets, owners = [], [], [], []
+        for r, i in enumerate(chunk):
+            n = int(mask[r].sum())
+            offsets = encoded["offset_mapping"][r, :n].tolist()
+            for t in range(1, n):
+                if offsets[t][1] > len(prefixes[i]):
+                    rows.append(r); cols.append(t - 1); targets.append(int(encoded["input_ids"][r, t])); owners.append(i)
+        if not rows:
+            continue
+        device = hidden.device
+        with torch.autocast(device.type, enabled=False):
+            selected = hidden[torch.tensor(rows, device=device), torch.tensor(cols, device=device)].float()
+            logits = F.linear(selected, head.weight.float(), None if head.bias is None else head.bias.float())
+            picked = torch.log_softmax(logits, -1).gather(-1, torch.tensor(targets, device=device)[:, None]).squeeze(-1)
+        np.add.at(sums, owners, picked.cpu().double().numpy())
+    return sums
+
+
 def score_items(adapter: cp.ModelAdapter, items: Sequence[dict[str, Any]], surfaces: dict[str, str],
                 null_cache: dict[tuple[str, str], float] | None = None) -> tuple[list[dict[str, Any]], dict[tuple[str, str], float]]:
     """Per item: PMI per template × candidate, correctness (mean over templates), all-templates-correct and agreement."""
@@ -777,11 +810,11 @@ def score_items(adapter: cp.ModelAdapter, items: Sequence[dict[str, Any]], surfa
         r, n = item_prompts(item, surfaces)
         real += r; null += n
         shapes.append((len(item["templates"]), len(item["candidates"])))
-    raw = cp.continuation_logprob(adapter, [p for p, _ in real], [c for _, c in real]) if real else np.zeros(0)
+    raw = continuation_logprob(adapter, [p for p, _ in real], [c for _, c in real]) if real else np.zeros(0)
     cache = dict(null_cache or {})
     missing = sorted(set(null) - set(cache))
     if missing:
-        cache.update(zip(missing, cp.continuation_logprob(adapter, [p for p, _ in missing], [c for _, c in missing]).tolist()))
+        cache.update(zip(missing, continuation_logprob(adapter, [p for p, _ in missing], [c for _, c in missing]).tolist()))
     pmi = raw - np.asarray([cache[pair] for pair in null])
     out, cursor = [], 0
     for item, (n_t, k) in zip(items, shapes):

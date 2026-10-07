@@ -313,6 +313,36 @@ Evaluation only, on finished `final.pt` checkpoints (main checkout, `experiments
 Smoke tests run after the commit of this document and are labelled SMOKE. They use short subsets on the CPU, plus at most
 4 GB and 5 min of GPU. They report timing and pipeline checks only, never a result.
 
+### §9 addendum — smoke tests (2026-10-07; SMOKE, not a result)
+
+The GPU was shared with a running queue job (100% utilization, 20.5 GB in use), so GPU timings are upper bounds. Outputs
+went to a scratch directory, not to run folders.
+
+- **A1 / B2 rescoring** (`score --windows N`), T5 SmolLM2-135M seed 1.
+  - CPU, C5, 8 windows, `ref` and `ref-off`: 19 s. The masks replay the trainer's strata exactly (`counts_equal`). The
+    sums differ by 0.3%, because the CPU runs fp32 against the trainer's GPU bf16.
+  - GPU, 32 windows:
+    - C0′ replays bit-exactly (max |Δ window sum| 0.0).
+    - C5's large strata replay to 9 × 10⁻⁵ relative, closer than `e9_rescore`'s committed `ref` on the same windows
+      (10⁻⁴); see §10.2.
+  - Masks cost ≈ 0.01 s per window on T5 and T4: ≈ 15 s per 1,024-window run.
+  - Every bin nests the coarse strata on every batch.
+- **A2 row probe**, T5 SmolLM2-135M seed 1, CPU.
+  - C5 took 3 min 43 s and 2.2 GB of RAM; C2 took about the same.
+  - The pipeline produces R² for every representation, `oof.npz`, `tsne.npz` and `tsne.png` (the figure renders, with
+    one panel per representation).
+- **B1 items**, T5 SmolLM2-135M C5 seed 1, three sources.
+  - CPU, 10 anchors per subset: 8 min 19 s. Every concept links (381 of 381) and every family and reference test
+    populates.
+  - GPU, 20 anchors per subset (695 concepts, all linked), with the final scorer (§10.3): 152 s, about 255 sequences/s on
+    the shared GPU.
+- **Cost basis for the plan.** The committed dimension-3 evaluations ran on the queue GPU without contention:
+  - throughput: SmolLM2-360M ≈ 1,200 sequences/s, 135M ≈ 2,100, Qwen3-0.6B ≈ 450, Qwen3-1.7B ≈ 180, with the slower shared
+    scorer;
+  - the plan assumes ×1.5 for the continuation-only scorer (×2.5 on Qwen3, whose 152k-row head dominated);
+  - item volume: T5 has 333k sequences under `own` and 258k under each other source (the reference tests are `own`
+    only), plus ≈ 24k null prompts; T4 has 87k (+ 25k null).
+
 ## 10. Deviations and changes after commit
 
 ### 10.1 The replay rule (2026-10-07, before any evaluation of these measures on a checkpoint)
@@ -337,3 +367,42 @@ original rule every composing run would have been excluded.
 
 **Consequence.** Rescoring jobs keep the trainer's evaluation batch, so the queue never passes `--eval-batch`: a different
 batch changes bf16 kernel shapes. Smoke runs on the CPU (fp32) check the masks only.
+
+### 10.2 The replay tolerance applies to large strata (2026-10-07, after the first GPU smoke; no endpoint computed)
+
+**What the smoke showed.** The labelled GPU smoke (§9: SmolLM2-135M C5 s1, the first 32 windows) reproduced the trainer's
+large strata to 9 × 10⁻⁵ relative (`all`, `after`, `inside`, `unlinked`, `after_frequent`, `after_len3plus`). On the
+same 32 windows, `e9_rescore`'s committed `ref` reproduces them to 1–3 × 10⁻⁴. The masks were identical, but a stratum with
+a few hundred targets differed by 0.75%. In a small stratum, one window's composer noise is a large fraction of the total.
+
+**New rule.** For a composing run, the 10⁻³ relative tolerance of §10.1 is checked on the strata with ≥ 5,000 targets (the
+largest stratum when none has as many). Those strata identify the model; the masks are the replay of the strata and stay
+exact for every stratum and every run. Runs without a composer must still replay bit-exactly. The C0′ GPU smoke did:
+max |Δ window sum| = 0.0.
+
+`ref_check` records `max_relative_stratum_diff` (the checked strata), `max_relative_stratum_diff_any` (every stratum) and
+the list of checked strata.
+
+### 10.3 The B1 continuation scorer (2026-10-07, after the B1 smoke; no endpoint computed)
+
+**Change.** B1 scores options with `e9_understanding.continuation_logprob`:
+- the same batch forward, spans and autocast as the shared adapter;
+- output logits only at the positions that predict a continuation token, with texts batched by length (E11's
+  `continuation_scores`, §13.2 of the E11 pre-registration);
+- the output head applied in **float32**.
+
+**Why.** It is 5.5× faster on the CPU. Under bf16 autocast, the head's rounding depends on the matrix shape: in the smoke,
+the shared and the continuation-only scorers flipped a few near-tie items on the GPU. Applying the head in float32 removes
+that rounding source.
+
+**What does not change.** On the CPU (no autocast), it equals `channel_probes.continuation_logprob` to 6 × 10⁻⁵ nats (a
+smoke check on 512 real prompts) and to 10⁻⁴ in the toy test. The PMI, the argmax, the families and the endpoints are
+unchanged.
+
+### 10.4 Job settings (2026-10-07; no endpoint computed)
+
+- **Rescoring variants.** `ref` for every run, plus `ref-off` for C5 (A1-S6). The jobs keep the trainer's evaluation batch
+  (§10.1).
+- **Row probe figure.** Seed 1 only (the figure is descriptive). Every seed gets its probe.
+- **B1 sources.** On Qwen3, C5 gets `own` and `none` (no `random_frame`) to halve its cost. The `own − random_frame`
+  specificity condition of reading (a) is tested on SmolLM2, where all three sources run.

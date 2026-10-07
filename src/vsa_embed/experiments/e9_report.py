@@ -1304,12 +1304,22 @@ def plot_freqbias(label: str, g: dict[str, Any], out: Path, slug: str, *, candid
         if rows:
             x = [r["mean_log2_frequency"] for r in rows]
             fig, ax = plt.subplots(figsize=(6.4, 3.4))
+            ends = []
             for model in [m for m in ("P0", "C0'", "C2", candidate) if m in loss["losses"]]:
                 y = [loss["losses"][model][r["name"]] for r in rows]
                 colour = COLOURS.get(model, MUTED)
                 ax.plot(x, y, "-o", color=colour, linewidth=2, markersize=5, markeredgecolor="#fcfcfb", markeredgewidth=1.0,
                         label=model)
-                ax.annotate(model, (x[-1], y[-1]), xytext=(6, 0), textcoords="offset points", fontsize=8, color=INK, va="center")
+                ends.append([y[-1], model])
+            # direct labels at the right end, pushed apart so that converging lines never stack their labels
+            low, high = ax.get_ylim()
+            gap = 0.06 * (high - low)
+            ends.sort()
+            for i in range(1, len(ends)):
+                ends[i][0] = max(ends[i][0], ends[i - 1][0] + gap)
+            for value, model in ends:
+                ax.annotate(model, (x[-1], value), xytext=(8, 0), textcoords="offset points", fontsize=8, color=INK, va="center",
+                            annotation_clip=False)
             ax.set_xlabel("log2 training frequency of the preceding term (bin mean)", fontsize=8, color=MUTED)
             ax.set_ylabel("loss after the term (nats/token)", fontsize=8, color=MUTED)
             ax.grid(True, axis="y", color=GRID, linewidth=0.6); ax.set_axisbelow(True)

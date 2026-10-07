@@ -382,7 +382,8 @@ def test_queue_dry_runs(tmp_path) -> None:
     jobs = fb.queue_stage("t5", priority=55, root=tmp_path, dry_run=True, models=["C5", "C0p"])
     assert [j["name"] for j in jobs] == ["t5-SmolLM2-360M-full-C0p-s2-freqbias", "t5-SmolLM2-360M-full-C0p-s2-freqrows",
                                          "t5-SmolLM2-360M-full-C5-s1-freqbias", "t5-SmolLM2-360M-full-C5-s1-freqrows"]
-    assert jobs[1]["lane"] == "cpu" and jobs[1]["priority"] == 56 and "--no-tsne" not in jobs[1]["command"]
+    assert jobs[1]["lane"] == "cpu" and jobs[1]["priority"] == 56 and "--no-tsne" in jobs[1]["command"]          # seed 2: no figure
+    assert "--no-tsne" not in jobs[3]["command"] and jobs[2]["command"][-5:-3] == ["ref", "ref-off"]               # C5 s1
     assert "--no-tsne" in fb.queue_stage("t5", root=tmp_path, dry_run=True, licensed=True, kinds=["rows"])[0]["command"]
     understanding = und.queue_stage("t5", tmp_path / "items" / "understanding-t5-smollm2-v1", priority=56, root=tmp_path, dry_run=True,
                                     seeds=[1])
@@ -457,6 +458,10 @@ def test_evaluation_sources_and_restoration(world, items) -> None:
     assert {r["test"] for r in own} >= {"hop1", "bridge"} and not {r["test"] for r in none} & {"hop1", "bridge"}   # references: own only
     own_main = [r for r in own if r["test"] not in und.REFERENCE_TESTS]
     assert [r["id"] for r in own_main] == [r["id"] for r in none] and any(a["margin"] != b["margin"] for a, b in zip(own_main, none))
+    prefixes, continuations = ["Brightwater Ledger is owned by", "Of Grosh Console and Plurb Standard, the one we mean is"], \
+        [" the Zash Team", " Grosh Console"]
+    assert np.allclose(und.continuation_logprob(run.adapter, prefixes, continuations),                  # the fp32-head scorer
+                       cp.continuation_logprob(run.adapter, prefixes, continuations), atol=1e-4)
     summary = und.summarize(evaluation, resamples=50)
     assert "composite" in summary["sources"]["own"]["heldout"] and summary["comparisons"]
     scores = und.concept_family_scores(own)

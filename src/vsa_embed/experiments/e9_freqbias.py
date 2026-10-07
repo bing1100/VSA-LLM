@@ -587,14 +587,16 @@ def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[s
 
 
 REPLAY_TOLERANCE = 1e-3
+REPLAY_MIN_TARGETS = 5000
 
 
 def prefix_reference_check(run_dir: Path, strata: list[str], starts: list[int], sums: np.ndarray, counts: np.ndarray, *,
                            composing: bool = False) -> dict[str, Any]:
     """`e4_quant.reference_check` on the run's final evaluation, also for a prefix of its windows (smoke tests), with the
-    replay verdict (pre-registration §10.1): the masks must be identical (`counts_equal`); the sums bit-exact for a run
-    without a composer, and within `REPLAY_TOLERANCE` relative per stratum total for a composing run (the composer's
-    CUDA `index_add_` sums in no fixed order under bf16)."""
+    replay verdict (pre-registration §10.1–10.2): the masks must be identical (`counts_equal`); the sums bit-exact for a
+    run without a composer, and for a composing run within `REPLAY_TOLERANCE` relative per stratum total on the strata
+    with ≥ `REPLAY_MIN_TARGETS` targets (the largest stratum if none has as many): the composer's CUDA `index_add_` sums in
+    no fixed order under bf16, and in a small stratum one window's noise is a large fraction of the total."""
     path = Path(run_dir) / "eval_windows.npz"
     if not path.exists():
         return {"available": False}
@@ -610,13 +612,19 @@ def prefix_reference_check(run_dir: Path, strata: list[str], starts: list[int], 
     a, b = run_sums[index][:, :n], sums[mine]
     with np.errstate(invalid="ignore", divide="ignore"):
         relative = np.abs(b.sum(1) - a.sum(1)) / np.abs(a.sum(1))
-    max_relative = float(np.nanmax(relative)) if index else None
+    targets = run_counts[index][:, :n].sum(1) if index else np.zeros(0)
+    large = targets >= REPLAY_MIN_TARGETS
+    if index and not large.any():
+        large = targets == targets.max()
+    max_relative = float(np.nanmax(relative[large])) if index else None
+    max_relative_all = float(np.nanmax(relative)) if index else None
     max_abs = float(np.abs(a - b).max()) if index else None
     ok = counts_equal and max_abs is not None and (max_abs == 0.0 or (composing and max_relative <= REPLAY_TOLERANCE))
     return {"available": True, "paired": True, "final_tokens": tokens, "windows": n, "prefix": n < len(saved["starts"]),
             "strata_checked": len(index), "counts_equal": counts_equal, "max_abs_window_sum_diff": max_abs,
-            "max_relative_stratum_diff": max_relative, "composing": composing, "tolerance": REPLAY_TOLERANCE if composing else 0.0,
-            "replay_ok": bool(ok)}
+            "max_relative_stratum_diff": max_relative, "max_relative_stratum_diff_any": max_relative_all,
+            "strata_in_tolerance_check": [strata[m] for m, keep in zip(mine, large) if keep], "composing": composing,
+            "tolerance": REPLAY_TOLERANCE if composing else 0.0, "replay_ok": bool(ok)}
 
 
 def bin_support(strata: Sequence[str], counts: np.ndarray, terms: dict[str, np.ndarray],
@@ -1237,12 +1245,14 @@ def queue_stage(stage: str, *, priority: int = 55, kinds: Sequence[str] = ("scor
         if (models and model not in models) or (seeds and seed_match and int(seed_match[1]) not in seeds):
             continue
         run_dir = Path(root) / "runs" / stage / path.stem
-        if "score" in kinds:
+        seed = int(seed_match[1]) if seed_match else 1
+        if "score" in kinds:                  # ref-off (the channel switched off; A1-S6) for the candidate only
+            variants = ("ref", "ref-off") if model == "C5" else ("ref",)
             jobs.append({"name": f"{stage}-{path.stem}-freqbias", "priority": priority, "lane": None, "min_free_gb": 5,
-                         "command": score_command(run_dir, python=python)})
-        if "rows" in kinds:
+                         "command": score_command(run_dir, python=python, variants=variants)})
+        if "rows" in kinds:                   # the t-SNE figure uses seed 1 (licensed tracks: none)
             jobs.append({"name": f"{stage}-{path.stem}-freqrows", "priority": priority + 1, "lane": "cpu", "min_free_gb": 0,
-                         "command": rows_command(run_dir, python=python, with_tsne=not licensed)})
+                         "command": rows_command(run_dir, python=python, with_tsne=not licensed and seed == 1)})
     if dry_run:
         return jobs
     queued = []
