@@ -254,6 +254,14 @@ def test_gradient_dev_writes_the_lr_that_evaluate_reads(world, sets, tmp_path, c
     assert summary["gradient"]["lr"] == chosen["lr"] and (tmp_path / "eval" / "gradient_records.json").exists()
 
 
+def test_scr_notes_drop_bibliographic_parts() -> None:
+    assert e11.scr_definition("structure in first source") is None
+    assert e11.scr_definition("RN given refers to parent cpd; inhibits Zn-dependent metalloproteinases") == \
+        "inhibits Zn-dependent metalloproteinases"
+    assert e11.scr_definition("has antineoplastic activity; structure given in first source") == "has antineoplastic activity"
+    assert e11.scr_definition("an ionic liquid") == "an ionic liquid" and e11.scr_definition("isomer of X; RN given") is None
+
+
 def test_teacher_reads_open_licence_text_only(tmp_path) -> None:
     def read_set(licence: str) -> e11.ReadSet:
         return e11.ReadSet(tmp_path, {"licence": [licence]}, [], [{"concept": "c", "licence": licence}], [])

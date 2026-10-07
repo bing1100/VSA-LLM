@@ -71,8 +71,21 @@ ITEMS = ROOT / "items"
 DATA = Path("~/data/vsa-llm/e11").expanduser()
 FOLDER = "e11"                                     # per-run output folder name (RUN/e11-<set>)
 METHODS = ("frames", "persistence", "context", "gradient", "windows", "locality")
-PRIMARY_STYLE = {"t5": "prose", "t4": "chebi", "t1": "scope", "wordnet": "prose"}
-EXCLUDED_KINDS = {"t4": ("element", "charge", "branch"), "t1": ("branch",), "wordnet": ("lexname", "pos"), "t5": ()}
+PRIMARY_STYLE = {"t5": "prose", "t4": "chebi", "t1": "scope", "t7": "scr", "wordnet": "prose"}
+EXCLUDED_KINDS = {"t4": ("element", "charge", "branch"), "t1": ("branch",), "t7": ("branch",), "wordnet": ("lexname", "pos"),
+                  "t5": ()}
+# MeSH SCR notes are partly bibliographic ("structure given in first source", "RN given refers to parent cpd"): those
+# `;`-separated parts are dropped; a note is read only if ≥ 3 words remain (§15).
+SCR_BOILERPLATE = re.compile(r"^(rn given|structure|mf given|in first source|for .* see|see also|no structure|mixture of|"
+                             r"also see|isomer|.*\bfirst source\b|.*\bgiven in\b.*source)", re.I)
+
+
+def scr_definition(note: str, *, min_words: int = 3) -> str | None:
+    """The informative part of a MeSH supplementary-record note, or None."""
+    kept = [p.strip() for p in (note or "").split(";")]
+    kept = [p for p in kept if p and not SCR_BOILERPLATE.match(p) and len(p.split()) >= 2]
+    text = "; ".join(kept)
+    return text if len(text.split()) >= min_words else None
 LICENCES = {"t5": "project-generated (synthetic T5 glossary)", "chebi": "CC BY 4.0 (ChEBI, EMBL-EBI, release 255)",
             "mesh": "public domain (MeSH 2026, courtesy of the U.S. National Library of Medicine)",
             "openstax": "CC BY-NC-SA 4.0 (OpenStax Chemistry 2e; research use, text kept under ~/data, not committed)"}
@@ -325,6 +338,19 @@ def heldout_definitions(track: str, ctx: TrackContext, entries: Sequence[int], s
                     names[e] = headings.get(cid, cid)
                     texts[e] = (note, f"MeSH 2026 scope note ({cid})", LICENCES["mesh"], "scope")
             info["source"] = "MeSH 2026 ScopeNote of the preferred concept, read as '<headword>: <note>'"
+        elif track == "t7":
+            from ..ontologies.mesh_novel import parse_supplementary
+            config = tracks._load_config(spec)["ontology"]
+            records = {r["ui"]: r for r in parse_supplementary(Path(config["supplementary_path"]).expanduser())}
+            for e in entries:
+                record = records.get(_entry_concept_name(ctx, e)) or {}
+                note = scr_definition(record.get("note") or "")
+                if note and record.get("name"):
+                    names[e] = record["name"]
+                    texts[e] = (note, f"MeSH 2026 supplementary record note ({record['ui']}, introduced {record.get('introduced')})",
+                                LICENCES["mesh"], "scr")
+            info["source"] = ("MeSH 2026 supplementary concept record <Note>, bibliographic parts removed, read as "
+                              "'<headword>: <note>'")
         else:
             raise ValueError(f"held-out definitions are not defined for track {track!r}")
     chosen = linkable_headwords(ctx, names, tokenizer, min_subtokens) if tokenizer is not None else {e: (n, "name") for e, n in names.items()}
@@ -878,11 +904,13 @@ class ItemScorer:
             yield
 
     def score(self, frames: dict[str, rtl.Frame | None], contexts: dict[str, str] | None = None,
-              concepts: Sequence[str] | None = None) -> dict[str, list[dict[str, Any]]]:
-        """Per concept: result rows of its items (prompts: PMI correctness, paraphrase consistency; statements)."""
+              concepts: Sequence[str] | None = None, *, prefix: "PrefixCache | str | None" = None, tag: str | None = None
+              ) -> dict[str, list[dict[str, Any]]]:
+        """Per concept: result rows of its items (prompts: PMI correctness, paraphrase consistency; statements). With a
+        cached `prefix` every prompt (and its null) is read after it; `tag` names the prefix in the result cache."""
         concepts = list(concepts or self.concepts)
-        cacheable = self.read_set.kind == "new"
-        key_of = {c: (c, self._key(frames.get(c)), (contexts or {}).get(c)) for c in concepts}
+        cacheable = self.read_set.kind == "new" and (prefix is None or tag is not None)
+        key_of = {c: (c, self._key(frames.get(c)), (contexts or {}).get(c), tag) for c in concepts}
         todo = [c for c in concepts if not (cacheable and key_of[c] in self.cache)]
         if todo:
             items = [i for c in todo for i in self.items_by_concept[c]]
@@ -892,9 +920,12 @@ class ItemScorer:
             prompt_items = [i for i in items if i["test"] in {"property", "entailment"}]
             statement_items = [i for i in items if i["test"] == "statement"]
             # Prompts with a definition in front are ≈ 3–5× longer: half the batch keeps the peak memory of a plain pass.
-            with self.condition(frames), _smaller(self.adapter, 2 if contexts else 1), fast_continuations():
-                prompts, _ = zs.score_prompts(self.adapter, prompt_items, self.surface) if prompt_items else ([], None)
-                statements = edit.score_statements(self.adapter, statement_items, self.surface) if statement_items else []
+            with self.condition(frames), _smaller(self.adapter, 2 if contexts or prefix is not None else 1):
+                # A prefix given as text is read here, inside the condition: its new names link to inserted entries.
+                cache = PrefixCache(self.run, self.adapter, prefix) if isinstance(prefix, str) else prefix
+                with prefixed_continuations(cache) if cache is not None else fast_continuations():
+                    prompts, _ = zs.score_prompts(self.adapter, prompt_items, self.surface) if prompt_items else ([], None)
+                    statements = edit.score_statements(self.adapter, statement_items, self.surface) if statement_items else []
             self.passes += 1
             kinds = {i["id"]: i.get("edge_kind") for i in items}
             fresh: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -908,8 +939,53 @@ class ItemScorer:
         return {c: self.cache[key_of[c]] for c in concepts}
 
 
+class PrefixCache:
+    """A context prefix (e.g. definitions read in context) run once through the model, its key/value cache reused for
+    every text scored after it (E11-M, preregistration §14). Texts are tokenized on their own and placed at positions
+    P … P+T−1 after the P prefix tokens; their spans (channel injections) are linked within the text. One difference
+    from scoring `prefix + text` jointly: the channel's causal context query (`context_window` tokens) does not reach
+    back into the prefix for injections in a text's first few tokens (tested close; recorded)."""
+
+    def __init__(self, run: E5Run, adapter: Any, text: str | None = None, *, ids: torch.Tensor | None = None,
+                 spans: dict[str, torch.Tensor] | None = None) -> None:
+        self.run, self.adapter = run, adapter
+        model, device, tokenizer = run.model, run.device, run.tokenizer
+        if ids is None:
+            encoded = tokenizer([text or ""], return_offsets_mapping=True, add_special_tokens=False, return_tensors="pt")
+            ids = encoded["input_ids"]
+            if getattr(adapter, "spans_fn", None) is not None and model.channel is not None and ids.shape[1]:
+                spans = adapter.spans_fn([text], [[tuple(o) for o in encoded["offset_mapping"][0].tolist()]])
+        self.length = int(ids.shape[1])
+        self.legacy = None
+        if self.length:
+            with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                embeddings = model.embed(ids.to(device), None if spans is None else {k: v.to(device) for k, v in spans.items()})
+                out = model.base(inputs_embeds=embeddings, use_cache=True)
+            cache = out.past_key_values
+            self.legacy = cache.to_legacy_cache() if hasattr(cache, "to_legacy_cache") else tuple(cache)
+
+    def _cache(self, batch: int) -> Any:
+        from transformers import DynamicCache
+        return DynamicCache.from_legacy_cache(tuple((k.expand(batch, -1, -1, -1), v.expand(batch, -1, -1, -1)) for k, v in self.legacy))
+
+    @torch.no_grad()
+    def hidden(self, ids: torch.Tensor, attention: torch.Tensor, spans: dict[str, torch.Tensor] | None) -> torch.Tensor:
+        """Final hidden states (B × T × d) of `ids` read after the prefix."""
+        model, device = self.run.model, self.run.device
+        ids, attention = ids.to(device), attention.to(device)
+        spans = None if spans is None else {k: v.to(device) for k, v in spans.items()}
+        with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
+            embeddings = model.embed(ids, spans)
+            if not self.length:
+                return model.base(inputs_embeds=embeddings, attention_mask=attention).last_hidden_state
+            mask = torch.cat([torch.ones(ids.shape[0], self.length, dtype=attention.dtype, device=device), attention], 1)
+            out = model.base(inputs_embeds=embeddings, attention_mask=mask, past_key_values=self._cache(ids.shape[0]), use_cache=True)
+        return out.last_hidden_state
+
+
 @torch.no_grad()
-def continuation_scores(adapter: Any, prefixes: Sequence[str], continuations: Sequence[str]) -> tuple[np.ndarray, np.ndarray]:
+def continuation_scores(adapter: Any, prefixes: Sequence[str], continuations: Sequence[str], *,
+                        prefix: PrefixCache | None = None) -> tuple[np.ndarray, np.ndarray]:
     """Σ log p(continuation | prefix) and the number of continuation tokens, as `channel_probes.continuation_logprob` /
     `e9_ontology_edit.continuation_stats` compute them (same batch forward, spans, autocast and output head), but with
     output logits only at the positions that predict a continuation token and with texts batched by length. The shared
@@ -921,7 +997,11 @@ def continuation_scores(adapter: Any, prefixes: Sequence[str], continuations: Se
     order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
     for start in range(0, len(order), adapter.batch_size):
         chunk = order[start:start + adapter.batch_size]
-        encoded, out, head = adapter._run_batch([texts[i] for i in chunk])
+        if prefix is None:
+            encoded, out, head = adapter._run_batch([texts[i] for i in chunk])
+            hidden = out.hidden_states[-1]
+        else:
+            encoded, hidden, head = _prefixed_batch(adapter, prefix, [texts[i] for i in chunk])
         mask = encoded["attention_mask"]
         rows, cols, targets, owners = [], [], [], []
         for r, i in enumerate(chunk):
@@ -932,7 +1012,6 @@ def continuation_scores(adapter: Any, prefixes: Sequence[str], continuations: Se
                     rows.append(r); cols.append(t - 1); targets.append(int(encoded["input_ids"][r, t])); owners.append(i)
         if not rows:
             continue
-        hidden = out.hidden_states[-1]
         with adapter._autocast():
             logits = F.linear(hidden[torch.tensor(rows, device=hidden.device), torch.tensor(cols, device=hidden.device)].float(),
                               head.weight.float())
@@ -942,16 +1021,43 @@ def continuation_scores(adapter: Any, prefixes: Sequence[str], continuations: Se
     return sums, counts
 
 
+def _prefixed_batch(adapter: Any, prefix: PrefixCache, batch: list[str]) -> tuple[Any, torch.Tensor, Any]:
+    """(encoding, final hidden states, output head) of a right-padded batch read after `prefix` (`_run_batch`'s contract)."""
+    tokenizer = adapter.tokenizer
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+    encoded = tokenizer(batch, return_offsets_mapping=True, add_special_tokens=False, padding=True, truncation=True,
+                        max_length=adapter.max_length, return_tensors="pt")
+    spans = None
+    if adapter.spans_fn is not None:
+        offsets = [[tuple(o) for o, m in zip(offs.tolist(), msk.tolist()) if m] for offs, msk in
+                   zip(encoded["offset_mapping"], encoded["attention_mask"])]
+        spans = adapter.spans_fn(batch, offsets)
+    hidden = prefix.hidden(encoded["input_ids"], encoded["attention_mask"], spans)
+    return encoded, hidden, prefix.run.model.model.get_output_embeddings()
+
+
 @contextlib.contextmanager
-def fast_continuations() -> Iterator[None]:
-    """Within the block the E5.4 / E9 scorers (`zs.score_prompts`, `edit.score_statements`) use `continuation_scores`."""
+def patched_continuations(scorer: Callable[..., tuple[np.ndarray, np.ndarray]]) -> Iterator[None]:
+    """Within the block the E5.4 / E9 scorers (`zs.score_prompts`, `edit.score_statements`) use `scorer`."""
     saved = cp.continuation_logprob, edit.continuation_stats
-    cp.continuation_logprob = lambda adapter, prefixes, continuations: continuation_scores(adapter, prefixes, continuations)[0]
-    edit.continuation_stats = continuation_scores
+    cp.continuation_logprob = lambda adapter, prefixes, continuations: scorer(adapter, prefixes, continuations)[0]
+    edit.continuation_stats = scorer
     try:
         yield
     finally:
         cp.continuation_logprob, edit.continuation_stats = saved
+
+
+def fast_continuations() -> contextlib.AbstractContextManager:
+    """`patched_continuations(continuation_scores)`: the E9 scorers with logits only at continuation positions."""
+    return patched_continuations(continuation_scores)
+
+
+def prefixed_continuations(prefix: PrefixCache) -> contextlib.AbstractContextManager:
+    """The E9 scorers reading every prompt after a cached context `prefix` (definitions in context, E11-M)."""
+    return patched_continuations(lambda adapter, p, c: continuation_scores(adapter, p, c, prefix=prefix))
 
 
 @contextlib.contextmanager
@@ -1898,7 +2004,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     items = sub.add_parser("items", help="build a read-to-learn item set")
     items.add_argument("--kind", required=True, choices=["new", "heldout", "swap"])
-    items.add_argument("--track", required=True, choices=["t5", "t4", "t1"])
+    items.add_argument("--track", required=True, choices=["t5", "t4", "t1", "t7"])
     items.add_argument("--output", type=Path, required=True); items.add_argument("--new-items", type=Path, default=None)
     items.add_argument("--glossary", type=Path, default=None); items.add_argument("--styles", nargs="*", default=None)
     items.add_argument("--seed", type=int, default=0); items.add_argument("--limit", type=int, default=None)
