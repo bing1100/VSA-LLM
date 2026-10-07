@@ -580,3 +580,17 @@ Not in this block (author decision pending): Qwen3-4B (≈ 11.4 h per run; a lit
 | 57 | **Qwen3 seed 3** | Qwen3-1.7B/0.6B-Base on T5, seed 3 (C0′, C2, C5), priorities 55–58 (after the Qwen3.5 block) |
 | 58 | **Clinical track from the credentialed files** in `data/` (SNOMED CT International 2022-05-31, UMLS 2022AB, MIMIC-III 1.4 `NOTEEVENTS`, MIMIC-IV 3.1) | Supersedes decision 1's open substitute where the licensed sources apply. DUA and licence rules: `data/` is git-ignored; nothing derived from MIMIC, SNOMED CT or UMLS is committed (derived tables under `~/data/vsa-llm/`); MIMIC text is never sent to an external service (no `claude -p` teacher or judge on MIMIC text; Claude Code sessions read only file names, sizes and column headers, never note contents) |
 | 59 | **Read-to-learn** (one-shot vocabulary from reading definitions or a textbook glossary) | New experiment for the self-reflective-learning use case: read a definition → frame → compose the new term's vector, no gradient step; design and pre-registration before any run |
+
+## E11 — read-to-learn (decision 59; WP-E11, 2026-10-07)
+
+Pre-registration: `experiments/e11-read-to-learn/preregistration.md` (committed before any run). A trained E9 C5 model reads a
+term's definition once; a reader writes a frame over the existing atomics and relations; the channel composes the term's row;
+the term is tested with the definition out of context and no gradient step. Readers: oracle, stated, typeprior, pattern,
+**linker** (the model chooses each found concept's relation by the definition's likelihood and self-tests the edge), host
+(E7 prompted extraction), teacher (optional, open licences only), random, none. Text routes on the same items: the definition
+in context (IKE-style) and a compute-matched one-shot gradient update (lr chosen on 40 dev words). Sets: T5 invented words
+(3 definition styles; primary `prose`), T5 held-out terms, T4 held-out ChEBI entities with their ChEBI definitions (natural),
+T4 invented compounds, T1 held-out MeSH (negative control), OpenStax *Chemistry 2e* glossary (exploratory frame swap; the
+book is CC BY-NC-SA 4.0, not CC BY). Primary endpoints: P1 T5 new words, 360M, property, linker − none; P2 T4 held-out ChEBI
+terms, loss after the term, linker − none (Holm over both). Code `vsa_embed.read_to_learn`, `vsa_embed.experiments.e11_read_to_learn`;
+queue commands from `e11_read_to_learn plan` (priority 61–63, evaluation only).
