@@ -31,7 +31,7 @@ holdout:
   fraction: 0.13                # of the eligible framed codes of each eligible bin
   bins: [-12, -10, -8]          # lower edges: training counts ≈ 4–25, 26–187, 188–1,355 (head bins −6, −4 excluded)
   min_count: 5
-  expected_sha256: null         # pinned to the prepare stage's digest before any GPU run (a build that differs fails)
+  expected_sha256: 5450b37b542048e52e6725d8e567bb9f67296a1d35c0f3eeb17944af5a1df298   # frozen 2026-10-07 (prepare-v1, 382 codes), before any GPU run; a build that differs fails
 text:
   tokenizer: HuggingFaceTB/SmolLM2-360M   # SmolLM2-135M / -360M share it; T1c's reference tokenizer
   max_tokens: 8192              # first 8,192 tokens of the concatenated discharge summaries (≥ 99% of admissions whole)

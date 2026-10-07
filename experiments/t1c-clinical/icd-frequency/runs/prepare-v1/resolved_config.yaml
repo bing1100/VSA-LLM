@@ -1,0 +1,92 @@
+experiment: t1c-icd-frequency
+version: v1
+seed: 20261007
+paths:
+  t1c_config: experiments/t1c-clinical/t1c.yaml
+  data_root: ~/data/vsa-llm/t1c/icd-frequency-v1
+  ontology_pt: ~/data/vsa-llm/t1c/snomed-mimic3-smollm2-v2/ontology.pt
+  t1c_holdout: ~/data/vsa-llm/t1c/snomed-mimic3-smollm2-v2/holdout_concepts.txt
+  alias_table: ~/data/vsa-llm/t1c/e9/t1c.json
+  runs: experiments/t1c-clinical/icd-frequency/runs
+sources:
+  diagnoses: physionet.org/files/mimiciii/1.4/DIAGNOSES_ICD.csv.gz
+  titles: physionet.org/files/mimiciii/1.4/D_ICD_DIAGNOSES.csv.gz
+  icd9_map_dir: mimic-iv_data/hosp/Mapping/ICD9CM_DIAGNOSIS_MAP_202112
+labels:
+  note_category: Discharge summary
+  max_concepts: 8
+  frequency_edges:
+  - -14
+  - -12
+  - -10
+  - -8
+  - -6
+  - -4
+  - -2
+  - 0
+split:
+  dev_buckets:
+  - 1000
+  - 1500
+holdout:
+  salt: t1c-icd-frequency-v1
+  fraction: 0.13
+  bins:
+  - -12
+  - -10
+  - -8
+  min_count: 5
+  expected_sha256: null
+text:
+  tokenizer: HuggingFaceTB/SmolLM2-360M
+  max_tokens: 8192
+  chunk_tokens: 1024
+  segment_tokens: 32
+  link_min_subtokens: 2
+  workers: 8
+encode:
+  batch_chunks: 8
+  dtype: bfloat16
+head:
+  source_dim: 256
+  attention_dim: 256
+  label_hidden: 512
+  batch: 32
+  lr: 0.001
+  weight_decay: 0.01
+  max_epochs: 12
+  patience: 2
+  free_std: 0.02
+  conditions:
+  - free
+  - composed_head
+  - transe
+  - title
+  - random
+  - gram
+  - composed_free
+composer:
+  operator: hrr
+  dimension: 256
+  composition: attentive
+  concept_factor: induced
+  key_dimension: 8
+gram:
+  attention_dim: 128
+kge:
+  dimension: 256
+  steps: 20000
+  batch: 1024
+  negatives: 64
+analysis:
+  ks:
+  - 10
+  - 100
+  bootstrap_primary: 2000
+  bootstrap_secondary: 1000
+  rare_below: -10
+  frequent_from: -8
+  probe_folds: 5
+  neighbours: 10
+  tsne_points: 3000
+  tsne_iterations: 750
