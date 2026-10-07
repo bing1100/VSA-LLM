@@ -775,3 +775,172 @@ def test_t5_alias_table_replays_exactly(monkeypatch) -> None:
     assert table.digest() == ontology["alias_table_sha256"] and len(table.entry_concepts) == ontology["entry_count"]
     lexicon = tracks.track_lexicon(tracks.TRACKS["t5"], ontology)
     assert lexicon.text("type:process") == "process" and any(t.startswith("the ") for t in lexicon.texts.values())
+
+
+# -- 8. item versions (decision 56): v2 ⊃ v1, opt-in jobs and report ------------------------------------------------------
+
+def _frame_key(frame) -> frozenset:
+    return frozenset(tuple(edge) for edge in frame)
+
+
+def test_items_v2_extend_new_words_keeps_the_base_first(world, items, tmp_path) -> None:
+    ontology = world["root"] / "ontology.pt"
+    reserved = edit._reserved_names([items["reserved"]])
+    base = tmp_path / "new-v1"
+    edit.build_new_word_items(ontology, base, tokenizer_name="gpt2", count=3, min_subtokens=1, contamination_texts=SENTENCES,
+                              reserved_names=reserved)
+    out = tmp_path / "new-v2"
+    manifest = edit.extend_new_word_items(base, ontology, out, tokenizer_name="gpt2", count=6, contamination_texts=SENTENCES,
+                                          reserved_names=reserved)
+    for name in ("concepts.jsonl", "items.jsonl"):
+        assert (out / name).read_bytes().startswith((base / name).read_bytes())
+        assert len((out / name).read_bytes()) > len((base / name).read_bytes())
+    _, concepts, new_items = edit.load_item_dir(out, edit.SCHEMA_NEW)
+    assert [c["concept"] for c in concepts] == [f"e9n-{i:04d}" for i in range(6)] and manifest["counts"]["concepts"] == 6
+    assert len({c["surface"].lower() for c in concepts}) == 6
+    # The names continue the base's sequence (a longer build has the same names); extension frames are new combinations.
+    longer = edit.build_new_word_items(ontology, tmp_path / "new-6", tokenizer_name="gpt2", count=6, min_subtokens=1,
+                                       contamination_texts=SENTENCES, reserved_names=reserved)
+    assert [c["surface"] for c in concepts] == [json.loads(line)["surface"]
+                                                for line in (tmp_path / "new-6" / "concepts.jsonl").read_text().splitlines()]
+    existing = {_frame_key([[RELATIONS[r], ATOMS[f]] for r, f in frame]) for frame in FRAMES}
+    base_frames = {_frame_key(c["frame"]) for c in concepts[:3]}
+    for concept in concepts[3:]:
+        assert _frame_key(concept["frame"]) not in existing | base_frames
+        assert concept["donor_entry"] not in {c["donor_entry"] for c in concepts[:3]}
+        assert any(i["concept"] == concept["concept"] for i in new_items)
+    assert manifest["base"]["concepts"] == 3 and manifest["extension"]["first_concept"] == "e9n-0003"
+    assert manifest["base"]["sha256"]["items.jsonl"] == edit._sha256(base / "items.jsonl") and manifest["seed"] == 0
+    assert manifest["checks"]["names"] == 6 + 64 and manifest["contamination_free"] and longer["count"] == 6
+    assert manifest["sha256"]["items.jsonl"] == edit._sha256(out / "items.jsonl")
+    tampered = tmp_path / "tampered"
+    tampered.mkdir()
+    for name in ("concepts.jsonl", "manifest.json"):
+        (tampered / name).write_bytes((base / name).read_bytes())
+    lines = (base / "items.jsonl").read_text().splitlines(keepends=True)
+    row = json.loads(lines[0])
+    row["templates"] = row["templates"] + ["The {x} is"]
+    (tampered / "items.jsonl").write_text(json.dumps(row) + "\n" + "".join(lines[1:]))
+    with pytest.raises(ValueError, match="not reproduced"):
+        edit.extend_new_word_items(tampered, ontology, tmp_path / "bad", tokenizer_name="gpt2", count=6,
+                                   contamination_texts=SENTENCES, reserved_names=reserved)
+    with pytest.raises(ValueError, match="must exceed"):
+        edit.extend_new_word_items(base, ontology, tmp_path / "bad2", tokenizer_name="gpt2", count=3,
+                                   contamination_texts=SENTENCES, reserved_names=reserved)
+
+
+def test_items_v2_extend_edits_never_touch_base_concepts(world, tmp_path) -> None:
+    ontology = world["root"] / "ontology.pt"
+    base = tmp_path / "edits-v1"
+    lexicon = _toy_lexicon()                      # same-type fillers (the toy's WordNet pools are too small to edit within a lexname)
+    edit.build_edit_items(ontology, base, tokenizer_name="gpt2", count=2, min_subtokens=1, neighbors=1, lexicon=lexicon)
+    pool = edit.edit_pool(ontology, tokenizer_name="gpt2", min_subtokens=1, lexicon=lexicon)
+    out = tmp_path / "edits-v2"
+    manifest = edit.extend_edit_items(base, ontology, out, tokenizer_name="gpt2", count=5, lexicon=lexicon)
+    for name in ("concepts.jsonl", "items.jsonl"):
+        assert (out / name).read_bytes().startswith((base / name).read_bytes())
+    _, base_concepts, _ = edit.load_item_dir(base, edit.SCHEMA_EDITS)
+    _, concepts, all_items = edit.load_item_dir(out, edit.SCHEMA_EDITS)
+    base_entries = {c["entry"] for c in base_concepts}                       # edited and neighbour concepts of v1
+    extension = [c for c in concepts[len(base_concepts):] if c["role"] == "edited"]
+    edited = {c["entry"] for c in concepts if c["role"] == "edited"}
+    assert extension and not ({c["entry"] for c in extension} & base_entries)
+    assert not ({c["entry"] for c in concepts if c["role"] == "neighbour"} & edited)
+    assert len({c["concept"] for c in concepts}) == len(concepts) and len({i["id"] for i in all_items}) == len(all_items)
+    assert manifest["pool"]["heldout_eligible"] == pool["heldout"] and manifest["pool"]["seen_eligible"] == pool["seen"]
+    assert manifest["base"]["edits"] == 2 and manifest["extension"]["edits"] == len(extension)
+    assert manifest["counts"]["efficacy"] == 2 + len(extension) and isinstance(manifest["pool"]["heldout_capped"], bool)
+
+
+def test_e9_plan_item_versions_are_opt_in(plan_root, tmp_path) -> None:
+    spec = tracks.TRACKS["t5"]
+    run = Path("runs/t5/SmolLM2-360M-full-C5-s1")
+    default = e9_plan.evaluation_jobs(run, spec, alias_table=Path("t5.json"))
+    assert [s for s, _, _ in default] == ["probes", "zeroshot", "edit", "probes-int4", "zeroshot-int4", "edit-int4"]
+    both = {s: c for s, c, _ in e9_plan.evaluation_jobs(run, spec, alias_table=Path("t5.json"), item_versions=("v1", "v2"))}
+    assert both["edit"] == {s: c for s, c, _ in default}["edit"]                          # v1 unchanged
+    v2 = both["edit-v2-int4"]
+    assert v2[v2.index("--new-items") + 1].endswith("new-words-t5-smollm2-v2")
+    assert v2[v2.index("--edit-items") + 1].endswith("edits-t5-smollm2-v2")
+    assert v2[v2.index("--output") + 1] == str(run / "edit-v2-int4") and v2[v2.index("--quantize") + 1] == "int4"
+    pq = {s: c for s, c, _ in e9_plan.evaluation_jobs(run, spec, profile="pq", model="C5sh", item_versions=("v2",))}
+    assert set(pq) == {"zeroshot", "edit-v2"} and "--edit-items" not in pq["edit-v2"]      # C5sh: new words only
+    with pytest.raises(ValueError):
+        e9_plan.dimension3_items("t5", "smollm2", "v3")
+    assert e9_plan.edit_folder("v1", "int4") == "edit-int4" and e9_plan.edit_folder("v2") == "edit-v2"
+    counts = {v: e9_plan.item_counts("t5", "smollm2", v) for v in ("v1", "v2")}
+    assert counts["v1"]["new_concepts"] == 300 and counts["v2"]["new_concepts"] == 700 and counts["v2"]["edits"] == 700
+    new_ratio, edit_ratio = e9_plan.item_scale("t5", "smollm2", "v2")
+    assert new_ratio == pytest.approx(counts["v2"]["new_items"] / counts["v1"]["new_items"]) and edit_ratio == pytest.approx(3.5)
+    # Evaluation-only re-runs on v2 for an existing stage: core models at bf16 and INT4, arms at bf16, report on v2.
+    _plan(plan_root, hosts=["SmolLM2-135M"], seeds=[1, 2], track="t5")
+    e9_plan.write_stage("main", hosts=["SmolLM2-135M"], models=["C5sh"], seeds=[1], data_root=plan_root["data"],
+                        counts_ontology=plan_root["counts"], root=plan_root["root"], track="t5")
+    measured = plan_root["root"] / "runs" / "main" / "SmolLM2-135M-full-C5-s1" / "edit"
+    measured.mkdir(parents=True)
+    (measured / "summary.json").write_text(json.dumps({"new_words": {"seconds": 50.0}, "edits": {"seconds": 6.0}}))
+    queue = tmp_path / "jobs"
+    queued, planned = e9_plan.queue_item_evaluations("main", track="t5", root=plan_root["root"], queue_dir=queue,
+                                                     alias_table=tmp_path / "t5.json")
+    names = [n for n, _, _, _ in planned]
+    assert len(planned) == 1 * 2 + 3 * 2 * 2 + 1 + 1 and set(queued) == set(names) and names[-1] == "main-report-items-v2"
+    assert "main-SmolLM2-135M-full-C5sh-s1-edit-v2" in names and "main-SmolLM2-135M-full-C5sh-s1-edit-v2-int4" not in names
+    hours = {n: (h, b) for n, _, h, b in planned}
+    overhead = e9_plan.EDIT_JOB_OVERHEAD_S["SmolLM2-135M"]
+    assert hours["main-SmolLM2-135M-full-C5-s1-edit-v2"] == (pytest.approx((overhead + 50 * new_ratio + 6 * edit_ratio) / 3600), "measured")
+    assert hours["main-SmolLM2-135M-full-C5-s2-edit-v2"][1].startswith("sibling")
+    assert hours["main-SmolLM2-135M-full-C5sh-s1-edit-v2"][0] == pytest.approx((overhead + 50 * new_ratio) / 3600)
+    jobs = {p.stem: json.loads(p.read_text()) for p in queue.glob("*.json")}
+    assert jobs["main-SmolLM2-135M-full-C2-s2-edit-v2-int4"]["priority"] == e9_plan.ITEM_EVAL_PRIORITY
+    report = jobs["main-report-items-v2"]
+    assert report["priority"] == e9_plan.ITEM_EVAL_PRIORITY + 1 and "--item-seed" in report["command"]
+    assert report["command"][report["command"].index("--items-version") + 1] == "v2"
+    assert not any("training.lm" in " ".join(j["command"]) for j in jobs.values())          # evaluation only
+    assert e9_plan.queue_item_evaluations("main", track="t5", root=plan_root["root"], queue_dir=queue,
+                                          alias_table=tmp_path / "t5.json")[0] == []      # idempotent
+    _, only = e9_plan.queue_item_evaluations("main", track="t5", root=plan_root["root"], queue=False, models=["C5"], seeds=[2],
+                                             report=False)
+    assert [n for n, _, _, _ in only] == ["main-SmolLM2-135M-full-C5-s2-edit-v2", "main-SmolLM2-135M-full-C5-s2-edit-v2-int4"]
+    with pytest.raises(ValueError):
+        e9_plan.queue_item_evaluations("main", track="t5", root=plan_root["root"], queue=False, version="v1")
+    # The dimension-3 baselines on v2: own folders, names and report; estimates scaled by the item counts.
+    _, dim3 = e9_plan.queue_dim3_baselines("main", track="t5", root=plan_root["root"], queue=False, version="v2", models=["C5"],
+                                           seeds=[1])
+    name, command, hours_v2 = dim3[0]
+    assert name == "main-SmolLM2-135M-full-C5-s1-dim3-baselines-v2"
+    assert command[command.index("--output") + 1].endswith("/dim3-baselines-v2")
+    assert command[command.index("--edit-items") + 1].endswith("edits-t5-smollm2-v2") and dim3[-1][0] == "main-report-dim3-v2"
+    assert "--items-version" in dim3[-1][1] and dim3[-1][1][dim3[-1][1].index("--output") + 1].endswith("main-dim3-v2")
+    assert hours_v2 > e9_plan.dim3_estimate_hours("SmolLM2-135M", "C5") * 2
+    _, dim3_v1 = e9_plan.queue_dim3_baselines("main", track="t5", root=plan_root["root"], queue=False, models=["C5"], seeds=[1])
+    assert dim3_v1[0][0] == "main-SmolLM2-135M-full-C5-s1-dim3-baselines" and "--items-version" not in dim3_v1[-1][1]
+
+
+def test_r9_report_items_v2_and_item_seed(world, items, tmp_path) -> None:
+    ontology = world["root"] / "ontology.pt"
+    reserved = edit._reserved_names([items["reserved"]])
+    new_v2, edits_v2 = tmp_path / "new-v2", tmp_path / "edits-v2"
+    edit.extend_new_word_items(items["new"], ontology, new_v2, tokenizer_name="gpt2", count=7, contamination_texts=SENTENCES,
+                               reserved_names=reserved)
+    edit.extend_edit_items(items["edits"], ontology, edits_v2, tokenizer_name="gpt2", count=7)
+    for name in ("C0p", "C5"):
+        run = world["runs"][name]
+        edit.main(["evaluate", "--run", str(run), "--new-items", str(new_v2), "--edit-items", str(edits_v2),
+                   "--output", str(run / "edit-v2"), "--device", "cpu", "--resamples", "50", "--fit-entries", "20", "--overwrite"])
+    out = tmp_path / "report"
+    summary = e9_report.write_report([world["root"] / "runs"], out, resamples=100, figures=False, items_version="v2", item_seed=True)
+    group = summary["groups"]["fake-host · lora"]
+    assert summary["items_version"] == "v2"
+    d3 = group["dimension3"]["variants"]["bf16"]["models"]
+    assert set(d3) == {"C0'", "C5"} and d3["C5"][1]["new_words"]["concepts"] == 7
+    item_seed = group["dimension3_item_seed"]["variants"]["bf16"]
+    block = item_seed["new_words"]["own − C0' own"]["tests"]["property"]
+    assert block["concepts"] == 7 and block["model"]["seeds"] == 1 and "bootstrap" in block
+    assert item_seed["edits"]["metrics"]["log_odds"]
+    report = (out / "report.md").read_text()
+    assert "Items **v2**" in report and "item × seed analysis" in report
+    config = yaml.safe_load((out / "resolved_config.yaml").read_text())
+    assert config["items_version"] == "v2" and config["item_seed"] is True
+    plain = e9_report.write_report([world["root"] / "runs"], tmp_path / "plain", resamples=100, figures=False)
+    assert "items_version" not in plain and "dimension3_item_seed" not in next(iter(plain["groups"].values()))
+    assert "item_seed" not in yaml.safe_load((tmp_path / "plain" / "resolved_config.yaml").read_text())

@@ -598,15 +598,25 @@ def run_items(args: argparse.Namespace) -> dict[str, Any]:
     alias_table = ensure_alias_table(spec)
     lexicon = lexicon_for(spec, ontology)
     tokenizer = args.tokenizer or FAMILY_TOKENIZERS[family]
+    extend = getattr(args, "extend", None)
+    if extend is not None and not args.count:
+        raise ValueError("--extend needs --count (the total of the superset)")
     if args.kind == "new":
         texts = edit._contamination_texts([spec.data_root / "train"], tokenizer, args.contamination_tokens)
         reserved = edit._reserved_names(args.reserved_names)
         if spec.items_dir is not None:          # the track's own synthetic names are taken too
             reserved |= {a.lower() for r in _read(spec.items_dir / "synthetic_concepts.jsonl") for a in r.get("aliases", [])}
+        if extend is not None:                  # items -v2: a strict superset of -v1 (decision 56)
+            return edit.extend_new_word_items(extend, spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count,
+                                              extension_seed=args.extension_seed, alias_table=alias_table,
+                                              contamination_texts=texts, reserved_names=reserved, lexicon=lexicon)
         return edit.build_new_word_items(spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count or 300,
                                          seed=args.seed, min_subtokens=args.min_subtokens, alias_table=alias_table,
                                          contamination_texts=texts, reserved_names=reserved, name_seed=args.name_seed,
                                          lexicon=lexicon)
+    if extend is not None:
+        return edit.extend_edit_items(extend, spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count,
+                                      extension_seed=args.extension_seed, alias_table=alias_table, lexicon=lexicon)
     return edit.build_edit_items(spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count or 200, seed=args.seed,
                                  min_subtokens=args.min_subtokens, alias_table=alias_table, lexicon=lexicon)
 
@@ -626,6 +636,10 @@ def main(argv: list[str] | None = None) -> None:
     items.add_argument("--min-subtokens", type=int, default=2); items.add_argument("--name-seed", type=int, default=11)
     items.add_argument("--contamination-tokens", type=int, default=20_000_000)
     items.add_argument("--reserved-names", type=Path, nargs="*", default=[])
+    items.add_argument("--extend", type=Path, default=None,
+                       help="build a strict superset of this item directory (e.g. -v2 from -v1: its rows first and "
+                            "byte-identical, its seeds reused; --count = the new total)")
+    items.add_argument("--extension-seed", type=int, default=1, help="random stream of the extension's rows (with --extend)")
     ev = sub.add_parser("zeroshot", help="score the track's WP-C7 zero-shot items on a trained run")
     ev.add_argument("--run", type=Path, required=True); ev.add_argument("--track", required=True, choices=sorted(TRACKS))
     ev.add_argument("--output", type=Path, required=True); ev.add_argument("--items", type=Path, default=None)
