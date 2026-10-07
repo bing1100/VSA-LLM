@@ -691,6 +691,50 @@ into the ontology beats reading definitions in context at a fixed context budget
 The estimate is in the §14 addendum below (CPU smoke test and commands). The recommended placement is priority 53:
 after the tier-1 evaluations (52) and before `e11-report` (54). The T4 seeds 2–3 jobs follow their training.
 
+### §14 addendum — CPU smoke test (2026-10-07; SMOKE, not a result) and commands
+
+**Setup.**
+- **Run:** SmolLM2-135M T5 seed 1 on the CPU (6 threads); the GPU queue was busy. N = 25, the first episode.
+- **Model and routes:**
+  - C5: frames (oracle, linker, typeprior, none), in context at 2,048 tokens, retrieval k = 1;
+  - C0′: the gradient route (Adam, lr 1e-4, the dev lr not yet chosen).
+- **Outputs:** `smoke/many-t5-SmolLM2-135M-C5-s1-cpu/`, `smoke/many-t5-SmolLM2-135M-C0p-s1-cpu-gradient/`.
+
+**Timing.**
+- The C5 smoke took 546 s, over the 5-minute target. The cause was the CPU: the 2,048-token prefix route took 231 s.
+- A first attempt scored all 400 terms because the read set was not restricted to the requested sizes. It was stopped
+  and fixed (`evaluate_many` now reads and scores only the first max(sizes) terms).
+- The C0′ gradient smoke took 163 s.
+
+**Smoke numbers.** One seed, 25 terms, 135M, so not evidence for anything:
+
+| Condition | Property accuracy | Loss after mentions in passages |
+|---|---|---|
+| none | 0.15 | 2.54 |
+| frame:oracle | 0.18 | 2.43 |
+| frame:linker | 0.18 | 2.50 |
+| frame:typeprior | 0.20 | 2.43 |
+| context:B2048 (18/25 definitions fit) | 0.39 | 1.85 |
+| rag:k1 (recall 1.00) | 0.63 | 1.38 |
+| C0′ none | 0.16 | 2.40 |
+| C0′ gradient | 0.23 | 3.36 |
+
+- The sequential updates help the items but damage text prediction.
+- The frame interference check gives exactly 0.0 (306 items, CPU).
+
+**Commands.** `experiments/e11-read-to-learn/queue-commands-many.sh`, printed by
+`python -m vsa_embed.experiments.e11_many plan`.
+
+| Jobs | Priority | Idle-GPU estimate |
+|---|---|---|
+| 6 × T5-M (360M C5 / C0′ s1–3) | 53 | ≈ 0.89 / 0.67 GPU-h each |
+| 2 × T4-M s1 | 53 | ≈ 0.56 / 0.40 GPU-h each |
+| e11-many-report | 54 | — |
+| **Total now** | | **≈ 5.6 GPU-h** |
+| 4 × T4-M seeds 2–3 (after their training) | 53 | ≈ 1.9 GPU-h |
+
+- **T7-H** (§15): 2 jobs after T7's E9 runs train, ≈ 1.0 GPU-h, commented in the same file.
+
 ## 15. Amendment (2026-10-07): dictionary sources for "read a dictionary", and the T7 dictionary set
 
 **Survey** (probed 2026-10-07; one or two requests per service; `DATA_SOURCES.md` §15):

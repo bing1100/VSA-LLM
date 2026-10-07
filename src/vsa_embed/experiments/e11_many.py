@@ -334,7 +334,11 @@ def evaluate_many(run: E5Run, many: ManySet, *, routes: Sequence[str], readers: 
     and cost records."""
     started = time.monotonic()
     ctx = e11.run_context(run)
-    sizes = [n for n in (sizes or many.sizes) if n <= len(many.order)]
+    sizes = sorted(n for n in (sizes or many.sizes) if n <= len(many.order))
+    if max(sizes) < len(many.order):                 # only the terms the requested sizes use are read and scored
+        order = many.order[:max(sizes)]
+        many = dataclasses.replace(many, order=order, read_set=restrict(many.read_set, order, many.style),
+                                   passages=[p for p in many.passages if p["size"] in sizes])
     compose = run.channel is not None and run.channel.mode == "compose"
     read_set = many.read_set
     style = many.style
@@ -729,10 +733,11 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
 # -- plan ----------------------------------------------------------------------------------------------------------------------
 
 MANY_PRIORITY = 53                         # after tier 1 (52) and before its report (54): see preregistration §14.8
-# Idle-GPU seconds per job at SmolLM2-360M, extrapolated from the E11 smoke timings (§12): readers on 400 definitions,
-# 5 frame conditions, 2 budgets × 5 sizes in context (cached prefix), 2 k × 5 sizes retrieval, the gradient pass with
-# 5 checkpoints, passages; ×0.6 for C0′ (no readers, no frames).
-MANY_SECONDS = {("t5", "C5"): 2700, ("t5", "C0p"): 1600, ("t4", "C5"): 2400, ("t4", "C0p"): 1500}
+# Idle-GPU seconds per job at SmolLM2-360M, extrapolated from the E11 GPU smoke rates (§12, halved for contention) and
+# the E11-M CPU smoke (§14 addendum): T5 — readers on 400 definitions ≈ 260 s, 5 frame conditions ≈ 590 s, 2 budgets ×
+# 5 sizes in context ≈ 930 s, 2 k × 5 sizes retrieval ≈ 875 s, the gradient pass with checkpoints ≈ 450 s; T4 — ≈ 1,660
+# multi-term windows per condition × 10 conditions plus items; C0′ has no readers and one frame condition (`none`).
+MANY_SECONDS = {("t5", "C5"): 3200, ("t5", "C0p"): 2400, ("t4", "C5"): 2000, ("t4", "C0p"): 1450}
 
 
 def plan_jobs(*, seeds: Sequence[int] = (1, 2, 3), python: str = "$PY", priority: int = MANY_PRIORITY,

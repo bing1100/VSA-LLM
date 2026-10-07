@@ -739,6 +739,22 @@ book is CC BY-NC-SA 4.0, not CC BY). Primary endpoints: P1 T5 new words, 360M, p
 terms, loss after the term, linker − none (Holm over both). Code `vsa_embed.read_to_learn`, `vsa_embed.experiments.e11_read_to_learn`;
 queue commands from `e11_read_to_learn plan` (priority 61–63, evaluation only).
 
+**E11 follow-ups of 2026-10-07** (preregistration §§13.6, 14, 15; committed before any run):
+- **E11-M, many terms read once each.**
+  - Design:
+    - Sets: N = 25 … 400 invented T5 words (v2 pool, nested episodes, 250 generated multi-term passages) and 242 T4
+      held-out ChEBI terms (natural windows with ≥ 2 read terms).
+    - Routes: frames written at once; all definitions in context under 2,048 / 7,168 tokens (cached prefix); BM25
+      retrieval (k = 1, 3); a sequential one-pass gradient update.
+    - Primary M1: T5, 360M C5, N = 200, property, `frame:linker − context:B2048`.
+  - Code `vsa_embed.experiments.e11_many`. Queue: `experiments/e11-read-to-learn/queue-commands-many.sh`, priority 53,
+    ≈ 5.6 GPU-h now and ≈ 1.9 GPU-h after T4 seeds 2–3.
+- **Dictionary sources.**
+  - Wiktionary neologisms are open (CC BY-SA), but have no gold frames and almost no local occurrences; Wikidata lexemes
+    give CC0 glosses only; Merriam-Webster, Wordnik and Oxford are not open.
+  - The feasible natural source is the MeSH 2026 supplementary-record notes of T7's held-out records:
+    `items/t7-heldout-smollm2-v1` (487 terms), which runs once T7 is trained.
+
 ## E9 new-vocabulary track T7 (decision 55; screened and built 2026-10-07)
 
 **Novelty proxy** (`e9_novelty calibrate`, `experiments/e9-retrofit/novelty/calibration/`).

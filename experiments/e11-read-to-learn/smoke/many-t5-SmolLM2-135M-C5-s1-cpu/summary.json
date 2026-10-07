@@ -1,0 +1,657 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-135M-full-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-SmolLM2-135M-full-C5-s1",
+    "run_git_sha": "db753467e253ecc1c840eaa46ebbfb2b77f8ddc3",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "track": "t5",
+  "kind": "new",
+  "routes": [
+    "frames",
+    "context",
+    "rag"
+  ],
+  "smoke": true,
+  "means": {
+    "frame:oracle": {
+      "25": {
+        "property": 0.18359375,
+        "entailment": 0.46,
+        "paraphrase": 0.40625,
+        "statement_accuracy": 0.2578125
+      }
+    },
+    "frame:linker": {
+      "25": {
+        "property": 0.1796875,
+        "entailment": 0.34,
+        "paraphrase": 0.375,
+        "statement_accuracy": 0.2421875
+      }
+    },
+    "frame:typeprior": {
+      "25": {
+        "property": 0.1953125,
+        "entailment": 0.46,
+        "paraphrase": 0.390625,
+        "statement_accuracy": 0.25
+      }
+    },
+    "none": {
+      "25": {
+        "property": 0.1484375,
+        "entailment": 0.34,
+        "paraphrase": 0.3984375,
+        "statement_accuracy": 0.2109375
+      }
+    },
+    "context:B2048": {
+      "25": {
+        "property": 0.390625,
+        "entailment": 0.62,
+        "paraphrase": 0.40625,
+        "statement_accuracy": 0.53125
+      }
+    },
+    "rag:k1": {
+      "25": {
+        "property": 0.62890625,
+        "entailment": 0.72,
+        "paraphrase": 0.5703125,
+        "statement_accuracy": 0.90625
+      }
+    }
+  },
+  "contrasts": [
+    {
+      "a": "frame:linker",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "property",
+      "mean": -0.2109375,
+      "ci_low": -0.29296875,
+      "ci_high": -0.13671875,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "frame:linker",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "entailment",
+      "mean": -0.28,
+      "ci_low": -0.46,
+      "ci_high": -0.1,
+      "n": 50,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "frame:linker",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": -0.03125,
+      "ci_low": -0.1328125,
+      "ci_high": 0.0859375,
+      "n": 128,
+      "p_value": 0.5974025974025974
+    },
+    {
+      "a": "frame:linker",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": -0.2890625,
+      "ci_low": -0.3908203125,
+      "ci_high": -0.1875,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "frame:oracle",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "property",
+      "mean": -0.20703125,
+      "ci_low": -0.29296875,
+      "ci_high": -0.1328125,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "frame:oracle",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "entailment",
+      "mean": -0.16,
+      "ci_low": -0.32,
+      "ci_high": 0.0,
+      "n": 50,
+      "p_value": 0.07192807192807193
+    },
+    {
+      "a": "frame:oracle",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": 0.0,
+      "ci_low": -0.10175781249999999,
+      "ci_high": 0.109375,
+      "n": 128,
+      "p_value": 1.0
+    },
+    {
+      "a": "frame:oracle",
+      "b": "context:B2048",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": -0.2734375,
+      "ci_low": -0.375,
+      "ci_high": -0.171875,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "frame:linker",
+      "b": "none",
+      "size": 25,
+      "test": "property",
+      "mean": 0.03125,
+      "ci_low": 0.0,
+      "ci_high": 0.06640625,
+      "n": 128,
+      "p_value": 0.08791208791208792
+    },
+    {
+      "a": "frame:linker",
+      "b": "none",
+      "size": 25,
+      "test": "entailment",
+      "mean": 0.0,
+      "ci_low": 0.0,
+      "ci_high": 0.0,
+      "n": 50,
+      "p_value": 1.0
+    },
+    {
+      "a": "frame:linker",
+      "b": "none",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": -0.0234375,
+      "ci_low": -0.1015625,
+      "ci_high": 0.046875,
+      "n": 128,
+      "p_value": 0.5934065934065934
+    },
+    {
+      "a": "frame:linker",
+      "b": "none",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": 0.03125,
+      "ci_low": -0.0001953124999999889,
+      "ci_high": 0.0703125,
+      "n": 128,
+      "p_value": 0.14185814185814186
+    },
+    {
+      "a": "frame:oracle",
+      "b": "none",
+      "size": 25,
+      "test": "property",
+      "mean": 0.03515625,
+      "ci_low": -0.015625,
+      "ci_high": 0.0859375,
+      "n": 128,
+      "p_value": 0.1878121878121878
+    },
+    {
+      "a": "frame:oracle",
+      "b": "none",
+      "size": 25,
+      "test": "entailment",
+      "mean": 0.12,
+      "ci_low": 0.04,
+      "ci_high": 0.22,
+      "n": 50,
+      "p_value": 0.007992007992007992
+    },
+    {
+      "a": "frame:oracle",
+      "b": "none",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": 0.0078125,
+      "ci_low": -0.0859375,
+      "ci_high": 0.09375,
+      "n": 128,
+      "p_value": 0.965034965034965
+    },
+    {
+      "a": "frame:oracle",
+      "b": "none",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": 0.046875,
+      "ci_low": 0.0,
+      "ci_high": 0.09375,
+      "n": 128,
+      "p_value": 0.08591408591408592
+    },
+    {
+      "a": "frame:typeprior",
+      "b": "none",
+      "size": 25,
+      "test": "property",
+      "mean": 0.046875,
+      "ci_low": 0.00390625,
+      "ci_high": 0.08984375,
+      "n": 128,
+      "p_value": 0.027972027972027972
+    },
+    {
+      "a": "frame:typeprior",
+      "b": "none",
+      "size": 25,
+      "test": "entailment",
+      "mean": 0.12,
+      "ci_low": 0.04,
+      "ci_high": 0.22,
+      "n": 50,
+      "p_value": 0.003996003996003996
+    },
+    {
+      "a": "frame:typeprior",
+      "b": "none",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": -0.0078125,
+      "ci_low": -0.09375,
+      "ci_high": 0.0859375,
+      "n": 128,
+      "p_value": 0.9470529470529471
+    },
+    {
+      "a": "frame:typeprior",
+      "b": "none",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": 0.0390625,
+      "ci_low": -0.0078125,
+      "ci_high": 0.0859375,
+      "n": 128,
+      "p_value": 0.14385614385614387
+    },
+    {
+      "a": "context:B2048",
+      "b": "none",
+      "size": 25,
+      "test": "property",
+      "mean": 0.2421875,
+      "ci_low": 0.16796875,
+      "ci_high": 0.3165039062499999,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "context:B2048",
+      "b": "none",
+      "size": 25,
+      "test": "entailment",
+      "mean": 0.28,
+      "ci_low": 0.1,
+      "ci_high": 0.46,
+      "n": 50,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "context:B2048",
+      "b": "none",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": 0.0078125,
+      "ci_low": -0.109375,
+      "ci_high": 0.1171875,
+      "n": 128,
+      "p_value": 0.9090909090909091
+    },
+    {
+      "a": "context:B2048",
+      "b": "none",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": 0.3203125,
+      "ci_low": 0.2265625,
+      "ci_high": 0.421875,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "rag:k1",
+      "b": "frame:linker",
+      "size": 25,
+      "test": "property",
+      "mean": 0.44921875,
+      "ci_low": 0.36708984375,
+      "ci_high": 0.53125,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "rag:k1",
+      "b": "frame:linker",
+      "size": 25,
+      "test": "entailment",
+      "mean": 0.38,
+      "ci_low": 0.18,
+      "ci_high": 0.56,
+      "n": 50,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "rag:k1",
+      "b": "frame:linker",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": 0.1953125,
+      "ci_low": 0.078125,
+      "ci_high": 0.296875,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "rag:k1",
+      "b": "frame:linker",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": 0.6640625,
+      "ci_low": 0.5859375,
+      "ci_high": 0.75,
+      "n": 128,
+      "p_value": 0.001998001998001998
+    },
+    {
+      "a": "frame:linker",
+      "b": "frame:typeprior",
+      "size": 25,
+      "test": "property",
+      "mean": -0.015625,
+      "ci_low": -0.0546875,
+      "ci_high": 0.01953125,
+      "n": 128,
+      "p_value": 0.4755244755244755
+    },
+    {
+      "a": "frame:linker",
+      "b": "frame:typeprior",
+      "size": 25,
+      "test": "entailment",
+      "mean": -0.12,
+      "ci_low": -0.22,
+      "ci_high": -0.04,
+      "n": 50,
+      "p_value": 0.003996003996003996
+    },
+    {
+      "a": "frame:linker",
+      "b": "frame:typeprior",
+      "size": 25,
+      "test": "paraphrase",
+      "mean": -0.015625,
+      "ci_low": -0.09375,
+      "ci_high": 0.0703125,
+      "n": 128,
+      "p_value": 0.7572427572427572
+    },
+    {
+      "a": "frame:linker",
+      "b": "frame:typeprior",
+      "size": 25,
+      "test": "statement_accuracy",
+      "mean": -0.0078125,
+      "ci_low": -0.046875,
+      "ci_high": 0.0234375,
+      "n": 128,
+      "p_value": 0.8191808191808192
+    }
+  ],
+  "texts": {
+    "passages": {
+      "frame:oracle": {
+        "25": {
+          "loss": 2.4259209959503365,
+          "targets": 3087
+        }
+      },
+      "frame:linker": {
+        "25": {
+          "loss": 2.4975020778718835,
+          "targets": 3087
+        }
+      },
+      "frame:typeprior": {
+        "25": {
+          "loss": 2.4324790482432723,
+          "targets": 3087
+        }
+      },
+      "none": {
+        "25": {
+          "loss": 2.535090300012071,
+          "targets": 3087
+        }
+      },
+      "context:B2048": {
+        "25": {
+          "loss": 1.854767141907053,
+          "targets": 3087
+        }
+      },
+      "rag:k1": {
+        "25": {
+          "loss": 1.3773702878024094,
+          "targets": 3087
+        }
+      }
+    },
+    "windows": {},
+    "contrasts": [
+      {
+        "kind": "passages",
+        "condition": "frame:oracle",
+        "size": 25,
+        "mean": -0.10916930406173478,
+        "ci_low": -0.14105612050726063,
+        "ci_high": -0.07699368002214489,
+        "p_value": 0.001998001998001998,
+        "clusters": 50,
+        "nonempty_clusters": 50,
+        "resamples": 1000,
+        "relative": -0.043063280255229944,
+        "relative_ci_low": -0.05476197187979499,
+        "relative_ci_high": -0.030607204277593045
+      },
+      {
+        "kind": "passages",
+        "condition": "frame:linker",
+        "size": 25,
+        "mean": -0.03758822214018747,
+        "ci_low": -0.052052873468753404,
+        "ci_high": -0.024480199768263718,
+        "p_value": 0.001998001998001998,
+        "clusters": 50,
+        "nonempty_clusters": 50,
+        "resamples": 1000,
+        "relative": -0.014827172878223901,
+        "relative_ci_low": -0.02047758785443885,
+        "relative_ci_high": -0.009708601586502556
+      },
+      {
+        "kind": "passages",
+        "condition": "frame:typeprior",
+        "size": 25,
+        "mean": -0.10261125176879869,
+        "ci_low": -0.13193904695523623,
+        "ci_high": -0.0745552824004632,
+        "p_value": 0.001998001998001998,
+        "clusters": 50,
+        "nonempty_clusters": 50,
+        "resamples": 1000,
+        "relative": -0.0404763695274721,
+        "relative_ci_low": -0.05131149839848796,
+        "relative_ci_high": -0.030022208436186634
+      },
+      {
+        "kind": "passages",
+        "condition": "context:B2048",
+        "size": 25,
+        "mean": -0.680323158105018,
+        "ci_low": -0.785226019714998,
+        "ci_high": -0.5718521159378496,
+        "p_value": 0.001998001998001998,
+        "clusters": 50,
+        "nonempty_clusters": 50,
+        "resamples": 1000,
+        "relative": -0.26836249505659765,
+        "relative_ci_low": -0.300115644034015,
+        "relative_ci_high": -0.2347233181250349
+      },
+      {
+        "kind": "passages",
+        "condition": "rag:k1",
+        "size": 25,
+        "mean": -1.1577200122096616,
+        "ci_low": -1.2938805742029031,
+        "ci_high": -1.0292406537803365,
+        "p_value": 0.001998001998001998,
+        "clusters": 50,
+        "nonempty_clusters": 50,
+        "resamples": 1000,
+        "relative": -0.45667801742768255,
+        "relative_ci_low": -0.4855257385522312,
+        "relative_ci_high": -0.42537210652234925
+      }
+    ]
+  },
+  "forgetting_first_terms_property": {},
+  "primary_within_run": null,
+  "presence": {
+    "context:B2048|N25": {
+      "present": 18,
+      "of": 25,
+      "tokens": 2035,
+      "all_tokens": 2852
+    }
+  },
+  "recall": {
+    "rag:k1|N25": 1.0
+  },
+  "costs": {
+    "write": {
+      "oracle": 0.0,
+      "linker": 1962.76,
+      "typeprior": 0.0
+    },
+    "interference": {
+      "items": 306,
+      "max_abs_margin_change": 0.0
+    },
+    "context:B2048|N25": {
+      "context_tokens_per_use": 2035.0,
+      "prefill_flops_per_use": 551780754690.0
+    },
+    "rag:k1|N25": {
+      "context_tokens_per_use": 121.76,
+      "prefill_flops_per_use": 33014655867.84
+    },
+    "frames_per_use": {
+      "context_tokens_per_use": 0.0,
+      "prefill_flops_per_use": 0.0
+    }
+  },
+  "frames": {
+    "prose": {
+      "linker": {
+        "frames": 25,
+        "empty": 0,
+        "edges_mean": 3.96,
+        "precision": 0.7474747474747475,
+        "recall": 0.3894736842105263,
+        "f1": 0.5121107266435987,
+        "stated_recall": 0.3894736842105263,
+        "filler_recall": 1.0,
+        "relation_accuracy": 0.7179682539682539,
+        "ambiguous_relation_accuracy": 0.45652173913043476,
+        "ambiguous_edges": 46,
+        "cost_per_word": {
+          "forward_passes": 15.32,
+          "forward_tokens": 1962.76,
+          "seconds": 1.9843077466450634
+        }
+      },
+      "oracle": {
+        "frames": 25,
+        "empty": 0,
+        "edges_mean": 7.6,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0,
+        "stated_recall": 1.0,
+        "filler_recall": 1.0,
+        "relation_accuracy": 1.0,
+        "ambiguous_relation_accuracy": 1.0,
+        "ambiguous_edges": 57,
+        "cost_per_word": {}
+      },
+      "typeprior": {
+        "frames": 25,
+        "empty": 0,
+        "edges_mean": 7.52,
+        "precision": 0.898936170212766,
+        "recall": 0.8894736842105263,
+        "f1": 0.8941798941798942,
+        "stated_recall": 0.8894736842105263,
+        "filler_recall": 1.0,
+        "relation_accuracy": 0.9040144300144299,
+        "ambiguous_relation_accuracy": 0.6545454545454545,
+        "ambiguous_edges": 55,
+        "cost_per_word": {}
+      }
+    }
+  },
+  "sizes": [
+    25
+  ],
+  "timings": {
+    "frames": 228.9025827581063,
+    "context": 231.31250012293458,
+    "rag": 81.640883510001,
+    "gradient": 8.088536560535431e-07
+  },
+  "seconds": 542.108758687973,
+  "parameters": 135572667
+}
