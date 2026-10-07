@@ -1,0 +1,52 @@
+model:
+  size: pretrained
+  seq_len: 1024
+  gradient_checkpointing: false
+  pretrained: HuggingFaceTB/SmolLM2-360M
+  host_mode: frozen
+  vocab_size: 49152
+  lora_rank: 64
+train:
+  lr: 0.001
+  min_lr_ratio: 0.1
+  warmup_tokens: 2500000
+  weight_decay: 0.1
+  log_every: 10
+  checkpoint_minutes: 10
+  micro_batch: 8
+  grad_accum: 8
+  total_tokens: 65536
+  save_trainable_only: true
+  eval_only: true
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  semantic_weight: 0.0
+  delta_weight: 0.001
+data:
+  min_subtokens: 2
+  seed: 1234
+  train: /home/bhux/data/vsa-llm/e9/novelty/novel/eval
+  eval: /home/bhux/data/vsa-llm/e9/novelty/novel/eval
+  ontology: /home/bhux/data/vsa-llm/e9/novelty/novel/ontology.pt
+eval:
+  windows: 512
+  first_tokens: 65536
+  save_window_losses: true
+  batch: 4
+device: cuda
+channel:
+  mode: none
+  operator: hrr
+  composition: attentive
+  dimension: 256
+  key_dimension: 32
+  context_window: 0
+  gate_bias: -2.0
+  hashed_buckets: 0
+  developmental: null
+  concept_factor: induced
+  free_dimension: 0
+  frames: ontology
+seed: 1
+experiment: e9-novelty-mesh-novel-aliaslevel-SmolLM2-360M-P0

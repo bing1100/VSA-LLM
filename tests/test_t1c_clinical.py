@@ -351,7 +351,9 @@ def test_e9_plan_dry_run_plans_t1c_without_touching_the_queue(tmp_path: Path) ->
     level, command = by_name["t1c-SmolLM2-360M-full-C5-s1-edit"]
     assert level == 63 and str(e9_plan.dimension3_items("t1c")[0]) in command
     hours = {n: e9_plan.job_estimate_hours(n, c, configs={str(p): configs[p.stem] for p in paths}) for n, _, c in planned}
-    assert abs(hours["t1c-SmolLM2-360M-full-C5-s1"] - 67 / 60) < 1e-6 and abs(hours["t1c-SmolLM2-135M-full-C0p-s2"] - 31 / 60) < 1e-6
+    # measured minutes (T5's 1,024 windows) + one extra measured 1,024-window pass (24 s / 12 s) at each of 7 evaluation points
+    assert abs(hours["t1c-SmolLM2-360M-full-C5-s1"] - (67 + 7 * 24 / 60) / 60) < 1e-6
+    assert abs(hours["t1c-SmolLM2-135M-full-C0p-s2"] - (31 + 7 * 12 / 60) / 60) < 1e-6
     assert hours["t1c-SmolLM2-360M-frozen-P0-s1"] < 0.1 and all(h > 0 for h in hours.values())
     assert by_name["t1c-quant-s1-2"][0] == 64 and by_name["t1c-report-s1-2"][0] == 65
 

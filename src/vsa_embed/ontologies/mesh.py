@@ -63,9 +63,11 @@ def _parse(path: Path) -> list[dict]:
                           "lexical_tag": t.get("LexicalTag") or "NON",
                           "record_preferred": t.get("RecordPreferredTermYN") == "Y"}
                          for t in element.findall("ConceptList/Concept/TermList/Term") if t.findtext("String")]
+            introduced = element.findtext("DateIntroduced/Year") or element.findtext("DateCreated/Year")
             records.append({"ui": ui, "name": name, "trees": trees, "actions": [a for a in actions if a],
                             "related": [r for r in related if r], "terms": sorted(terms), "note": " ".join(note.split()),
-                            "term_info": term_info, "descriptor_class": element.get("DescriptorClass") or ""})
+                            "term_info": term_info, "descriptor_class": element.get("DescriptorClass") or "",
+                            "introduced": int(introduced) if introduced else None})
             element.clear()
     return records
 

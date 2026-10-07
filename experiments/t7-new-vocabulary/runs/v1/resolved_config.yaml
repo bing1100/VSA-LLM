@@ -1,0 +1,82 @@
+experiment: t7-new-vocabulary
+track_label: new-vocabulary biomedical (MeSH SCR + PubMed 2025-26)
+seed: 20261007
+tokenizer: HuggingFaceTB/SmolLM2-360M
+workers: 6
+paths:
+  data_root: ~/data/vsa-llm/tracks/t7-newvocab/v1
+  pubmed_raw: ~/data/vsa-llm/pubmed/baseline-2026
+  pubmed_text: ~/data/vsa-llm/pubmed/text-2026
+  pubmedqa: ~/data/vsa-llm/pubmedqa
+  general_config: experiments/c3-general-corpus/c3.yaml
+pubmed:
+  prefix: pubmed26n
+  files:
+  - 1334
+  - 1315
+  min_abstract_words: 30
+  english_only: true
+  eval_buckets: 2000
+  min_pmid: 41025505
+  updates:
+    files:
+    - 1651
+    - 1572
+    base_url: https://ftp.ncbi.nlm.nih.gov/pubmed/updatefiles/
+    raw: ~/data/vsa-llm/pubmed/updates-2026
+    text: ~/data/vsa-llm/pubmed/text-updates-2026
+pubmedqa:
+  repo: qiaojin/PubMedQA
+  file: pqa_labeled/train-00000-of-00001.parquet
+  revision: 9001f2853fb87cab8d220904e0de81ac6973b318
+  test_ground_truth_url: https://raw.githubusercontent.com/pubmedqa/pubmedqa/1cbae8e92f72f20c8d3747cbb3bf5bc53554d997/data/test_ground_truth.json
+ontology:
+  adapter: mesh_novel
+  path: ~/data/vsa-llm/mesh/desc2026.gz
+  supplementary_path: ~/data/vsa-llm/mesh/supp-2026/supp2026.gz
+  selection: experiments/t7-new-vocabulary/screen/selection.tsv
+  selection_sha256: 1ead39e8cc044e4c85c745c58feaff97abb11d07369e8b5a5d964fbed7b186d8
+  max_atomics: 8192
+  max_degree: 16
+  policy:
+    include_descriptors: false
+    scr_classes:
+    - '1'
+    - '3'
+    - '4'
+    min_domain_mentions: 5
+    max_general_mentions: 0
+screen:
+  general_docs: 300000
+  workers: 6
+mix:
+  domain_share: 0.5
+  calibration_docs: 2000
+data:
+  domain_filter: mentions
+  presample_tokens: 20000000
+  holdout_fraction: 0.25
+  holdout_min_count: 5
+  holdout_min_subtokens: 2
+  holdout_max_containing: 5
+  expected_holdout_sha256: null
+  min_subtokens: 2
+  train_tokens: 130000000
+  reference_train_tokens: null
+  train_min_subtokens: 1
+  l1_slice_tokens: 0
+  eval_pubmed_docs: null
+  eval_general_docs: 5000
+  eval_mix_tokens: null
+  cardinality_docs: 2000
+hosts: []
+cardinality_tokenizers:
+- HuggingFaceTB/SmolLM2-360M
+feasibility:
+  split: eval-pubmed
+  heldout_min_entries_5plus: 300
+  heldout_min_occurrences: 2000
+  rare_min_entries: 300
+  rare_min_occurrences: 2000
+  trainer_windows: 4096
+  window_length: 1024

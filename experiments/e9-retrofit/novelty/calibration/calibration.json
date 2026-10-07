@@ -1,0 +1,435 @@
+{
+  "tracks": [
+    "t5",
+    "t4",
+    "t1",
+    "wordnet"
+  ],
+  "hosts": [
+    "SmolLM2-360M",
+    "SmolLM2-135M"
+  ],
+  "strata": [
+    "after_heldout",
+    "after_unseen",
+    "after_rare_seen",
+    "after_len3plus"
+  ],
+  "null_gain": 0.001,
+  "rows": [
+    {
+      "track": "t5",
+      "host": "SmolLM2-360M",
+      "novelty": {
+        "after_heldout": -0.7404346138077006,
+        "after_unseen": -0.7436380109150468,
+        "after_rare_seen": -0.7496400267678885,
+        "after_len3plus": -0.8118084330018107,
+        "inside": -0.6970174150976699,
+        "unlinked": -0.8563236356978668
+      },
+      "gain": {
+        "after_heldout": -0.11677951870252082,
+        "after_unseen": -0.054729944067833124,
+        "after_rare_seen": -0.05619358150358553,
+        "after_len3plus": -0.07103984035754338,
+        "inside": 6.369230081162191e-05,
+        "unlinked": -0.000380427834046383
+      },
+      "novelty_mean": -0.7613802711231117,
+      "gain_mean": -0.07468572115787071,
+      "inside_loss": 3.3771056753997426,
+      "after_unlinked": 0.8873849771267861,
+      "inside_nats_per_span": 15.307536977535278,
+      "subtokens_per_span": 5.532738518975528,
+      "general_to_domain": 0.0,
+      "general_absent_share": 1.0,
+      "linked_spans": 63213,
+      "linked_entries": 3603,
+      "windows": 1024,
+      "domain_spans_per_1k": 60.28461456298828,
+      "general_spans_per_1k": 0.0
+    },
+    {
+      "track": "t4",
+      "host": "SmolLM2-360M",
+      "novelty": {
+        "after_heldout": -0.40145430097813245,
+        "after_unseen": -0.5587566641863021,
+        "after_rare_seen": -0.5247362385533597,
+        "after_len3plus": -0.44823253503351534,
+        "inside": -0.45153300487881415,
+        "unlinked": -0.10539143395124409
+      },
+      "gain": {
+        "after_heldout": -0.003978543417885444,
+        "after_unseen": -0.023211777194963385,
+        "after_rare_seen": -0.008712937477210508,
+        "after_len3plus": -0.010793904653486857,
+        "inside": -0.015509012875725935,
+        "unlinked": -0.0001257088253041797
+      },
+      "novelty_mean": -0.48329493468782736,
+      "gain_mean": -0.01167429068588655,
+      "inside_loss": 1.6367651468273576,
+      "after_unlinked": 1.0993838396816351,
+      "inside_nats_per_span": 5.3370609879865585,
+      "subtokens_per_span": 5.085672930548276,
+      "general_to_domain": 0.03627875598318746,
+      "general_absent_share": 0.7329240597938659,
+      "linked_spans": 40071,
+      "linked_entries": 9119,
+      "windows": 1024,
+      "domain_spans_per_1k": 38.214683532714844,
+      "general_spans_per_1k": 1.386381178858094
+    },
+    {
+      "track": "t1",
+      "host": "SmolLM2-360M",
+      "novelty": {
+        "after_heldout": -0.07694256914730417,
+        "after_unseen": -0.04576139616689298,
+        "after_rare_seen": -0.06347545991941121,
+        "after_len3plus": -0.07713292073744052,
+        "inside": -0.11942403205087991,
+        "unlinked": -0.060552378233758294
+      },
+      "gain": {
+        "after_heldout": 0.0001812456308839885,
+        "after_unseen": 3.497828944707542e-05,
+        "after_rare_seen": -0.00011847218717180407,
+        "after_len3plus": -0.0004833651902739988,
+        "inside": 0.0005471530474873916,
+        "unlinked": -3.377117330584279e-05
+      },
+      "novelty_mean": -0.06582808649276223,
+      "gain_mean": -9.640336427868474e-05,
+      "inside_loss": 0.7634178551033645,
+      "after_unlinked": 0.9905026270746536,
+      "inside_nats_per_span": 1.2638211426616548,
+      "subtokens_per_span": 2.7706596263419496,
+      "general_to_domain": 0.38344480511532375,
+      "general_absent_share": 0.37674268241759723,
+      "linked_spans": 74239,
+      "linked_entries": 9818,
+      "windows": 2048,
+      "domain_spans_per_1k": 35.3999137878418,
+      "general_spans_per_1k": 13.57391304347826
+    },
+    {
+      "track": "wordnet",
+      "host": "SmolLM2-360M",
+      "novelty": {
+        "after_heldout": -0.005977987942585616,
+        "after_unseen": -0.006028711491252791,
+        "after_rare_seen": -0.008194233391738947,
+        "after_len3plus": -0.0084871410776813,
+        "inside": -0.003258451487649185,
+        "unlinked": -0.006194545596283129
+      },
+      "gain": {
+        "after_heldout": -4.3229231682563104e-05,
+        "after_unseen": 0.0003540395047642559,
+        "after_rare_seen": 7.344091442677066e-05,
+        "after_len3plus": 0.00010342434048177772,
+        "inside": 0.00018361371757379027,
+        "unlinked": 7.042491398402684e-06
+      },
+      "novelty_mean": -0.007172018475814664,
+      "gain_mean": 0.0001219188819975603,
+      "inside_loss": 0.9090213964411242,
+      "after_unlinked": 0.8994130141401776,
+      "inside_nats_per_span": 1.0713728009313894,
+      "subtokens_per_span": 2.2542463914065123,
+      "general_to_domain": 0.9089127839222383,
+      "general_absent_share": 0.25891238670694866,
+      "linked_spans": 59580,
+      "linked_entries": 16724,
+      "windows": 1024,
+      "domain_spans_per_1k": 56.819915771484375,
+      "general_spans_per_1k": 51.64434782608696
+    },
+    {
+      "track": "t5",
+      "host": "SmolLM2-135M",
+      "novelty": {
+        "after_heldout": -0.7366587208139643,
+        "after_unseen": -0.7274715835365075,
+        "after_rare_seen": -0.7332624241636595,
+        "after_len3plus": -0.7967786520765235,
+        "inside": -0.6559196605345182,
+        "unlinked": -0.8542705225917825
+      },
+      "gain": {
+        "after_heldout": -0.07540394137606693,
+        "after_unseen": -0.0334776088993522,
+        "after_rare_seen": -0.031113767529790507,
+        "after_len3plus": -0.06356943682508054,
+        "inside": 0.0021583172578088,
+        "unlinked": -0.0005739075773007852
+      },
+      "novelty_mean": -0.7485428451476638,
+      "gain_mean": -0.05089118865757254,
+      "inside_loss": 3.3801814921338402,
+      "after_unlinked": 0.8848573836404064,
+      "inside_nats_per_span": 15.321478850523231,
+      "subtokens_per_span": 5.532738518975528,
+      "general_to_domain": 0.0,
+      "general_absent_share": 1.0,
+      "linked_spans": 63213,
+      "linked_entries": 3603,
+      "windows": 1024,
+      "domain_spans_per_1k": 60.28461456298828,
+      "general_spans_per_1k": 0.0
+    },
+    {
+      "track": "t4",
+      "host": "SmolLM2-135M",
+      "novelty": {
+        "after_heldout": -0.3569364635259438,
+        "after_unseen": -0.5131671864078329,
+        "after_rare_seen": -0.47692835351465357,
+        "after_len3plus": -0.4028034720637977,
+        "inside": -0.3975103242408045,
+        "unlinked": -0.1024919445140148
+      },
+      "gain": {
+        "after_heldout": -0.006251467015591534,
+        "after_unseen": -0.03698142796906874,
+        "after_rare_seen": -0.016215534767408266,
+        "after_len3plus": -0.017274643499395864,
+        "inside": -0.020346321984229924,
+        "unlinked": -0.00025553011247971306
+      },
+      "novelty_mean": -0.43745886887805696,
+      "gain_mean": -0.019180768312866102,
+      "inside_loss": 1.8500103672086066,
+      "after_unlinked": 1.0657725282249457,
+      "inside_nats_per_span": 6.032397608990136,
+      "subtokens_per_span": 5.085672930548276,
+      "general_to_domain": 0.03627875598318746,
+      "general_absent_share": 0.7329240597938659,
+      "linked_spans": 40071,
+      "linked_entries": 9119,
+      "windows": 1024,
+      "domain_spans_per_1k": 38.214683532714844,
+      "general_spans_per_1k": 1.386381178858094
+    },
+    {
+      "track": "t1",
+      "host": "SmolLM2-135M",
+      "novelty": {
+        "after_heldout": -0.07783608132558656,
+        "after_unseen": -0.04338062251345888,
+        "after_rare_seen": -0.06325525636788192,
+        "after_len3plus": -0.07975191061638383,
+        "inside": -0.10830239295804486,
+        "unlinked": -0.06200411765137903
+      },
+      "gain": {
+        "after_heldout": 8.413789832431872e-05,
+        "after_unseen": -0.0015374043928548676,
+        "after_rare_seen": 0.00018786631929091702,
+        "after_len3plus": -0.0013309070356401394,
+        "inside": -0.00021177044927558143,
+        "unlinked": -0.00011637971595963342
+      },
+      "novelty_mean": -0.06605596770582779,
+      "gain_mean": -0.0006490768027199428,
+      "inside_loss": 0.9356921394764002,
+      "after_unlinked": 0.9933493953394273,
+      "inside_nats_per_span": 1.5490173579087685,
+      "subtokens_per_span": 2.7706596263419496,
+      "general_to_domain": 0.38344480511532375,
+      "general_absent_share": 0.37674268241759723,
+      "linked_spans": 74239,
+      "linked_entries": 9818,
+      "windows": 2048,
+      "domain_spans_per_1k": 35.3999137878418,
+      "general_spans_per_1k": 13.57391304347826
+    },
+    {
+      "track": "wordnet",
+      "host": "SmolLM2-135M",
+      "novelty": {
+        "after_heldout": -0.0030597746678709663,
+        "after_unseen": -0.0034960578003221,
+        "after_rare_seen": -0.0030379783968024904,
+        "after_len3plus": -0.0041487837080956685,
+        "inside": -5.5538705228899586e-05,
+        "unlinked": -0.0031884375748812734
+      },
+      "gain": {
+        "after_heldout": -1.0250093002877196e-05,
+        "after_unseen": 0.00024520129546295094,
+        "after_rare_seen": -0.0006160276941406593,
+        "after_len3plus": -2.100724384188241e-05,
+        "inside": 0.00016586383859630688,
+        "unlinked": -1.927531072213108e-05
+      },
+      "novelty_mean": -0.0034356486432728065,
+      "gain_mean": -0.00010052093388061701,
+      "inside_loss": 1.043267406012135,
+      "after_unlinked": 0.9023134744618431,
+      "inside_nats_per_span": 1.2295951748502538,
+      "subtokens_per_span": 2.2542463914065123,
+      "general_to_domain": 0.9089127839222383,
+      "general_absent_share": 0.25891238670694866,
+      "linked_spans": 59580,
+      "linked_entries": 16724,
+      "windows": 1024,
+      "domain_spans_per_1k": 56.819915771484375,
+      "general_spans_per_1k": 51.64434782608696
+    }
+  ],
+  "agreement": {
+    "SmolLM2-360M": {
+      "inside_loss": {
+        "novelty": {
+          "kendall_tau": 0.6666666666666666,
+          "spearman": 0.7999999999999999,
+          "permutation_p": 0.16666666666666666
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "after_unlinked": {
+        "novelty": {
+          "kendall_tau": 0.0,
+          "spearman": -0.19999999999999998,
+          "permutation_p": 0.625
+        },
+        "gain": {
+          "kendall_tau": -0.18257418583505536,
+          "spearman": -0.316227766016838,
+          "permutation_p": 0.75
+        }
+      },
+      "inside_nats_per_span": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "subtokens_per_span": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "general_to_domain": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "general_absent_share": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      }
+    },
+    "SmolLM2-135M": {
+      "inside_loss": {
+        "novelty": {
+          "kendall_tau": 0.6666666666666666,
+          "spearman": 0.7999999999999999,
+          "permutation_p": 0.16666666666666666
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "after_unlinked": {
+        "novelty": {
+          "kendall_tau": 0.0,
+          "spearman": -0.19999999999999998,
+          "permutation_p": 0.625
+        },
+        "gain": {
+          "kendall_tau": -0.18257418583505536,
+          "spearman": -0.316227766016838,
+          "permutation_p": 0.75
+        }
+      },
+      "inside_nats_per_span": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "subtokens_per_span": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "general_to_domain": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      },
+      "general_absent_share": {
+        "novelty": {
+          "kendall_tau": 1.0,
+          "spearman": 1.0,
+          "permutation_p": 0.041666666666666664
+        },
+        "gain": {
+          "kendall_tau": 0.9128709291752769,
+          "spearman": 0.9486832980505139,
+          "permutation_p": 0.08333333333333333
+        }
+      }
+    }
+  }
+}

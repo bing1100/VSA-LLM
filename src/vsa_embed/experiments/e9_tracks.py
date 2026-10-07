@@ -14,6 +14,10 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
   list and dimension-3 items live under `~/data/vsa-llm/t1c/` (`TrackSpec.alias_table_dir`, `items_root`), never
   in the repository; WP-C7-format zero-shot items on held-out terms (`t1c_corpus --stage zeroshot-items`).
 - `wordnet` — the C3 WordNet host corpus (the original E9 design).
+- `t7` — T7 new biomedical vocabulary (author decision 55): MeSH supplementary concept records and descriptors whose
+  names are frequent in PubMed 2025–26 and absent from general web text, linked in the abstracts that mention them
+  (`ontologies/mesh_novel.py`, built by `t1_open_corpus` with the `mesh_novel` adapter); evaluation on
+  `eval-pubmed`; no WP-C7 zero-shot items (dimension 3 = invented new words + edits, as T1).
 
 Host tokenizer families (WP-Qwen): every track is built for SmolLM2 (`data_root`) and, relinked with the same
 ontology, alias table and holdout, for the Qwen3 base tokenizer (`TrackSpec.for_family("qwen3")`, `QWEN3_ROOTS`)
@@ -119,6 +123,13 @@ T1_TEMPLATES = {
                                                 "{x} is used as {y}."),
     "see_also": RelationTemplates(["{x} is related to", "See also, for {x}:"], "{x} is closely related to {y}."),
 }
+# T7 (MeSH SCRs and descriptors): the T1 wordings plus the SCR relations (the heading an SCR is indexed under, and
+# its record class).
+T7_TEMPLATES = {
+    **T1_TEMPLATES,
+    "mapped_to": RelationTemplates(["{x} is a kind of", "In MeSH, {x} is indexed under"], "{x} is a type of {y}."),
+    "record_class": RelationTemplates(["{x} is classified as a", "In MeSH, {x} is recorded as a"], "{x} is a {y}."),
+}
 
 
 @dataclass(frozen=True)
@@ -181,11 +192,12 @@ DATA = Path("~/data/vsa-llm").expanduser()
 T1C_ROOT = DATA / "t1c/snomed-mimic3-smollm2-v1"
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1",
-               "t1c": T1C_ROOT / "hosts/qwen3"}
+               "t1c": T1C_ROOT / "hosts/qwen3", "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3"}
 # Qwen3.5 corpora (WP-Qwen35): the same builders with the Qwen3.5 base tokenizer (`Qwen/Qwen3.5-0.8B-Base`, shared by the
 # 0.8B/2B hosts), run with the Qwen3.5 environment. T5 is built (`experiments/t5-enterprise-glossary/t5-qwen35.yaml`).
 QWEN35_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen35", "t4": DATA / "tracks/t4-chemistry/v1-qwen35",
-                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3_5", "wordnet": DATA / "c3/wordnet-qwen3_5-v1"}
+                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3_5", "wordnet": DATA / "c3/wordnet-qwen3_5-v1",
+                "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3_5"}
 TRACKS: dict[str, TrackSpec] = {
     "t5": TrackSpec("t5", "T5 enterprise glossary", DATA / "tracks/t5-glossary/v1",
                     config=Path("experiments/t5-enterprise-glossary/t5.yaml"), items_dir=Path("experiments/t5-enterprise-glossary/items"),
@@ -211,6 +223,17 @@ TRACKS: dict[str, TrackSpec] = {
     "wordnet": TrackSpec("wordnet", "WordNet general (C3)", DATA / "c3/wordnet-smollm2-v1", general_split=None,
                          category_relations=edit.CATEGORY_RELATIONS, kept_relations=tuple(sorted(edit.KEPT_RELATIONS)),
                          edit_relations=edit.CATEGORY_RELATIONS, family_roots={"qwen3": QWEN3_ROOTS["wordnet"], "qwen3_5": QWEN35_ROOTS["wordnet"]}),
+    # T7 (decision 55): the SmolLM2 corpus is the build's reference; the Qwen relinks would be `hosts` of the same config
+    # (not built). Category = the class a record is indexed under (SCR `mapped_to`) or filed under (descriptor `parent`);
+    # edits change the pharmacological action where an entry has exactly one, else that class.
+    "t7": TrackSpec("t7", "T7 new biomedical vocabulary (MeSH SCR + PubMed 2025-26)", DATA / "tracks/t7-newvocab/v1",
+                    # 4,096 windows: the fewest that meet the held-out and rare criteria at ℓ_min 2 (runs/v1/feasibility.json)
+                    eval_split="eval-pubmed", windows=4096, config=Path("experiments/t7-new-vocabulary/t7.yaml"),
+                    holdout_names=Path("experiments/t7-new-vocabulary/runs/v1/holdout_concepts.txt"),
+                    category_relations=("mapped_to", "parent"),
+                    kept_relations=("mapped_to", "parent", "branch_top", "branch_second", "record_class"),
+                    edit_relations=("pharmacological_action", "mapped_to", "parent"),
+                    family_roots={"qwen3": QWEN3_ROOTS["t7"], "qwen3_5": QWEN35_ROOTS["t7"]}),
 }
 FAMILY_TOKENIZERS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-0.6B-Base", "qwen3_5": "Qwen/Qwen3.5-0.8B-Base"}
 
@@ -233,7 +256,7 @@ def track_frame_ontology(spec: TrackSpec) -> tuple[Any, list[int], dict[str, Any
     """(FrameOntology with the synthetic concepts appended, their concept indices, track config) — the
     state `track_corpus.run` / `t1_open_corpus` had when it built the alias table."""
     config = _load_config(spec)
-    if spec.name == "t1":
+    if spec.name in ("t1", "t7"):              # built by t1_open_corpus (adapters `mesh`, `mesh_novel`)
         from .t1_open_corpus import build_track_ontology
         return build_track_ontology(config["ontology"]), [], config
     if spec.name == "t1c":
@@ -414,6 +437,16 @@ def track_lexicon(spec: TrackSpec, ontology: dict[str, Any] | None = None) -> Tr
             if kind == "mesh" and value in heading:
                 texts[atom] = heading[value]
         templates = T1_TEMPLATES
+    elif spec.name == "t7":
+        frame_ontology, _, _ = track_frame_ontology(spec)
+        fillers = frame_ontology.metadata["filler_headings"]
+        for atom in atoms:
+            kind, _, value = atom.partition(":")
+            if kind == "mesh" and value in fillers:
+                texts[atom] = fillers[value]
+            elif kind == "class":
+                texts[atom] = value
+        templates = T7_TEMPLATES
     elif spec.name == "t1c":
         # Filler names are the concepts' preferred terms (licensed: they only reach item files under `items_root`);
         # the filler type is its top-level hierarchy, so an edit keeps e.g. a body structure a body structure.

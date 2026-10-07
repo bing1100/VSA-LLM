@@ -903,11 +903,27 @@ MEASURED_TRAINING_MINUTES = {"SmolLM2-360M": 67.0, "SmolLM2-135M": 31.0}
 # (measured 1.3–2.4 min probes, 2–3.8 min quant); other hosts scale with parameters.
 EVAL_MINUTES_360M = {"probes": 2.0, "probes-int4": 3.8, "zeroshot": 1.5, "zeroshot-int4": 3.0, "edit": 1.5, "edit-int4": 3.0,
                      "rescore": 3.0, "quant_base": 4.0, "quant_channel": 7.2, "report": 22.0, "eval_only": 2.0}
+# The measured training minutes include the run's own stratified evaluations on T5's 1,024 windows; a track evaluated on
+# more windows (T1/T1c 2,048, T7 4,096) adds the extra windows at each of its evaluation points, at the measured cost of
+# one 1,024-window pass (same WP-PQ1 measurement: 24 s for 360M, 12 s for 135M at bf16).
+MEASURED_EVAL_WINDOWS = 1024
+EVAL_PASS_SECONDS_1024 = {"SmolLM2-360M": 24.0, "SmolLM2-135M": 12.0}
+
+
+def extra_evaluation_minutes(config: dict[str, Any], host: str) -> float:
+    """Minutes the run's own evaluations add over `MEASURED_TRAINING_MINUTES` (windows beyond `MEASURED_EVAL_WINDOWS`)."""
+    from vsa_embed.training.lm import eval_token_schedule
+    windows = int(config.get("eval", {}).get("windows", MEASURED_EVAL_WINDOWS))
+    if host not in EVAL_PASS_SECONDS_1024 or windows <= MEASURED_EVAL_WINDOWS:
+        return 0.0
+    points = 1 + len(eval_token_schedule(int(config["eval"].get("first_tokens", 10_000_000)), int(config["train"]["total_tokens"])))
+    return points * (windows - MEASURED_EVAL_WINDOWS) / MEASURED_EVAL_WINDOWS * EVAL_PASS_SECONDS_1024[host] / 60
 
 
 def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict[str, Any]] | None = None) -> float:
     """GPU hours of one planned job (`queue_jobs(plan=...)`): training runs from `MEASURED_TRAINING_MINUTES` (scaled by
-    tokens) or the 6N model; P0 is evaluation only; evaluations from `EVAL_MINUTES_360M` scaled to the host."""
+    tokens, plus `extra_evaluation_minutes` for tracks evaluated on more windows) or the 6N model; P0 is evaluation
+    only; evaluations from `EVAL_MINUTES_360M` scaled to the host."""
     module = command[2] if len(command) > 2 else ""
     if module == "vsa_embed.training.lm":
         config = (configs or {}).get(command[command.index("--config") + 1]) or yaml.safe_load(Path(command[command.index("--config") + 1]).read_text())
@@ -916,7 +932,7 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
         if config["train"].get("eval_only"):
             return EVAL_MINUTES_360M["eval_only"] * _host_scale(host) / 60
         if host in MEASURED_TRAINING_MINUTES:
-            return MEASURED_TRAINING_MINUTES[host] * tokens / 50_000_000 / 60
+            return (MEASURED_TRAINING_MINUTES[host] * tokens / 50_000_000 + extra_evaluation_minutes(config, host)) / 60
         return estimate_hours(host, tokens) if host in HOST_PARAMETERS else float("nan")
     host = next((h for h in HOST_PARAMETERS if h in name), "SmolLM2-360M")
     if module == "vsa_embed.experiments.e4_quant":

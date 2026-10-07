@@ -738,3 +738,73 @@ T4 invented compounds, T1 held-out MeSH (negative control), OpenStax *Chemistry 
 book is CC BY-NC-SA 4.0, not CC BY). Primary endpoints: P1 T5 new words, 360M, property, linker − none; P2 T4 held-out ChEBI
 terms, loss after the term, linker − none (Holm over both). Code `vsa_embed.read_to_learn`, `vsa_embed.experiments.e11_read_to_learn`;
 queue commands from `e11_read_to_learn plan` (priority 61–63, evaluation only).
+
+## E9 new-vocabulary track T7 (decision 55; screened and built 2026-10-07)
+
+**Novelty proxy** (`e9_novelty calibrate`, `experiments/e9-retrofit/novelty/calibration/`).
+
+- **What was measured.** P0-only quantities on the four finished tracks, seed 1, against R9's novelty index
+  (C0′ − P0, mean of the held-out, unseen, rare and 3+-subtoken strata) and against the channel gain.
+- **Agreement with the novelty ordering.** Three P0-side proxies order T5 > T4 > T1 > WordNet exactly at both
+  SmolLM2 sizes (Kendall τ = 1). An exact ordering of 4 tracks has p = 1/24.
+  - Inside nats per linked span: 15.3 / 5.3 / 1.3 / 1.1 at 360M.
+  - Subtokens per span: 5.5 / 5.1 / 2.8 / 2.3.
+  - General-to-domain frequency of the vocabulary: 0.00 / 0.04 / 0.38 / 0.91.
+- **The other two proxies.** P0 inside loss swaps the two null tracks (τ = 0.67). After-term / unlinked loss does not
+  order the tracks at all.
+- **Agreement with the gain.** The gain orders three levels: T5, then T4, then T1 = WordNet (n.s.). Every ordering
+  proxy reaches the best attainable τ-b of 0.91 (p = 0.083).
+- **Primary proxy:** inside nats per span. It is the host's own surprisal for spelling a term, and it does not depend on
+  span density. General-to-domain frequency is biased toward 0 for mention-filtered corpora.
+
+**Candidates** (SmolLM2-360M P0 slices, 512 windows; `experiments/e9-retrofit/novelty/candidates.md`).
+Inside nats per span:
+
+| Candidate | Nats / span | Verdict |
+|---|---:|---|
+| T2 | 25.8 | templated synthetic, excluded |
+| T3 | 1.82 | low novelty, infeasible rare stratum |
+| T6 | 1.63 | low novelty, infeasible rare stratum |
+| MeSH descriptors introduced 2024–26 | 2.16 | new headings for established words |
+| MeSH SCRs introduced 2022–26 | 5.92 | only 541 records |
+| MeSH names absent from general text, SCR + descriptors | 5.43 | |
+| Same, SCR only | 6.59 | chosen |
+
+Three ideas were not built:
+- New INNs: the WHO lists are CC BY-NC-SA, and the INNs arrive through the SCRs anyway.
+- ChEBI entries by date: ChEBI's OBO has no creation dates.
+- Wikidata / Wikipedia 2025 entities: dumps of 25–140 GB, and most names are composed of known words.
+
+**T7** (`experiments/t7-new-vocabulary/`, `ontologies/mesh_novel.py`, built by `t1_open_corpus` with the `mesh_novel`
+adapter):
+- **Vocabulary.** MeSH 2026 SCRs (chemicals, diseases, organisms) with ≥ 5 training-side mentions and 0 mentions in
+  300,000 documents of the C3 general stream, counted over all of a record's names.
+- **Selection.** 8,184 records, 11,141 names, frozen as `screen/selection.tsv` (sha256 `1ead39e8…`).
+- **Frames.** Mapped heading, pharmacological action, record class and branches, over 3,295 descriptor atomics.
+- **Corpus.** PubMed abstracts that mention a selected name: the 2026 baseline slice plus the 80 newest 2026 update
+  files, PMID ≥ 41,025,505, 94% published in 2026. They are mixed 50/50 with FineWeb-Edu.
+- **Sizes.** `train` 57.3M tokens; `eval-pubmed` 6.5M tokens, PMID buckets < 2,000.
+- **Holdout.** 908 entries, node- and alias-disjoint, sha256 `5e133b5f…`.
+- **Feasibility at ℓ_min 2:** feasible with 4,096 evaluation windows.
+  - Held-out: 8,786 occurrences, 411 entries with ≥ 5.
+  - Rare: 4,337 occurrences, 1,577 entries.
+- **Measured P0 novelty on `eval-pubmed`:** 6.49 nats per span, 1.21× T4.
+- **Dimension 3.** `items/{new-words,edits}-t7-smollm2-v1`: 300 new words and 200 edits. The edited relation is the
+  pharmacological action, else the mapped heading.
+- **Alias table.** `~/data/vsa-llm/e9/alias-tables/t7.json`.
+
+**Queue** (not queued). Configs are in `experiments/e9-retrofit/configs/t7/`. `--dry-run` lists every job. The
+estimates use measured costs, plus T7's 3,072 extra evaluation windows per evaluation point. T7 is proposed at priority
+70–73, after T1c's 62–69:
+
+```bash
+# SmolLM2-360M P0, C0′, C2, C5 × seeds 1–3: 53 jobs ≈ 15.4 GPU-h (≈ 1.26 h per trained run with its 4,096-window evaluations)
+PYTHONPATH=src python -m vsa_embed.experiments.e9_plan --track t7 --hosts SmolLM2-360M --seeds 1 2 3 --priority 70 --queue
+# optional, the size trend: SmolLM2-135M seed 1 (P0, C0′, C2, C5): 23 jobs ≈ 2.9 GPU-h
+PYTHONPATH=src python -m vsa_embed.experiments.e9_plan --track t7 --hosts SmolLM2-135M --seeds 1 --priority 70 --queue
+```
+
+**Prediction from the proxy (written before any run).** T7 is slightly more novel than T4, by 1.21× on the proxy. Its
+gain should therefore be at least T4's on the term strata: after unseen terms −2.3%, after 3+-subtoken terms −1.1%
+(360M, seed 1). It should not reach T5's. A null T7 would break the novelty ordering. A T4-sized gain would replicate it
+on a second natural track whose text holds no curated definitions.

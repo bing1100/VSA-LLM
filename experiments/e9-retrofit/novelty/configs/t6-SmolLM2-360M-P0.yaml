@@ -1,0 +1,36 @@
+model:
+  size: pretrained
+  seq_len: 1024
+  gradient_checkpointing: false
+  pretrained: HuggingFaceTB/SmolLM2-360M
+  host_mode: frozen
+  vocab_size: 49152
+  lora_rank: 64
+train:
+  lr: 0.001
+  min_lr_ratio: 0.1
+  warmup_tokens: 2500000
+  weight_decay: 0.1
+  log_every: 10
+  checkpoint_minutes: 10
+  micro_batch: 8
+  grad_accum: 8
+  total_tokens: 65536
+  save_trainable_only: true
+  eval_only: true
+data:
+  min_subtokens: 2
+  seed: 1234
+  train: /home/bhux/data/vsa-llm/tracks/t6-legal/v1/eval
+  eval: /home/bhux/data/vsa-llm/tracks/t6-legal/v1/eval
+  ontology: /home/bhux/data/vsa-llm/tracks/t6-legal/v1/ontology.pt
+eval:
+  windows: 512
+  first_tokens: 65536
+  save_window_losses: true
+  batch: 4
+device: cuda
+channel:
+  mode: none
+seed: 1
+experiment: e9-novelty-t6-SmolLM2-360M-P0

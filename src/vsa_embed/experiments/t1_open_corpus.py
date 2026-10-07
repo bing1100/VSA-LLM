@@ -32,6 +32,13 @@ Stages:
      ids re-linked with the host tokenizer (`relink_for_host`), each with its own `ontology.pt`.
   6. `ontology.pt`; cardinality tables (tokenizer × ℓ_min, per source); feasibility verdict per
      ℓ_min; report.
+
+The E9 new-vocabulary track **T7** (author decision 55) is built by the same stages with the `mesh_novel` adapter
+(`ontologies/mesh_novel.py`: MeSH supplementary concept records and descriptors whose names are frequent in the
+training-side PubMed text and absent from general web text). Its extra stage `screen` counts the candidate names
+and writes the frozen selection (`selection.tsv`, pinned by `ontology.selection_sha256` before `build`);
+`data.domain_filter: mentions` keeps only abstracts that mention a selected name (training and evaluation sides
+alike), and `track_label` names the track in manifests and reports. Every key is opt-in: T1 builds as before.
 """
 
 from __future__ import annotations
@@ -73,7 +80,23 @@ def mesh_adapter(config: dict[str, Any]) -> FrameOntology:
                                      policy=MeshAliasPolicy.from_config(config.get("aliases")))
 
 
-ONTOLOGY_ADAPTERS: dict[str, Callable[[dict[str, Any]], FrameOntology]] = {"mesh": mesh_adapter}
+def mesh_novel_adapter(config: dict[str, Any]) -> FrameOntology:
+    """T7: the frozen selection (`selection`, pinned by `selection_sha256`) of MeSH SCR / descriptor names."""
+    from vsa_embed.ontologies.mesh_novel import build_novel_ontology, load_mesh_records, read_selection
+    descriptors, scrs = load_mesh_records(Path(config["path"]).expanduser(), Path(config["supplementary_path"]).expanduser())
+    selection = read_selection(Path(config["selection"]).expanduser(), expected_sha256=config.get("selection_sha256"))
+    return build_novel_ontology(descriptors, scrs, selection, max_atomics=int(config["max_atomics"]),
+                                max_degree=int(config["max_degree"]),
+                                source={"descriptors": config["path"], "supplementary": config["supplementary_path"],
+                                        "selection": config["selection"], "selection_sha256": config.get("selection_sha256")})
+
+
+ONTOLOGY_ADAPTERS: dict[str, Callable[[dict[str, Any]], FrameOntology]] = {"mesh": mesh_adapter, "mesh_novel": mesh_novel_adapter}
+
+
+def config_label(config: dict[str, Any]) -> str:
+    """The track's label in manifests and reports (T1-open unless the config names another track)."""
+    return str(config.get("track_label") or TRACK_LABEL)
 
 
 def build_track_ontology(config: dict[str, Any]) -> FrameOntology:
@@ -86,19 +109,23 @@ def build_track_ontology(config: dict[str, Any]) -> FrameOntology:
 # -- documents ----------------------------------------------------------------------------------
 
 def pubmed_documents(paths: list[Path], *, eval_buckets: int, split: str, exclude: frozenset[int] = frozenset(),
-                     limit: int | None = None) -> Iterator[str]:
+                     limit: int | None = None, keep: Callable[[str], bool] | None = None,
+                     min_pmid: int | None = None) -> Iterator[str]:
     """Texts of the `split` ("eval" or "train") side of the PMID-hash split, in file order, each
-    PMID once; `exclude` PMIDs are skipped."""
+    PMID once; `exclude` PMIDs are skipped, and so are PMIDs below `min_pmid` (T7: revised records of older
+    citations in the update files) and texts `keep` rejects (T7: no selected name)."""
     if split not in {"eval", "train"}:
         raise ValueError("split must be eval or train")
     seen: set[int] = set()
     produced = 0
     for record in iter_pubmed(paths):
         pmid = int(record["pmid"])
-        if pmid in seen or pmid in exclude:
+        if pmid in seen or pmid in exclude or (min_pmid is not None and pmid < min_pmid):
             continue
         seen.add(pmid)
         if (pmid_bucket(pmid) < eval_buckets) != (split == "eval"):
+            continue
+        if keep is not None and not keep(record["text"]):
             continue
         if limit is not None and produced >= limit:
             return
@@ -146,10 +173,18 @@ class TrackDocuments:
     exclude_pmids: frozenset[int] = frozenset()
     domain_share: float = 0.5
     calibration: tuple[float, float] = (4.7, 4.6)   # chars per reference-tokenizer token (pubmed, general)
+    mention_filter: Any = None                     # T7: keep only abstracts mentioning a selected name (`.mentions`)
+    mention_digest: str | None = None              # the frozen selection's sha256 (part of the stream signature)
+    min_pmid: int | None = None                    # T7: PMIDs below are skipped (revisions of older citations)
+    label: str = TRACK_LABEL                       # the config's `track_label` (T7); not part of any stream signature
     # The interface `relink_for_host` reads (T1c's `ClinicalDocuments` provides the same with its own values).
     domain_split: ClassVar[str] = "eval-pubmed"
-    track_label: ClassVar[str] = TRACK_LABEL
     sources: ClassVar[tuple[str, ...]] = SOURCES
+
+    @property
+    def track_label(self) -> str:
+        """The label `relink_for_host` writes into the corpus manifests (a field, so `replace` keeps it for host relinks)."""
+        return self.label
 
     def signature(self, stream: str) -> str:
         """Fingerprint of everything that decides a stream's documents (guards corpus reuse)."""
@@ -163,11 +198,18 @@ class TrackDocuments:
             spec["eval_pubmed_docs"] = self.eval_pubmed_docs
         if stream in ("eval", "eval-general"):
             spec["eval_general_docs"] = self.eval_general_docs
+        if self.mention_filter is not None and stream != "eval-general":
+            spec["mention_filter"] = self.mention_digest
+        if self.min_pmid is not None and stream != "eval-general":
+            spec["min_pmid"] = self.min_pmid
         return hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
+
+    def _keep(self) -> Callable[[str], bool] | None:
+        return self.mention_filter.mentions if self.mention_filter is not None else None
 
     def eval_pubmed(self) -> Iterator[str]:
         return pubmed_documents(self.pubmed_paths, eval_buckets=self.eval_buckets, split="eval",
-                                limit=self.eval_pubmed_docs)
+                                limit=self.eval_pubmed_docs, keep=self._keep(), min_pmid=self.min_pmid)
 
     def eval_domain(self) -> Iterator[str]:
         return self.eval_pubmed()
@@ -177,7 +219,7 @@ class TrackDocuments:
 
     def train_pubmed(self) -> Iterator[str]:
         return pubmed_documents(self.pubmed_paths, eval_buckets=self.eval_buckets, split="train",
-                                exclude=self.exclude_pmids)
+                                exclude=self.exclude_pmids, keep=self._keep(), min_pmid=self.min_pmid)
 
     def train_general(self) -> Iterator[str]:
         return iter_texts(self.general_shards, skip=self.general_skip)
@@ -492,8 +534,24 @@ def pubmed_names(config: dict[str, Any]) -> list[str]:
     return baseline_names(spec["prefix"], int(spec["files"][0]), int(spec["files"][1]))
 
 
+def update_names(config: dict[str, Any]) -> list[str]:
+    """T7: the PubMed update files (`pubmed.updates.files`, newest first); none for T1."""
+    updates = config["pubmed"].get("updates")
+    return baseline_names(config["pubmed"]["prefix"], int(updates["files"][0]), int(updates["files"][1])) if updates else []
+
+
+def pubmed_paths(config: dict[str, Any]) -> list[Path]:
+    """Extracted PubMed files in stream order: the update files (if any, newest first), then the baseline files."""
+    paths = []
+    updates = config["pubmed"].get("updates")
+    if updates:
+        paths += text_paths(update_names(config), Path(updates["text"]).expanduser())
+    return paths + text_paths(pubmed_names(config), Path(config["paths"]["pubmed_text"]).expanduser())
+
+
 def fetch(config: dict[str, Any]) -> dict[str, Any]:
-    """Download and extract the PubMed baseline files; download PubMedQA (pqa_labeled)."""
+    """Download and extract the PubMed baseline files (and the update files, if configured); download PubMedQA
+    (pqa_labeled)."""
     paths, spec = config["paths"], config["pubmed"]
     names = pubmed_names(config)
     raw, text = Path(paths["pubmed_raw"]).expanduser(), Path(paths["pubmed_text"]).expanduser()
@@ -501,6 +559,14 @@ def fetch(config: dict[str, Any]) -> dict[str, Any]:
     extracted = extract_baseline(names, raw, text, workers=int(config["workers"]),
                                  min_abstract_words=int(spec["min_abstract_words"]), english_only=bool(spec["english_only"]))
     result = {"downloads": downloads, "extracted": extracted}
+    updates = spec.get("updates")
+    if updates:
+        names = update_names(config)
+        update_raw, update_text = Path(updates["raw"]).expanduser(), Path(updates["text"]).expanduser()
+        result["update_downloads"] = download_baseline(names, update_raw, base_url=updates["base_url"])
+        result["update_extracted"] = extract_baseline(names, update_raw, update_text, workers=int(config["workers"]),
+                                                      min_abstract_words=int(spec["min_abstract_words"]),
+                                                      english_only=bool(spec["english_only"]))
     qa = config.get("pubmedqa")
     if qa:
         from huggingface_hub import hf_hub_download
@@ -532,18 +598,28 @@ def pubmedqa_pmids(config: dict[str, Any]) -> frozenset[int]:
 
 def track_documents(config: dict[str, Any], *, calibration: tuple[float, float] | None = None) -> TrackDocuments:
     general, data = general_settings(config), config["data"]
-    text_dir = Path(config["paths"]["pubmed_text"]).expanduser()
-    paths = text_paths(pubmed_names(config), text_dir)
+    paths = pubmed_paths(config)
     missing = [str(p) for p in paths if not p.exists()]
     if missing:
         raise FileNotFoundError(f"extracted PubMed files missing (run --stage fetch first): {missing[:3]}")
     if int(data["eval_general_docs"]) > general["eval_docs"]:
         raise ValueError("eval_general_docs exceeds the C3 evaluation documents")
+    mention_filter, mention_digest = None, None
+    if data.get("domain_filter") == "mentions":
+        from vsa_embed.ontologies.mesh_novel import MentionCounter, read_selection
+        spec = config["ontology"]
+        rows = read_selection(Path(spec["selection"]).expanduser(), expected_sha256=spec.get("selection_sha256"))
+        mention_filter, mention_digest = MentionCounter(r["key"] for r in rows), spec.get("selection_sha256")
+    elif data.get("domain_filter"):
+        raise ValueError(f"unknown data.domain_filter {data['domain_filter']!r} (mentions)")
     return TrackDocuments(
         pubmed_paths=paths, eval_buckets=int(config["pubmed"]["eval_buckets"]), general_shards=general["shards"],
         general_skip=general["eval_docs"], eval_general_docs=int(data["eval_general_docs"]),
         eval_pubmed_docs=data.get("eval_pubmed_docs"), exclude_pmids=pubmedqa_pmids(config),
-        domain_share=float(config["mix"]["domain_share"]), calibration=calibration or (4.7, 4.6))
+        domain_share=float(config["mix"]["domain_share"]), calibration=calibration or (4.7, 4.6),
+        mention_filter=mention_filter, mention_digest=mention_digest,
+        min_pmid=int(config["pubmed"]["min_pmid"]) if config["pubmed"].get("min_pmid") else None,
+        label=config_label(config))
 
 
 def alias_statistics(table: AliasTable, tokenizer_names: list[str]) -> dict[str, Any]:
@@ -592,7 +668,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     presample_manifest = build_corpus(documents.train(presample_log), data_root / "presample", tokenizer_name=tokenizer_name,
                                       table=base_table, eos_id=tokenizer.eos_token_id, max_tokens=int(data["presample_tokens"]),
                                       workers=workers, reuse=True,
-                                      extra_manifest={"track": TRACK_LABEL, "max_tokens_requested": int(data["presample_tokens"]),
+                                      extra_manifest={"track": config_label(config), "max_tokens_requested": int(data["presample_tokens"]),
                                                       "stream_signature": presample_signature})
     presample_shares = record_shares(data_root / "presample", presample_log, tokenizer.eos_token_id)
     presample = TokenCorpus.open(data_root / "presample")
@@ -659,12 +735,16 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     feasibility = {}
     for label, root, info, configured in builds:
         built = info["corpora"]["train"]["tokens"]
+        requested = int(info["corpora"]["train"].get("max_tokens_requested") or configured)
         frequencies = {}
         for threshold in (1, 2, 3, 4):
             if threshold >= int(data["train_min_subtokens"]):
                 frequency = train_frequency(root / "train", len(full.entry_concepts), threshold)
-                # A train corpus at ≥ 99% of its budget is complete (the last document overshoots or stops short).
-                provenance = "measured" if built >= 0.99 * configured else f"slice ({built:,} of {configured:,} tokens)"
+                # A train corpus at ≥ 99% of its budget is complete (the last document overshoots or stops short), and so
+                # is one whose document stream ended first (T7: the mention-bearing abstracts run out before the budget).
+                exhausted = built < 0.99 * requested
+                provenance = ("measured" if built >= 0.99 * configured or exhausted
+                              else f"slice ({built:,} of {configured:,} tokens)")
             else:
                 frequency = np.zeros(len(full.entry_concepts), dtype=np.int64)
                 provenance = "not stored (train_min_subtokens)"
@@ -674,9 +754,9 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     (output_dir / "feasibility.json").write_text(json.dumps({"criteria": criteria, "by_tokenizer": feasibility}, indent=2) + "\n")
 
     summary = {
-        "track": TRACK_LABEL,
+        "track": config_label(config),
         "ontology": {**{k: v for k, v in ontology.metadata.items() if k in ("source", "descriptors", "alias_policy", "alias_stats",
-                                                                             "max_atomics", "max_degree")},
+                                                                             "max_atomics", "max_degree", "records", "empty_frames")},
                      "concepts": len(ontology.concept_names), "atomics": len(ontology.atomic_names),
                      "relations": len(ontology.relation_names), "aliases": len(full.alias_to_entry),
                      "entries": len(full.entry_concepts), "alias_subtokens": alias_stats},
@@ -693,11 +773,50 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "hosts": {h["tokenizer"]: str(data_root / "hosts" / h["name"]) for h in config.get("hosts") or []},
         "train_l1_slice": l1_manifest,
         "alias_table_sha256": full.digest(), "data_root": str(data_root),
+        "domain_filter": data.get("domain_filter"),
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str) + "\n")
     (output_dir / "report.md").write_text(render_report(summary, by_source, feasibility, criteria))
-    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", track=TRACK_LABEL)
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", track=config_label(config))
     return summary
+
+
+# -- T7 vocabulary screen ------------------------------------------------------------------------
+
+def screen(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
+    """T7: count every candidate name (`ontology.policy`) in the training-side PubMed text (evaluation-pool and
+    PubMedQA PMIDs excluded) and in the first `screen.general_docs` documents of the C3 general training stream,
+    select (`mesh_novel.select_aliases`) and write `selection.tsv` + `screen.json`; the config then pins the
+    selection's sha256 (`ontology.selection_sha256`) before `build`."""
+    from vsa_embed.ontologies.mesh_novel import (NovelVocabularyPolicy, candidate_aliases, count_general_mentions,
+                                                 count_pubmed_mentions, load_mesh_records, mention_key, select_aliases,
+                                                 write_selection)
+    spec, settings = config["ontology"], config.get("screen") or {}
+    policy = NovelVocabularyPolicy.from_config(spec.get("policy"))
+    descriptors, scrs = load_mesh_records(Path(spec["path"]).expanduser(), Path(spec["supplementary_path"]).expanduser())
+    pairs, candidate_stats = candidate_aliases(descriptors, scrs, policy)
+    keys = sorted({mention_key(alias) for alias, _ in pairs})
+    general = general_settings(config)
+    verify_shards(general["shards"], general["shard_sha256"])
+    workers = int(settings.get("workers", config.get("workers", 4)))
+    min_pmid = int(config["pubmed"]["min_pmid"]) if config["pubmed"].get("min_pmid") else None
+    domain, domain_docs = count_pubmed_mentions(pubmed_paths(config), keys, eval_buckets=int(config["pubmed"]["eval_buckets"]),
+                                                exclude=pubmedqa_pmids(config), min_pmid=min_pmid, workers=workers)
+    general_counts, general_docs = count_general_mentions(general["shards"], keys, skip=general["eval_docs"],
+                                                          limit=int(settings.get("general_docs", 300_000)), workers=workers)
+    rows, selection_stats = select_aliases(pairs, domain, general_counts, policy)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    digest = write_selection(output_dir / "selection.tsv", rows)
+    result = {"policy": {k: (sorted(v) if isinstance(v, frozenset) else v) for k, v in policy.__dict__.items()
+                         if k != "function_words"},
+              "candidates": candidate_stats, "candidate_keys": len(keys), "selection": selection_stats,
+              "domain_documents": domain_docs, "general_documents": general_docs,
+              "general_sample": {"shards": general["shards"], "skip": general["eval_docs"], "docs": general_docs},
+              "selection_sha256": digest,
+              "by_kind": dict(Counter(("scr" if r["ui"].startswith("C") else "descriptor") for r in rows)),
+              "domain_occurrences": int(sum(r["domain"] for r in rows))}
+    (output_dir / "screen.json").write_text(json.dumps(result, indent=2, default=str) + "\n")
+    return result
 
 
 # -- report -------------------------------------------------------------------------------------
@@ -715,10 +834,19 @@ def _cardinality_table(rows: list[dict[str, Any]]) -> list[str]:
 def render_report(summary: dict[str, Any], by_source: dict[str, dict[str, Any]], feasibility: dict[str, Any],
                   criteria: dict[str, Any]) -> str:
     h, onto = summary["holdout"], summary["ontology"]
-    lines = [f"# T1-open corpus — {TRACK_LABEL}", "",
-             "Ontology: MeSH 2026 descriptors (frames from tree positions, pharmacological actions, see-also); "
-             "corpus: PubMed 2026 baseline abstracts mixed 50/50 (tokens) with FineWeb-Edu (the C3 stream). "
-             "Pretrained hosts may have seen PubMed; the newest baseline files were used to limit overlap.", "",
+    label = summary.get("track", TRACK_LABEL)
+    if label == TRACK_LABEL:
+        intro = ("Ontology: MeSH 2026 descriptors (frames from tree positions, pharmacological actions, see-also); "
+                 "corpus: PubMed 2026 baseline abstracts mixed 50/50 (tokens) with FineWeb-Edu (the C3 stream). "
+                 "Pretrained hosts may have seen PubMed; the newest baseline files were used to limit overlap.")
+        title = f"# T1-open corpus — {label}"
+    else:
+        intro = ("Ontology: MeSH 2026 supplementary concept records and descriptors whose names are frequent in the training-side "
+                 "PubMed 2025–26 text and absent from a general-text sample (`mesh_novel`; frames: mapped heading, pharmacological "
+                 "action, record class, tree branches); corpus: the PubMed abstracts that mention a selected name, mixed 50/50 "
+                 "(tokens) with FineWeb-Edu (the C3 stream).")
+        title = f"# {label} — corpus build"
+    lines = [title, "", intro, "",
              "Data: PubMed, courtesy of the U.S. National Library of Medicine (2026 baseline snapshot, not updated); "
              "MeSH 2026, U.S. National Library of Medicine.", "",
              f"Linker: {onto['aliases']:,} aliases over {onto['entries']:,} entries (alias policy {onto.get('alias_policy')}).", "",
@@ -792,12 +920,17 @@ def load_config(path: Path) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--stage", choices=("fetch", "build"), default="build")
+    parser.add_argument("--stage", choices=("fetch", "screen", "build"), default="build")
     parser.add_argument("--output", type=Path, help="run folder (build)")
     args = parser.parse_args(argv)
     config = load_config(args.config)
     if args.stage == "fetch":
         print(json.dumps(fetch(config), indent=2, default=str)[:3000])
+        return
+    if args.stage == "screen":
+        if args.output is None:
+            parser.error("--output is required for --stage screen")
+        print(json.dumps(screen(config, args.output), indent=2, default=str)[:3000])
         return
     if args.output is None:
         parser.error("--output is required for --stage build")
