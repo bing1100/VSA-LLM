@@ -1,9 +1,9 @@
 """E9 run configs and job chaining: retrofit × quantization on pretrained hosts (execution.md, E9).
 
-    python -m vsa_embed.experiments.e9_plan --track t5|t4|t1|wordnet [--stage NAME] [--hosts SmolLM2-360M SmolLM2-135M]
+    python -m vsa_embed.experiments.e9_plan --track t5|t4|t1|t1c|wordnet [--stage NAME] [--hosts SmolLM2-360M SmolLM2-135M]
         [--host-mode train|lora] [--lora-rank 64] [--host-lr X] [--channel-lr 1e-3] [--gate-bias 0] [--tokens 50000000]
         [--seeds 1] [--models P0 C0p C2 C5] [--no-evals] [--int4-probes SUBSET] [--queue] [--priority 22]
-        [--rescore arms|all|none]
+        [--rescore arms|all|none] [--dry-run]
     python -m vsa_embed.experiments.e9_plan --track t5 --models C5rf C5ut C5tr C5sh C6m C6d C6g --seeds 1 2 3
         --stage t5 --priority 51 --queue                                    # WP-PQ1 arms (below)
     python -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-1.7B-Base Qwen3-0.6B-Base --host-mode lora
@@ -22,8 +22,9 @@ queue (`.jobs/`, through `vsa_embed.jobqueue`, run with this interpreter from th
 **Tracks** (`e9_tracks`; orchestrator decision after the engagement check: SmolLM2 already models general
 WordNet words, so the primary corpora are vocabularies that are new or rare for the host): `t5` enterprise
 glossary (contamination-free invented terms; run first), `t4` chemistry (ChEBI names), `t1` T1-open (MeSH on
-PubMed; strata on `eval-pubmed` with 2,048 windows), `wordnet` (C3 general corpus; secondary, the negative
-control). Each points `data.train` / `data.eval` / `data.ontology` at its corpus for the hosts' tokenizer family
+PubMed; strata on `eval-pubmed` with 2,048 windows), `t1c` (licensed clinical track, decision 58: SNOMED CT on
+MIMIC-III notes; strata on `eval-mimic` with 2,048 windows; its alias table and dimension-3 items live under
+`~/data/vsa-llm/t1c/`, `TrackSpec.items_root`), `wordnet` (C3 general corpus; secondary, the negative control). Each points `data.train` / `data.eval` / `data.ontology` at its corpus for the hosts' tokenizer family
 (`TrackSpec.for_family`: SmolLM2, or the Qwen3 relink with the same ontology, alias table and holdout).
 
 **Recipe** (engagement check, 2026-10-02): full fine-tuning (`--host-mode train`, host lr 3e-5; `lora`: rank
@@ -84,6 +85,11 @@ and INT4 (`RUN/probes.json`, `RUN/probes-int4.json`), the track's zero-shot item
 and, for tracks with a general-text corpus, on `eval-general` (`quant-general/<stage>/`); at P + 3 — the R9
 report (`experiments/e9-retrofit/report/<stage>/`). Track runs read the evaluation alias table written by
 `e9_tracks.ensure_alias_table` at queue time. Retries of evaluation jobs replace their partial outputs.
+
+**Dry run** (`--dry-run` without `--dim3-baselines`): writes the configs and prints every job `--queue` would add
+(name, priority, command) with a GPU-hour estimate (`job_estimate_hours`: training from the measured per-run times,
+`MEASURED_TRAINING_MINUTES`, else the 6N model; evaluations from `EVAL_MINUTES_360M`), without touching the queue
+or writing the alias table.
 
 **Dimension-3 baselines** (WP-PQ2, novelty check §4.4; `--dim3-baselines`): evaluation-only jobs on the stage's
 existing runs, nothing is trained or re-planned — per run `RUN/dim3-baselines` (`e9_dim3_baselines`: in-context frames
@@ -200,10 +206,12 @@ def stage_family(hosts: list[str]) -> str:
 
 
 def dimension3_items(track: str, family: str = "smollm2") -> tuple[Path, Path]:
-    """(new-word items, edit items) of a track for a host tokenizer family (the WordNet ones keep their names)."""
+    """(new-word items, edit items) of a track for a host tokenizer family (the WordNet ones keep their names). A licensed
+    track (T1c) keeps its items outside the repository (`TrackSpec.items_root`)."""
     if track == "wordnet":
         return ITEMS / f"new-words-{family}-v1", ITEMS / f"edits-{family}-v1"
-    return ITEMS / f"new-words-{track}-{family}-v1", ITEMS / f"edits-{track}-{family}-v1"
+    root = (TRACKS[track].items_root if track in TRACKS else None) or ITEMS
+    return root / f"new-words-{track}-{family}-v1", root / f"edits-{track}-{family}-v1"
 
 
 def zeroshot_items(family: str = "smollm2") -> Path:
@@ -500,7 +508,8 @@ def rowsource_jobs(configs: dict[Path, dict[str, Any]], track: str, *, python: s
 
 def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, track: str = "t5", evals: bool = True,
                root: Path = ROOT, queue_dir: Path | None = None, int4_probes: str | None = None,
-               alias_table: Path | None = None, rescore: str = "arms") -> list[str]:
+               alias_table: Path | None = None, rescore: str = "arms",
+               plan: list[tuple[str, int, list[str]]] | None = None) -> list[str]:
     """Training jobs at `priority` (default: the hosts' family's, 22 SmolLM2 / 26 Qwen3); per-run evaluations
     at +1, `e4_quant` over the runs at +2, the R9 report at +3. Names are idempotent: a job that exists is left
     alone (P0, shared by seed batches). Track runs get the evaluation alias table (written here once if
@@ -511,7 +520,10 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     variants) at +1, no `e4_quant` (their INT4 evaluation is the rescoring's `int4-A`); C6 arms whose row-source table
     is missing get an `e9_rowsource build` job at `priority`, queued before the training jobs (the queue runs equal
     priorities first come, first served). `rescore="all"` also rescores P0 / C0′ / C2 / C5 (the `controls` variants:
-    filler strata and the claim-B controls); `"none"` rescores nothing."""
+    filler strata and the claim-B controls); `"none"` rescores nothing.
+
+    `plan` (a list): dry run — every job is appended as (name, priority, command) instead of being queued, and the
+    alias table is neither written nor required."""
     from .e9_rescore import profile_variants, rescore_command
     if rescore not in {"arms", "all", "none"}:
         raise ValueError("rescore must be arms, all or none")
@@ -530,9 +542,13 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     env = {"PYTHONPATH": "src"}
     queued: list[str] = []
     if evals and alias_table is None:
-        alias_table = ensure_alias_table(spec)
+        alias_table = spec.alias_table_path if plan is not None else ensure_alias_table(spec)
 
     def submit(name: str, command: list[str], level: int, *, min_free_gb: float, resume_args: list[str] | None = None) -> None:
+        if plan is not None:
+            plan.append((name, level, command))
+            queued.append(name)
+            return
         try:
             add(queue, command, name=name, priority=level, min_free_gb=min_free_gb, env=env, resume_args=resume_args)
             queued.append(name)
@@ -686,6 +702,45 @@ def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, qu
     return queued, planned
 
 
+# Measured training minutes per 50M-token E9 run on the RTX 3090 shared with the queue (execution.md, WP-PQ1 "Measured
+# costs": SmolLM2-360M 67–68 min, -135M 31 min); other hosts use the 6N model or the memory probe.
+MEASURED_TRAINING_MINUTES = {"SmolLM2-360M": 67.0, "SmolLM2-135M": 31.0}
+# Minutes of one evaluation job on SmolLM2-360M (WP-PQ1 measurements and decision 41: probes ≈ 6 min on 135M, ≈ 2.5× on
+# 360M, INT4 slower; zero-shot + editing ≈ 3 min at bf16; e4_quant ≈ 4 evaluation passes per run and variant; report
+# ≈ 22 min); 135M takes ≈ 0.45× (the trainer's ratio), other hosts scale with parameters.
+EVAL_MINUTES_360M = {"probes": 15.0, "probes-int4": 20.0, "zeroshot": 1.5, "zeroshot-int4": 3.0, "edit": 1.5, "edit-int4": 3.0,
+                     "rescore": 3.0, "quant": 12.0, "report": 22.0, "eval_only": 2.0}
+
+
+def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict[str, Any]] | None = None) -> float:
+    """GPU hours of one planned job (`queue_jobs(plan=...)`): training runs from `MEASURED_TRAINING_MINUTES` (scaled by
+    tokens) or the 6N model; P0 is evaluation only; evaluations from `EVAL_MINUTES_360M` scaled to the host."""
+    module = command[2] if len(command) > 2 else ""
+    if module == "vsa_embed.training.lm":
+        config = (configs or {}).get(command[command.index("--config") + 1]) or yaml.safe_load(Path(command[command.index("--config") + 1]).read_text())
+        host = _config_host(config) or ""
+        tokens = int(config["train"]["total_tokens"])
+        if config["train"].get("eval_only"):
+            return EVAL_MINUTES_360M["eval_only"] * _host_scale(host) / 60
+        if host in MEASURED_TRAINING_MINUTES:
+            return MEASURED_TRAINING_MINUTES[host] * tokens / 50_000_000 / 60
+        return estimate_hours(host, tokens) if host in HOST_PARAMETERS else float("nan")
+    host = next((h for h in HOST_PARAMETERS if h in name), "SmolLM2-360M")
+    if module == "vsa_embed.experiments.e4_quant":
+        runs = command.index("--output") - command.index("--runs") - 1
+        return EVAL_MINUTES_360M["quant"] * runs / 60
+    if module == "vsa_embed.experiments.e9_report":
+        return EVAL_MINUTES_360M["report"] / 60
+    suffix = name.rsplit("-s", 1)[-1].split("-", 1)[-1] if "-s" in name else ""
+    return EVAL_MINUTES_360M.get(suffix, 5.0) * _host_scale(host) / 60
+
+
+def _host_scale(host: str) -> float:
+    if host == "SmolLM2-135M":
+        return 0.45
+    return max(0.45, HOST_PARAMETERS.get(host, HOST_PARAMETERS["SmolLM2-360M"]) / HOST_PARAMETERS["SmolLM2-360M"])
+
+
 def describe_plan(paths: list[Path], plans: dict[str, dict[str, Any]]) -> list[str]:
     """One line per host: micro-batch, checkpointing, host dtype, their source (table, memory probe, override) and
     GPU hours of the trained runs (measured tokens/s from the probe, else the 6N model)."""
@@ -748,7 +803,9 @@ def main(argv: list[str] | None = None) -> None:
                              f"existing configs and runs (no training; default priority {DIM3_PRIORITY}; --seeds/--models filter)")
     parser.add_argument("--dim3-weights-on-candidate", action="store_true",
                         help="with --dim3-baselines: also run ROME/MEMIT/AlphaEdit on C5's host weights (ontology edit + ROME)")
-    parser.add_argument("--dry-run", action="store_true", help="with --dim3-baselines: print the jobs and GPU estimates only")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="print the jobs --queue would add with GPU-hour estimates (configs are written; the queue and "
+                             "the alias table are not touched); with --dim3-baselines: its jobs and estimates")
     args = parser.parse_args(argv)
     family = stage_family(args.hosts)
     stage = args.stage or f"{args.track}{FAMILIES[family]['suffix']}"
@@ -774,6 +831,19 @@ def main(argv: list[str] | None = None) -> None:
         mode = args.host_mode or FAMILIES[family]["mode"]
         plans = {h: host_plan(h, mode, memory=memory, micro_batch=args.micro_batch) for h in args.hosts}
         print("\n".join(describe_plan(paths, plans)))
+    if args.dry_run:
+        planned: list[tuple[str, int, list[str]]] = []
+        queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
+                   rescore=args.rescore, plan=planned)
+        configs = {str(p): yaml.safe_load(Path(p).read_text()) for p in paths}
+        total, training = 0.0, 0.0
+        for name, level, command in planned:
+            hours = job_estimate_hours(name, command, configs=configs)
+            total += hours if hours == hours else 0.0
+            training += hours if command[2] == "vsa_embed.training.lm" and hours == hours else 0.0
+            print(f"[{level}] {name}  ≈ {hours:.2f} GPU-h\n  {' '.join(command)}")
+        print(f"dry run: {len(planned)} job(s), ≈ {total:.1f} GPU-h (training and P0 evaluation ≈ {training:.1f}); nothing queued")
+        return
     if args.queue:
         queued = queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
                             rescore=args.rescore)
