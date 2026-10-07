@@ -32,7 +32,9 @@ edited layers scaled to the host's depth (`default_layers`: ROME layer 5 of 32, 
 - context prefixes are a fixed list (`CONTEXT_PREFIXES`) instead of ten texts sampled from the model,
   so edits are deterministic;
 - the second moment `C` is estimated from `cov_tokens` tokens of the run's own training stream (ROME:
-  100,000 Wikipedia texts), with a ridge of `1e-5 · mean(diag C)` before inversion;
+  100,000 Wikipedia texts), with a ridge of `1e-5 · mean(diag C)` before ROME's and MEMIT's inversions
+  (the reference solves MEMIT's `λC + KKᵀ` without one, which is singular when `C` is rank-deficient);
+  AlphaEdit's null space is taken from the unridged `C` (its solve has `l2 · I`);
 - `δ` is optimized in float32 without autocast; scoring then runs as every other E9 evaluation;
 - AlphaEdit's absolute eigenvalue threshold is kept (2e-2) but the null-space dimension is recorded, and
   `nullspace_relative` switches to a threshold relative to the largest eigenvalue for hosts whose key
@@ -99,7 +101,8 @@ class EditorSettings:
         out["layers"] = list(layers)
         out["context_prefixes"] = list(self.context_prefixes)
         out["deviations"] = ["fixed context prefixes (not model-generated)", "second moment from the run's training stream",
-                             "delta optimized in float32 without autocast", "ridge 1e-5·mean(diag C) before inversion"]
+                             "delta optimized in float32 without autocast",
+                             "ridge 1e-5·mean(diag C) on C before inversion (ROME C⁻¹, MEMIT λC + KKᵀ; not AlphaEdit's null space)"]
         return out
 
 
@@ -276,11 +279,20 @@ def second_moments(host: EditableHost, texts: Sequence[str], layers: Sequence[in
     return {l: (sums[l] / count).cpu() for l in layers}
 
 
-def _inverse_solver(moment: Tensor) -> Callable[[Tensor], Tensor]:
+RIDGE = 1e-5          # relative to mean(diag C)
+
+
+def ridged(moment: Tensor) -> Tensor:
+    """`C + RIDGE · mean(diag C) · I` (float64): the second moment as ROME and MEMIT invert it. A moment estimated
+    from a finite sample is rank-deficient when the sample has fewer distinct keys than key dimensions, and is
+    ill-conditioned along rarely used directions; the ridge makes every inversion well-posed."""
     c = moment.double()
-    ridge = 1e-5 * float(torch.diagonal(c).mean())
-    factor = torch.linalg.cholesky(c + ridge * torch.eye(c.shape[0], dtype=c.dtype))
-    return lambda x: torch.cholesky_solve(x.double().reshape(c.shape[0], -1), factor).reshape(x.shape)
+    return c + RIDGE * float(torch.diagonal(c).mean()) * torch.eye(c.shape[0], dtype=c.dtype)
+
+
+def _inverse_solver(moment: Tensor) -> Callable[[Tensor], Tensor]:
+    factor = torch.linalg.cholesky(ridged(moment))
+    return lambda x: torch.cholesky_solve(x.double().reshape(factor.shape[0], -1), factor).reshape(x.shape)
 
 
 # -- keys and targets -------------------------------------------------------------------------------------
@@ -417,13 +429,15 @@ def apply_memit(host: EditableHost, requests: Sequence[EditRequest], settings: E
         _, current = _site_io(host, layer, plain, residual=z_layer)
         residual = ((targets_z - current).double() / (len(layers) - i)).T     # (d, n)
         k = keys.T                                                     # (d_in, n)
-        moment = moments[layer].double()
         if settings.method == "memit":
-            adjusted = torch.linalg.solve(settings.mom2_update_weight * moment + k @ k.T, k)   # (d_in, n)
+            # The ridged C, as ROME's: with a rank-deficient C, λC + KKᵀ is singular and LU returns an arbitrary
+            # null-space component, which the update then writes onto every key outside span(C) + span(K) (the
+            # edited subject's own plain-prompt key among them), so the residual it leaves can grow instead of shrink.
+            adjusted = torch.linalg.solve(settings.mom2_update_weight * ridged(moments[layer]) + k @ k.T, k)   # (d_in, n)
             update = residual @ adjusted.T                             # (d, d_in)
             null_dim = None
         else:
-            eigenvalues, eigenvectors = torch.linalg.eigh(moment)
+            eigenvalues, eigenvectors = torch.linalg.eigh(moments[layer].double())
             threshold = settings.nullspace_threshold if settings.nullspace_relative is None \
                 else settings.nullspace_relative * float(eigenvalues.max())
             small = eigenvalues < threshold
@@ -462,5 +476,5 @@ def sequence_logprob(host: EditableHost, prompt: str, continuation: str) -> floa
         return float(F.log_softmax(logits, -1).gather(-1, tensors["input_ids"][0, pos][:, None]).sum())
 
 
-__all__ = ["CONTEXT_PREFIXES", "EditRequest", "EditableHost", "EditorSettings", "METHODS", "apply_edits", "apply_memit",
-           "apply_rome", "default_layers", "edit_layers", "optimize_delta", "second_moments", "sequence_logprob"]
+__all__ = ["CONTEXT_PREFIXES", "EditRequest", "EditableHost", "EditorSettings", "METHODS", "RIDGE", "apply_edits", "apply_memit",
+           "apply_rome", "default_layers", "edit_layers", "optimize_delta", "ridged", "second_moments", "sequence_logprob"]
