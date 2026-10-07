@@ -108,6 +108,101 @@ def holm_adjust(p_values: Sequence[float]) -> list[float]:
     return adjusted
 
 
+def crossed_components(values: Sequence[Sequence[float]] | np.ndarray) -> dict[str, float | int | None]:
+    """Crossed random-effects model `y[c, s] = μ + a_c + b_s + e_cs` of a complete clusters × seeds table (one value per
+    cell, e.g. a concept's mean paired difference in one training seed; items × seeds in the claim-C analysis).
+
+    ANOVA estimators of the variance components (equal to REML for a balanced table when none is truncated at 0):
+    `var_cluster` = (MS_c − MS_e) / S, `var_seed` = (MS_s − MS_e) / n, `var_residual` = MS_e, truncated at 0. The
+    mean's variance `Var(μ̂) = var_cluster / n + var_seed / S + var_residual / (n S)` is a linear combination of the
+    mean squares, whose Satterthwaite degrees of freedom give a t interval and a two-sided p. One seed: the ordinary
+    one-sample t (the seed and residual components are not identifiable). `sd_cluster_mean` is the SD of the
+    clusters' seed-averaged values (`sqrt(var_cluster + var_residual / S)`), the per-cluster SD that a seed-averaged
+    paired test uses."""
+    from scipy import stats
+    y = np.asarray(values, dtype=np.float64)
+    if y.ndim != 2 or y.shape[0] < 2 or y.shape[1] < 1 or not np.isfinite(y).all():
+        raise ValueError("values must be a finite clusters × seeds table with at least 2 clusters")
+    n, s = y.shape
+    mu = float(y.mean())
+    rows, cols = y.mean(1), y.mean(0)
+    ms_c = s * float(((rows - mu) ** 2).sum()) / (n - 1)
+    out: dict[str, float | int | None] = {"mean": mu, "clusters": n, "seeds": s}
+    if s == 1:
+        terms = [(ms_c, n - 1)]
+        out.update(var_cluster=None, var_seed=None, var_residual=None, var_total=ms_c, ms_cluster=ms_c, ms_seed=None,
+                   ms_residual=None, sd_cluster_mean=math.sqrt(ms_c), seed_means=[float(c) for c in cols])
+        variance = ms_c / n
+    else:
+        ms_s = n * float(((cols - mu) ** 2).sum()) / (s - 1)
+        ms_e = float(((y - rows[:, None] - cols[None, :] + mu) ** 2).sum()) / ((n - 1) * (s - 1))
+        var_c, var_s, var_e = max(0.0, (ms_c - ms_e) / s), max(0.0, (ms_s - ms_e) / n), ms_e
+        # Var(μ̂) from the (truncated) components, written as Σ ± MS / (n S) for the Satterthwaite df.
+        terms = [(ms_c if ms_c > ms_e else 0.0, n - 1), (ms_s if ms_s > ms_e else 0.0, s - 1)]
+        residual_sign = (ms_c > ms_e) + (ms_s > ms_e) - 1                   # MS_e enters with this coefficient
+        terms.append((residual_sign * ms_e, (n - 1) * (s - 1)))
+        variance = var_c / n + var_s / s + var_e / (n * s)
+        out.update(var_cluster=var_c, var_seed=var_s, var_residual=var_e, var_total=var_c + var_s + var_e, ms_cluster=ms_c,
+                   ms_seed=ms_s, ms_residual=ms_e, sd_cluster_mean=math.sqrt(var_c + var_e / s),
+                   seed_means=[float(c) for c in cols])
+    se = math.sqrt(max(variance, 0.0))
+    numerator = sum(t for t, _ in terms) ** 2
+    denominator = sum(t * t / d for t, d in terms if d > 0 and t != 0)
+    df = float(numerator / denominator) if denominator > 0 else float("inf")
+    if se == 0:
+        out.update(se=0.0, df=df, ci_low=mu, ci_high=mu, p_value=1.0 if mu == 0 else 0.0)
+        return out
+    q = float(stats.t.ppf(0.975, df)) if math.isfinite(df) else 1.959963984540054
+    t_value = mu / se
+    p = float(2 * stats.t.sf(abs(t_value), df)) if math.isfinite(df) else float(2 * stats.norm.sf(abs(t_value)))
+    out.update(se=se, df=df, t=t_value, ci_low=mu - q * se, ci_high=mu + q * se, p_value=p)
+    return out
+
+
+def two_way_cluster_bootstrap(values: Sequence[Sequence[float]] | np.ndarray, *, resamples: int = 2000,
+                              seed: int = 0) -> dict[str, float | int]:
+    """Percentile interval and two-sided p of the mean of a clusters × seeds table, resampling clusters (rows) and seeds
+    (columns) independently with replacement (the pigeonhole bootstrap, Owen 2007: conservative, its variance counts
+    the residual component twice). One seed: an ordinary cluster bootstrap."""
+    y = np.asarray(values, dtype=np.float64)
+    if y.ndim != 2 or y.shape[0] < 1 or y.shape[1] < 1 or not np.isfinite(y).all():
+        raise ValueError("values must be a finite clusters × seeds table")
+    n, s = y.shape
+    rng = np.random.default_rng(seed)
+    row_weights = rng.multinomial(n, np.full(n, 1.0 / n), size=resamples).astype(np.float64)       # resamples × n
+    col_weights = rng.multinomial(s, np.full(s, 1.0 / s), size=resamples).astype(np.float64)       # resamples × s
+    draws = np.einsum("rn,ns,rs->r", row_weights, y, col_weights) / (n * s)
+    p = float(min(1.0, 2 * (min((draws <= 0).sum(), (draws >= 0).sum()) + 1) / (resamples + 1)))
+    if np.all(y == 0):
+        p = 1.0
+    return {"mean": float(y.mean()), "ci_low": float(np.quantile(draws, 0.025)), "ci_high": float(np.quantile(draws, 0.975)),
+            "p_value": p, "clusters": n, "seeds": s, "resamples": int(resamples)}
+
+
+def required_clusters(delta: float, *, var_cluster: float, var_seed: float, var_residual: float, seeds: int,
+                      alpha: float = 0.05, power: float = 0.8, tests: int = 1) -> float | None:
+    """Clusters (items) needed for a two-sided level-`alpha / tests` test of the mean (the Bonferroni bound of Holm over
+    `tests`, normal approximation) to detect `delta` with `power` when `seeds` seeds are pooled:
+    `n = (var_cluster + var_residual / S) / ((Δ / (z_{1−α/2m} + z_power))² − var_seed / S)`. None when the seed
+    component alone exceeds the budget (more items cannot reach the power; more seeds are needed)."""
+    from scipy import stats
+    z = float(stats.norm.ppf(1 - alpha / (2 * tests)) + stats.norm.ppf(power))
+    budget = (abs(delta) / z) ** 2 - var_seed / seeds
+    if budget <= 0:
+        return None
+    return (var_cluster + var_residual / seeds) / budget
+
+
+def power_at(n: int, delta: float, *, var_cluster: float, var_seed: float, var_residual: float, seeds: int,
+             alpha: float = 0.05, tests: int = 1) -> float:
+    """Power of the same test with `n` clusters and `seeds` seeds (normal approximation)."""
+    from scipy import stats
+    se = math.sqrt(var_cluster / n + var_seed / seeds + var_residual / (n * seeds))
+    if se == 0:
+        return 1.0 if delta else 0.0
+    return float(stats.norm.sf(stats.norm.ppf(1 - alpha / (2 * tests)) - abs(delta) / se))
+
+
 def wilson_interval(successes: int, total: int, *, z: float = 1.96) -> tuple[float, float]:
     """Wilson score interval for a binomial proportion."""
     if total <= 0:

@@ -274,8 +274,8 @@ def test_t7_dry_run_plans_without_queueing(tmp_path: Path) -> None:
     assert c5["e9_track"] == "t7" and c5["data"]["eval"] == str(tmp_path / "t7" / "eval-pubmed") and c5["eval"]["windows"] == 4096
     planned: list = []
     queue = tmp_path / "jobs"
-    queued = e9_plan.queue_jobs(paths, "t7", 62, track="t7", root=tmp_path / "e9", queue_dir=queue, plan=planned)
-    assert queued == [] and not queue.exists()                       # nothing queued, no alias table written
+    listed = e9_plan.queue_jobs(paths, "t7", 62, track="t7", root=tmp_path / "e9", queue_dir=queue, plan=planned)
+    assert not queue.exists() and listed == [name for name, _, _ in planned]   # planned only: nothing queued
     names = {name: (level, command) for name, level, command in planned}
     assert names["t7-SmolLM2-360M-full-C5-s3"][0] == 62 and names["t7-SmolLM2-360M-full-C5-s3-edit-int4"][0] == 63
     assert names["t7-quant-s1-2-3"][0] == 64 and names["t7-report-s1-2-3"][0] == 65
@@ -283,14 +283,15 @@ def test_t7_dry_run_plans_without_queueing(tmp_path: Path) -> None:
     edit = names["t7-SmolLM2-360M-full-C5-s1-edit"][1]
     assert edit[edit.index("--alias-table") + 1] == str(TRACKS["t7"].alias_table_path)
     assert edit[edit.index("--new-items") + 1].endswith("new-words-t7-smollm2-v1")
-    configs = {Path(p): yaml.safe_load(Path(p).read_text()) for p in paths}
+    configs = {str(p): yaml.safe_load(Path(p).read_text()) for p in paths}
     train = names["t7-SmolLM2-360M-full-C5-s1"][1]
-    # ≈ 67 min of training + 7 evaluations of 4,096 windows at forward-only speed (≈ 13 min)
-    expected = (50e6 + 7 * 4096 * 1024 / 3) / 12_400 / 3600
-    assert e9_plan.job_hours("t7-SmolLM2-360M-full-C5-s1", train, configs) == pytest.approx(expected)
+    # measured 67 min (T5's 1,024 windows) + 3 extra 1,024-window passes (24 s each, measured) at 7 evaluation points
+    extra = 7 * 3 * 24 / 60
+    assert e9_plan.job_estimate_hours("t7-SmolLM2-360M-full-C5-s1", train, configs=configs) == pytest.approx((67.0 + extra) / 60)
+    t5 = dict(configs[str(paths[-1])], eval={**configs[str(paths[-1])]["eval"], "windows": 1024})
+    assert e9_plan.extra_evaluation_minutes(t5, "SmolLM2-360M") == 0.0           # measured runs are unchanged
     p0 = names["t7-SmolLM2-360M-frozen-P0-s1"][1]
-    assert e9_plan.job_hours("t7-SmolLM2-360M-frozen-P0-s1", p0, configs) == e9_plan.EVAL_HOURS["SmolLM2-360M"]["P0"]
-    assert e9_plan.job_hours("t7-SmolLM2-360M-full-C5-s1-probes-int4", [], configs) == e9_plan.EVAL_HOURS["SmolLM2-360M"]["probes-int4"]
+    assert e9_plan.job_estimate_hours("t7-SmolLM2-360M-frozen-P0-s1", p0, configs=configs) == pytest.approx(2.0 / 60)
 
 
 def test_t7_lexicon_wording() -> None:
@@ -316,3 +317,9 @@ def test_t1_stream_signature_unchanged_without_t7_keys() -> None:
                                                                mention_digest="abc", min_pmid=7)
     assert base.signature("train") != filtered.signature("train")
     assert base.signature("eval-general") == filtered.signature("eval-general")    # the general stream is shared
+    # the label `relink_for_host` writes: T1's by default; a field, so a host relink (`replace`) keeps T7's
+    from dataclasses import replace
+    from vsa_embed.experiments.t1_open_corpus import TRACK_LABEL
+    labelled = TrackDocuments(**common, label="T7")
+    assert base.track_label == TRACK_LABEL and replace(labelled, eval_general_docs=3).track_label == "T7"
+    assert labelled.signature("train") == base.signature("train") and TrackDocuments.domain_split == "eval-pubmed"

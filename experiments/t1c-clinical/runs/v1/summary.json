@@ -1,0 +1,382 @@
+{
+  "track": "clinical (SNOMED CT + MIMIC-III)",
+  "ontology": {
+    "source": "/home/bhux/workplace/VSA-LLM/data/SnomedCT_InternationalRF2_PRODUCTION_20220531T120000Z",
+    "concepts": 310698,
+    "hierarchy_counts": {
+      "body_structure": 40443,
+      "clinical_finding": 117002,
+      "observable_entity": 10127,
+      "organism": 32590,
+      "procedure": 58730,
+      "product": 24681,
+      "substance": 27125
+    },
+    "alias_policy": {
+      "drop_abbreviations": true,
+      "max_abbreviation_chars": 8,
+      "min_chars": 3,
+      "max_words": 8,
+      "function_words": 187
+    },
+    "alias_stats": {
+      "concepts_without_alias": 15831,
+      "descriptions": 829188,
+      "dropped_abbreviation": 1560,
+      "dropped_function_word": 4,
+      "dropped_long": 59502,
+      "dropped_short": 6,
+      "keep": 768116
+    },
+    "relation_edges": {
+      "access": 1589,
+      "after": 2661,
+      "associated_morphology": 63201,
+      "associated_with": 1329,
+      "attr:1003735000": 468,
+      "attr:246501002": 408,
+      "attr:246513007": 1042,
+      "attr:260870009": 203,
+      "attr:363709002": 565,
+      "attr:371881003": 480,
+      "attr:405815000": 263,
+      "attr:424244007": 500,
+      "attr:425391005": 1539,
+      "attr:704323007": 336,
+      "attr:718497002": 469,
+      "attr:719722006": 1362,
+      "attr:732943007": 8746,
+      "attr:732945000": 5054,
+      "attr:732947008": 4927,
+      "attr:733722007": 2574,
+      "attr:733725009": 2630,
+      "causative_agent": 16778,
+      "characterizes": 755,
+      "clinical_course": 5101,
+      "component": 8495,
+      "direct_device": 4095,
+      "direct_morphology": 7788,
+      "direct_site": 319,
+      "direct_substance": 5176,
+      "due_to": 16275,
+      "finding_informer": 267,
+      "finding_method": 2249,
+      "finding_site": 89745,
+      "has_active_ingredient": 20210,
+      "has_disposition": 8019,
+      "has_focus": 4656,
+      "has_intent": 4954,
+      "has_interpretation": 13531,
+      "has_manufactured_dose_form": 14494,
+      "has_precise_active_ingredient": 8739,
+      "has_specimen": 2857,
+      "has_unit_of_presentation": 4927,
+      "hierarchy": 310698,
+      "inheres_in": 1158,
+      "interprets": 38062,
+      "is_a": 495187,
+      "is_modification_of": 2275,
+      "laterality": 19376,
+      "method": 60173,
+      "occurrence": 15635,
+      "pathological_process": 18237,
+      "plays_role": 9428,
+      "procedure_site": 3318,
+      "procedure_site_direct": 33144,
+      "procedure_site_indirect": 8202,
+      "property": 1374,
+      "scale_type": 972,
+      "semantic_tag": 310698,
+      "surgical_approach": 464,
+      "time_aspect": 643,
+      "using_device": 4935,
+      "using_substance": 3621
+    },
+    "frames_truncated": 767,
+    "max_atomics": 8192,
+    "max_degree": 16,
+    "min_relation_edges": 200,
+    "atomics": 8192,
+    "relations": 62,
+    "aliases": 496997,
+    "entries": 295143,
+    "alias_subtokens": {
+      "HuggingFaceTB/SmolLM2-135M": {
+        "aliases": 496997,
+        "aliases_2plus_subtokens": 495279,
+        "histogram_1_2_3_4_5plus": [
+          1718,
+          20257,
+          46231,
+          65623,
+          363168
+        ]
+      },
+      "Qwen/Qwen3-0.6B-Base": {
+        "aliases": 496997,
+        "aliases_2plus_subtokens": 495667,
+        "histogram_1_2_3_4_5plus": [
+          1330,
+          15759,
+          37589,
+          57138,
+          385181
+        ]
+      }
+    },
+    "concepts_with_text_definition": 6343
+  },
+  "notes": {
+    "eval_buckets": 1000,
+    "buckets": 10000,
+    "shards": 32,
+    "rows": 2083180,
+    "dropped_iserror": 886,
+    "dropped_empty": 68,
+    "notes": {
+      "train": 1881250,
+      "eval": 200976
+    },
+    "patients": {
+      "train": 41501,
+      "eval": 4645
+    },
+    "patients_on_both_sides": 0,
+    "characters": {
+      "train": 3434974634,
+      "eval": 362134527
+    },
+    "categories": {
+      "train": {
+        "Case Management": 858,
+        "Consult": 86,
+        "Discharge summary": 53855,
+        "ECG": 189205,
+        "Echo": 41525,
+        "General": 7510,
+        "Nursing": 202545,
+        "Nursing/other": 741014,
+        "Nutrition": 8575,
+        "Pharmacy": 92,
+        "Physician": 128171,
+        "Radiology": 471670,
+        "Rehab Services": 4965,
+        "Respiratory": 28728,
+        "Social Work": 2451
+      },
+      "eval": {
+        "Case Management": 95,
+        "Consult": 12,
+        "Discharge summary": 5797,
+        "ECG": 19806,
+        "Echo": 4269,
+        "General": 726,
+        "Nursing": 20637,
+        "Nursing/other": 81455,
+        "Nutrition": 825,
+        "Pharmacy": 9,
+        "Physician": 13110,
+        "Radiology": 50609,
+        "Rehab Services": 443,
+        "Respiratory": 2973,
+        "Social Work": 210
+      }
+    },
+    "category_characters": {
+      "train": {
+        "Case Management": 950235,
+        "Consult": 529377,
+        "Discharge summary": 518294657,
+        "ECG": 39671343,
+        "Echo": 96281238,
+        "General": 11666785,
+        "Nursing": 361034108,
+        "Nursing/other": 591050545,
+        "Nutrition": 20886814,
+        "Pharmacy": 233672,
+        "Physician": 914689164,
+        "Radiology": 819945011,
+        "Rehab Services": 15471952,
+        "Respiratory": 39010284,
+        "Social Work": 5259449
+      },
+      "eval": {
+        "Case Management": 111903,
+        "Consult": 62013,
+        "Discharge summary": 55406842,
+        "ECG": 4165250,
+        "Echo": 9857171,
+        "General": 1121137,
+        "Nursing": 37424519,
+        "Nursing/other": 64760667,
+        "Nutrition": 1978516,
+        "Pharmacy": 25909,
+        "Physician": 93759613,
+        "Radiology": 87582243,
+        "Rehab Services": 1391314,
+        "Respiratory": 4013311,
+        "Social Work": 474119
+      }
+    },
+    "limit_rows": null
+  },
+  "mix": {
+    "domain_share": 0.5,
+    "chars_per_token": {
+      "mimic": 3.275138678676575,
+      "general": 4.579549140644206
+    },
+    "calibration_tokenizer": "HuggingFaceTB/SmolLM2-360M",
+    "general_shards": [
+      "002_00000.parquet",
+      "000_00000.parquet"
+    ],
+    "general_eval_docs_skipped": 5000,
+    "eval_domain_docs": 40000,
+    "categories": null
+  },
+  "presample": {
+    "tokens": 10000283,
+    "documents": 13670,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "0c67a02d21452109fdcf93c340fc1a0f411e6a923ffa3bc5af982f788534a7aa",
+    "boundary": "prefix",
+    "spans": 507458,
+    "eos_id": 0,
+    "skipped_documents": 4,
+    "track": "clinical (SNOMED CT + MIMIC-III)",
+    "max_tokens_requested": 10000000,
+    "stream_signature": "3e539c9637b1e806ef30672fbfa1907084d5dbc886ceaf9248925293d6ef18d1",
+    "source_shares": {
+      "exact": true,
+      "documents": {
+        "mimic": 9013,
+        "general": 4657
+      },
+      "tokens": {
+        "mimic": 5029396,
+        "general": 4970887
+      },
+      "share": {
+        "mimic": 0.5029253672121079,
+        "general": 0.4970746327878921
+      }
+    }
+  },
+  "holdout": {
+    "concepts": 1675,
+    "chosen_entries": 160,
+    "closure_entries": 1512,
+    "heldout_entries": 1672,
+    "eligible_entries": 1596,
+    "excluded_hub_entries": 2541,
+    "sha256": "fa738430fd3b40389d27bb4bc5543b0be6a0e7f8cd9aaaa3adae8e8b226a7d6f",
+    "names_file": "/home/bhux/data/vsa-llm/t1c/snomed-mimic3-smollm2-v1/holdout_concepts.txt"
+  },
+  "corpora": {
+    "HuggingFaceTB/SmolLM2-360M": {
+      "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+      "corpora": {
+        "eval": {
+          "tokens": 10001725,
+          "documents": 13926,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "18dc1545668201cfb39dcc277ac0a6b679016cb0ec722f1e169087832c1ecd42",
+          "boundary": "prefix",
+          "spans": 502230,
+          "eos_id": 0,
+          "skipped_documents": 2,
+          "track": "clinical (SNOMED CT + MIMIC-III)",
+          "max_tokens_requested": 10000000,
+          "stream_signature": "1f448be48590f06e07898e38414b9aaee2bc9f4a3a63f34a00866666e6e44e9f"
+        },
+        "eval-mimic": {
+          "tokens": 22352802,
+          "documents": 39993,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "18dc1545668201cfb39dcc277ac0a6b679016cb0ec722f1e169087832c1ecd42",
+          "boundary": "prefix",
+          "spans": 1311829,
+          "eos_id": 0,
+          "skipped_documents": 7,
+          "track": "clinical (SNOMED CT + MIMIC-III)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "864445573202c5925884e6886f37f6c6052c515b730606132fab8a3324848440"
+        },
+        "eval-general": {
+          "tokens": 4998786,
+          "documents": 5000,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "18dc1545668201cfb39dcc277ac0a6b679016cb0ec722f1e169087832c1ecd42",
+          "boundary": "prefix",
+          "spans": 207825,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "clinical (SNOMED CT + MIMIC-III)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "499a860a6fd800620059766900ce5bdf03fd407c60ff27f5422011f68cb43f78"
+        },
+        "train": {
+          "tokens": 130000026,
+          "documents": 176299,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "37031151e0230bc06fd47402d9b000ce429bfe91dfc4e309cf0a3f0dc84106f7",
+          "boundary": "prefix",
+          "spans": 6323074,
+          "eos_id": 0,
+          "skipped_documents": 36,
+          "track": "clinical (SNOMED CT + MIMIC-III)",
+          "max_tokens_requested": 130000000,
+          "stream_signature": "3e539c9637b1e806ef30672fbfa1907084d5dbc886ceaf9248925293d6ef18d1"
+        }
+      },
+      "source_shares": {
+        "eval": {
+          "exact": true,
+          "documents": {
+            "mimic": 8934,
+            "general": 4992
+          },
+          "tokens": {
+            "mimic": 5010300,
+            "general": 4991425
+          },
+          "share": {
+            "mimic": 0.5009435872312026,
+            "general": 0.49905641276879736
+          }
+        },
+        "train": {
+          "exact": true,
+          "documents": {
+            "mimic": 115379,
+            "general": 60920
+          },
+          "tokens": {
+            "mimic": 64973932,
+            "general": 65026094
+          },
+          "share": {
+            "mimic": 0.49979937696320154,
+            "general": 0.5002006230367985
+          }
+        }
+      },
+      "linked_entries_in_train_at_min_subtokens": 28972,
+      "ontology_sha256": "090747941c5c8549f114eb0970bd9cea3a471fe4ba97dbdd7ca02f20c3f5cf0c"
+    }
+  },
+  "hosts": {},
+  "alias_table_sha256": "18dc1545668201cfb39dcc277ac0a6b679016cb0ec722f1e169087832c1ecd42",
+  "data_root": "/home/bhux/data/vsa-llm/t1c/snomed-mimic3-smollm2-v1"
+}

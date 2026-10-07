@@ -10,6 +10,8 @@ Lanes (opt-in): a job is in the `cpu` lane if its `lane` field says so or its na
 `--cpu-pattern`, else in the `gpu` lane. `run --lane gpu` skips CPU-lane jobs, so CPU-only jobs
 (reports) no longer hold the GPU; `run --lane cpu` starts a CPU-lane job only once every job ahead of
 it in priority order is done (its inputs). The default `--lane all` is the original single runner.
+A runner starts nothing while a job of its lane is running with a live process, and a job blocked
+for disk space is retried first on every poll instead of being skipped.
 
     vsa-queue add --name e4-50m-c0-s1 --priority 10 -- python -m vsa_embed.training.lm --config … --output …
     vsa-queue status
@@ -80,20 +82,29 @@ def lane_of(job: dict[str, Any], cpu_pattern: str | None = None) -> str:
 
 def _candidates(queue: Path, lane: str, cpu_pattern: str | None) -> list[dict[str, Any]]:
     everything = jobs(queue)
-    pending = [j for j in everything if j["status"] == "pending"
-               and (lane == "all" or lane_of(j, cpu_pattern) == lane)]
+    mine = [j for j in everything if lane == "all" or lane_of(j, cpu_pattern) == lane]
+    if any(j["status"] == "running" and _live(j) for j in mine):
+        return []      # one job per lane: a second runner on the same lane waits for the live job
+    # a blocked job stays first in line (re-checked every poll), so later jobs (its dependents) never jump it
+    pending = [j for j in mine if j["status"] in ("pending", "blocked")]
     if lane == "cpu":  # inputs first: every job ahead in priority order must be done
         pending = [j for j in pending
                    if all(o["status"] == "done" for o in everything if o["priority"] < j["priority"])]
     return pending
 
 
+def _live(job: dict[str, Any]) -> bool:
+    """A running job is live while its process or the runner that waits on it is alive (the runner records
+    the outcome right after reaping the process, so a job is never re-queued in between)."""
+    return _alive(job.get("pid")) or _alive(job.get("runner_pid"))
+
+
 def recover(queue: Path) -> list[str]:
-    """Re-queue jobs marked running whose process is gone."""
+    """Re-queue jobs marked running whose process and runner are gone."""
     recovered = []
     for job in jobs(queue):
-        if job["status"] == "running" and not _alive(job.get("pid")):
-            job.update(status="pending", interrupted=True, pid=None)
+        if job["status"] == "running" and not _live(job):
+            job.update(status="pending", interrupted=True, pid=None, runner_pid=None)
             _write(queue / f"{job['name']}.json", job); recovered.append(job["name"])
     return recovered
 
@@ -115,10 +126,10 @@ def run_next(queue: Path, *, lane: str = "all", cpu_pattern: str | None = None) 
         log.write(f"\n=== attempt {job['attempts']} {job['started']}: {' '.join(command)}\n"); log.flush()
         process = subprocess.Popen(command, cwd=job["cwd"], stdout=log, stderr=subprocess.STDOUT,
                                    env={**os.environ, **job["env"]}, start_new_session=True)
-        job["pid"] = process.pid; _write(path, job)
+        job["pid"], job["runner_pid"] = process.pid, os.getpid(); _write(path, job)
         code = process.wait()
     job = json.loads(path.read_text())
-    job.update(status="done" if code == 0 else "failed", returncode=code, finished=_now(), pid=None)
+    job.update(status="done" if code == 0 else "failed", returncode=code, finished=_now(), pid=None, runner_pid=None)
     _write(path, job)
     return job
 

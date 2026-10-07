@@ -1,0 +1,43 @@
+model:
+  size: pretrained
+  seq_len: 1024
+  gradient_checkpointing: false
+  pretrained: HuggingFaceTB/SmolLM2-135M
+  host_mode: train
+  vocab_size: 49152
+  lora_rank: 64
+train:
+  lr: 0.001
+  min_lr_ratio: 0.1
+  warmup_tokens: 2500000
+  weight_decay: 0.1
+  log_every: 10
+  checkpoint_minutes: 10
+  micro_batch: 8
+  grad_accum: 8
+  total_tokens: 50000000
+  save_trainable_only: false
+  host_lr: 3.0e-05
+data:
+  min_subtokens: 2
+  seed: 1234
+  train: /home/bhux/data/vsa-llm/t1c/snomed-mimic3-smollm2-v1/train
+  eval: /home/bhux/data/vsa-llm/t1c/snomed-mimic3-smollm2-v1/eval-mimic
+  ontology: /home/bhux/data/vsa-llm/t1c/snomed-mimic3-smollm2-v1/ontology.pt
+eval:
+  windows: 2048
+  first_tokens: 2500000
+  save_window_losses: true
+  batch: 32
+device: cuda
+channel:
+  mode: compose
+  operator: hrr
+  dimension: 256
+  composition: attentive
+  key_dimension: 8
+  context_window: 8
+  gate_bias: 0.0
+seed: 1
+experiment: e9-t1c-SmolLM2-135M-full-C5-s1
+e9_track: t1c

@@ -9,6 +9,10 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
 - `t4` — T4 chemistry (WP-C7): ChEBI names (long, rare IUPAC-style names) and synthetic compounds.
 - `t1` — T1-open (WP-T1): MeSH descriptors on PubMed; evaluation on `eval-pubmed` with 2,048 windows
   (open decision 12); no synthetic concepts.
+- `t1c` — T1c clinical (decision 58): SNOMED CT International 2022-05-31 on MIMIC-III notes (`t1c_corpus`);
+  evaluation on `eval-mimic` (held-out patients) with 2,048 windows. **Licensed**: its alias table, holdout
+  list and dimension-3 items live under `~/data/vsa-llm/t1c/` (`TrackSpec.alias_table_dir`, `items_root`), never
+  in the repository; WP-C7-format zero-shot items on held-out terms (`t1c_corpus --stage zeroshot-items`).
 - `wordnet` — the C3 WordNet host corpus (the original E9 design).
 - `t7` — T7 new biomedical vocabulary (author decision 55): MeSH supplementary concept records and descriptors whose
   names are frequent in PubMed 2025–26 and absent from general web text, linked in the abstracts that mention them
@@ -59,7 +63,6 @@ from typing import Any, Callable, Iterator, Sequence
 
 import numpy as np
 import torch
-import yaml
 
 from ..compose import FrameSchedule
 from ..evaluation import channel_probes as cp
@@ -78,6 +81,42 @@ NULL_SURFACE = "this"
 
 # T1-open has no relation templates of its own (WP-T1 built probes, not cloze items); these word the
 # dimension-3 items on MeSH frames (two property paraphrases and a statement each).
+# T1c (SNOMED CT) relation wordings for the dimension-3 items: two property paraphrases and a statement each, for the
+# attribute relations with readable body-structure / organism / substance / procedure fillers. Category relations
+# (`hierarchy`, `semantic_tag`) are kept, never templated.
+T1C_TEMPLATES = {
+    "is_a": RelationTemplates(["{x} is a kind of", "In SNOMED CT, {x} is classified under"], "{x} is a type of {y}."),
+    "finding_site": RelationTemplates(["The finding site of {x} is", "{x} is found in"], "{x} has the finding site {y}."),
+    "associated_morphology": RelationTemplates(["The associated morphology of {x} is", "{x} involves the morphology"],
+                                               "{x} has the associated morphology {y}."),
+    "causative_agent": RelationTemplates(["The causative agent of {x} is", "{x} is caused by"], "{x} has the causative agent {y}."),
+    "procedure_site_direct": RelationTemplates(["The direct procedure site of {x} is", "{x} is performed directly on"],
+                                               "{x} has the direct procedure site {y}."),
+    "procedure_site_indirect": RelationTemplates(["The indirect procedure site of {x} is", "{x} is performed indirectly on"],
+                                                 "{x} has the indirect procedure site {y}."),
+    "procedure_site": RelationTemplates(["The procedure site of {x} is", "{x} is performed on"], "{x} has the procedure site {y}."),
+    "method": RelationTemplates(["The method of {x} is", "{x} is carried out by"], "{x} has the method {y}."),
+    "has_active_ingredient": RelationTemplates(["The active ingredient of {x} is", "{x} contains the active ingredient"],
+                                               "{x} has the active ingredient {y}."),
+    "has_precise_active_ingredient": RelationTemplates(["The precise active ingredient of {x} is", "{x} contains precisely"],
+                                                       "{x} has the precise active ingredient {y}."),
+    "due_to": RelationTemplates(["{x} is due to", "The underlying cause of {x} is"], "{x} is a consequence of {y}."),
+    "pathological_process": RelationTemplates(["The pathological process of {x} is", "{x} arises through"],
+                                              "{x} has the pathological process {y}."),
+    "interprets": RelationTemplates(["{x} interprets", "{x} is an assessment of"], "{x} is an interpretation of {y}."),
+    "has_interpretation": RelationTemplates(["The interpretation of {x} is", "{x} is assessed as"], "{x} has the interpretation {y}."),
+    "occurrence": RelationTemplates(["The occurrence of {x} is", "{x} typically begins in"], "{x} has the occurrence {y}."),
+    "clinical_course": RelationTemplates(["The clinical course of {x} is", "The course of {x} is"], "{x} has the clinical course {y}."),
+    "part_of": RelationTemplates(["{x} is part of", "{x} is a component of"], "{x} is a part of {y}."),
+    "plays_role": RelationTemplates(["{x} plays the role of", "{x} acts as"], "{x} has the role {y}."),
+    "has_manufactured_dose_form": RelationTemplates(["The dose form of {x} is", "{x} is supplied as"], "{x} has the dose form {y}."),
+    "component": RelationTemplates(["The component of {x} is", "{x} measures"], "{x} has the component {y}."),
+    "direct_substance": RelationTemplates(["The direct substance of {x} is", "{x} acts directly on"], "{x} has the direct substance {y}."),
+    "direct_morphology": RelationTemplates(["The direct morphology of {x} is", "{x} acts directly on the lesion"],
+                                           "{x} has the direct morphology {y}."),
+    "has_disposition": RelationTemplates(["The disposition of {x} is", "{x} has the disposition of"], "{x} is disposed to act as {y}."),
+}
+
 T1_TEMPLATES = {
     "parent": RelationTemplates(["{x} is a kind of", "In the MeSH tree, {x} is filed under"], "{x} is a type of {y}."),
     "pharmacological_action": RelationTemplates(["The pharmacological action of {x} is", "{x} is classed among the"],
@@ -109,6 +148,10 @@ class TrackSpec:
     edit_relations: tuple[str, ...] = ("is_a",)
     family: str = "smollm2"                  # host tokenizer family of `data_root` (`cpt_plan.HOSTS[...]["corpus"]`)
     family_roots: dict[str, Path] = field(default_factory=dict, compare=False)   # other families' corpus roots
+    # Licensed tracks (T1c): their alias table and dimension-3 items live outside the repository.
+    alias_table_dir: Path | None = None      # default ALIAS_TABLE_DIR
+    items_root: Path | None = None           # dimension-3 items (default `e9_plan.ITEMS`, in the repository)
+    licensed: bool = False
 
     def for_family(self, family: str) -> "TrackSpec":
         """The track on another host tokenizer family: the same ontology, alias table, holdout, WP-C7 items and
@@ -133,7 +176,7 @@ class TrackSpec:
 
     @property
     def alias_table_path(self) -> Path | None:
-        return None if self.name == "wordnet" else ALIAS_TABLE_DIR / f"{self.name}.json"
+        return None if self.name == "wordnet" else (self.alias_table_dir or ALIAS_TABLE_DIR) / f"{self.name}.json"
 
     @property
     def zeroshot_items(self) -> Path | None:
@@ -144,9 +187,12 @@ DATA = Path("~/data/vsa-llm").expanduser()
 # Qwen3 corpora of each track (WP-Qwen): the same builders with the Qwen3 base tokenizer (`Qwen/Qwen3-0.6B-Base`,
 # shared by the 0.6B/1.7B/4B hosts). T5 is built (`experiments/t5-enterprise-glossary/t5-qwen3.yaml`); the others
 # are built by the commands of `resources/plan-improvement/execution.md` (E9 on Qwen3).
+# T1c (licensed; decision 58): the SmolLM2 corpora are the reference build; the Qwen3 relink is `hosts/qwen3`
+# (`experiments/t1c-clinical/t1c-qwen3.yaml`).
+T1C_ROOT = DATA / "t1c/snomed-mimic3-smollm2-v1"
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1",
-               "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3"}
+               "t1c": T1C_ROOT / "hosts/qwen3", "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3"}
 # Qwen3.5 corpora (WP-Qwen35): the same builders with the Qwen3.5 base tokenizer (`Qwen/Qwen3.5-0.8B-Base`, shared by the
 # 0.8B/2B hosts), run with the Qwen3.5 environment. T5 is built (`experiments/t5-enterprise-glossary/t5-qwen35.yaml`).
 QWEN35_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen35", "t4": DATA / "tracks/t4-chemistry/v1-qwen35",
@@ -168,6 +214,12 @@ TRACKS: dict[str, TrackSpec] = {
                     holdout_names=Path("experiments/t1-open-clinical/runs/v1/holdout_concepts.txt"),
                     category_relations=("parent",), kept_relations=("parent", "branch_top", "branch_second"),
                     edit_relations=("parent", "pharmacological_action"), family_roots={"qwen3": QWEN3_ROOTS["t1"], "qwen3_5": QWEN35_ROOTS["t1"]}),
+    "t1c": TrackSpec("t1c", "T1c clinical (SNOMED CT + MIMIC-III)", T1C_ROOT, eval_split="eval-mimic", windows=2048,
+                     config=Path("experiments/t1c-clinical/t1c.yaml"), holdout_names=T1C_ROOT / "holdout_concepts.txt",
+                     category_relations=("is_a",), kept_relations=("is_a", "hierarchy", "semantic_tag"),
+                     edit_relations=("finding_site", "causative_agent", "associated_morphology"),
+                     family_roots={"qwen3": QWEN3_ROOTS["t1c"]}, alias_table_dir=DATA / "t1c/e9",
+                     items_root=DATA / "t1c/items", items_dir=DATA / "t1c/items/zeroshot-t1c-v1", licensed=True),
     "wordnet": TrackSpec("wordnet", "WordNet general (C3)", DATA / "c3/wordnet-smollm2-v1", general_split=None,
                          category_relations=edit.CATEGORY_RELATIONS, kept_relations=tuple(sorted(edit.KEPT_RELATIONS)),
                          edit_relations=edit.CATEGORY_RELATIONS, family_roots={"qwen3": QWEN3_ROOTS["wordnet"], "qwen3_5": QWEN35_ROOTS["wordnet"]}),
@@ -196,7 +248,8 @@ def track_spec(name: str, family: str = "smollm2") -> TrackSpec:
 # -- the track ontology replay and its alias table ------------------------------------------------------------
 
 def _load_config(spec: TrackSpec) -> dict[str, Any]:
-    return yaml.safe_load(Path(spec.config).read_text())
+    from .t1_open_corpus import load_config            # resolves `extends:`
+    return load_config(Path(spec.config))
 
 
 def track_frame_ontology(spec: TrackSpec) -> tuple[Any, list[int], dict[str, Any]]:
@@ -206,6 +259,9 @@ def track_frame_ontology(spec: TrackSpec) -> tuple[Any, list[int], dict[str, Any
     if spec.name in ("t1", "t7"):              # built by t1_open_corpus (adapters `mesh`, `mesh_novel`)
         from .t1_open_corpus import build_track_ontology
         return build_track_ontology(config["ontology"]), [], config
+    if spec.name == "t1c":
+        from .t1c_corpus import build_track_ontology as build_t1c_ontology
+        return build_t1c_ontology(config["ontology"]), [], config
     from ..tracks import load_track
     from ..tracks.common import SyntheticConcept
     from .track_corpus import add_synthetic
@@ -391,6 +447,22 @@ def track_lexicon(spec: TrackSpec, ontology: dict[str, Any] | None = None) -> Tr
             elif kind == "class":
                 texts[atom] = value
         templates = T7_TEMPLATES
+    elif spec.name == "t1c":
+        # Filler names are the concepts' preferred terms (licensed: they only reach item files under `items_root`);
+        # the filler type is its top-level hierarchy, so an edit keeps e.g. a body structure a body structure.
+        frame_ontology, _, _ = track_frame_ontology(spec)
+        meta = frame_ontology.metadata
+        heading = dict(zip(frame_ontology.concept_names, meta["headings"]))
+        hierarchy = {c: (h[0] if h else "other") for c, h in zip(frame_ontology.concept_names, meta["concept_hierarchies"])}
+        for atom in atoms:
+            kind, _, value = atom.partition(":")
+            if kind == "sct":
+                if value in heading:
+                    texts[atom] = heading[value]
+                types[atom] = f"sct:{hierarchy.get(value, 'other')}"
+            elif kind in {"top", "tag"}:
+                texts[atom] = value.replace("_", " ")
+        templates = T1C_TEMPLATES
     else:
         raise ValueError("WordNet uses e9_ontology_edit.WordNetLexicon")
     return TrackLexicon(spec.name, templates, texts, types, category_relations=spec.category_relations,
@@ -632,15 +704,25 @@ def run_items(args: argparse.Namespace) -> dict[str, Any]:
     alias_table = ensure_alias_table(spec)
     lexicon = lexicon_for(spec, ontology)
     tokenizer = args.tokenizer or FAMILY_TOKENIZERS[family]
+    extend = getattr(args, "extend", None)
+    if extend is not None and not args.count:
+        raise ValueError("--extend needs --count (the total of the superset)")
     if args.kind == "new":
         texts = edit._contamination_texts([spec.data_root / "train"], tokenizer, args.contamination_tokens)
         reserved = edit._reserved_names(args.reserved_names)
         if spec.items_dir is not None:          # the track's own synthetic names are taken too
             reserved |= {a.lower() for r in _read(spec.items_dir / "synthetic_concepts.jsonl") for a in r.get("aliases", [])}
+        if extend is not None:                  # items -v2: a strict superset of -v1 (decision 56)
+            return edit.extend_new_word_items(extend, spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count,
+                                              extension_seed=args.extension_seed, alias_table=alias_table,
+                                              contamination_texts=texts, reserved_names=reserved, lexicon=lexicon)
         return edit.build_new_word_items(spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count or 300,
                                          seed=args.seed, min_subtokens=args.min_subtokens, alias_table=alias_table,
                                          contamination_texts=texts, reserved_names=reserved, name_seed=args.name_seed,
                                          lexicon=lexicon)
+    if extend is not None:
+        return edit.extend_edit_items(extend, spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count,
+                                      extension_seed=args.extension_seed, alias_table=alias_table, lexicon=lexicon)
     return edit.build_edit_items(spec.ontology, args.output, tokenizer_name=tokenizer, count=args.count or 200, seed=args.seed,
                                  min_subtokens=args.min_subtokens, alias_table=alias_table, lexicon=lexicon)
 
@@ -660,6 +742,10 @@ def main(argv: list[str] | None = None) -> None:
     items.add_argument("--min-subtokens", type=int, default=2); items.add_argument("--name-seed", type=int, default=11)
     items.add_argument("--contamination-tokens", type=int, default=20_000_000)
     items.add_argument("--reserved-names", type=Path, nargs="*", default=[])
+    items.add_argument("--extend", type=Path, default=None,
+                       help="build a strict superset of this item directory (e.g. -v2 from -v1: its rows first and "
+                            "byte-identical, its seeds reused; --count = the new total)")
+    items.add_argument("--extension-seed", type=int, default=1, help="random stream of the extension's rows (with --extend)")
     ev = sub.add_parser("zeroshot", help="score the track's WP-C7 zero-shot items on a trained run")
     ev.add_argument("--run", type=Path, required=True); ev.add_argument("--track", required=True, choices=sorted(TRACKS))
     ev.add_argument("--output", type=Path, required=True); ev.add_argument("--items", type=Path, default=None)

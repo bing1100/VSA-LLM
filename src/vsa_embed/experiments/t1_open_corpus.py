@@ -51,7 +51,7 @@ from collections import Counter
 from dataclasses import dataclass, replace
 from itertools import islice
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, ClassVar, Iterator
 
 import numpy as np
 import torch
@@ -94,7 +94,7 @@ def mesh_novel_adapter(config: dict[str, Any]) -> FrameOntology:
 ONTOLOGY_ADAPTERS: dict[str, Callable[[dict[str, Any]], FrameOntology]] = {"mesh": mesh_adapter, "mesh_novel": mesh_novel_adapter}
 
 
-def track_label(config: dict[str, Any]) -> str:
+def config_label(config: dict[str, Any]) -> str:
     """The track's label in manifests and reports (T1-open unless the config names another track)."""
     return str(config.get("track_label") or TRACK_LABEL)
 
@@ -176,6 +176,15 @@ class TrackDocuments:
     mention_filter: Any = None                     # T7: keep only abstracts mentioning a selected name (`.mentions`)
     mention_digest: str | None = None              # the frozen selection's sha256 (part of the stream signature)
     min_pmid: int | None = None                    # T7: PMIDs below are skipped (revisions of older citations)
+    label: str = TRACK_LABEL                       # the config's `track_label` (T7); not part of any stream signature
+    # The interface `relink_for_host` reads (T1c's `ClinicalDocuments` provides the same with its own values).
+    domain_split: ClassVar[str] = "eval-pubmed"
+    sources: ClassVar[tuple[str, ...]] = SOURCES
+
+    @property
+    def track_label(self) -> str:
+        """The label `relink_for_host` writes into the corpus manifests (a field, so `replace` keeps it for host relinks)."""
+        return self.label
 
     def signature(self, stream: str) -> str:
         """Fingerprint of everything that decides a stream's documents (guards corpus reuse)."""
@@ -202,6 +211,9 @@ class TrackDocuments:
         return pubmed_documents(self.pubmed_paths, eval_buckets=self.eval_buckets, split="eval",
                                 limit=self.eval_pubmed_docs, keep=self._keep(), min_pmid=self.min_pmid)
 
+    def eval_domain(self) -> Iterator[str]:
+        return self.eval_pubmed()
+
     def eval_general(self) -> Iterator[str]:
         return iter_texts(self.general_shards, limit=self.eval_general_docs)
 
@@ -222,31 +234,36 @@ class TrackDocuments:
         return self.mixed(self.eval_pubmed(), self.eval_general(), log)
 
 
-def source_token_shares(corpus_dir: Path, log: list[int], eos_id: int) -> dict[str, Any]:
+def source_token_shares(corpus_dir: Path, log: list[int], eos_id: int, sources: tuple[str, ...] = SOURCES) -> dict[str, Any]:
     """Realized tokens per source of a mixed corpus: documents are EOS-terminated in stream order,
     so the first `documents` entries of the mixer's log label them. Exact unless the builder
-    dropped documents (then flagged approximate and estimated from document counts)."""
+    dropped documents (then flagged approximate and estimated from document counts). `sources`
+    names the mixer's streams (T1-open: pubmed, general; T1c: mimic, general)."""
     corpus = TokenCorpus.open(corpus_dir)
     documents = int(corpus.manifest["documents"])
     ends = np.flatnonzero(np.asarray(corpus.tokens) == eos_id)
+    skipped = corpus.manifest.get("skipped_document_indices")
+    if skipped:                    # the builder recorded which input documents it dropped: align the log exactly
+        dropped = set(int(i) for i in skipped)
+        log = [source for index, source in enumerate(log) if index not in dropped]
     labels = np.asarray(log[:documents], dtype=np.int64)
-    exact = ends.size == documents and int(corpus.manifest.get("skipped_documents", 0)) == 0
+    exact = ends.size == documents and (int(corpus.manifest.get("skipped_documents", 0)) == 0 or skipped is not None)
     if exact:
         lengths = np.diff(np.concatenate([[-1], ends]))
-        per_source = np.bincount(labels, weights=lengths, minlength=len(SOURCES))
+        per_source = np.bincount(labels, weights=lengths, minlength=len(sources))
     else:
-        per_source = np.bincount(labels, minlength=len(SOURCES)) * (len(corpus) / max(1, documents))
+        per_source = np.bincount(labels, minlength=len(sources)) * (len(corpus) / max(1, documents))
     total = float(per_source.sum())
-    return {"exact": bool(exact), "documents": {s: int((labels == i).sum()) for i, s in enumerate(SOURCES)},
-            "tokens": {s: int(per_source[i]) for i, s in enumerate(SOURCES)},
-            "share": {s: float(per_source[i] / total) if total else 0.0 for i, s in enumerate(SOURCES)}}
+    return {"exact": bool(exact), "documents": {s: int((labels == i).sum()) for i, s in enumerate(sources)},
+            "tokens": {s: int(per_source[i]) for i, s in enumerate(sources)},
+            "share": {s: float(per_source[i] / total) if total else 0.0 for i, s in enumerate(sources)}}
 
 
-def record_shares(corpus_dir: Path, log: list[int], eos_id: int) -> dict[str, Any] | None:
+def record_shares(corpus_dir: Path, log: list[int], eos_id: int, sources: tuple[str, ...] = SOURCES) -> dict[str, Any] | None:
     """Measure and store `sources.json` after a build; a reused corpus (empty log) reads it back."""
     path = corpus_dir / "sources.json"
     if log:
-        shares = source_token_shares(corpus_dir, log, eos_id)
+        shares = source_token_shares(corpus_dir, log, eos_id, sources)
         path.write_text(json.dumps(shares, indent=2) + "\n")
         return shares
     return json.loads(path.read_text()) if path.exists() else None
@@ -364,11 +381,13 @@ def train_frequency(train_dir: Path, entry_count: int, min_subtokens: int) -> np
 def relink_for_host(tokenizer_name: str, out_dir: Path, *, documents: TrackDocuments, full: AliasTable,
                     train_table: AliasTable, ontology: FrameOntology, holdout_sha256: str, train_tokens: int,
                     train_min_subtokens: int, min_subtokens: int, workers: int, eval_mix_tokens: int | None = None,
-                    corpora: tuple[str, ...] = ("eval", "eval-pubmed", "eval-general", "train"),
-                    label: str = TRACK_LABEL) -> dict[str, Any]:
+                    corpora: tuple[str, ...] | None = None) -> dict[str, Any]:
     """Link the track's documents for one tokenizer: training (held-out aliases removed) and
     evaluation corpora sharing entry ids with every other tokenizer, plus that tokenizer's
-    `ontology.pt` (training frequencies differ per tokenizer because span lengths do)."""
+    `ontology.pt` (training frequencies differ per tokenizer because span lengths do). The domain
+    evaluation split is `documents.domain_split` (T1-open `eval-pubmed`, T1c `eval-mimic`)."""
+    domain_split = documents.domain_split
+    corpora = corpora or ("eval", domain_split, "eval-general", "train")
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
     eos, vocab = tokenizer.eos_token_id, len(tokenizer)
     # A tokenizer that normalizes its input (Qwen: NFC) is decode-checked against the normalized text and its corpora
@@ -381,7 +400,7 @@ def relink_for_host(tokenizer_name: str, out_dir: Path, *, documents: TrackDocum
     plan: dict[str, tuple[Callable[[list[int]], Iterator[str]], AliasTable, int, int]] = {
         "train": (documents.train, train_table, train_tokens, train_min_subtokens),
         "eval": (documents.eval_mixed, full, int(eval_mix_tokens or 10**12), 1),
-        "eval-pubmed": (lambda log: documents.eval_pubmed(), full, 10**12, 1),
+        domain_split: (lambda log: documents.eval_domain(), full, 10**12, 1),
         "eval-general": (lambda log: documents.eval_general(), full, 10**12, 1),
     }
     manifests: dict[str, Any] = {}
@@ -395,10 +414,10 @@ def relink_for_host(tokenizer_name: str, out_dir: Path, *, documents: TrackDocum
         log: list[int] = []
         manifests[name] = build_corpus(stream(log), out_dir / name, tokenizer_name=tokenizer_name, table=table, eos_id=eos,
                                        max_tokens=max_tokens, min_subtokens=min_length, workers=workers, vocab_size=vocab,
-                                       reuse=True, extra_manifest={"track": label, "max_tokens_requested": max_tokens,
+                                       reuse=True, extra_manifest={"track": documents.track_label, "max_tokens_requested": max_tokens,
                                                                    "stream_signature": signature, **fingerprint}, **extra)
         if name in ("train", "eval"):
-            shares[name] = record_shares(out_dir / name, log, eos)
+            shares[name] = record_shares(out_dir / name, log, eos, documents.sources)
     frequency = train_frequency(out_dir / "train", len(full.entry_concepts), min_subtokens)
     torch.save(channel_ontology(full, ontology, frequency, holdout_sha256), out_dir / "ontology.pt")
     return {"tokenizer": tokenizer_name, "corpora": manifests, "source_shares": shares,
@@ -599,7 +618,8 @@ def track_documents(config: dict[str, Any], *, calibration: tuple[float, float] 
         eval_pubmed_docs=data.get("eval_pubmed_docs"), exclude_pmids=pubmedqa_pmids(config),
         domain_share=float(config["mix"]["domain_share"]), calibration=calibration or (4.7, 4.6),
         mention_filter=mention_filter, mention_digest=mention_digest,
-        min_pmid=int(config["pubmed"]["min_pmid"]) if config["pubmed"].get("min_pmid") else None)
+        min_pmid=int(config["pubmed"]["min_pmid"]) if config["pubmed"].get("min_pmid") else None,
+        label=config_label(config))
 
 
 def alias_statistics(table: AliasTable, tokenizer_names: list[str]) -> dict[str, Any]:
@@ -648,7 +668,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     presample_manifest = build_corpus(documents.train(presample_log), data_root / "presample", tokenizer_name=tokenizer_name,
                                       table=base_table, eos_id=tokenizer.eos_token_id, max_tokens=int(data["presample_tokens"]),
                                       workers=workers, reuse=True,
-                                      extra_manifest={"track": track_label(config), "max_tokens_requested": int(data["presample_tokens"]),
+                                      extra_manifest={"track": config_label(config), "max_tokens_requested": int(data["presample_tokens"]),
                                                       "stream_signature": presample_signature})
     presample_shares = record_shares(data_root / "presample", presample_log, tokenizer.eos_token_id)
     presample = TokenCorpus.open(data_root / "presample")
@@ -678,8 +698,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     assert_alias_disjoint(full, train_table)
     min_subtokens = int(data["min_subtokens"])
     shared = dict(documents=documents, full=full, train_table=train_table, ontology=ontology, holdout_sha256=holdout["sha256"],
-                  train_min_subtokens=int(data["train_min_subtokens"]), min_subtokens=min_subtokens, workers=workers,
-                  label=track_label(config))
+                  train_min_subtokens=int(data["train_min_subtokens"]), min_subtokens=min_subtokens, workers=workers)
     reference = relink_for_host(tokenizer_name, data_root, train_tokens=int(data["train_tokens"]),
                                 eval_mix_tokens=data.get("eval_mix_tokens"), **shared)
     # Training budget the feasibility verdict refers to (a slice build is compared with the full one).
@@ -735,7 +754,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     (output_dir / "feasibility.json").write_text(json.dumps({"criteria": criteria, "by_tokenizer": feasibility}, indent=2) + "\n")
 
     summary = {
-        "track": track_label(config),
+        "track": config_label(config),
         "ontology": {**{k: v for k, v in ontology.metadata.items() if k in ("source", "descriptors", "alias_policy", "alias_stats",
                                                                              "max_atomics", "max_degree", "records", "empty_frames")},
                      "concepts": len(ontology.concept_names), "atomics": len(ontology.atomic_names),
@@ -758,7 +777,7 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str) + "\n")
     (output_dir / "report.md").write_text(render_report(summary, by_source, feasibility, criteria))
-    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", track=track_label(config))
+    write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", track=config_label(config))
     return summary
 
 

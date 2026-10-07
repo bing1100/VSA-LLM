@@ -2,7 +2,13 @@
 
     python -m vsa_embed.experiments.e9_report --runs experiments/e9-retrofit/runs/<stage>
         [--quant experiments/e9-retrofit/quant/<stage>] [--quant-general experiments/e9-retrofit/quant-general/<stage>]
-        --output <dir> [--candidate C5] [--resamples 10000] [--overwrite]
+        --output <dir> [--candidate C5] [--resamples 10000] [--overwrite] [--dim3-baselines]
+        [--items-version v1|v2] [--item-seed]
+
+`--items-version v2` (decision 56) reads the dimension-3 evaluations on the v2 items (`RUN/edit-v2`, `RUN/edit-v2-int4`,
+`RUN/dim3-baselines-v2`) instead of v1's. `--item-seed` (opt-in) adds the item × seed analysis of dimension 3: concepts ×
+seeds as the unit, a crossed random-effects model with Satterthwaite intervals and a two-way cluster bootstrap
+(`e9_power.analyse_group`), next to the item-level intervals of the default tables.
 
 `--quant-general` (tracks with a general-text corpus) adds the locality and quantization damage on general
 text: the dimension-2 analysis on `e4_quant --eval-corpus <eval-general>`, whose bf16 gain is C5 − reference
@@ -303,8 +309,10 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
 
 
-def _edit_folder(run: Run, variant: str) -> Path:
-    return run.path / ("edit" if variant == "bf16" else f"edit-{variant}")
+def _edit_folder(run: Run, variant: str, items_version: str = "v1") -> Path:
+    """`edit` / `edit-int4` (v1 items) or `edit-<version>` / `edit-<version>-int4` (`e9_plan.edit_folder`)."""
+    from .e9_power import edit_folder_name
+    return run.path / edit_folder_name(variant, items_version)
 
 
 def _zeroshot_folder(run: Run, variant: str) -> Path:
@@ -381,14 +389,15 @@ def cross_model(group: Group, candidate: str, variant: str, loader, tests: Seque
     return out
 
 
-def dimension3(group: Group, *, candidate: str, resamples: int, seed: int, variants: Sequence[str] = ("bf16", "int4")) -> dict[str, Any]:
+def dimension3(group: Group, *, candidate: str, resamples: int, seed: int, variants: Sequence[str] = ("bf16", "int4"),
+               items_version: str = "v1") -> dict[str, Any]:
     result: dict[str, Any] = {"variants": {}}
     for variant in variants:
         per_model: dict[str, Any] = {}
         for model, runs in group.models.items():
             for s, run in sorted(runs.items()):
                 entry: dict[str, Any] = {}
-                summary_path = _edit_folder(run, variant) / "summary.json"
+                summary_path = _edit_folder(run, variant, items_version) / "summary.json"
                 if summary_path.exists():
                     document = json.loads(summary_path.read_text())
                     if "new_words" in document:
@@ -400,7 +409,7 @@ def dimension3(group: Group, *, candidate: str, resamples: int, seed: int, varia
                     entry["zeroshot"] = json.loads(zs_path.read_text())["summary"]
                 if entry:
                     per_model.setdefault(model, {})[s] = entry
-        new_loader = lambda run, v: (lambda x: x[0] if x else None)(new_word_items(_edit_folder(run, v)))
+        new_loader = lambda run, v: (lambda x: x[0] if x else None)(new_word_items(_edit_folder(run, v, items_version)))
         zs_loader = lambda run, v: zeroshot_items(_zeroshot_folder(run, v))
         result["variants"][variant] = {
             "models": per_model,
@@ -685,16 +694,35 @@ def render_pq(pq: dict[str, Any], candidate: str) -> list[str]:
 # ---------------------------------------------------------------- analysis and rendering
 
 
+def item_seed_section(group: Group, *, candidate: str, variants: Sequence[str], items_version: str = "v1",
+                      resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
+    """Opt-in (`--item-seed`): the dimension-3 comparisons with concepts × seeds as the unit (`e9_power.analyse_group`:
+    crossed random-effects model with Satterthwaite intervals and a two-way cluster bootstrap) per precision."""
+    from .e9_power import analyse_group, edit_folder_name
+    out: dict[str, Any] = {"items_version": items_version, "variants": {}}
+    for variant in variants:
+        analysis = analyse_group(group, candidate=candidate, folder=edit_folder_name(variant, items_version),
+                                 zeroshot_folder="zeroshot" if variant == "bf16" else f"zeroshot-{variant}",
+                                 resamples=resamples, seed=seed)
+        if analysis.get("available") and (analysis.get("new_words") or analysis.get("edits") or analysis.get("zeroshot")):
+            out["variants"][variant] = analysis
+    return out
+
+
 def analyze(runs: Sequence[Run], quant: dict[str, dict[str, Any]], *, candidate: str = "C5", resamples: int = 10_000,
-            seed: int = 0, quantized: str = "int4", quant_general: dict[str, dict[str, Any]] | None = None
-            ) -> tuple[dict[str, Any], list[Group]]:
+            seed: int = 0, quantized: str = "int4", quant_general: dict[str, dict[str, Any]] | None = None,
+            items_version: str = "v1", item_seed: bool = False) -> tuple[dict[str, Any], list[Group]]:
     """`quantized` names the per-run quantized evaluations (`probes-<q>.json`, `zeroshot-<q>`, `edit-<q>`);
     `quant_general` is `e4_quant` on the track's general-text corpus (locality and general-text damage:
-    the dimension-2 analysis on that corpus, whose `gain_bf16` is the bf16 locality difference)."""
+    the dimension-2 analysis on that corpus, whose `gain_bf16` is the bf16 locality difference). `items_version`: the
+    dimension-3 item version whose editing evaluations are read (`edit` for v1, `edit-v2` for v2); `item_seed` adds the
+    concepts × seeds analysis of dimension 3 (`item_seed_section`)."""
     groups = build_groups(runs)
     summary: dict[str, Any] = {"candidate": candidate, "resamples": resamples, "seed": seed, "quantized": quantized, "groups": {},
                                "runs": [{"path": str(r.path), "condition": model_name(r.condition), "seed": r.seed,
                                          "complete": r.complete, "model": r.model} for r in runs]}
+    if items_version != "v1":                         # new key only where it applies (v1 summaries as before)
+        summary["items_version"] = items_version
     for group in groups:
         summary["groups"][group.label] = {
             "host": group.host, "mode": group.mode, "seeds": {m: group.seeds(m) for m in group.models},
@@ -704,7 +732,11 @@ def analyze(runs: Sequence[Run], quant: dict[str, dict[str, Any]], *, candidate:
                            "probes_quantized": probe_comparisons(group, candidate, f"probes-{quantized}.json",
                                                                  resamples=min(resamples, 2000), seed=seed)},
             "dimension3": dimension3(group, candidate=candidate, resamples=min(resamples, 10_000), seed=seed,
-                                     variants=("bf16", quantized))}
+                                     variants=("bf16", quantized), items_version=items_version)}
+        if item_seed:
+            summary["groups"][group.label]["dimension3_item_seed"] = item_seed_section(
+                group, candidate=candidate, variants=("bf16", quantized), items_version=items_version,
+                resamples=min(resamples, 2000), seed=seed)
         if quant_general:
             summary["groups"][group.label]["general_text"] = dimension2(group, quant_general, candidate=candidate,
                                                                        resamples=resamples, seed=seed)
@@ -829,9 +861,20 @@ def render(summary: dict[str, Any], figures: dict[str, dict[str, str]], *, title
                 for model, by_variant in general["damage"].items():
                     lines.append(f"| {model} | " + " | ".join(_relative(by_variant.get(v, {}).get("all")) for v in general["variants"]) + " |")
         lines += ["", "### Dimension 3 — zero-shot learning by ontology editing (no weight update)", ""]
+        if summary.get("items_version", "v1") != "v1":
+            lines += [f"Items **{summary['items_version']}** (a strict superset of v1, decision 56; run folders "
+                      f"`edit-{summary['items_version']}`).", ""]
         if len(g["seeds"].get(candidate, [])) == 1:
             lines += ["> Single seed: intervals cover items only, not seed variance.", ""]
         lines += _render_dimension3(d3, candidate)
+        item_seed = g.get("dimension3_item_seed")
+        if item_seed:
+            from .e9_power import render_item_seed
+            lines += ["", "### Dimension 3 — item × seed analysis (concepts × seeds; opt-in `--item-seed`)", ""]
+            if not item_seed["variants"]:
+                lines += ["No per-item editing evaluations for this version.", ""]
+            for variant, analysis in item_seed["variants"].items():
+                lines += [f"**{variant}**", ""] + render_item_seed(analysis, candidate=candidate, heading="####")
         if g.get("pq"):
             lines += render_pq(g["pq"], candidate)
         if figures.get(label):
@@ -1037,13 +1080,15 @@ def plot_group(label: str, g: dict[str, Any], out: Path, slug: str, *, candidate
 # ---------------------------------------------------------------- dimension-3 baselines (WP-PQ2; opt-in `--dim3-baselines`)
 
 
-def dimension3_baselines(group: Group, *, candidate: str, resamples: int, seed: int) -> dict[str, Any]:
-    """The `e9_dim3_baselines` evaluations of the group's runs (`RUN/dim3-baselines`): in-context frames and IKE, ROME /
-    MEMIT / AlphaEdit on the host weights, frame transplant, channel-off audit, intra-entity locality, row sources; and the
-    candidate's ontology edit vs every other model × method, paired over edit items (`e9_dim3_baselines.stage_summary`)."""
+def dimension3_baselines(group: Group, *, candidate: str, resamples: int, seed: int, items_version: str = "v1") -> dict[str, Any]:
+    """The `e9_dim3_baselines` evaluations of the group's runs (`RUN/dim3-baselines`; v2 items: `RUN/dim3-baselines-v2`):
+    in-context frames and IKE, ROME / MEMIT / AlphaEdit on the host weights, frame transplant, channel-off audit,
+    intra-entity locality, row sources; and the candidate's ontology edit vs every other model × method, paired over
+    edit items (`e9_dim3_baselines.stage_summary`)."""
     from . import e9_dim3_baselines as dim3
     runs = {model: {s: run.path for s, run in by_seed.items()} for model, by_seed in group.models.items()}
-    return dim3.stage_summary(runs, candidate=candidate, resamples=resamples, seed=seed)
+    folder = dim3.FOLDER if items_version == "v1" else f"{dim3.FOLDER}-{items_version}"
+    return dim3.stage_summary(runs, candidate=candidate, resamples=resamples, seed=seed, folder=folder)
 
 
 def render_dimension3_baselines(summary: dict[str, Any]) -> list[str]:
@@ -1061,12 +1106,16 @@ def render_dimension3_baselines(summary: dict[str, Any]) -> list[str]:
 def write_report(runs_dirs: Sequence[Path], output: Path, *, quant_dir: Path | None = None, candidate: str = "C5",
                  resamples: int = 10_000, seed: int = 0, title: str = "R9 — retrofit × quantization (E9)", figures: bool = True,
                  overwrite: bool = False, quantized: str = "int4", quant_general_dir: Path | None = None,
-                 dim3_baselines: bool = False) -> dict[str, Any]:
+                 dim3_baselines: bool = False, items_version: str = "v1", item_seed: bool = False) -> dict[str, Any]:
     config = {"runs": [str(p) for p in runs_dirs], "quant": str(quant_dir) if quant_dir else None, "candidate": candidate,
               "resamples": resamples, "seed": seed, "title": title, "quantized": quantized,
               "quant_general": str(quant_general_dir) if quant_general_dir else None}
     if dim3_baselines:                                # opt-in key (configs of earlier reports unchanged)
         config["dim3_baselines"] = True
+    if items_version != "v1":                         # opt-in keys (decision 56)
+        config["items_version"] = items_version
+    if item_seed:
+        config["item_seed"] = True
     if overwrite and output.exists():
         for path in [*output.glob("figures/*.png"), *(output / n for n in ("report.md", "summary.json", "resolved_config.yaml", "manifest.json"))]:
             if path.is_file():
@@ -1078,11 +1127,12 @@ def write_report(runs_dirs: Sequence[Path], output: Path, *, quant_dir: Path | N
     if not runs:
         raise FileNotFoundError(f"no run folders (metrics.jsonl) under {', '.join(map(str, runs_dirs))}")
     summary, groups = analyze(runs, load_quant(quant_dir), candidate=candidate, resamples=resamples, seed=seed, quantized=quantized,
-                              quant_general=load_quant(quant_general_dir) if quant_general_dir else None)
+                              quant_general=load_quant(quant_general_dir) if quant_general_dir else None,
+                              items_version=items_version, item_seed=item_seed)
     if dim3_baselines:
         for group in groups:
             summary["groups"][group.label]["dimension3_baselines"] = dimension3_baselines(
-                group, candidate=candidate, resamples=min(resamples, 10_000), seed=seed)
+                group, candidate=candidate, resamples=min(resamples, 10_000), seed=seed, items_version=items_version)
     plots: dict[str, dict[str, str]] = {}
     if figures:
         (output / "figures").mkdir(exist_ok=True)
@@ -1112,10 +1162,17 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--quant-general", type=Path, default=None, help="e4_quant output on the track's general-text corpus")
     parser.add_argument("--dim3-baselines", action="store_true",
                         help="add the dimension-3 baselines section (RUN/dim3-baselines of e9_dim3_baselines; WP-PQ2)")
+    parser.add_argument("--items-version", default="v1", choices=["v1", "v2"],
+                        help="dimension-3 item version to read (v1: RUN/edit, RUN/dim3-baselines; v2: RUN/edit-v2, "
+                             "RUN/dim3-baselines-v2; decision 56)")
+    parser.add_argument("--item-seed", action="store_true",
+                        help="add the dimension-3 item × seed analysis (concepts × seeds crossed random-effects model and "
+                             "two-way cluster bootstrap; e9_power)")
     args = parser.parse_args(argv)
     summary = write_report(args.runs, args.output, quant_dir=args.quant, candidate=args.candidate, resamples=args.resamples,
                            seed=args.seed, title=args.title, figures=not args.no_figures, overwrite=args.overwrite,
-                           quantized=args.quantized, quant_general_dir=args.quant_general, dim3_baselines=args.dim3_baselines)
+                           quantized=args.quantized, quant_general_dir=args.quant_general, dim3_baselines=args.dim3_baselines,
+                           items_version=args.items_version, item_seed=args.item_seed)
     print(json.dumps({label: {"seeds": g["seeds"]} for label, g in summary["groups"].items()}))
 
 

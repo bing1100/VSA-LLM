@@ -62,3 +62,39 @@ def test_cpu_lane_waits_for_a_lower_priority_gpu_job(tmp_path: Path) -> None:
     assert run_next(queue, lane="cpu") is None
     assert run_next(queue)["name"] == "train"  # default lane "all" = the original runner
     assert run_next(queue, lane="cpu")["name"] == "report"
+
+
+def test_a_blocked_job_is_retried_first_and_later_jobs_do_not_jump_it(tmp_path: Path) -> None:
+    queue = tmp_path / "q"
+    add(queue, [sys.executable, "-c", "pass"], name="train", priority=10, min_free_gb=10**9)
+    add(queue, [sys.executable, "-c", "pass"], name="eval", priority=20, min_free_gb=0)
+    assert run_next(queue, lane="gpu")["status"] == "blocked"
+    assert run_next(queue, lane="gpu")["name"] == "train"            # retried, not skipped
+    path = queue / "train.json"
+    job = json.loads(path.read_text()); job["min_free_gb"] = 0; path.write_text(json.dumps(job))
+    assert run_next(queue, lane="gpu")["name"] == "train"            # disk freed: it runs first
+    assert run_next(queue, lane="gpu")["name"] == "eval"
+
+
+def test_a_second_runner_waits_for_the_live_job_of_its_lane(tmp_path: Path) -> None:
+    import os
+    queue = tmp_path / "q"
+    path = add(queue, [sys.executable, "-c", "pass"], name="train", priority=10, min_free_gb=0)
+    add(queue, [sys.executable, "-c", "pass"], name="next", priority=20, min_free_gb=0)
+    add(queue, [sys.executable, "-c", "pass"], name="t5-report", priority=30, min_free_gb=0, lane="cpu")
+    job = json.loads(path.read_text()); job.update(status="running", pid=os.getpid()); path.write_text(json.dumps(job))
+    assert run_next(queue, lane="gpu") is None                       # live job in the gpu lane
+    assert run_next(queue) is None                                   # the original runner waits too
+    job.update(pid=999999999); path.write_text(json.dumps(job))      # its process is gone: recovered and resumed
+    assert run_next(queue, lane="gpu")["name"] == "train"
+
+
+def test_a_job_whose_runner_is_alive_is_not_recovered_after_its_process_exits(tmp_path: Path) -> None:
+    import os
+    queue = tmp_path / "q"
+    path = add(queue, [sys.executable, "-c", "pass"], name="train", priority=10, min_free_gb=0)
+    job = json.loads(path.read_text()); job.update(status="running", pid=999999999, runner_pid=os.getpid())
+    path.write_text(json.dumps(job))
+    assert recover(queue) == [] and run_next(queue) is None          # the runner is about to record the outcome
+    job.update(runner_pid=999999998); path.write_text(json.dumps(job))
+    assert recover(queue) == ["train"]

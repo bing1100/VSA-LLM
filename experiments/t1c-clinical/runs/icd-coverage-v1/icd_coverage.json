@@ -1,0 +1,139 @@
+{
+  "track_concepts": 310698,
+  "mimic_iii_icd9_diagnoses": {
+    "map": {
+      "rows": 48472,
+      "columns": 12,
+      "codes": 11108,
+      "code_column_match": 0.9999587390658524,
+      "concept_column_match": 0.9832067998019475
+    },
+    "discharge_admissions": {
+      "train": 47612,
+      "eval": 5114
+    },
+    "admissions_with_codes": {
+      "train": 47608,
+      "eval": 5114
+    },
+    "labels_per_admission_mean": {
+      "train": 11.754327003864896,
+      "eval": 11.614782948768088
+    },
+    "distinct_codes": {
+      "train": 6775,
+      "eval": 3545
+    },
+    "distinct_codes_all": 6918,
+    "codes_mapped_to_snomed": 5862,
+    "codes_mapped_to_track": 5589,
+    "by_training_frequency": {
+      "unseen": {
+        "codes": 143,
+        "mapped": 106,
+        "mapped_to_track": 101,
+        "codes_in_eval": 143,
+        "eval_codes_mapped_to_track": 101,
+        "eval_label_occurrences": 155,
+        "eval_label_occurrences_mapped_to_track": 111
+      },
+      "1-9": {
+        "codes": 4061,
+        "mapped": 3350,
+        "mapped_to_track": 3221,
+        "codes_in_eval": 943,
+        "eval_codes_mapped_to_track": 784,
+        "eval_label_occurrences": 1281,
+        "eval_label_occurrences_mapped_to_track": 1041
+      },
+      "10-49": {
+        "codes": 1492,
+        "mapped": 1306,
+        "mapped_to_track": 1250,
+        "codes_in_eval": 1237,
+        "eval_codes_mapped_to_track": 1042,
+        "eval_label_occurrences": 3514,
+        "eval_label_occurrences_mapped_to_track": 2950
+      },
+      "50-499": {
+        "codes": 1007,
+        "mapped": 899,
+        "mapped_to_track": 830,
+        "codes_in_eval": 1007,
+        "eval_codes_mapped_to_track": 830,
+        "eval_label_occurrences": 17008,
+        "eval_label_occurrences_mapped_to_track": 14137
+      },
+      "500+": {
+        "codes": 215,
+        "mapped": 201,
+        "mapped_to_track": 187,
+        "codes_in_eval": 215,
+        "eval_codes_mapped_to_track": 187,
+        "eval_label_occurrences": 37440,
+        "eval_label_occurrences_mapped_to_track": 34122
+      }
+    }
+  },
+  "mimic_iv_icd10_diagnoses": {
+    "map": {
+      "rows": 221193,
+      "codes": 19903
+    },
+    "admissions": {
+      "train": 228799,
+      "eval": 25578
+    },
+    "distinct_codes_all": 19440,
+    "codes_mapped_to_snomed": 9457,
+    "codes_mapped_to_track": 8971,
+    "by_training_frequency": {
+      "unseen": {
+        "codes": 539,
+        "mapped": 160,
+        "mapped_to_track": 154,
+        "codes_in_eval": 539,
+        "eval_codes_mapped_to_track": 154,
+        "eval_label_occurrences": 594,
+        "eval_label_occurrences_mapped_to_track": 183
+      },
+      "1-9": {
+        "codes": 11461,
+        "mapped": 4287,
+        "mapped_to_track": 4077,
+        "codes_in_eval": 2520,
+        "eval_codes_mapped_to_track": 1068,
+        "eval_label_occurrences": 3470,
+        "eval_label_occurrences_mapped_to_track": 1551
+      },
+      "10-49": {
+        "codes": 3901,
+        "mapped": 2300,
+        "mapped_to_track": 2174,
+        "codes_in_eval": 3205,
+        "eval_codes_mapped_to_track": 1781,
+        "eval_label_occurrences": 9727,
+        "eval_label_occurrences_mapped_to_track": 5558
+      },
+      "50-499": {
+        "codes": 2652,
+        "mapped": 1929,
+        "mapped_to_track": 1840,
+        "codes_in_eval": 2646,
+        "eval_codes_mapped_to_track": 1834,
+        "eval_label_occurrences": 45959,
+        "eval_label_occurrences_mapped_to_track": 33194
+      },
+      "500+": {
+        "codes": 887,
+        "mapped": 781,
+        "mapped_to_track": 726,
+        "codes_in_eval": 887,
+        "eval_codes_mapped_to_track": 726,
+        "eval_label_occurrences": 285425,
+        "eval_label_occurrences_mapped_to_track": 245700
+      }
+    },
+    "note": "MIMIC-IV notes are not on this machine: a text task on ICD-10 would need MIMIC-IV-Note"
+  }
+}
