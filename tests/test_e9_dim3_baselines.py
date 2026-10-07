@@ -76,8 +76,8 @@ def test_memit_moves_the_residual_and_alphaedit_stays_in_the_null_space() -> Non
     moments = ke.second_moments(host, TEXTS, layers)
     saved = host.snapshot(layers)
     memit = ke.EditorSettings(method="memit", layers=layers, v_steps=4, mom2_update_weight=1.0)
-    # TEXTS has four distinct sentences, so C (64 × 64) is rank-deficient and λC + KKᵀ alone is singular. `free`: the
-    # directions neither the sample keys nor the two edited keys of the first layer occupy.
+    # TEXTS has four distinct sentences, so C (64 × 64) is rank-deficient (rank 52) and λC + KKᵀ alone is singular.
+    # `free`: the directions neither the sample keys nor the two edited keys of the first layer occupy.
     keys = ke._mean_keys(host, layers[0], requests, memit).double()
     values, vectors = torch.linalg.eigh(moments[layers[0]].double())
     u, s, _ = torch.linalg.svd(torch.cat([vectors[:, values > 1e-10 * values.max()], keys.T], 1), full_matrices=True)
@@ -85,10 +85,13 @@ def test_memit_moves_the_residual_and_alphaedit_stays_in_the_null_space() -> Non
     assert free.shape[1] > 0
     info = ke.apply_memit(host, requests, memit, moments)
     assert info["edits"] == 2 and [p["layer"] for p in info["per_layer"]] == list(layers)
-    # The z error left for the second layer is smaller than for the first (the first layer's update did part of the work).
-    assert info["per_layer"][1]["z_error"] < info["per_layer"][0]["z_error"]
-    # The ridged C makes the solve well-posed: nothing is written onto the free directions (unridged, the update was
-    # ≈ 5,000× the weight's norm, nearly all of it there, and the z error grew 0.30 → 2.08).
+    # The first of two layers is given half the residual; with λ = 1 it delivers most of it, so the z error left for the
+    # second layer is well below the first's (0.17 vs 0.30 at every torch thread count).
+    assert info["per_layer"][1]["z_error"] < 0.75 * info["per_layer"][0]["z_error"]
+    # The ridged C makes the solve well-posed: nothing is written onto the free directions (≈ 1e-8 of the update). Without
+    # the ridge the singular solve turned float rounding into an arbitrary component there (90–100% of an update of norm
+    # 28–5,400; weight norm 0.9) that changed with the torch thread count, so the z error after the first layer was
+    # anywhere in 0.13–2.08 and this test passed or failed with the thread count other tests had left set.
     update = (host.weight(layers[0])[0] - saved[layers[0]]).double()
     assert float((update @ free).norm()) <= 1e-6 * float(update.norm())
     host.restore(saved)
