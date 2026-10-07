@@ -1,0 +1,10 @@
+run: experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C6m-s3
+variants:
+- ref
+- int4-A
+fillers: /home/bhux/data/vsa-llm/e9/filler-tables/t5-smollm2.pt
+group_size: auto
+calibration_windows: 64
+calibration_corpus: train
+eval_batch: null
+device: cuda

@@ -1,0 +1,2970 @@
+{
+  "source": {
+    "run": "experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5sh-s2",
+    "checkpoint": "final.pt",
+    "condition": "C5sh",
+    "seed": 2,
+    "size": "HuggingFaceTB/SmolLM2-360M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "frames": "shuffled",
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0
+    },
+    "experiment": "e9-t5-SmolLM2-360M-full-C5sh-s2",
+    "run_git_sha": "832e004675c2d442f0299209d700b8bdf9db5738",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "new_items": "experiments/e9-retrofit/items/new-words-t5-smollm2-v1",
+  "edit_items": null,
+  "new_words": {
+    "manifest": {
+      "schema": "e9-new-words/1",
+      "scenario": "e9_new_words",
+      "contamination_free": true,
+      "lexicon": "t5",
+      "description": "new concepts with invented names and frames that are new combinations of existing atomics and relations (zero-shot insertion by ontology editing)",
+      "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+      "ontology_alias_sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415",
+      "alias_table": {
+        "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t5.json",
+        "holdout_known": true,
+        "checks": {
+          "entry_concepts": true,
+          "digest": true,
+          "heldout_entries": true
+        },
+        "aliases": 4319,
+        "sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415"
+      },
+      "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+      "min_subtokens": 2,
+      "seed": 0,
+      "name_seed": 11,
+      "count": 300,
+      "distractors": 4,
+      "null_surface": "this",
+      "checks": {
+        "names": 364,
+        "rejected_candidates": 0,
+        "checked_against": [
+          "wordnet lemmas",
+          "alias table words",
+          "tokenizer vocabulary",
+          "contamination texts"
+        ],
+        "contamination_chars": 78829286,
+        "reserved_names": 203,
+        "reserved_clashes": 0
+      },
+      "construction": {
+        "donors_eligible": 3640,
+        "donors_tried": 300,
+        "rejected": {},
+        "kept_relations": [
+          "is_a"
+        ],
+        "rule": "category edges of a real donor kept; every other filler resampled (frequency-weighted, same relation) so that no existing entry has the category edge together with all resampled edges and no entry has the same frame; donors are neither held out nor synthetic",
+        "degree_histogram": {
+          "3": 3,
+          "4": 17,
+          "5": 37,
+          "6": 55,
+          "7": 58,
+          "8": 40,
+          "9": 36,
+          "10": 28,
+          "11": 19,
+          "12": 7
+        },
+        "eligible_donor_degree_histogram": {
+          "3": 40,
+          "4": 280,
+          "5": 378,
+          "6": 620,
+          "7": 711,
+          "8": 527,
+          "9": 384,
+          "10": 378,
+          "11": 244,
+          "12": 70,
+          "13": 8
+        }
+      },
+      "statement_templates": "the track's held-out wording (third paraphrase or statement; never a property template)",
+      "entailment": "true vs corrupted frame statement (the ontology has no hierarchy the items use)",
+      "counts": {
+        "concepts": 300,
+        "items": 3658,
+        "entailment": 600,
+        "property": 1529,
+        "statement": 1529
+      }
+    },
+    "resolved": {
+      "e9n-0000": {
+        "entry": 4200,
+        "found": [
+          4200
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0001": {
+        "entry": 4201,
+        "found": [
+          4201
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0002": {
+        "entry": 4202,
+        "found": [
+          4202
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0003": {
+        "entry": 4203,
+        "found": [
+          4203
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0004": {
+        "entry": 4204,
+        "found": [
+          4204
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0005": {
+        "entry": 4205,
+        "found": [
+          4205
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0006": {
+        "entry": 4206,
+        "found": [
+          4206
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0007": {
+        "entry": 4207,
+        "found": [
+          4207
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0008": {
+        "entry": 4208,
+        "found": [
+          4208
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0009": {
+        "entry": 4209,
+        "found": [
+          4209
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0010": {
+        "entry": 4210,
+        "found": [
+          4210
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0011": {
+        "entry": 4211,
+        "found": [
+          4211
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0012": {
+        "entry": 4212,
+        "found": [
+          4212
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0013": {
+        "entry": 4213,
+        "found": [
+          4213
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0014": {
+        "entry": 4214,
+        "found": [
+          4214
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0015": {
+        "entry": 4215,
+        "found": [
+          4215
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0016": {
+        "entry": 4216,
+        "found": [
+          4216
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0017": {
+        "entry": 4217,
+        "found": [
+          4217
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0018": {
+        "entry": 4218,
+        "found": [
+          4218
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0019": {
+        "entry": 4219,
+        "found": [
+          4219
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0020": {
+        "entry": 4220,
+        "found": [
+          4220
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0021": {
+        "entry": 4221,
+        "found": [
+          4221
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0022": {
+        "entry": 4222,
+        "found": [
+          4222
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0023": {
+        "entry": 4223,
+        "found": [
+          4223
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0024": {
+        "entry": 4224,
+        "found": [
+          4224
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0025": {
+        "entry": 4225,
+        "found": [
+          4225
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0026": {
+        "entry": 4226,
+        "found": [
+          4226
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0027": {
+        "entry": 4227,
+        "found": [
+          4227
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0028": {
+        "entry": 4228,
+        "found": [
+          4228
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0029": {
+        "entry": 4229,
+        "found": [
+          4229
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0030": {
+        "entry": 4230,
+        "found": [
+          4230
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0031": {
+        "entry": 4231,
+        "found": [
+          4231
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0032": {
+        "entry": 4232,
+        "found": [
+          4232
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0033": {
+        "entry": 4233,
+        "found": [
+          4233
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0034": {
+        "entry": 4234,
+        "found": [
+          4234
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0035": {
+        "entry": 4235,
+        "found": [
+          4235
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0036": {
+        "entry": 4236,
+        "found": [
+          4236
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0037": {
+        "entry": 4237,
+        "found": [
+          4237
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0038": {
+        "entry": 4238,
+        "found": [
+          4238
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0039": {
+        "entry": 4239,
+        "found": [
+          4239
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0040": {
+        "entry": 4240,
+        "found": [
+          4240
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0041": {
+        "entry": 4241,
+        "found": [
+          4241
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0042": {
+        "entry": 4242,
+        "found": [
+          4242
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0043": {
+        "entry": 4243,
+        "found": [
+          4243
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0044": {
+        "entry": 4244,
+        "found": [
+          4244
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0045": {
+        "entry": 4245,
+        "found": [
+          4245
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0046": {
+        "entry": 4246,
+        "found": [
+          4246
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0047": {
+        "entry": 4247,
+        "found": [
+          4247
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0048": {
+        "entry": 4248,
+        "found": [
+          4248
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0049": {
+        "entry": 4249,
+        "found": [
+          4249
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0050": {
+        "entry": 4250,
+        "found": [
+          4250
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0051": {
+        "entry": 4251,
+        "found": [
+          4251
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0052": {
+        "entry": 4252,
+        "found": [
+          4252
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0053": {
+        "entry": 4253,
+        "found": [
+          4253
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0054": {
+        "entry": 4254,
+        "found": [
+          4254
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0055": {
+        "entry": 4255,
+        "found": [
+          4255
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0056": {
+        "entry": 4256,
+        "found": [
+          4256
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0057": {
+        "entry": 4257,
+        "found": [
+          4257
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0058": {
+        "entry": 4258,
+        "found": [
+          4258
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0059": {
+        "entry": 4259,
+        "found": [
+          4259
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0060": {
+        "entry": 4260,
+        "found": [
+          4260
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0061": {
+        "entry": 4261,
+        "found": [
+          4261
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0062": {
+        "entry": 4262,
+        "found": [
+          4262
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0063": {
+        "entry": 4263,
+        "found": [
+          4263
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0064": {
+        "entry": 4264,
+        "found": [
+          4264
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0065": {
+        "entry": 4265,
+        "found": [
+          4265
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0066": {
+        "entry": 4266,
+        "found": [
+          4266
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0067": {
+        "entry": 4267,
+        "found": [
+          4267
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0068": {
+        "entry": 4268,
+        "found": [
+          4268
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0069": {
+        "entry": 4269,
+        "found": [
+          4269
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0070": {
+        "entry": 4270,
+        "found": [
+          4270
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0071": {
+        "entry": 4271,
+        "found": [
+          4271
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0072": {
+        "entry": 4272,
+        "found": [
+          4272
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0073": {
+        "entry": 4273,
+        "found": [
+          4273
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0074": {
+        "entry": 4274,
+        "found": [
+          4274
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0075": {
+        "entry": 4275,
+        "found": [
+          4275
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0076": {
+        "entry": 4276,
+        "found": [
+          4276
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0077": {
+        "entry": 4277,
+        "found": [
+          4277
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0078": {
+        "entry": 4278,
+        "found": [
+          4278
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0079": {
+        "entry": 4279,
+        "found": [
+          4279
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0080": {
+        "entry": 4280,
+        "found": [
+          4280
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0081": {
+        "entry": 4281,
+        "found": [
+          4281
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0082": {
+        "entry": 4282,
+        "found": [
+          4282
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0083": {
+        "entry": 4283,
+        "found": [
+          4283
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0084": {
+        "entry": 4284,
+        "found": [
+          4284
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0085": {
+        "entry": 4285,
+        "found": [
+          4285
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0086": {
+        "entry": 4286,
+        "found": [
+          4286
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0087": {
+        "entry": 4287,
+        "found": [
+          4287
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0088": {
+        "entry": 4288,
+        "found": [
+          4288
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0089": {
+        "entry": 4289,
+        "found": [
+          4289
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0090": {
+        "entry": 4290,
+        "found": [
+          4290
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0091": {
+        "entry": 4291,
+        "found": [
+          4291
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0092": {
+        "entry": 4292,
+        "found": [
+          4292
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0093": {
+        "entry": 4293,
+        "found": [
+          4293
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0094": {
+        "entry": 4294,
+        "found": [
+          4294
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0095": {
+        "entry": 4295,
+        "found": [
+          4295
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0096": {
+        "entry": 4296,
+        "found": [
+          4296
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0097": {
+        "entry": 4297,
+        "found": [
+          4297
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0098": {
+        "entry": 4298,
+        "found": [
+          4298
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0099": {
+        "entry": 4299,
+        "found": [
+          4299
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0100": {
+        "entry": 4300,
+        "found": [
+          4300
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0101": {
+        "entry": 4301,
+        "found": [
+          4301
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0102": {
+        "entry": 4302,
+        "found": [
+          4302
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0103": {
+        "entry": 4303,
+        "found": [
+          4303
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0104": {
+        "entry": 4304,
+        "found": [
+          4304
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0105": {
+        "entry": 4305,
+        "found": [
+          4305
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0106": {
+        "entry": 4306,
+        "found": [
+          4306
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0107": {
+        "entry": 4307,
+        "found": [
+          4307
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0108": {
+        "entry": 4308,
+        "found": [
+          4308
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0109": {
+        "entry": 4309,
+        "found": [
+          4309
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0110": {
+        "entry": 4310,
+        "found": [
+          4310
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0111": {
+        "entry": 4311,
+        "found": [
+          4311
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0112": {
+        "entry": 4312,
+        "found": [
+          4312
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0113": {
+        "entry": 4313,
+        "found": [
+          4313
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0114": {
+        "entry": 4314,
+        "found": [
+          4314
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0115": {
+        "entry": 4315,
+        "found": [
+          4315
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0116": {
+        "entry": 4316,
+        "found": [
+          4316
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0117": {
+        "entry": 4317,
+        "found": [
+          4317
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0118": {
+        "entry": 4318,
+        "found": [
+          4318
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0119": {
+        "entry": 4319,
+        "found": [
+          4319
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0120": {
+        "entry": 4320,
+        "found": [
+          4320
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0121": {
+        "entry": 4321,
+        "found": [
+          4321
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0122": {
+        "entry": 4322,
+        "found": [
+          4322
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0123": {
+        "entry": 4323,
+        "found": [
+          4323
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0124": {
+        "entry": 4324,
+        "found": [
+          4324
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0125": {
+        "entry": 4325,
+        "found": [
+          4325
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0126": {
+        "entry": 4326,
+        "found": [
+          4326
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0127": {
+        "entry": 4327,
+        "found": [
+          4327
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0128": {
+        "entry": 4328,
+        "found": [
+          4328
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0129": {
+        "entry": 4329,
+        "found": [
+          4329
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0130": {
+        "entry": 4330,
+        "found": [
+          4330
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0131": {
+        "entry": 4331,
+        "found": [
+          4331
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0132": {
+        "entry": 4332,
+        "found": [
+          4332
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0133": {
+        "entry": 4333,
+        "found": [
+          4333
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0134": {
+        "entry": 4334,
+        "found": [
+          4334
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0135": {
+        "entry": 4335,
+        "found": [
+          4335
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0136": {
+        "entry": 4336,
+        "found": [
+          4336
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0137": {
+        "entry": 4337,
+        "found": [
+          4337
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0138": {
+        "entry": 4338,
+        "found": [
+          4338
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0139": {
+        "entry": 4339,
+        "found": [
+          4339
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0140": {
+        "entry": 4340,
+        "found": [
+          4340
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0141": {
+        "entry": 4341,
+        "found": [
+          4341
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0142": {
+        "entry": 4342,
+        "found": [
+          4342
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0143": {
+        "entry": 4343,
+        "found": [
+          4343
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0144": {
+        "entry": 4344,
+        "found": [
+          4344
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0145": {
+        "entry": 4345,
+        "found": [
+          4345
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0146": {
+        "entry": 4346,
+        "found": [
+          4346
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0147": {
+        "entry": 4347,
+        "found": [
+          4347
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0148": {
+        "entry": 4348,
+        "found": [
+          4348
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0149": {
+        "entry": 4349,
+        "found": [
+          4349
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0150": {
+        "entry": 4350,
+        "found": [
+          4350
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0151": {
+        "entry": 4351,
+        "found": [
+          4351
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0152": {
+        "entry": 4352,
+        "found": [
+          4352
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0153": {
+        "entry": 4353,
+        "found": [
+          4353
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0154": {
+        "entry": 4354,
+        "found": [
+          4354
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0155": {
+        "entry": 4355,
+        "found": [
+          4355
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0156": {
+        "entry": 4356,
+        "found": [
+          4356
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0157": {
+        "entry": 4357,
+        "found": [
+          4357
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0158": {
+        "entry": 4358,
+        "found": [
+          4358
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0159": {
+        "entry": 4359,
+        "found": [
+          4359
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0160": {
+        "entry": 4360,
+        "found": [
+          4360
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0161": {
+        "entry": 4361,
+        "found": [
+          4361
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0162": {
+        "entry": 4362,
+        "found": [
+          4362
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0163": {
+        "entry": 4363,
+        "found": [
+          4363
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0164": {
+        "entry": 4364,
+        "found": [
+          4364
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0165": {
+        "entry": 4365,
+        "found": [
+          4365
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0166": {
+        "entry": 4366,
+        "found": [
+          4366
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0167": {
+        "entry": 4367,
+        "found": [
+          4367
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0168": {
+        "entry": 4368,
+        "found": [
+          4368
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0169": {
+        "entry": 4369,
+        "found": [
+          4369
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0170": {
+        "entry": 4370,
+        "found": [
+          4370
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0171": {
+        "entry": 4371,
+        "found": [
+          4371
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0172": {
+        "entry": 4372,
+        "found": [
+          4372
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0173": {
+        "entry": 4373,
+        "found": [
+          4373
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0174": {
+        "entry": 4374,
+        "found": [
+          4374
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0175": {
+        "entry": 4375,
+        "found": [
+          4375
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0176": {
+        "entry": 4376,
+        "found": [
+          4376
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0177": {
+        "entry": 4377,
+        "found": [
+          4377
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0178": {
+        "entry": 4378,
+        "found": [
+          4378
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0179": {
+        "entry": 4379,
+        "found": [
+          4379
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0180": {
+        "entry": 4380,
+        "found": [
+          4380
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0181": {
+        "entry": 4381,
+        "found": [
+          4381
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0182": {
+        "entry": 4382,
+        "found": [
+          4382
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0183": {
+        "entry": 4383,
+        "found": [
+          4383
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0184": {
+        "entry": 4384,
+        "found": [
+          4384
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0185": {
+        "entry": 4385,
+        "found": [
+          4385
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0186": {
+        "entry": 4386,
+        "found": [
+          4386
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0187": {
+        "entry": 4387,
+        "found": [
+          4387
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0188": {
+        "entry": 4388,
+        "found": [
+          4388
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0189": {
+        "entry": 4389,
+        "found": [
+          4389
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0190": {
+        "entry": 4390,
+        "found": [
+          4390
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0191": {
+        "entry": 4391,
+        "found": [
+          4391
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0192": {
+        "entry": 4392,
+        "found": [
+          4392
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0193": {
+        "entry": 4393,
+        "found": [
+          4393
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0194": {
+        "entry": 4394,
+        "found": [
+          4394
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0195": {
+        "entry": 4395,
+        "found": [
+          4395
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0196": {
+        "entry": 4396,
+        "found": [
+          4396
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0197": {
+        "entry": 4397,
+        "found": [
+          4397
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0198": {
+        "entry": 4398,
+        "found": [
+          4398
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0199": {
+        "entry": 4399,
+        "found": [
+          4399
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0200": {
+        "entry": 4400,
+        "found": [
+          4400
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0201": {
+        "entry": 4401,
+        "found": [
+          4401
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0202": {
+        "entry": 4402,
+        "found": [
+          4402
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0203": {
+        "entry": 4403,
+        "found": [
+          4403
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0204": {
+        "entry": 4404,
+        "found": [
+          4404
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0205": {
+        "entry": 4405,
+        "found": [
+          4405
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0206": {
+        "entry": 4406,
+        "found": [
+          4406
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0207": {
+        "entry": 4407,
+        "found": [
+          4407
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0208": {
+        "entry": 4408,
+        "found": [
+          4408
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0209": {
+        "entry": 4409,
+        "found": [
+          4409
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0210": {
+        "entry": 4410,
+        "found": [
+          4410
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0211": {
+        "entry": 4411,
+        "found": [
+          4411
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0212": {
+        "entry": 4412,
+        "found": [
+          4412
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0213": {
+        "entry": 4413,
+        "found": [
+          4413
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0214": {
+        "entry": 4414,
+        "found": [
+          4414
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0215": {
+        "entry": 4415,
+        "found": [
+          4415
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0216": {
+        "entry": 4416,
+        "found": [
+          4416
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0217": {
+        "entry": 4417,
+        "found": [
+          4417
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0218": {
+        "entry": 4418,
+        "found": [
+          4418
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0219": {
+        "entry": 4419,
+        "found": [
+          4419
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0220": {
+        "entry": 4420,
+        "found": [
+          4420
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0221": {
+        "entry": 4421,
+        "found": [
+          4421
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0222": {
+        "entry": 4422,
+        "found": [
+          4422
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0223": {
+        "entry": 4423,
+        "found": [
+          4423
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0224": {
+        "entry": 4424,
+        "found": [
+          4424
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0225": {
+        "entry": 4425,
+        "found": [
+          4425
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0226": {
+        "entry": 4426,
+        "found": [
+          4426
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0227": {
+        "entry": 4427,
+        "found": [
+          4427
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0228": {
+        "entry": 4428,
+        "found": [
+          4428
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0229": {
+        "entry": 4429,
+        "found": [
+          4429
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0230": {
+        "entry": 4430,
+        "found": [
+          4430
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0231": {
+        "entry": 4431,
+        "found": [
+          4431
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0232": {
+        "entry": 4432,
+        "found": [
+          4432
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0233": {
+        "entry": 4433,
+        "found": [
+          4433
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0234": {
+        "entry": 4434,
+        "found": [
+          4434
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0235": {
+        "entry": 4435,
+        "found": [
+          4435
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0236": {
+        "entry": 4436,
+        "found": [
+          4436
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0237": {
+        "entry": 4437,
+        "found": [
+          4437
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0238": {
+        "entry": 4438,
+        "found": [
+          4438
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0239": {
+        "entry": 4439,
+        "found": [
+          4439
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0240": {
+        "entry": 4440,
+        "found": [
+          4440
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0241": {
+        "entry": 4441,
+        "found": [
+          4441
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0242": {
+        "entry": 4442,
+        "found": [
+          4442
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0243": {
+        "entry": 4443,
+        "found": [
+          4443
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0244": {
+        "entry": 4444,
+        "found": [
+          4444
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0245": {
+        "entry": 4445,
+        "found": [
+          4445
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0246": {
+        "entry": 4446,
+        "found": [
+          4446
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0247": {
+        "entry": 4447,
+        "found": [
+          4447
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0248": {
+        "entry": 4448,
+        "found": [
+          4448
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0249": {
+        "entry": 4449,
+        "found": [
+          4449
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0250": {
+        "entry": 4450,
+        "found": [
+          4450
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0251": {
+        "entry": 4451,
+        "found": [
+          4451
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0252": {
+        "entry": 4452,
+        "found": [
+          4452
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0253": {
+        "entry": 4453,
+        "found": [
+          4453
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0254": {
+        "entry": 4454,
+        "found": [
+          4454
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0255": {
+        "entry": 4455,
+        "found": [
+          4455
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0256": {
+        "entry": 4456,
+        "found": [
+          4456
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0257": {
+        "entry": 4457,
+        "found": [
+          4457
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0258": {
+        "entry": 4458,
+        "found": [
+          4458
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0259": {
+        "entry": 4459,
+        "found": [
+          4459
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0260": {
+        "entry": 4460,
+        "found": [
+          4460
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0261": {
+        "entry": 4461,
+        "found": [
+          4461
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0262": {
+        "entry": 4462,
+        "found": [
+          4462
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0263": {
+        "entry": 4463,
+        "found": [
+          4463
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0264": {
+        "entry": 4464,
+        "found": [
+          4464
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0265": {
+        "entry": 4465,
+        "found": [
+          4465
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0266": {
+        "entry": 4466,
+        "found": [
+          4466
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0267": {
+        "entry": 4467,
+        "found": [
+          4467
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0268": {
+        "entry": 4468,
+        "found": [
+          4468
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0269": {
+        "entry": 4469,
+        "found": [
+          4469
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0270": {
+        "entry": 4470,
+        "found": [
+          4470
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0271": {
+        "entry": 4471,
+        "found": [
+          4471
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0272": {
+        "entry": 4472,
+        "found": [
+          4472
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0273": {
+        "entry": 4473,
+        "found": [
+          4473
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0274": {
+        "entry": 4474,
+        "found": [
+          4474
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0275": {
+        "entry": 4475,
+        "found": [
+          4475
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0276": {
+        "entry": 4476,
+        "found": [
+          4476
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0277": {
+        "entry": 4477,
+        "found": [
+          4477
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0278": {
+        "entry": 4478,
+        "found": [
+          4478
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0279": {
+        "entry": 4479,
+        "found": [
+          4479
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0280": {
+        "entry": 4480,
+        "found": [
+          4480
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0281": {
+        "entry": 4481,
+        "found": [
+          4481
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0282": {
+        "entry": 4482,
+        "found": [
+          4482
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0283": {
+        "entry": 4483,
+        "found": [
+          4483
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0284": {
+        "entry": 4484,
+        "found": [
+          4484
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0285": {
+        "entry": 4485,
+        "found": [
+          4485
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0286": {
+        "entry": 4486,
+        "found": [
+          4486
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0287": {
+        "entry": 4487,
+        "found": [
+          4487
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0288": {
+        "entry": 4488,
+        "found": [
+          4488
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0289": {
+        "entry": 4489,
+        "found": [
+          4489
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0290": {
+        "entry": 4490,
+        "found": [
+          4490
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0291": {
+        "entry": 4491,
+        "found": [
+          4491
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0292": {
+        "entry": 4492,
+        "found": [
+          4492
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0293": {
+        "entry": 4493,
+        "found": [
+          4493
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0294": {
+        "entry": 4494,
+        "found": [
+          4494
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0295": {
+        "entry": 4495,
+        "found": [
+          4495
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0296": {
+        "entry": 4496,
+        "found": [
+          4496
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0297": {
+        "entry": 4497,
+        "found": [
+          4497
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0298": {
+        "entry": 4498,
+        "found": [
+          4498
+        ],
+        "status": "linked",
+        "inner_links": 0
+      },
+      "e9n-0299": {
+        "entry": 4499,
+        "found": [
+          4499
+        ],
+        "status": "linked",
+        "inner_links": 0
+      }
+    },
+    "info": {
+      "new_entries": [
+        4200,
+        4500
+      ],
+      "fit_entries": 2845,
+      "mean_row_norm": 2.7674264907836914,
+      "none_coverage": 1.0,
+      "mean_row_coverage": 1.0
+    },
+    "summary": {
+      "concepts": 300,
+      "linked_concepts": 300,
+      "status_counts": {
+        "linked": 300
+      },
+      "inner_links": 0,
+      "sources": {
+        "own": {
+          "property": {
+            "mean": 0.19784172661870503,
+            "n": 1529
+          },
+          "property_new": {
+            "mean": 0.20056956875508544,
+            "n": 1229
+          },
+          "property_category": {
+            "mean": 0.18666666666666668,
+            "n": 300
+          },
+          "entailment": {
+            "mean": 0.5,
+            "n": 600
+          },
+          "paraphrase": {
+            "mean": 0.3368214519293656,
+            "n": 1529
+          },
+          "statement_accuracy": {
+            "mean": 0.2145192936559843,
+            "n": 1529
+          },
+          "statement_margin": {
+            "mean": -1.0627566252824217,
+            "n": 1529
+          },
+          "statement_loss": {
+            "mean": 4.634538920723329,
+            "n": 1529
+          }
+        },
+        "none": {
+          "property": {
+            "mean": 0.1906474820143885,
+            "n": 1529
+          },
+          "property_new": {
+            "mean": 0.19283970707892595,
+            "n": 1229
+          },
+          "property_category": {
+            "mean": 0.18166666666666667,
+            "n": 300
+          },
+          "entailment": {
+            "mean": 0.5166666666666667,
+            "n": 600
+          },
+          "paraphrase": {
+            "mean": 0.34139960758665794,
+            "n": 1529
+          },
+          "statement_accuracy": {
+            "mean": 0.2197514715500327,
+            "n": 1529
+          },
+          "statement_margin": {
+            "mean": -1.0405742205264457,
+            "n": 1529
+          },
+          "statement_loss": {
+            "mean": 4.6945979302106835,
+            "n": 1529
+          }
+        },
+        "mean_row": {
+          "property": {
+            "mean": 0.1945716154349248,
+            "n": 1529
+          },
+          "property_new": {
+            "mean": 0.20097640358014646,
+            "n": 1229
+          },
+          "property_category": {
+            "mean": 0.16833333333333333,
+            "n": 300
+          },
+          "entailment": {
+            "mean": 0.49166666666666664,
+            "n": 600
+          },
+          "paraphrase": {
+            "mean": 0.3342053629823414,
+            "n": 1529
+          },
+          "statement_accuracy": {
+            "mean": 0.2223675604970569,
+            "n": 1529
+          },
+          "statement_margin": {
+            "mean": -1.0650656421622058,
+            "n": 1529
+          },
+          "statement_loss": {
+            "mean": 4.640226508882392,
+            "n": 1529
+          }
+        },
+        "random_frame": {
+          "property": {
+            "mean": 0.19686069326357097,
+            "n": 1529
+          },
+          "property_new": {
+            "mean": 0.20219690805532953,
+            "n": 1229
+          },
+          "property_category": {
+            "mean": 0.175,
+            "n": 300
+          },
+          "entailment": {
+            "mean": 0.51,
+            "n": 600
+          },
+          "paraphrase": {
+            "mean": 0.35055591890124266,
+            "n": 1529
+          },
+          "statement_accuracy": {
+            "mean": 0.2223675604970569,
+            "n": 1529
+          },
+          "statement_margin": {
+            "mean": -1.060732570461363,
+            "n": 1529
+          },
+          "statement_loss": {
+            "mean": 4.641744822929525,
+            "n": 1529
+          }
+        }
+      },
+      "comparisons": [
+        {
+          "test": "property",
+          "baseline": "none",
+          "difference": 0.007194244604316547,
+          "ci_low": -0.001962066710268149,
+          "ci_high": 0.016350555918901243,
+          "n": 1529,
+          "p_value": 0.13793103448275862,
+          "better": true,
+          "p_holm": 0.41379310344827586,
+          "significant": false
+        },
+        {
+          "test": "property",
+          "baseline": "mean_row",
+          "difference": 0.0032701111837802484,
+          "ci_low": -0.004578155657292348,
+          "ci_high": 0.01144538914323087,
+          "n": 1529,
+          "p_value": 0.4197901049475262,
+          "better": true,
+          "p_holm": 0.8395802098950524,
+          "significant": false
+        },
+        {
+          "test": "property",
+          "baseline": "random_frame",
+          "difference": 0.0009810333551340746,
+          "ci_low": -0.008183453237410071,
+          "ci_high": 0.009810333551340745,
+          "n": 1529,
+          "p_value": 0.863568215892054,
+          "better": true,
+          "p_holm": 0.863568215892054,
+          "significant": false
+        },
+        {
+          "test": "property_new",
+          "baseline": "none",
+          "difference": 0.007729861676159479,
+          "ci_low": -0.0016273393002441008,
+          "ci_high": 0.017493897477624084,
+          "n": 1229,
+          "p_value": 0.12693653173413294,
+          "better": true,
+          "p_holm": 0.3808095952023988,
+          "significant": false
+        },
+        {
+          "test": "property_new",
+          "baseline": "mean_row",
+          "difference": -0.0004068348250610252,
+          "ci_low": -0.009764035801464606,
+          "ci_high": 0.008136696501220505,
+          "n": 1229,
+          "p_value": 0.9265367316341829,
+          "better": false,
+          "p_holm": 1.0,
+          "significant": false
+        },
+        {
+          "test": "property_new",
+          "baseline": "random_frame",
+          "difference": -0.0016273393002441008,
+          "ci_low": -0.012205044751830757,
+          "ci_high": 0.008136696501220505,
+          "n": 1229,
+          "p_value": 0.7526236881559221,
+          "better": false,
+          "p_holm": 1.0,
+          "significant": false
+        },
+        {
+          "test": "property_category",
+          "baseline": "none",
+          "difference": 0.005,
+          "ci_low": -0.02,
+          "ci_high": 0.028333333333333332,
+          "n": 300,
+          "p_value": 0.7016491754122939,
+          "better": true,
+          "p_holm": 0.7136431784107946,
+          "significant": false
+        },
+        {
+          "test": "property_category",
+          "baseline": "mean_row",
+          "difference": 0.018333333333333333,
+          "ci_low": 0.0,
+          "ci_high": 0.03833333333333333,
+          "n": 300,
+          "p_value": 0.07296351824087956,
+          "better": true,
+          "p_holm": 0.21889055472263869,
+          "significant": false
+        },
+        {
+          "test": "property_category",
+          "baseline": "random_frame",
+          "difference": 0.011666666666666667,
+          "ci_low": -0.011666666666666667,
+          "ci_high": 0.03666666666666667,
+          "n": 300,
+          "p_value": 0.3568215892053973,
+          "better": true,
+          "p_holm": 0.7136431784107946,
+          "significant": false
+        },
+        {
+          "test": "entailment",
+          "baseline": "none",
+          "difference": -0.016666666666666666,
+          "ci_low": -0.04,
+          "ci_high": 0.006666666666666667,
+          "n": 600,
+          "p_value": 0.20889555222388806,
+          "better": false,
+          "p_holm": 0.6266866566716642,
+          "significant": false
+        },
+        {
+          "test": "entailment",
+          "baseline": "mean_row",
+          "difference": 0.008333333333333333,
+          "ci_low": -0.011666666666666667,
+          "ci_high": 0.03,
+          "n": 600,
+          "p_value": 0.4847576211894053,
+          "better": true,
+          "p_holm": 0.9155422288855573,
+          "significant": false
+        },
+        {
+          "test": "entailment",
+          "baseline": "random_frame",
+          "difference": -0.01,
+          "ci_low": -0.03333333333333333,
+          "ci_high": 0.011666666666666667,
+          "n": 600,
+          "p_value": 0.4577711144427786,
+          "better": false,
+          "p_holm": 0.9155422288855573,
+          "significant": false
+        },
+        {
+          "test": "paraphrase",
+          "baseline": "none",
+          "difference": -0.004578155657292348,
+          "ci_low": -0.02354480052321779,
+          "ci_high": 0.014388489208633094,
+          "n": 1529,
+          "p_value": 0.6966516741629185,
+          "better": false,
+          "p_holm": 1.0,
+          "significant": false
+        },
+        {
+          "test": "paraphrase",
+          "baseline": "mean_row",
+          "difference": 0.002616088947024199,
+          "ci_low": -0.014388489208633094,
+          "ci_high": 0.01962066710268149,
+          "n": 1529,
+          "p_value": 0.7856071964017991,
+          "better": true,
+          "p_holm": 1.0,
+          "significant": false
+        },
+        {
+          "test": "paraphrase",
+          "baseline": "random_frame",
+          "difference": -0.013734466971877043,
+          "ci_low": -0.032047089601046436,
+          "ci_high": 0.00524852844996721,
+          "n": 1529,
+          "p_value": 0.17091454272863568,
+          "better": false,
+          "p_holm": 0.512743628185907,
+          "significant": false
+        },
+        {
+          "test": "statement_accuracy",
+          "baseline": "none",
+          "difference": -0.005232177894048398,
+          "ci_low": -0.015058862001308043,
+          "ci_high": 0.004578155657292348,
+          "n": 1529,
+          "p_value": 0.367816091954023,
+          "better": false,
+          "p_holm": 0.37181409295352325,
+          "significant": false
+        },
+        {
+          "test": "statement_accuracy",
+          "baseline": "mean_row",
+          "difference": -0.007848266841072597,
+          "ci_low": -0.01765860039241334,
+          "ci_high": 0.001962066710268149,
+          "n": 1529,
+          "p_value": 0.12393803098450774,
+          "better": false,
+          "p_holm": 0.37181409295352325,
+          "significant": false
+        },
+        {
+          "test": "statement_accuracy",
+          "baseline": "random_frame",
+          "difference": -0.007848266841072597,
+          "ci_low": -0.01831262262916939,
+          "ci_high": 0.002616088947024199,
+          "n": 1529,
+          "p_value": 0.1619190404797601,
+          "better": false,
+          "p_holm": 0.37181409295352325,
+          "significant": false
+        },
+        {
+          "test": "statement_margin",
+          "baseline": "none",
+          "difference": -0.022182404755975958,
+          "ci_low": -0.04122354949849313,
+          "ci_high": -0.0024802959698279133,
+          "n": 1529,
+          "p_value": 0.025987006496751622,
+          "better": false,
+          "p_holm": 0.07796101949025487,
+          "significant": false
+        },
+        {
+          "test": "statement_margin",
+          "baseline": "mean_row",
+          "difference": 0.0023090168797841077,
+          "ci_low": -0.01165003028453504,
+          "ci_high": 0.016635547830504988,
+          "n": 1529,
+          "p_value": 0.7496251874062968,
+          "better": true,
+          "p_holm": 1.0,
+          "significant": false
+        },
+        {
+          "test": "statement_margin",
+          "baseline": "random_frame",
+          "difference": -0.0020240548210586876,
+          "ci_low": -0.021792232401629554,
+          "ci_high": 0.016137148738688913,
+          "n": 1529,
+          "p_value": 0.8425787106446777,
+          "better": false,
+          "p_holm": 1.0,
+          "significant": false
+        },
+        {
+          "test": "statement_loss",
+          "baseline": "none",
+          "difference": -0.0600590094873544,
+          "ci_low": -0.0830196860089169,
+          "ci_high": -0.04029169320594622,
+          "n": 1529,
+          "p_value": 0.0009995002498750624,
+          "better": true,
+          "p_holm": 0.0029985007496251873,
+          "significant": true
+        },
+        {
+          "test": "statement_loss",
+          "baseline": "mean_row",
+          "difference": -0.005687588159062811,
+          "ci_low": -0.019940434039108612,
+          "ci_high": 0.008373488375225986,
+          "n": 1529,
+          "p_value": 0.44377811094452774,
+          "better": true,
+          "p_holm": 0.8875562218890555,
+          "significant": false
+        },
+        {
+          "test": "statement_loss",
+          "baseline": "random_frame",
+          "difference": -0.007205902206195399,
+          "ci_low": -0.02679027900613504,
+          "ci_high": 0.012217109593423736,
+          "n": 1529,
+          "p_value": 0.45577211394302847,
+          "better": true,
+          "p_holm": 0.8875562218890555,
+          "significant": false
+        }
+      ],
+      "chance": {
+        "property": 0.2,
+        "entailment": 0.5
+      }
+    },
+    "seconds": 80.66703688399866
+  }
+}

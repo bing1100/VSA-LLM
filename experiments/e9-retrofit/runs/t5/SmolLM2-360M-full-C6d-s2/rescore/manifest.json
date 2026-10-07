@@ -1,0 +1,38 @@
+{
+  "schema_version": 2,
+  "created_at": "2026-10-07T19:45:08.975086+00:00",
+  "git_sha": "76831d0949d7d7791da8ace490042a3126d23b7c",
+  "git_dirty": false,
+  "git_state_recorded_at": "run start",
+  "python": "3.12.4",
+  "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+  "packages": {
+    "torch": "2.11.0+cu128",
+    "transformers": "4.54.0",
+    "nltk": "3.8.1",
+    "PyYAML": "6.0.2",
+    "numpy": "2.2.6",
+    "safetensors": "0.5.3",
+    "vsa-embed": "0.1.0.dev0"
+  },
+  "device": "cuda",
+  "cuda_device": "NVIDIA GeForce RTX 3090",
+  "torch_num_threads": 6,
+  "argv": [
+    "/home/bhux/workplace/VSA-LLM/src/vsa_embed/experiments/e9_rescore.py",
+    "score",
+    "--run",
+    "experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C6d-s2",
+    "--variants",
+    "ref",
+    "int4-A",
+    "--output",
+    "experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C6d-s2/rescore",
+    "--resume"
+  ],
+  "config_sha256": "52747abd2fcdbd52539aa82ab791deb9368f88bb5ebac1f69d396f5f38c1c868",
+  "variants": [
+    "int4-A",
+    "ref"
+  ]
+}

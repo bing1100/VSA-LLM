@@ -1,0 +1,17 @@
+run: experiments/e9-retrofit/runs/t5/SmolLM2-135M-full-C2-s3
+variants:
+- ref
+- ref-off
+- int4-A
+- int4-A-off
+- int4-A-emb
+- int4-hqq
+- int4-nf4
+- int4-gptq
+- int4-awq
+fillers: /home/bhux/data/vsa-llm/e9/filler-tables/t5-smollm2.pt
+group_size: auto
+calibration_windows: 64
+calibration_corpus: train
+eval_batch: null
+device: cuda
