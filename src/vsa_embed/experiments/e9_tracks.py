@@ -12,7 +12,7 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
 - `t1c` — T1c clinical (decision 58): SNOMED CT International 2022-05-31 on MIMIC-III notes (`t1c_corpus`);
   evaluation on `eval-mimic` (held-out patients) with 2,048 windows. **Licensed**: its alias table, holdout
   list and dimension-3 items live under `~/data/vsa-llm/t1c/` (`TrackSpec.alias_table_dir`, `items_root`), never
-  in the repository; no WP-C7 zero-shot items.
+  in the repository; WP-C7-format zero-shot items on held-out terms (`t1c_corpus --stage zeroshot-items`).
 - `wordnet` — the C3 WordNet host corpus (the original E9 design).
 
 Host tokenizer families (WP-Qwen): every track is built for SmolLM2 (`data_root`) and, relinked with the same
@@ -207,7 +207,7 @@ TRACKS: dict[str, TrackSpec] = {
                      category_relations=("is_a",), kept_relations=("is_a", "hierarchy", "semantic_tag"),
                      edit_relations=("finding_site", "causative_agent", "associated_morphology"),
                      family_roots={"qwen3": QWEN3_ROOTS["t1c"]}, alias_table_dir=DATA / "t1c/e9",
-                     items_root=DATA / "t1c/items", licensed=True),
+                     items_root=DATA / "t1c/items", items_dir=DATA / "t1c/items/zeroshot-t1c-v1", licensed=True),
     "wordnet": TrackSpec("wordnet", "WordNet general (C3)", DATA / "c3/wordnet-smollm2-v1", general_split=None,
                          category_relations=edit.CATEGORY_RELATIONS, kept_relations=tuple(sorted(edit.KEPT_RELATIONS)),
                          edit_relations=edit.CATEGORY_RELATIONS, family_roots={"qwen3": QWEN3_ROOTS["wordnet"], "qwen3_5": QWEN35_ROOTS["wordnet"]}),

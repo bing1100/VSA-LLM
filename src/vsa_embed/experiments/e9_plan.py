@@ -705,11 +705,12 @@ def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, qu
 # Measured training minutes per 50M-token E9 run on the RTX 3090 shared with the queue (execution.md, WP-PQ1 "Measured
 # costs": SmolLM2-360M 67–68 min, -135M 31 min); other hosts use the 6N model or the memory probe.
 MEASURED_TRAINING_MINUTES = {"SmolLM2-360M": 67.0, "SmolLM2-135M": 31.0}
-# Minutes of one evaluation job on SmolLM2-360M (WP-PQ1 measurements and decision 41: probes ≈ 6 min on 135M, ≈ 2.5× on
-# 360M, INT4 slower; zero-shot + editing ≈ 3 min at bf16; e4_quant ≈ 4 evaluation passes per run and variant; report
-# ≈ 22 min); 135M takes ≈ 0.45× (the trainer's ratio), other hosts scale with parameters.
-EVAL_MINUTES_360M = {"probes": 15.0, "probes-int4": 20.0, "zeroshot": 1.5, "zeroshot-int4": 3.0, "edit": 1.5, "edit-int4": 3.0,
-                     "rescore": 3.0, "quant": 12.0, "report": 22.0, "eval_only": 2.0}
+# Minutes of one evaluation job on SmolLM2-360M, measured on the T1-open seed-1 block (2,048 windows; `probes*.json`
+# timing, `quant/t1` per-run file times): probes 2.0 (bf16) / 3.8 (INT4); e4_quant per run 4 (P0, C0′) / 7.2 (C2, C5,
+# with variant B); WP-PQ1: zero-shot + editing ≈ 3 min at bf16, the R9 report ≈ 22 min. SmolLM2-135M takes ≈ 0.55×
+# (measured 1.3–2.4 min probes, 2–3.8 min quant); other hosts scale with parameters.
+EVAL_MINUTES_360M = {"probes": 2.0, "probes-int4": 3.8, "zeroshot": 1.5, "zeroshot-int4": 3.0, "edit": 1.5, "edit-int4": 3.0,
+                     "rescore": 3.0, "quant_base": 4.0, "quant_channel": 7.2, "report": 22.0, "eval_only": 2.0}
 
 
 def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict[str, Any]] | None = None) -> float:
@@ -727,8 +728,13 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
         return estimate_hours(host, tokens) if host in HOST_PARAMETERS else float("nan")
     host = next((h for h in HOST_PARAMETERS if h in name), "SmolLM2-360M")
     if module == "vsa_embed.experiments.e4_quant":
-        runs = command.index("--output") - command.index("--runs") - 1
-        return EVAL_MINUTES_360M["quant"] * runs / 60
+        runs = command[command.index("--runs") + 1:command.index("--output")]
+        minutes = 0.0
+        for run in runs:
+            model = stem_model(Path(run).name)
+            run_host = next((h for h in HOST_PARAMETERS if Path(run).name.startswith(h + "-")), "SmolLM2-360M")
+            minutes += EVAL_MINUTES_360M["quant_base" if model in {"P0", "C0p"} else "quant_channel"] * _host_scale(run_host)
+        return minutes / 60
     if module == "vsa_embed.experiments.e9_report":
         return EVAL_MINUTES_360M["report"] / 60
     suffix = name.rsplit("-s", 1)[-1].split("-", 1)[-1] if "-s" in name else ""
@@ -737,8 +743,8 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
 
 def _host_scale(host: str) -> float:
     if host == "SmolLM2-135M":
-        return 0.45
-    return max(0.45, HOST_PARAMETERS.get(host, HOST_PARAMETERS["SmolLM2-360M"]) / HOST_PARAMETERS["SmolLM2-360M"])
+        return 0.55
+    return max(0.55, HOST_PARAMETERS.get(host, HOST_PARAMETERS["SmolLM2-360M"]) / HOST_PARAMETERS["SmolLM2-360M"])
 
 
 def describe_plan(paths: list[Path], plans: dict[str, dict[str, Any]]) -> list[str]:

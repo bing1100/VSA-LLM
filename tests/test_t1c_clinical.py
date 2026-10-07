@@ -280,7 +280,7 @@ def test_t1c_track_registration_keeps_licensed_paths_outside_the_repo() -> None:
     spec = e9_tracks.track_spec("t1c")
     assert spec.licensed and spec.eval_split == "eval-mimic" and spec.windows == 2048
     repo = Path.cwd().resolve()
-    for path in (spec.data_root, spec.holdout_names, spec.alias_table_path, *e9_plan.dimension3_items("t1c")):
+    for path in (spec.data_root, spec.holdout_names, spec.alias_table_path, spec.items_dir, *e9_plan.dimension3_items("t1c")):
         assert not Path(path).resolve().is_relative_to(repo), path
     qwen = e9_tracks.track_spec("t1c", "qwen3")
     assert qwen.data_root == spec.data_root / "hosts" / "qwen3" and qwen.alias_table_path == spec.alias_table_path
@@ -311,3 +311,56 @@ def test_source_shares_stay_exact_when_documents_are_skipped(tmp_path: Path) -> 
     assert shares["exact"]
     assert shares["tokens"] == {"mimic": lengths[0] + lengths[3], "general": lengths[2]}
     assert shares["documents"] == {"mimic": 2, "general": 1}
+
+
+def test_zeroshot_concepts_use_own_aliases_and_track_fillers(snomed_release: Path) -> None:
+    from vsa_embed.experiments.e9_tracks import T1C_TEMPLATES
+    from vsa_embed.experiments.t1c_corpus import zeroshot_concepts
+    from vsa_embed.tracks.common import choice_items, entailment_items
+    onto = S.build_snomed_ontology(snomed_release, hierarchies=("clinical_finding", "body_structure", "organism"),
+                                   max_atomics=64, max_degree=16, min_relation_edges=1)
+    concepts, pools = zeroshot_concepts(onto, {"1002", "1008"}, templates=T1C_TEMPLATES)
+    by_id = {c["concept"]: c for c in concepts}
+    assert set(by_id) == {"1002"}                         # 1008 has no alias of its own
+    assert by_id["1002"]["surface"] == "Left zorbic disorder" and by_id["1002"]["split"] == "heldout"
+    assert by_id["1002"]["facts"] == {"is_a": ["Zorbic disorder"], "finding_site": ["Left plinth structure"]}
+    assert pools["finding_site"] == {"Plinth structure", "Left plinth structure"}
+    items = choice_items(concepts, T1C_TEMPLATES, {r: sorted(v) for r, v in pools.items()}, track="t1c", task="p", seed=0,
+                         choices=2)
+    assert items and all(i["surface"] in i["prompt"] for i in items)
+    statements = entailment_items(concepts, T1C_TEMPLATES, {r: sorted(v) for r, v in pools.items()}, track="t1c", task="e", seed=0)
+    labels = Counter(i["label"] for i in statements)
+    assert labels[0] == labels[1] >= 1
+
+
+def test_e9_plan_dry_run_plans_t1c_without_touching_the_queue(tmp_path: Path) -> None:
+    import torch
+    from vsa_embed.experiments import e9_plan, e9_tracks
+    torch.save({"entry_count": 295000, "atomic_count": 8192, "relation_count": 62}, tmp_path / "counts.pt")
+    paths = e9_plan.write_stage("t1c", hosts=["SmolLM2-360M", "SmolLM2-135M"], models=["P0", "C0p", "C2", "C5"], seeds=[1, 2],
+                                track="t1c", data_root=tmp_path / "data", counts_ontology=tmp_path / "counts.pt", root=tmp_path / "e9")
+    configs = {p.stem: __import__("yaml").safe_load(p.read_text()) for p in paths}
+    assert len(paths) == 2 * (1 + 3 * 2)
+    c5 = configs["SmolLM2-360M-full-C5-s1"]
+    assert c5["eval"]["windows"] == 2048 and c5["data"]["eval"].endswith("eval-mimic") and c5["e9_track"] == "t1c"
+    queue = tmp_path / "jobs"
+    planned: list = []
+    names = e9_plan.queue_jobs(paths, "t1c", 62, track="t1c", root=tmp_path / "e9", queue_dir=queue, plan=planned)
+    assert not queue.exists() and len(names) == len(planned)
+    by_name = {n: (level, command) for n, level, command in planned}
+    level, command = by_name["t1c-SmolLM2-360M-full-C5-s1-edit"]
+    assert level == 63 and str(e9_plan.dimension3_items("t1c")[0]) in command
+    hours = {n: e9_plan.job_estimate_hours(n, c, configs={str(p): configs[p.stem] for p in paths}) for n, _, c in planned}
+    assert abs(hours["t1c-SmolLM2-360M-full-C5-s1"] - 67 / 60) < 1e-6 and abs(hours["t1c-SmolLM2-135M-full-C0p-s2"] - 31 / 60) < 1e-6
+    assert hours["t1c-SmolLM2-360M-frozen-P0-s1"] < 0.1 and all(h > 0 for h in hours.values())
+    assert by_name["t1c-quant-s1-2"][0] == 64 and by_name["t1c-report-s1-2"][0] == 65
+
+
+def test_rrf_lines_join_lines_split_across_gzip_parts(tmp_path: Path) -> None:
+    from vsa_embed.experiments.t1c_corpus import rrf_lines
+    text = "C1|ENG|a|\nC2|ENG|bb|\nC3|ENG|ccc|\n"
+    cut = text.index("bb") + 1                      # the split falls inside the second line
+    for name, part in (("X.RRF.aa.gz", text[:cut]), ("X.RRF.ab.gz", text[cut:])):
+        with gzip.open(tmp_path / name, "wt") as handle:
+            handle.write(part)
+    assert list(rrf_lines(sorted(tmp_path.glob("X.RRF.*gz")))) == ["C1|ENG|a|", "C2|ENG|bb|", "C3|ENG|ccc|"]

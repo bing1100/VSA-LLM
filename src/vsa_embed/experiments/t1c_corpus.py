@@ -28,6 +28,8 @@ Stages (`--stage`):
      configured host relink (`hosts`: the Qwen3 tokenizer under `data_root/hosts/qwen3`, same holdout);
   5. `ontology.pt`, cardinality per source and tokenizer, feasibility per stratum (held-out, unseen, rare,
      3+-subtoken) on `eval-mimic`, report.
+- `zeroshot-items`: WP-C7-format zero-shot items on held-out terms (`zeroshot_property.jsonl`,
+  `zeroshot_entailment.jsonl`; `e9_tracks zeroshot`), written to `--output` under the data root (licensed).
 - `definitions`: how many concepts have a text definition (SNOMED `sct2_TextDefinition`, UMLS `MRDEF` through the
   SNOMED CT US atoms of `MRCONSO`), overall, among the track's concepts and among the held-out concepts (counts only).
 
@@ -231,6 +233,15 @@ def feasibility_by_stratum(corpus_dir: Path, *, heldout_entries: list[int], freq
 
 # -- stages -----------------------------------------------------------------------------------------------------
 
+def sanitize_manifests(corpora: dict[str, Any]) -> dict[str, Any]:
+    """Committed summaries keep corpus counts only: the per-document positions of skipped notes
+    (`skipped_document_indices`, needed only for exact source shares) stay in the data root's manifests."""
+    for info in corpora.values():
+        for manifest in (info.get("corpora") or {}).values():
+            manifest.pop("skipped_document_indices", None)
+    return corpora
+
+
 def run_inventory(config: dict[str, Any], output_dir: Path, *, rows: bool = True) -> dict[str, Any]:
     from vsa_embed.data.clinical_inventory import DEFAULT_GROUPS, inventory
     git_at_start = prepare_output_dir(output_dir) if not (output_dir / "resolved_config.yaml").exists() else None
@@ -384,10 +395,29 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "alias_table_sha256": full.digest(), "data_root": str(data_root),
     }
     summary["notes"].pop("source", None)
+    sanitize_manifests(summary["corpora"])
+    summary["presample"].pop("skipped_document_indices", None)
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str) + "\n")
     (output_dir / "report.md").write_text(render_report(summary, by_source, feasibility, criteria))
     write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", track=TRACK_LABEL)
     return summary
+
+
+def rrf_lines(paths: list[Path]) -> Iterator[str]:
+    """Lines of a UMLS file shipped as consecutive gzip parts (`MRCONSO.RRF.aa.gz`, `.ab.gz`, …): the split falls
+    inside a line, so a part's unterminated tail is joined with the next part's head."""
+    carry = ""
+    for path in paths:
+        with gzip.open(path, "rt", encoding="utf-8", newline="") as handle:
+            for line in handle:
+                if carry:
+                    line, carry = carry + line, ""
+                if line.endswith("\n"):
+                    yield line.rstrip("\r\n")
+                else:
+                    carry = line
+    if carry:
+        yield carry
 
 
 def run_definitions(config: dict[str, Any], output_dir: Path, *, umls: bool = True) -> dict[str, Any]:
@@ -409,32 +439,110 @@ def run_definitions(config: dict[str, Any], output_dir: Path, *, umls: bool = Tr
     if umls and meta:
         meta = Path(meta).expanduser()
         cui_of: dict[str, set[str]] = {}
-        for path in sorted(meta.glob("MRCONSO.RRF.*gz")):
-            with gzip.open(path, "rt", encoding="utf-8") as handle:
-                for line in handle:
-                    f = line.split("|")
-                    if f[11] == "SNOMEDCT_US" and f[13] in track:
-                        cui_of.setdefault(f[13], set()).add(f[0])
-        defined_cuis: Counter[str] = Counter()
+        for line in rrf_lines(sorted(meta.glob("MRCONSO.RRF.*gz"))):
+            f = line.split("|")
+            if len(f) > 13 and f[11] == "SNOMEDCT_US" and f[13] in track:
+                cui_of.setdefault(f[13], set()).add(f[0])
+        # Source languages (MRSAB: RSAB, LAT; current versions): a local English reader can use English definitions only.
+        language: dict[str, str] = {}
+        for line in rrf_lines(sorted(meta.glob("MRSAB.RRF*gz"))):
+            f = line.split("|")
+            if len(f) > 21 and f[21] == "Y":
+                language[f[3]] = f[19]
         sources: dict[str, set[str]] = {}
-        with gzip.open(meta / "MRDEF.RRF.gz", "rt", encoding="utf-8") as handle:
-            for line in handle:
-                f = line.split("|")
-                if f[6] in ("O", "E", "Y"):            # suppressed definitions are not used
-                    continue
-                defined_cuis[f[0]] += 1
-                sources.setdefault(f[0], set()).add(f[4])
-        defined = {c for c, cuis in cui_of.items() if any(defined_cuis[u] for u in cuis)}
+        for line in rrf_lines([meta / "MRDEF.RRF.gz"]):
+            f = line.split("|")                        # CUI|AUI|ATUI|SATUI|SAB|DEF|SUPPRESS|CVF|
+            if len(f) < 8 or f[-3] in ("O", "E", "Y"):  # suppressed definitions are not used (DEF may hold "|")
+                continue
+            sources.setdefault(f[0], set()).add(f[4])
+        english = {u for u, sabs in sources.items() if any(language.get(s) == "ENG" for s in sabs)}
+        any_language = set(sources)
+        defined = {c for c, cuis in cui_of.items() if cuis & any_language}
+        defined_en = {c for c, cuis in cui_of.items() if cuis & english}
         source_counts: Counter[str] = Counter()
-        for c in defined:
-            source_counts.update({s for u in cui_of[c] for s in sources.get(u, ())})
-        result["umls_mrdef"] = {"track_concepts_with_cui": len(cui_of), "defined_track": len(defined),
-                                "defined_heldout": len(defined & held), "either_track": len(defined | (snomed_defined & track)),
-                                "either_heldout": len((defined | snomed_defined) & held),
-                                "definition_sources_top": dict(source_counts.most_common(12))}
+        for c in defined_en:
+            source_counts.update({s for u in cui_of[c] for s in sources.get(u, ()) if language.get(s) == "ENG"})
+        result["umls_mrdef"] = {"track_concepts_with_cui": len(cui_of), "defined_track_any_language": len(defined),
+                                "defined_track_english": len(defined_en), "defined_heldout_english": len(defined_en & held),
+                                "defined_heldout_any_language": len(defined & held),
+                                "english_or_snomed_track": len(defined_en | (snomed_defined & track)),
+                                "english_or_snomed_heldout": len((defined_en | snomed_defined) & held),
+                                "english_definition_sources_top": dict(source_counts.most_common(12))}
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "definitions.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
+
+
+# -- track zero-shot items (held-out terms) ----------------------------------------------------------------------
+
+def zeroshot_concepts(ontology: FrameOntology, heldout_names: set[str], *, templates: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, set[str]]]:
+    """Held-out concepts as WP-C7 item sources: `surface` = the preferred term when it is one of the concept's own
+    aliases (else its shortest alias), only when that alias names no other concept (so it links to the concept's own
+    entry); `facts` = templated relation → readable filler names (fillers that are track concepts). Also the
+    per-relation filler pools over every concept (distractors)."""
+    from vsa_embed.span_channel import normalize_alias
+    meta = ontology.metadata
+    heading = dict(zip(ontology.concept_names, meta["headings"]))
+    owners: dict[str, set[int]] = {}
+    for alias, concept in ontology.alias_pairs:
+        owners.setdefault(normalize_alias(alias), set()).add(concept)
+    aliases: dict[int, list[str]] = {}
+    for alias, concept in ontology.alias_pairs:
+        aliases.setdefault(concept, []).append(alias)
+    pools: dict[str, set[str]] = {}
+    facts_of: dict[int, dict[str, list[str]]] = {}
+    for index, frame in enumerate(ontology.frames):
+        facts: dict[str, list[str]] = {}
+        for r, a in frame:
+            relation, atom = ontology.relation_names[r], ontology.atomic_names[a]
+            kind, _, value = atom.partition(":")
+            if relation in templates and kind == "sct" and value in heading:
+                facts.setdefault(relation, []).append(heading[value])
+                pools.setdefault(relation, set()).add(heading[value])
+        facts_of[index] = facts
+    concepts = []
+    for index, name in enumerate(ontology.concept_names):
+        if name not in heldout_names or not facts_of[index]:
+            continue
+        own = [a for a in aliases.get(index, []) if owners[normalize_alias(a)] == {index}]
+        if not own:
+            continue
+        preferred = [a for a in own if normalize_alias(a) == normalize_alias(heading[name])]
+        surface = preferred[0] if preferred else min(own, key=lambda a: (len(a.split()), a))
+        concepts.append({"concept": name, "surface": surface, "split": "heldout", "facts": facts_of[index]})
+    return concepts, pools
+
+
+def build_zeroshot_items(config: dict[str, Any], out_dir: Path, *, seed: int = 0, max_concepts: int = 600,
+                         max_relations: int = 2) -> dict[str, Any]:
+    """WP-C7-format zero-shot items (`zeroshot_property.jsonl`, `zeroshot_entailment.jsonl`) on held-out T1c terms:
+    a seeded sample of `max_concepts` held-out concepts, at most `max_relations` templated relations each, 4 choices
+    (2 paraphrases from `e9_tracks.T1C_TEMPLATES`) and one true / one corrupted statement. Licensed: written under
+    `out_dir` (outside the repository); returns counts and file digests only."""
+    import random
+    from vsa_embed.experiments.e9_tracks import T1C_TEMPLATES
+    from vsa_embed.tracks.common import choice_items, entailment_items, write_jsonl
+    data_root = Path(config["paths"]["data_root"]).expanduser()
+    held = set((data_root / "holdout_concepts.txt").read_text().split())
+    ontology = build_track_ontology(config["ontology"])
+    concepts, pools = zeroshot_concepts(ontology, held, templates=T1C_TEMPLATES)
+    rng = random.Random(seed)
+    chosen = sorted(rng.sample(concepts, min(max_concepts, len(concepts))), key=lambda c: c["concept"])
+    pool_lists = {r: sorted(v) for r, v in pools.items()}
+    properties = choice_items(chosen, T1C_TEMPLATES, pool_lists, track="t1c", task="zeroshot_property", seed=seed,
+                              max_relations=max_relations)
+    statements = entailment_items(chosen, T1C_TEMPLATES, pool_lists, track="t1c", task="zeroshot_entailment", seed=seed,
+                                  max_relations=max_relations)
+    out_dir = _private_dir(Path(out_dir))
+    files = {"zeroshot_property.jsonl": write_jsonl(out_dir / "zeroshot_property.jsonl", properties),
+             "zeroshot_entailment.jsonl": write_jsonl(out_dir / "zeroshot_entailment.jsonl", statements)}
+    relations = Counter(i["relation"] for i in properties if i["paraphrase"] == 0)
+    manifest = {"track": "t1c", "eligible_heldout_concepts": len(concepts), "concepts": len(chosen), "seed": seed,
+                "max_relations": max_relations, "property_groups": sum(relations.values()),
+                "property_rows": len(properties), "entailment_rows": len(statements),
+                "relations": dict(sorted(relations.items())), "files": files}
+    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    return manifest
 
 
 # -- report -----------------------------------------------------------------------------------------------------
@@ -511,7 +619,7 @@ def render_report(summary: dict[str, Any], by_source: dict[str, dict[str, Any]],
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--stage", choices=("inventory", "extract", "build", "definitions"), default="build")
+    parser.add_argument("--stage", choices=("inventory", "extract", "build", "definitions", "zeroshot-items"), default="build")
     parser.add_argument("--output", type=Path, help="run folder (inventory, build, definitions)")
     parser.add_argument("--no-rows", action="store_true", help="inventory without line counts")
     args = parser.parse_args(argv)
@@ -524,6 +632,8 @@ def main(argv: list[str] | None = None) -> None:
         parser.error(f"--output is required for --stage {args.stage}")
     if args.stage == "inventory":
         print(json.dumps(run_inventory(config, args.output, rows=not args.no_rows), indent=2))
+    elif args.stage == "zeroshot-items":
+        print(json.dumps(build_zeroshot_items(config, args.output), indent=2))
     elif args.stage == "definitions":
         print(json.dumps(run_definitions(config, args.output), indent=2))
     else:
