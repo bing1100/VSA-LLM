@@ -688,17 +688,24 @@ The GPU timings were taken on a shared GPU and are qualitative. Training through
 - **T1-open (MeSH in PubMed, seed 1) is null** (all term strata within ±0.15%), and across T5, T4 and T1 the gain orders with the vocabulary's novelty to the host, measured as how much plain continued training lowers the loss after the terms (C0′ − P0: −74%, −40 to −56%, −5 to −8%; R9 "Across tracks"). `[[figure: channel gain vs novelty index per track and stratum]]`
 - **Caveat: the glossary text is generated from the same ontology** whose frames the embedding receives. The gain may partly be copying of the filler words that follow a term (the lexical-overlap confound of Onoe et al. 2023). T4/T1 natural text and a split of continuation tokens into filler-verbalizing and other tokens decide this `[[A-B5: lexical-overlap split; T4/T1]]`.
 
-Baselines that also give a held-out term a vector zero-shot, and that the claim must face (novelty check A-B1–A-B6; WP-PQ1 builds the trained arms):
+Baselines that also give a held-out term a vector zero-shot, and that the claim must face (novelty check A-B1–A-B6; WP-PQ1 trained arms, T5, SmolLM2-360M, 3 seeds; relative loss vs C0′, negative = better; all arm-vs-C5 differences on the term strata Holm-significant except untyped; R9 "T5 controls"):
 
-| Baseline | Held-out | Seen rare | 3+-subtoken | Locality | Extra context tokens |
+| Baseline | Held-out | Seen rare | 3+-subtoken | Locality (unlinked) | Extra context tokens |
 |---|---:|---:|---:|---:|---:|
-| new token, subtoken-mean initialization (FVT/Hewitt) | `[[A-B1]]` | | | | 0 |
-| new token, encoded-definition initialization (Token Distillation style) | `[[A-B1]]` | | | | 0 |
+| **composed embedding, C5 (HRR, attentive)** | **−13.3%** | **−6.0%** | **−7.6%** | −0.03% | 0 |
+| same-site subtoken-mean rows (FVT/Hewitt new-token initialization), C6m | +1.1% | +0.9% | −0.1% | +0.05% | 0 |
+| same-site vector from the verbalized frame (host encoder + projector), C6d | −2.8% | −3.4% | −3.9% | −0.05% | 0 |
+| same-site KGE (TransE) + MLP, C6g | +2.4% | −0.8% | −1.6% | +0.04% | 0 |
 | new token, type-only initialization (K-Tokeniser-like) | `[[A-B1]]` | | | | 0 |
-| same-site vector from the verbalized frame (host encoder + projector) or KGE + MLP | `[[A-B2/A-B4]]` | | | | 0 |
 | verbalized frame in context at first mention (ECBD/Onoe protocol) | `[[A-B3]]` | | | | `[[n]]` |
 | composed embedding + verbalized frame in context | `[[A-B3]]` | | | | `[[n]]` |
-| shuffled / equal-degree random / type-only frames; zero-vector gate; operator ablation | `[[A-B6]]` | | | | 0 |
+| shuffled frames (another term's frame), C5sh | +4.6% | +2.3% | +0.0% | +0.08% | 0 |
+| random fixed binding, C5rf | −8.5% | −5.8% | −6.6% | −0.04% | 0 |
+| untyped composition (fillers only), C5ut | −13.4% | −6.1% | −7.7% | −0.03% | 0 |
+| translation operator x + r, C5tr | −17.2% | −8.7% | −9.4% | +0.01% | 0 |
+
+- **Reading.** The frame's content is necessary (shuffled frames are worse than no channel) and composing it beats every same-site vector that carries the same or more information without composition (by 10.8–15.3% on held-out terms). The binding operator is not the source: untyped composition ties HRR and translation beats it, so by rule 7 the mechanism is compositional parameter sharing over ontology frames, with the operator as an ablation.
+- **Copy concern, quantified** (`e9_rescore`): 86–90% of the gain after rare and unseen terms is on tokens that verbalize a frame filler; after held-out terms two thirds of the gain is on other tokens (−19.4% there). On T4 natural text filler continuations are 1–10% of targets.
 
 Recommended wording once the controls are in (novelty check §2.6): "… lowers next-token loss after invented, contamination-free glossary terms by 3–13% relative to continued training without the channel. The largest reduction (9–13%) is after held-out terms … On seen rare terms it beats a capacity-matched free per-concept table by 7–8%. The host neutralizes the channel on vocabulary it already models, and unlinked text is unchanged." Add "and new-token initialization … and approaches in-context frames" only after A-B1–A-B4.
 
@@ -717,9 +724,9 @@ Recommended wording once the controls are in (novelty check §2.6): "… lowers 
 
 - **Reading.** The advantage on new and rare terms is largely preserved under INT4 but does not grow: only held-out terms at 135M grow (1.14×). The single-seed impression that it grows on every stratum at 135M did not replicate (rare 0.39×, multi-subtoken 0.93×). The all-token ratio above 1 comes from *unlinked* domain text, where the embedding is inactive: the C5-trained host weights are more INT4-robust in general (2–4 points less damage), which is not the embedding recovering rare words. Ratios divide two small differences and are shown only next to $\mathrm{DiD} = (L_{C0',\mathrm{INT4}} - L_{C5,\mathrm{INT4}}) - (L_{C0',\mathrm{FP}} - L_{C5,\mathrm{FP}})$ with paired window-bootstrap CIs (Holm within stratum).
 - **Why it is not a robustness claim.** Four-bit PTQ pulls fully fine-tuned weights back toward the original host because small fine-tuning deltas fall below the quantization step (Zhang et al. 2025), while updates held in a separate module survive (Abitante et al. 2026). That predicts this pattern for *any* separate module.
-- Controls before any stronger wording `[[B-B1: bit-matched unstructured side module (FP16 LoRA or free table at equal bytes; C2 at the channel's precision); B-B2: channel off at INT4; B-B3: GPTQ, AWQ, NF4 with generic and in-domain calibration, and a variant that quantizes the tied embedding; B-B4: delta norms vs the INT4 step]]`.
+- **Controls (T5, 360M, 3 seeds).** Held-out DiD by quantizer: RTN +0.049, HQQ +0.055, NF4 +0.033, AWQ +0.025, GPTQ −0.001 (n.s.: fully kept), RTN with the embedding quantized +0.043 nats. With the channel switched off at both precisions the held-out DiD vanishes (−0.001) while the all-token robustness of the C5-trained host remains (−0.012): that robustness belongs to the host weights, as the separate-module mechanism predicts. Still pending: `[[B-B1: bit-matched unstructured side module; B-B4: delta norms vs the INT4 step]]`.
 
-Recommended wording (revised after three seeds; the novelty check's §3.5 growth wording is withdrawn): "Under INT4 weight-only round-to-nearest PTQ (embeddings and output head unquantized), the channel's loss advantage on new and rare domain terms in fully fine-tuned SmolLM2 hosts is largely preserved, whether or not the channel itself is quantized." It stays out of the abstract until B-B1–B-B3 pass.
+Recommended wording (revised after three seeds; the novelty check's §3.5 growth wording is withdrawn): "Under INT4 weight-only round-to-nearest PTQ (embeddings and output head unquantized), the channel's loss advantage on new and rare domain terms in fully fine-tuned SmolLM2 hosts is largely preserved (fully under GPTQ), whether or not the channel itself is quantized." It stays out of the abstract (B-B1 pending; on natural text, T4, the gain is partly lost).
 
 **Dimension 3 — changing behaviour without weight updates by editing the ontology (claim C).** After training, new words and edits change only the alias table and the composer's frame schedule.
 - *New words:* 300 invented, contamination-free names whose frames are new combinations of existing atomics and relations (the construction of ALCUNA; Yin et al. 2023). Tests: property selection among 5 options (chance 0.20), entailment (chance 0.50), paraphrase consistency, and a statement test in held-out wordings.

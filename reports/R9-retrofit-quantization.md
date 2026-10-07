@@ -84,6 +84,59 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 
 T4 chemistry and T1-open (natural text with rare multi-token terms; running now), the WordNet negative control, Qwen3 seed 2, the PQ1 controls (channel off at INT4, GPTQ/AWQ/HQQ/NF4, quantized embeddings, the C5 arm variants, 3 seeds on T5 and T4), the Qwen3.5 block, and the dimension-3 knowledge-editing baselines.
 
+## T5 controls (WP-PQ1; SmolLM2-360M, 3 seeds, 2026-10-07)
+
+Full tables: `experiments/e9-retrofit/report/t5/report.md`, sections "WP-PQ1" (job `t5-report-s1-2-3-pq-SmolLM2-360M`). Same recipe, test set and parameters as C5; seeds 1–3 each; relative loss differences with 95% window bootstraps, Holm over arms within stratum.
+
+**What the composed vector needs (operator and specificity ablation).** C5 − arm on held-out / rare / unseen / 3+-subtoken terms (negative = C5 better), and each arm − C0′ on held-out terms:
+
+| Arm | C5 − arm | arm − C0′ (held-out) |
+|---|---|---|
+| C5rf: fixed random orthogonal binding | −5.2%* / −0.3%* / −0.3% / −1.1%* | −8.5% |
+| C5ut: untyped (fillers only, no binding) | +0.2% / +0.1% / +0.4% / +0.1%* (equal) | −13.4% |
+| C5tr: translation x + r | **+4.8%* / +2.9%* / +2.7%* / +2.1%*** (translation better) | **−17.2%** |
+| C5sh: shuffled frames (another term's frame) | **−17.0%* / −8.2%* / −8.9%* / −7.6%*** | **+4.6%** (worse than no channel) |
+
+- **The frame's content is necessary**: with another term's frame the channel is worse than none.
+- **Binding is not**: dropping relation roles costs nothing, a random fixed binding costs 5% on held-out terms, and plain translation beats HRR on every term stratum. By rule 7 (outline), E9 is described as compositional parameter sharing over ontology frames; "HRR" names one operator in the ablation, the best one here is translation. The from-scratch operator screen (decision 54) decides the same question for training from scratch.
+
+**Same-site baselines that also give an unseen term a vector without training on it** (frozen per-entry source vector through a trained projector, parameter-matched, same site and gate). C5 − arm on held-out / rare / unseen / 3+-subtoken, and arm − C0′ on held-out:
+
+| Arm | C5 − arm | arm − C0′ (held-out) |
+|---|---|---|
+| C6m: subtoken mean (FVT / Hewitt-style new-token initialization) | −14.2%* / −6.9%* / −7.4%* / −7.5%* | +1.1% (no help) |
+| C6d: definition encoder (the host encodes the verbalized frame) | −10.8%* / −2.8%* / −3.3%* / −3.8%* | −2.8% |
+| C6g: TransE KG embedding of the entry | −15.3%* / −5.3%* / −5.9%* / −6.1%* | +2.4% (no help) |
+
+The composed vector beats all three by wide margins (claim A's refutation reading "new-token initialization or a same-site frame-text vector matches the composed vector" is **not** triggered on T5). Encoding the same frame as text recovers only about a fifth of the gain.
+
+**Copy concern: filler vs non-filler continuation tokens** (`e9_rescore`; a filler target is a token in the 8 tokens after a term that belongs to an alias of a filler of that term's frame; 19–23% of targets). C5 − C0′:
+
+| After… | total | on filler tokens | on other tokens | share of the gain on fillers |
+|---|---|---|---|---|
+| held-out terms | −13.3% | −8.1%* | **−19.4%*** | 0.33 |
+| rare terms | −6.0% | −8.7%* | −2.1%* | 0.86 |
+| unseen terms | −6.6% | −9.0%* | −1.9% | 0.90 |
+| 3+-subtoken terms (≈ all linked) | −7.6% | −12.5%* | −3.5%* | 0.75 |
+
+- For rare and unseen terms **most of the gain (86–90%) is predicting the frame's filler words**: the copy effect the novelty check warned about. For held-out terms, whose rows come only from composition, two thirds of the gain is on other tokens (−19.4%), consistent with the composed row telling the model what kind of term follows (in T5's templated text, the type-specific continuation) rather than which filler word comes next.
+- Natural text has far fewer filler continuations (T4: 1–10% of targets vs 19–23% here), which fits T4's much smaller effect.
+
+**Claim-B controls (360M, C5 vs C0′; DiD = change of the C5 − C0′ gap from bf16 to 4-bit, positive = the advantage shrinks):**
+
+| Quantizer | held-out DiD | rare DiD | all-token DiD |
+|---|---|---|---|
+| RTN (torchao, group 128) | +0.049* | +0.012* | −0.005* |
+| HQQ | +0.055* | +0.026* | −0.003* |
+| NF4 | +0.033* | +0.004* | −0.002* |
+| GPTQ | **−0.001 (n.s.)** | −0.005* | +0.002* |
+| AWQ | +0.025* | +0.005* | −0.047* |
+| RTN with the input embedding quantized too | +0.043* | +0.009* | −0.009* |
+
+- With GPTQ the held-out advantage is fully kept; with the other quantizers 20–50% of it is lost. Variant B and a quantized embedding change little.
+- **Channel off at both precisions**: the held-out DiD disappears (−0.001, n.s.), so the held-out loss under RTN comes from the channel's contribution being read less well by the quantized host. The all-token robustness of the C5-trained host is a property of its weights (DiD with the channel off −0.012*), not of the channel at inference: the "separate module survives PTQ" mechanism, not a structure effect.
+- Claim B therefore stays at "the gain is largely preserved under 4-bit PTQ, fully under GPTQ", with the robustness on ordinary text attributed to the host weights.
+
 ## T4 chemistry — natural text (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
 Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entities (IUPAC and trivial names as multi-token aliases) in ChEBI entry texts and PubMed chemistry abstracts, half general text (FineWeb-Edu); same recipe, design and test protocol as T5. This is the test of the copy concern: T5 text is generated from the ontology the channel reads, T4 text is not (except the ChEBI entry texts, which are curated definitions). Seed 1 only; intervals are over windows/items.
