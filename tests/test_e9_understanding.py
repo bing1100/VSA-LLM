@@ -236,7 +236,7 @@ def test_score_run_replays_the_trainer_and_writes_terms(world, tmp_path) -> None
         record = fb.score_run(world["runs"][name], tmp_path / name, variants=["ref", "ref-off"], fillers=world["fillers"],
                               exclusions=world["exclusions"], device="cpu")
         check = record["ref_check"]
-        assert check["paired"] and check["counts_equal"] and check["max_abs_window_sum_diff"] == 0.0
+        assert check["paired"] and check["counts_equal"] and check["max_abs_window_sum_diff"] == 0.0 and check["replay_ok"]
         assert all(v["nested"] for v in record["variants"].values())
     c5, c0 = fb.load_scores(tmp_path / "C5"), fb.load_scores(tmp_path / "C0p")
     assert sorted(c5["sums"]) == ["ref", "ref-off"] and sorted(c0["sums"]) == ["ref"]
@@ -256,6 +256,20 @@ def test_score_run_replays_the_trainer_and_writes_terms(world, tmp_path) -> None
     again = fb.score_run(world["runs"]["C0p"], tmp_path / "C0p", fillers=world["fillers"], exclusions=world["exclusions"], device="cpu",
                          resume=True)
     assert sorted(again["variants"]) == ["ref"] and (tmp_path / "C0p" / "manifest.json").exists()
+
+
+def test_replay_verdict_tolerates_only_the_composer(tmp_path) -> None:
+    strata = ["all", "after"]
+    sums, counts = np.array([[100.0, 120.0, 80.0], [50.0, 60.0, 40.0]]), np.array([[200, 240, 160], [100, 120, 80]], dtype=np.int32)
+    lm.save_window_losses(tmp_path / "eval_windows.npz", 1000, [0, 10, 20], {s: ([sums[i]], [counts[i]]) for i, s in enumerate(strata)})
+    noisy = sums * (1 + 2e-4)
+    assert fb.prefix_reference_check(tmp_path, strata, [0, 10, 20], sums, counts)["replay_ok"]
+    assert not fb.prefix_reference_check(tmp_path, strata, [0, 10, 20], noisy, counts)["replay_ok"]          # no composer: exact
+    assert fb.prefix_reference_check(tmp_path, strata, [0, 10, 20], noisy, counts, composing=True)["replay_ok"]
+    assert not fb.prefix_reference_check(tmp_path, strata, [0, 10, 20], sums * 1.01, counts, composing=True)["replay_ok"]
+    assert not fb.prefix_reference_check(tmp_path, strata, [0, 10, 20], sums, counts + 1, composing=True)["replay_ok"]
+    prefix = fb.prefix_reference_check(tmp_path, strata, [0, 10], sums[:, :2], counts[:, :2])
+    assert prefix["replay_ok"] and prefix["prefix"] and prefix["windows"] == 2
 
 
 def _synthetic_scores(losses: dict[str, float], windows: int = 40, seed: int = 0) -> dict:
@@ -283,7 +297,7 @@ def _synthetic_scores(losses: dict[str, float], windows: int = 40, seed: int = 0
     support = {b: {"targets": int(counts[k].sum()), "entries": 10, "mean_log2_frequency": float(np.log2(max(lo, 1)) + 0.7)}
                for k, (b, lo, _) in enumerate(bins)}
     record = {"bins": [{"name": b, "lo": lo, "hi": hi} for b, lo, hi in bins], "bin_support": support, "scheme": "halfdecade",
-              "channel": "compose"}
+              "channel": "compose", "ref_check": {"replay_ok": True}}
     return {"strata": strata, "count": counts, "sums": {"ref": sums}, "terms": terms, "record": record}
 
 

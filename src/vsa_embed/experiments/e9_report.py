@@ -1141,8 +1141,14 @@ def _load_by_model(group: Group, loader, folder: str) -> dict[str, dict[int, Any
 
 def freqbias_section(group: Group, *, candidate: str, resamples: int, seed: int) -> dict[str, Any]:
     from . import e9_freqbias as fb
-    scores = _load_by_model(group, fb.load_scores, fb.SCORE_DIR)
-    out: dict[str, Any] = {"rescored": {m: sorted(v) for m, v in scores.items()}}
+    loaded = _load_by_model(group, fb.load_scores, fb.SCORE_DIR)
+    # pre-registration §7 / §10.1: a run whose rescoring does not replay the trainer's evaluation is excluded
+    excluded = {m: sorted(s for s, v in by.items() if not (v["record"].get("ref_check") or {}).get("replay_ok", False))
+                for m, by in loaded.items()}
+    scores = {m: {s: v for s, v in by.items() if s not in excluded[m]} for m, by in loaded.items()}
+    scores = {m: by for m, by in scores.items() if by}
+    out: dict[str, Any] = {"rescored": {m: sorted(v) for m, v in scores.items()},
+                           "excluded_replay": {m: s for m, s in excluded.items() if s}}
     if scores:
         candidates = [candidate] + [m for m in FREQ_COMPARE if m in scores and m != candidate]
         out["loss"] = fb.frequency_analysis(scores, candidates=candidates, reference="C0'", resamples=resamples, seed=seed,

@@ -483,10 +483,10 @@ def load_scores(folder: Path) -> dict[str, Any] | None:
 
 def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[str] = ("ref",), scheme: str = PRIMARY_SCHEME,
               fillers: Path | None | str = "auto", exclusions: Path | None | str = "auto", device: str = "cuda",
-              eval_batch: int | None = None, resume: bool = False, overwrite: bool = False) -> dict[str, Any]:
+              eval_batch: int | None = None, resume: bool = False, overwrite: bool = False,
+              windows: int | None = None) -> dict[str, Any]:
     """Re-score `run_dir` on its evaluation windows with the trainer's strata, the filler split, the strict strata and the
     frequency bins (module docstring)."""
-    from .e4_quant import reference_check
     from .e9_rescore import channel_off, ensure_filler_table
     run_dir = Path(run_dir)
     output = Path(output) if output else run_dir / SCORE_DIR
@@ -517,6 +517,8 @@ def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[s
     bins = scheme_bins(scheme)
     eval_corpus = TokenCorpus.open(Path(config["data"]["eval"]))
     starts = eval_windows(eval_corpus, count=config["eval"]["windows"], length=config["model"]["seq_len"])
+    if windows:                                       # smoke tests only: the first `windows` evaluation windows
+        starts = list(starts)[:int(windows)]
     if overwrite and output.exists():
         for name in ("windows.npz", "terms.npz", "freqbias.json", "resolved_config.yaml", "manifest.json"):
             (output / name).unlink(missing_ok=True)
@@ -570,16 +572,51 @@ def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[s
         print(json.dumps({"run": record["id"], "variant": variant, "after": record["variants"][variant]["strata"]["after"]["loss"],
                           "seconds": record["variants"][variant]["seconds"]}), flush=True)
     if "ref" in sums and strata is not None:
-        record["ref_check"] = reference_check(run_dir, strata, list(starts), sums["ref"], counts)
+        record["ref_check"] = prefix_reference_check(run_dir, strata, list(starts), sums["ref"], counts,
+                                                     composing=config["channel"]["mode"] == "compose")
     if strata is not None and "window" in terms:
         record["bin_support"] = bin_support(strata, counts, terms, bins)
     if not has_channel:
         record["off_variants"] = "a run without a channel answers ref-off with ref"
     (output / "freqbias.json").write_text(json.dumps(record, indent=2, default=str) + "\n")
-    settings = {"run": str(run_dir), "variants": list(variants), "scheme": scheme, "fillers": str(fillers) if fillers else None,
+    settings = {"run": str(run_dir), "variants": list(variants), "scheme": scheme, "windows": windows,
+                "fillers": str(fillers) if fillers else None,
                 "exclusions": str(exclusions) if exclusions else None, "eval_batch": eval_batch, "device": device}
     write_run_metadata(output, settings, git_at_start=git_at_start, device=target, variants=sorted(sums))
     return record
+
+
+REPLAY_TOLERANCE = 1e-3
+
+
+def prefix_reference_check(run_dir: Path, strata: list[str], starts: list[int], sums: np.ndarray, counts: np.ndarray, *,
+                           composing: bool = False) -> dict[str, Any]:
+    """`e4_quant.reference_check` on the run's final evaluation, also for a prefix of its windows (smoke tests), with the
+    replay verdict (pre-registration §10.1): the masks must be identical (`counts_equal`); the sums bit-exact for a run
+    without a composer, and within `REPLAY_TOLERANCE` relative per stratum total for a composing run (the composer's
+    CUDA `index_add_` sums in no fixed order under bf16)."""
+    path = Path(run_dir) / "eval_windows.npz"
+    if not path.exists():
+        return {"available": False}
+    saved = lm.load_window_losses(path)
+    n = len(starts)
+    if not saved["evals"] or not np.array_equal(saved["starts"][:n], np.asarray(starts)):
+        return {"available": True, "paired": False, "detail": "different evaluation windows"}
+    tokens = max(saved["evals"])
+    run_sums, run_counts = saved["evals"][tokens]
+    index = [saved["strata"].index(s) for s in strata if s in saved["strata"]]
+    mine = [strata.index(s) for s in strata if s in saved["strata"]]
+    counts_equal = bool(np.array_equal(run_counts[index][:, :n], counts[mine]))
+    a, b = run_sums[index][:, :n], sums[mine]
+    with np.errstate(invalid="ignore", divide="ignore"):
+        relative = np.abs(b.sum(1) - a.sum(1)) / np.abs(a.sum(1))
+    max_relative = float(np.nanmax(relative)) if index else None
+    max_abs = float(np.abs(a - b).max()) if index else None
+    ok = counts_equal and max_abs is not None and (max_abs == 0.0 or (composing and max_relative <= REPLAY_TOLERANCE))
+    return {"available": True, "paired": True, "final_tokens": tokens, "windows": n, "prefix": n < len(saved["starts"]),
+            "strata_checked": len(index), "counts_equal": counts_equal, "max_abs_window_sum_diff": max_abs,
+            "max_relative_stratum_diff": max_relative, "composing": composing, "tolerance": REPLAY_TOLERANCE if composing else 0.0,
+            "replay_ok": bool(ok)}
 
 
 def bin_support(strata: Sequence[str], counts: np.ndarray, terms: dict[str, np.ndarray],
@@ -1188,7 +1225,7 @@ def queue_stage(stage: str, *, priority: int = 55, kinds: Sequence[str] = ("scor
     from vsa_embed.jobqueue import DEFAULT_DIR, add
 
     from .cpt_plan import pinned_python
-    from .e9_plan import EVAL_JOB_BATCH, _config_host, stage_python
+    from .e9_plan import _config_host, stage_python
     from .e9_rescore import model_of
     configs = sorted((Path(root) / "configs" / stage).glob("*.yaml"))
     hosts = [h for h in (_config_host(yaml.safe_load(p.read_text())) for p in configs) if h]
@@ -1199,11 +1236,10 @@ def queue_stage(stage: str, *, priority: int = 55, kinds: Sequence[str] = ("scor
         seed_match = re.search(r"-s(\d+)$", path.stem)
         if (models and model not in models) or (seeds and seed_match and int(seed_match[1]) not in seeds):
             continue
-        config = yaml.safe_load(path.read_text())
         run_dir = Path(root) / "runs" / stage / path.stem
         if "score" in kinds:
             jobs.append({"name": f"{stage}-{path.stem}-freqbias", "priority": priority, "lane": None, "min_free_gb": 5,
-                         "command": score_command(run_dir, python=python, batch_size=EVAL_JOB_BATCH.get(_config_host(config) or ""))})
+                         "command": score_command(run_dir, python=python)})
         if "rows" in kinds:
             jobs.append({"name": f"{stage}-{path.stem}-freqrows", "priority": priority + 1, "lane": "cpu", "min_free_gb": 0,
                          "command": rows_command(run_dir, python=python, with_tsne=not licensed)})
@@ -1233,6 +1269,7 @@ def main(argv: list[str] | None = None) -> None:
     score.add_argument("--fillers", type=Path, default=None); score.add_argument("--no-fillers", action="store_true")
     score.add_argument("--exclusions", type=Path, default=None); score.add_argument("--no-strict", action="store_true")
     score.add_argument("--device", default="cuda"); score.add_argument("--eval-batch", type=int, default=None)
+    score.add_argument("--windows", type=int, default=None, help="smoke tests only: score the first N evaluation windows")
     score.add_argument("--resume", action="store_true"); score.add_argument("--overwrite", action="store_true")
     rows = sub.add_parser("rows", help="A2: frequency decodability of a run's concept rows (CPU)")
     rows.add_argument("--run", type=Path, required=True); rows.add_argument("--output", type=Path, default=None)
@@ -1253,7 +1290,8 @@ def main(argv: list[str] | None = None) -> None:
         fillers: Path | None | str = None if args.no_fillers else (args.fillers or "auto")
         exclusions: Path | None | str = None if args.no_strict else (args.exclusions or "auto")
         record = score_run(args.run, args.output, variants=args.variants, scheme=args.scheme, fillers=fillers, exclusions=exclusions,
-                           device=args.device, eval_batch=args.eval_batch, resume=args.resume, overwrite=args.overwrite)
+                           device=args.device, eval_batch=args.eval_batch, resume=args.resume, overwrite=args.overwrite,
+                           windows=args.windows)
         print(json.dumps({"run": record["id"], "variants": sorted(record["variants"]), "ref_check": record.get("ref_check")}, default=str))
     elif args.command == "rows":
         record = probe_run(args.run, args.output, folds=args.folds, seed=args.seed, tsne_points=args.tsne_points,

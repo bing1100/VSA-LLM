@@ -74,7 +74,7 @@ both spans' strata).
   `after_unseen` (frequency 0, not held out) and `after_heldout`. The bins are half-decades chosen so that their unions are
   exactly the trainer's `after_rare_seen` (1–9), `after_mid` (10–99) and `after_frequent` (≥ 100). This is checked on
   every batch. The `log2` scheme (1, 2–3, 4–7, …, ≥ 1,024) is a sensitivity analysis only.
-- **Exact replay:** the per-window outputs contain the trainer's strata. `ref_check` must report
+- **Exact replay** (amended in §10.1): the per-window outputs contain the trainer's strata. `ref_check` must report
   `max |Δ window sum| = 0` against the run's `eval_windows.npz` at its final evaluation. A run that fails this is
   excluded from A1/B2, and the failure is reported.
 - **Term table** (`terms.npz`): per evaluation window × entry, the sums over the union of that entry's own after-span
@@ -315,4 +315,25 @@ Smoke tests run after the commit of this document and are labelled SMOKE. They u
 
 ## 10. Deviations and changes after commit
 
-(none yet)
+### 10.1 The replay rule (2026-10-07, before any evaluation of these measures on a checkpoint)
+
+**Problem.** §2 and §7 required `max |Δ window sum| = 0` against the trainer's final evaluation. The committed PQ1
+rescorings (`RUN/rescore`, 41 runs; read from their files, no new evaluation) show that this holds only for runs without a
+composer:
+- P0, C0′, C2 and C6* replay bit-exactly on the GPU.
+- C5 and the C5 arms differ by at most **2.1 × 10⁻⁴ relative per stratum total**. Their masks are identical
+  (`counts_equal`) in every run.
+
+The composer's CUDA `index_add_` sums in no fixed order under bf16, which is documented in `e9_ontology_edit`. Under the
+original rule every composing run would have been excluded.
+
+**New rule** (`e9_freqbias.prefix_reference_check`, `replay_ok`):
+- The masks must be identical (`counts_equal`), for every run.
+- The sums must be bit-exact for runs without a composer.
+- For composing runs, the sums must agree within **10⁻³ relative per stratum total**. That is 5× the largest observed
+  difference, and far below the percent-level effects measured.
+
+`e9_report --freqbias` excludes runs that fail and lists them (`excluded_replay`).
+
+**Consequence.** Rescoring jobs keep the trainer's evaluation batch, so the queue never passes `--eval-batch`: a different
+batch changes bf16 kernel shapes. Smoke runs on the CPU (fp32) check the masks only.

@@ -839,11 +839,21 @@ def available_sources(run: E5Run, requested: Sequence[str] | None) -> list[str]:
     return [s for s in (requested or SOURCES) if s in allowed]
 
 
-def evaluate(run: E5Run, items_dir: Path, *, sources: Sequence[str] | None = None, seed: int = 0,
+def evaluate(run: E5Run, items_dir: Path, *, sources: Sequence[str] | None = None, seed: int = 0, limit_anchors: int | None = None,
              log: Callable[[str], None] = print) -> dict[str, Any]:
-    """Score every item under each source (module docstring)."""
+    """Score every item under each source (module docstring). `limit_anchors` (smoke tests only) keeps the items of the
+    first N anchors of each subset."""
     from .e9_tracks import random_frames, replaced_frames
     manifest, concepts, items = load_items(items_dir)
+    if limit_anchors:
+        firsts: dict[str, list[str]] = defaultdict(list)
+        for item in items:
+            if item["anchor"] not in firsts[item["subset"]] and len(firsts[item["subset"]]) < limit_anchors:
+                firsts[item["subset"]].append(item["anchor"])
+        keep = {a for anchors in firsts.values() for a in anchors}
+        items = [i for i in items if i["anchor"] in keep]
+        used = {cid for i in items for cid in i["slots"].values()}
+        concepts = [c for c in concepts if c["concept"] in used]
     ontology = run.ontology
     relation_id = {n: i for i, n in enumerate(ontology["relation_names"])}
     atomic_id = {n: i for i, n in enumerate(ontology["atomic_names"])}
@@ -995,12 +1005,13 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     output = args.output or output_folder(args.run, args.items)
     alias_table = args.alias_table or ensure_alias_table(track_spec(manifest["track"], manifest["family"]))
     config = {"experiment": "e9-understanding", "run": str(args.run), "items": str(args.items), "sources": requested, "seed": args.seed,
+              "limit_anchors": args.limit_anchors,
               "resamples": args.resamples, "alias_table": str(alias_table) if alias_table else None, "batch_size": args.batch_size}
     if args.overwrite:
         clear_output(output)
     git_at_start = start_output(output, config)
     run = open_run(args.run, device=args.device, batch_size=args.batch_size, alias_table=alias_table)
-    evaluation = evaluate(run, args.items, sources=requested, seed=args.seed)
+    evaluation = evaluate(run, args.items, sources=requested, seed=args.seed, limit_anchors=args.limit_anchors)
     summary = summarize(evaluation, resamples=args.resamples, seed=args.seed)
     header = {"source": run.describe(), "items": str(args.items), "track": manifest["track"]}
     write_jsonl_gz(output / "predictions.jsonl.gz", ({"source": source, **{k: v for k, v in row.items() if k != "relation"}}
@@ -1159,6 +1170,7 @@ def main(argv: list[str] | None = None) -> None:
     ev.add_argument("--sources", default=""); ev.add_argument("--seed", type=int, default=0)
     ev.add_argument("--resamples", type=int, default=2000); ev.add_argument("--batch-size", type=int, default=32)
     ev.add_argument("--device", default=None); ev.add_argument("--overwrite", action="store_true")
+    ev.add_argument("--limit-anchors", type=int, default=None, help="smoke tests only: the items of the first N anchors per subset")
     queue = sub.add_parser("queue", help="queue one evaluation per config of a stage")
     queue.add_argument("--stage", required=True); queue.add_argument("--items", type=Path, required=True)
     queue.add_argument("--priority", type=int, default=56); queue.add_argument("--models", nargs="*", default=None)
