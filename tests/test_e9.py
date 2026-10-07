@@ -901,6 +901,8 @@ def test_e9_plan_item_versions_are_opt_in(plan_root, tmp_path) -> None:
     _, only = e9_plan.queue_item_evaluations("main", track="t5", root=plan_root["root"], queue=False, models=["C5"], seeds=[2],
                                              report=False)
     assert [n for n, _, _, _ in only] == ["main-SmolLM2-135M-full-C5-s2-edit-v2", "main-SmolLM2-135M-full-C5-s2-edit-v2-int4"]
+    _, batch = e9_plan.queue_item_evaluations("main", track="t5", root=plan_root["root"], queue=False, models=["C5"], seeds=[2])
+    assert batch[-1][0] == "main-report-items-v2-s2"                                       # a seed batch reports again
     with pytest.raises(ValueError):
         e9_plan.queue_item_evaluations("main", track="t5", root=plan_root["root"], queue=False, version="v1")
     # The dimension-3 baselines on v2: own folders, names and report; estimates scaled by the item counts.
@@ -914,6 +916,13 @@ def test_e9_plan_item_versions_are_opt_in(plan_root, tmp_path) -> None:
     assert hours_v2 > e9_plan.dim3_estimate_hours("SmolLM2-135M", "C5") * 2
     _, dim3_v1 = e9_plan.queue_dim3_baselines("main", track="t5", root=plan_root["root"], queue=False, models=["C5"], seeds=[1])
     assert dim3_v1[0][0] == "main-SmolLM2-135M-full-C5-s1-dim3-baselines" and "--items-version" not in dim3_v1[-1][1]
+    _, capped = e9_plan.queue_dim3_baselines("main", track="t5", root=plan_root["root"], queue=False, version="v2",
+                                             models=["C0p", "C5"], seeds=[1], edit_limit=200)
+    by_name = {n: (c, h) for n, c, h in capped}
+    c0, c5 = by_name["main-SmolLM2-135M-full-C0p-s1-dim3-baselines-v2"], by_name["main-SmolLM2-135M-full-C5-s1-dim3-baselines-v2"]
+    assert c0[0][c0[0].index("--edit-limit") + 1] == "200" and "--edit-limit" not in c5[0]       # weight-editor jobs only
+    _, full = e9_plan.queue_dim3_baselines("main", track="t5", root=plan_root["root"], queue=False, version="v2", models=["C0p"], seeds=[1])
+    assert c0[1] < full[0][2] and c5[1] == pytest.approx(hours_v2)
 
 
 def test_r9_report_items_v2_and_item_seed(world, items, tmp_path) -> None:

@@ -683,18 +683,26 @@ def dim3_estimate_hours(host: str, model: str, *, weights_on_candidate: bool = F
     return seconds * host_scale / 3600
 
 
+def dim3_edit_limited(model: str, *, weights_on_candidate: bool = False) -> bool:
+    """Whether a model's baseline job runs a weight editor (the methods `edit_limit` applies to)."""
+    return any(m in DIM3_WEIGHT_METHODS for m in dim3_methods(model, weights_on_candidate=weights_on_candidate).split(","))
+
+
 def dim3_baseline_job(run_dir: Path, spec: TrackSpec, *, model: str, python: str = sys.executable, alias_table: Path | None = None,
                       batch_size: int | None = None, weights_on_candidate: bool = False,
-                      version: str = "v1") -> tuple[str, list[str], list[str]]:
+                      version: str = "v1", edit_limit: int | None = None) -> tuple[str, list[str], list[str]]:
     """(suffix, command, retry arguments) of a run's dimension-3 baseline evaluation (`RUN/dim3-baselines`, bf16; v2 items:
-    `RUN/dim3-baselines-v2`): the same new-word and edit items as the run's `edit` (`edit-v2`) job."""
+    `RUN/dim3-baselines-v2`): the same new-word and edit items as the run's `edit` (`edit-v2`) job. `edit_limit` (jobs with a
+    weight editor only): the first N edited concepts (`--edit-limit`; v2's first 200 are v1's edits)."""
     new_items, edit_items = dimension3_items(spec.name, spec.family, version)
     table = ["--alias-table", str(alias_table)] if alias_table else []
     batch = ["--batch-size", str(int(batch_size))] if batch_size else []
+    limit = (["--edit-limit", str(int(edit_limit))] if edit_limit and dim3_edit_limited(model, weights_on_candidate=weights_on_candidate)
+             else [])
     folder = dim3_folder(version)
     command = [python, "-m", "vsa_embed.experiments.e9_dim3_baselines", "evaluate", "--run", str(run_dir),
                "--new-items", str(new_items), "--edit-items", str(edit_items),
-               "--methods", dim3_methods(model, weights_on_candidate=weights_on_candidate), *table, *batch,
+               "--methods", dim3_methods(model, weights_on_candidate=weights_on_candidate), *limit, *table, *batch,
                "--output", str(Path(run_dir) / folder)]
     return folder, command, ["--overwrite"]
 
@@ -741,17 +749,21 @@ def _add_planned(planned: list[tuple[str, list[str], float, int]], *, queue: boo
 def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, queue_dir: Path | None = None,
                          priority: int = DIM3_PRIORITY, models: list[str] | None = None, seeds: list[int] | None = None,
                          alias_table: Path | None = None, weights_on_candidate: bool = False, queue: bool = True,
-                         version: str = "v1") -> tuple[list[str], list[tuple[str, list[str], float]]]:
+                         version: str = "v1", edit_limit: int | None = None) -> tuple[list[str], list[tuple[str, list[str], float]]]:
     """Evaluation-only dimension-3 baseline jobs for the stage's existing configs (`configs/<stage>/*.yaml`; no
     training is queued or re-planned): one job per run at `priority` (after the run's training, whose priority is
     lower), the stage's report with the dimension-3 section at `priority + 1`. `version` = the item version (v2: job
     names `…-dim3-baselines-v2`, folders `RUN/dim3-baselines-v2`, report `<stage>-report-dim3-v2`; estimates scaled by the
-    item count). Returns (queued names, planned jobs as (name, command, GPU-h estimate)); `queue=False` only plans."""
+    item count). `edit_limit`: the jobs with a weight editor (P0, C0′; C5 with `weights_on_candidate`) score only the first
+    N edits (on v2, 200 = v1's edits: the weight editors dominate the cost and the C5-vs-editor contrasts are large).
+    Returns (queued names, planned jobs as (name, command, GPU-h estimate)); `queue=False` only plans."""
     paths, configs, family, python = _stage_configs(stage, root)
     spec = track_spec(track, family)
     if alias_table is None:
         alias_table = ensure_alias_table(spec) if queue else spec.alias_table_path
     scale = item_scale(spec.name, family, version)
+    base_edits = (item_counts(spec.name, family, "v1") or {}).get("edits")
+    limited = (scale[0], min(scale[1], edit_limit / base_edits)) if edit_limit and base_edits else scale
     planned: list[tuple[str, list[str], float, int]] = []
     for path in paths:
         stem = path.stem
@@ -762,8 +774,9 @@ def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, qu
         run_dir = root / "runs" / stage / stem
         suffix, command, _ = dim3_baseline_job(run_dir, spec, model=model, python=python, alias_table=alias_table,
                                                batch_size=EVAL_JOB_BATCH.get(host), weights_on_candidate=weights_on_candidate,
-                                               version=version)
-        hours = (dim3_estimate_hours(host, model, weights_on_candidate=weights_on_candidate, scale=scale)
+                                               version=version, edit_limit=edit_limit)
+        cut = limited if dim3_edit_limited(model, weights_on_candidate=weights_on_candidate) else scale
+        hours = (dim3_estimate_hours(host, model, weights_on_candidate=weights_on_candidate, scale=cut)
                  if host in HOST_PARAMETERS else float("nan"))
         planned.append((f"{stage}-{stem}-{suffix}", command, hours, priority))
     report = f"{stage}-report-dim3" if version == "v1" else f"{stage}-report-dim3-{version}"
@@ -775,10 +788,11 @@ def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, qu
 # ---------------------------------------------------------------- dimension-3 re-evaluation on another item version (decision 56)
 
 ITEM_EVAL_PRIORITY = 53
-# Seconds a per-run editing job spends outside the scoring that `RUN/edit/summary.json` times (start-up, model load,
-# quantization); measured from the queue's wall times of the T5 v1 jobs (2026-10-07): SmolLM2 ≈ 4–6 s, Qwen3 ≈ 20–60 s.
-EDIT_JOB_OVERHEAD_S = {"SmolLM2-135M": 5.0, "SmolLM2-360M": 6.0, "Qwen3-0.6B-Base": 25.0, "Qwen3-1.7B-Base": 45.0,
-                       "Qwen3-4B-Base": 90.0, "Qwen3.5-0.8B-Base": 30.0, "Qwen3.5-2B-Base": 50.0}
+# Seconds a per-run editing job spends outside the scoring that `RUN/edit/summary.json` times; measured as queue wall time −
+# (new-word + edit seconds) over the 64 finished T5 v1 jobs (2026-10-07): 3.9–6.0 s on every host, bf16 and INT4 alike.
+# Qwen3-4B and Qwen3.5 are not measured yet (set from the largest measured value).
+EDIT_JOB_OVERHEAD_S = {"SmolLM2-135M": 4.5, "SmolLM2-360M": 5.0, "Qwen3-0.6B-Base": 5.0, "Qwen3-1.7B-Base": 6.0,
+                       "Qwen3-4B-Base": 8.0, "Qwen3.5-0.8B-Base": 6.0, "Qwen3.5-2B-Base": 8.0}
 
 
 def measured_edit_seconds(run_dir: Path, quantize: str | None = None) -> tuple[float, float] | None:
@@ -819,8 +833,10 @@ def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2"
     configs (nothing is trained or re-planned): P0 / C0′ / C2 / C5 at bf16 and INT4 as their chained `edit` /
     `edit-int4` jobs (→ `edit-v2`, `edit-v2-int4`), the WP-PQ1 arms at bf16 as their `pq` chain (C5sh: new words only);
     then the stage's report on that version with the item × seed section (`report/<stage>-items-<version>`) at
-    `priority + 1`. Job names `<stage>-<stem>-edit-<version>[-int4]`. GPU-h from the run's measured v1 scoring times scaled by
-    the item ratio (`edit_estimate_hours`). Returns (queued names, planned (name, command, hours, basis))."""
+    `priority + 1` (job `<stage>-report-items-<version>`, with `-s<seeds>` when `seeds` filters, so a later seed batch
+    queues its own report into the same folder). Job names `<stage>-<stem>-edit-<version>[-int4]`. GPU-h from the run's
+    measured v1 scoring times scaled by the item ratio (`edit_estimate_hours`). Returns (queued names, planned (name,
+    command, hours, basis))."""
     if version == "v1":
         raise ValueError("v1 evaluations are the chained `edit` jobs; choose another item version")
     paths, configs, family, python = _stage_configs(stage, root)
@@ -838,9 +854,11 @@ def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2"
         host = _config_host(config) or ""
         if (models and model not in models) or (seeds and model != "P0" and seed not in seeds) or (hosts and host not in hosts):
             continue
-        siblings = sorted(p for p in runs.glob(f"{host}-*-s*") if p.name != stem
-                          and _channel_kind(stem_model(p.name)) == _channel_kind("C5" if model in ARMS else model)
-                          and (model not in ARMS or stem_model(p.name) == "C5"))
+        reference = "C5" if model in ARMS else model                 # the arms are costed like C5 (a channel per entry)
+        siblings = sorted((p for p in runs.glob(f"{host}-*-s*") if p.name != stem
+                           and _channel_kind(stem_model(p.name)) == _channel_kind(reference)
+                           and (model not in ARMS or stem_model(p.name) == "C5")),
+                          key=lambda p: (stem_model(p.name) != reference, p.name))      # the same model first
         shuffled = model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled"
         for quantize in ([None] if model in ARMS else [None, "int4"]):
             suffix, command, _ = edit_job(runs / stem, spec, python=python, alias_table=alias_table,
@@ -854,7 +872,8 @@ def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2"
                    *(["--quant", str(quant)] if quant.exists() else []), *(["--quant-general", str(general)] if general.exists() else []),
                    "--items-version", version, "--item-seed", "--output", str(root / "report" / f"{stage}-items-{version}"),
                    "--overwrite"]
-        planned.append((f"{stage}-report-items-{version}", command, 0.0, priority + 1, "report"))
+        batch = f"-s{'-'.join(map(str, sorted(seeds)))}" if seeds else ""      # a seed batch reports again (same folder)
+        planned.append((f"{stage}-report-items-{version}{batch}", command, 0.0, priority + 1, "report"))
     queued = _add_planned([(n, c, h, l) for n, c, h, l, _ in planned], queue=queue, queue_dir=queue_dir, retry_level=priority)
     return queued, [(n, c, h, b) for n, c, h, _, b in planned]
 
@@ -921,6 +940,9 @@ def main(argv: list[str] | None = None) -> None:
                              f"existing configs and runs (no training; default priority {DIM3_PRIORITY}; --seeds/--models filter)")
     parser.add_argument("--dim3-weights-on-candidate", action="store_true",
                         help="with --dim3-baselines: also run ROME/MEMIT/AlphaEdit on C5's host weights (ontology edit + ROME)")
+    parser.add_argument("--dim3-edit-limit", type=int, default=None,
+                        help="with --dim3-baselines: jobs with a weight editor (P0, C0p) score only the first N edits "
+                             "(e9_dim3_baselines --edit-limit; on v2, 200 = the v1 edits)")
     parser.add_argument("--dry-run", action="store_true",
                         help="with --dim3-baselines or --item-evals: print the jobs and GPU estimates only")
     parser.add_argument("--items-version", nargs="+", default=["v1"], choices=list(ITEM_VERSIONS),
@@ -943,7 +965,7 @@ def main(argv: list[str] | None = None) -> None:
             stage, track=args.track, priority=args.priority if args.priority is not None else DIM3_PRIORITY,
             models=args.models if explicit else None, seeds=args.seeds if seeds_given else None,
             weights_on_candidate=args.dim3_weights_on_candidate, queue=args.queue and not args.dry_run,
-            version=args.items_version[0])
+            version=args.items_version[0], edit_limit=args.dim3_edit_limit)
         for name, command, hours in planned:
             print(f"{name}  ≈ {hours:.2f} GPU-h\n  {' '.join(command)}")
         print(f"≈ {sum(h for _, _, h in planned if h == h):.1f} GPU-h for {len(planned) - 1} evaluation job(s); queued {len(queued)} job(s)")
