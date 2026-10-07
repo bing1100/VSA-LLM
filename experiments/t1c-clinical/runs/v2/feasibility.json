@@ -1,0 +1,158 @@
+{
+  "criteria": {
+    "min_occurrences": 2000,
+    "min_entries": 300,
+    "exploratory_occurrences": 1000,
+    "exploratory_entries": 50,
+    "trainer_windows": 2048,
+    "window_length": 1024
+  },
+  "by_tokenizer": {
+    "HuggingFaceTB/SmolLM2-360M": [
+      {
+        "min_subtokens": 2,
+        "tokens": 22352802,
+        "windows_for_whole_split": 21827,
+        "strata": {
+          "after_heldout": {
+            "split": {
+              "occurrences": 40690,
+              "entries": 442,
+              "entries_5plus": 347
+            },
+            "verdict_split": "feasible",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 3638,
+              "entries": 311,
+              "entries_5plus": 161
+            },
+            "verdict_trainer_windows": "feasible (entries counted with \u2265 1 occurrence)",
+            "windows_needed": 12288
+          },
+          "after_unseen": {
+            "split": {
+              "occurrences": 1365,
+              "entries": 786,
+              "entries_5plus": 32
+            },
+            "verdict_split": "exploratory-feasible",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 117,
+              "entries": 97,
+              "entries_5plus": 1
+            },
+            "verdict_trainer_windows": "infeasible",
+            "windows_needed": null
+          },
+          "after_rare_seen": {
+            "split": {
+              "occurrences": 6592,
+              "entries": 2636,
+              "entries_5plus": 316
+            },
+            "verdict_split": "feasible",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 668,
+              "entries": 526,
+              "entries_5plus": 3
+            },
+            "verdict_trainer_windows": "infeasible",
+            "windows_needed": 21827
+          },
+          "after_len3plus": {
+            "split": {
+              "occurrences": 377116,
+              "entries": 8901,
+              "entries_5plus": 4242
+            },
+            "verdict_split": "feasible",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 35564,
+              "entries": 3913,
+              "entries_5plus": 1198
+            },
+            "verdict_trainer_windows": "feasible",
+            "windows_needed": 1024
+          }
+        },
+        "linked_spans_split": 691843
+      },
+      {
+        "min_subtokens": 3,
+        "tokens": 22352802,
+        "windows_for_whole_split": 21827,
+        "strata": {
+          "after_heldout": {
+            "split": {
+              "occurrences": 22552,
+              "entries": 384,
+              "entries_5plus": 280
+            },
+            "verdict_split": "feasible (entries counted with \u2265 1 occurrence)",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 2063,
+              "entries": 255,
+              "entries_5plus": 116
+            },
+            "verdict_trainer_windows": "exploratory-feasible",
+            "windows_needed": null
+          },
+          "after_unseen": {
+            "split": {
+              "occurrences": 1460,
+              "entries": 877,
+              "entries_5plus": 34
+            },
+            "verdict_split": "exploratory-feasible",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 126,
+              "entries": 105,
+              "entries_5plus": 1
+            },
+            "verdict_trainer_windows": "infeasible",
+            "windows_needed": null
+          },
+          "after_rare_seen": {
+            "split": {
+              "occurrences": 6633,
+              "entries": 2746,
+              "entries_5plus": 311
+            },
+            "verdict_split": "feasible",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 665,
+              "entries": 542,
+              "entries_5plus": 2
+            },
+            "verdict_trainer_windows": "infeasible",
+            "windows_needed": 21827
+          },
+          "after_len3plus": {
+            "split": {
+              "occurrences": 377116,
+              "entries": 8901,
+              "entries_5plus": 4242
+            },
+            "verdict_split": "feasible",
+            "trainer_windows": {
+              "windows": 2048,
+              "occurrences": 35564,
+              "entries": 3913,
+              "entries_5plus": 1198
+            },
+            "verdict_trainer_windows": "feasible",
+            "windows_needed": 1024
+          }
+        },
+        "linked_spans_split": 377116
+      }
+    ]
+  }
+}

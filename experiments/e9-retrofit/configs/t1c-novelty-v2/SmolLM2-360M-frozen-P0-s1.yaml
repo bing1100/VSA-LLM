@@ -2,7 +2,7 @@ model:
   size: pretrained
   seq_len: 1024
   gradient_checkpointing: false
-  pretrained: HuggingFaceTB/SmolLM2-135M
+  pretrained: HuggingFaceTB/SmolLM2-360M
   host_mode: frozen
   vocab_size: 49152
   lora_rank: 64
@@ -13,8 +13,8 @@ train:
   weight_decay: 0.1
   log_every: 10
   checkpoint_minutes: 10
-  micro_batch: 16
-  grad_accum: 4
+  micro_batch: 8
+  grad_accum: 8
   total_tokens: 50000000
   save_trainable_only: true
   eval_only: true
@@ -28,10 +28,10 @@ eval:
   windows: 2048
   first_tokens: 2500000
   save_window_losses: true
-  batch: 32
+  batch: 4
 device: cuda
 channel:
   mode: none
 seed: 1
-experiment: e9-t1c-SmolLM2-135M-frozen-P0-s1
+experiment: e9-t1c-novelty-v2-SmolLM2-360M-frozen-P0-s1
 e9_track: t1c

@@ -597,7 +597,9 @@ every item set (`items/`). Committed: code, configs (paths and hyper-parameters)
 `metrics.jsonl`, `resolved_config.yaml` and `probes*.json` of any `runs/t1c*` E9 run folder. No note text is printed
 or sent anywhere; files were scanned for SNOMED alias strings before committing.
 
-**Build (`runs/v1`; linker and holdout settings committed before linking).**
+**Build (`runs/v2`, Qwen3 relink `runs/v2-qwen3`; linker and holdout settings committed before linking).** The first
+build (`runs/v1`, holdout `fa738430…` at fraction 0.10) is stale: the author re-froze the holdout at fraction 0.30 on
+2026-10-07 (T1c-1) from the same pre-sample, before any run; documents, linker and alias policy are unchanged.
 
 - Ontology: 310,698 active concepts of seven top-level hierarchies (clinical finding 117,002; procedure 58,730; body
   structure 40,443; organism 32,590; substance 27,125; product 24,681; observable entity 10,127); 62 relations
@@ -606,69 +608,74 @@ or sent anywhere; files were scanned for SNOMED alias strings before committing.
   ≤ 16 (767 frames truncated).
 - Linker (decision 19's lesson): FSN without its tag + synonyms accepted in the US/GB refsets; 1,560 bare acronyms,
   4 function words, 6 aliases < 3 characters and 59,502 descriptions > 8 words dropped → 496,997 aliases over 295,143
-  entries (alias table `18dc1545…`). SmolLM2 subtokens per alias 1/2/3/4/5+: 1,718 / 20,257 / 46,231 / 65,623 / 363,168.
+  entries (evaluation alias table `e0ab5fa3…`; its digest includes the holdout, v1 was `18dc1545…`). SmolLM2 subtokens
+  per alias 1/2/3/4/5+: 1,718 / 20,257 / 46,231 / 65,623 / 363,168.
 - Notes: 2,083,180 rows (file sha256 = PhysioNet's); 886 `ISERROR` and 68 empty dropped; patient split (sha256 bucket
   < 1,000/10,000 → evaluation): 41,501 / 4,645 patients, 1,881,250 / 200,976 notes, no patient on both sides.
 - SmolLM2 corpora (the reference): `train` 130.0M tokens (note share 0.500, exact), `eval-mimic` 22.35M (first 40,000
   shuffled evaluation-patient notes), `eval-general` 5.0M (C3's evaluation documents: locality), `eval` 10.0M (mixed).
-  Qwen3 relink built (`hosts/qwen3`, `runs/v1-qwen3`): train 130.0M (share 0.504), `eval-mimic` 22.2M.
-- Holdout (T1-open's rule, pinned `fa738430fd3b40389d27bb4bc5543b0be6a0e7f8cd9aaaa3adae8e8b226a7d6f`): 160 entries
-  chosen (10% of 1,596 eligible; 2,541 hub entries not eligible) + 1,512 by the closure = 1,672 entries; node- and
-  alias-disjoint (asserted).
+  Qwen3 relink built (`hosts/qwen3`, `runs/v2-qwen3`): train 130.0M (share 0.504), `eval-mimic` 22.2M.
+- Holdout (T1-open's rule at fraction 0.30, T1c-1; pinned `7369ec276b45465900cc3a9898381392f52fa99d47821a4c6ad80df5eae8cec5`,
+  superseding `fa738430…`): 479 entries chosen (30% of 1,596 eligible; 2,541 hub entries not eligible) + 1,595 by the
+  closure = 2,074 entries (2,069 concepts); node- and alias-disjoint (asserted). Fraction 0.10 on the same pre-sample
+  reproduces `fa738430…` exactly.
 
 **Feasibility** (decision 17's bar: ≥ 2,000 occurrences and ≥ 300 entries with ≥ 5 occurrences; SmolLM2, ℓ_min 2;
 Qwen3 within ±10%):
 
-| stratum | whole `eval-mimic` (21.8k windows): occ. / entries / entries ≥ 5 | verdict | E9's 2,048 windows: occ. / entries ≥ 5 | verdict |
+| stratum | whole `eval-mimic` (21,827 windows): occ. / entries / entries ≥ 5 | verdict | E9's 2,048 windows: occ. / entries ≥ 5 | verdict |
 |---|---|---|---|---|
-| held-out | 21,294 / 208 / 153 | exploratory-feasible | 1,927 / 72 | exploratory-feasible |
-| unseen (freq 0) | 1,360 / 784 / 32 | exploratory-feasible | 116 / 1 | infeasible |
-| rare-seen (1–9) | 6,573 / 2,636 / 315 | feasible | 662 / 3 | infeasible (the whole split is needed) |
+| held-out | 40,690 / 442 / 347 (v1: 21,294 / 208 / 153) | **feasible** | 3,638 / 161 | occurrences met, entries ≥ 5 not (12,288 windows needed) |
+| unseen (freq 0) | 1,365 / 786 / 32 | exploratory-feasible | 117 / 1 | infeasible |
+| rare-seen (1–9) | 6,592 / 2,636 / 316 | feasible | 668 / 3 | infeasible (the whole split is needed) |
 | 3+-subtoken | 377,116 / 8,901 / 4,242 | feasible | 35,564 / 1,198 | feasible (1,024 windows suffice) |
 
-The held-out stratum is bounded by how many distinct held-out terms occur in notes (SNOMED's compound aliases make
-frequent terms closure-heavy hubs). Simulated re-freezes on the same pre-sample and spans: fraction 0.30 → 2,074
-held-out entries, whole split 40,690 occ. / 347 entries ≥ 5, 2,048 windows 3,638 / 161; fraction 0.20 with hubs ≤ 20
-→ 5,025 entries, 49,621 / 446 and 4,608 / 205. No setting reaches 300 entries ≥ 5 inside 2,048 windows; the bar
-needs a whole-split evaluation of the final checkpoints. Note-level enrichment concentrates the strata only 1.5×.
+So the held-out and rare-seen gate strata are read on the whole split (T1c-2: `e4_quant --windows 21827` on the final
+checkpoints); the 2,048-window evaluations of the trainer stay the curves and the 3+-subtoken gate. The held-out stratum
+is bounded by how many distinct held-out terms occur in notes (SNOMED's compound aliases make frequent terms
+closure-heavy hubs); note-level enrichment concentrates the strata only 1.5×.
 
-**Novelty to the host (P0, SmolLM2-360M frozen; `runs/t1c-novelty`, 2,048 windows, 2 min, 3.2 GB).**
+**Novelty to the host (P0, SmolLM2-360M frozen; `runs/t1c-novelty-v2`, 2,048 windows, 2 min, 3.2 GB; v1 in
+`runs/t1c-novelty`, stale).**
 
 | P0 | T5 | T4 | T1-open | WordNet | **T1c** |
 |---|---:|---:|---:|---:|---:|
 | loss inside a term | 3.38 | 1.64 | 0.76 | 0.91 | **1.38** |
 | loss on unlinked text | 3.59 | 2.35 | 2.43 | 2.75 | **3.16** |
 | inside ÷ unlinked | 0.94 | 0.70 | 0.31 | 0.33 | **0.44** |
-| after held-out / unseen / rare-seen / 3+-subtoken | 3.35 / 3.44 / 3.33 / 3.19 | 2.40 / 3.50 / 3.31 / 2.69 | 2.41 / 2.46 / 2.39 / 2.33 | 2.54 / 2.66 / 2.64 / 2.48 | **3.50 / 3.23 / 3.24 / 3.03** |
-| held-out zero-shot property / entailment accuracy | 0.32 / 0.56 | 0.52 / 0.69 | — | — | **0.77 / 0.84** |
+| after held-out / unseen / rare-seen / 3+-subtoken | 3.35 / 3.44 / 3.33 / 3.19 | 2.40 / 3.50 / 3.31 / 2.69 | 2.41 / 2.46 / 2.39 / 2.33 | 2.54 / 2.66 / 2.64 / 2.48 | **3.34 / 3.23 / 3.24 / 3.03** |
+| held-out zero-shot property / entailment accuracy | 0.32 / 0.56 | 0.52 / 0.69 | — | — | **0.76 / 0.88** |
 
 The *text* of notes is new to the host (unlinked 3.16 nats vs 2.35–2.75 on the other natural tracks), the *terms*
-much less: inside-term loss sits between T4 and T1-open/WordNet, and P0 already answers 77% of held-out frame
+much less: inside-term loss sits between T4 and T1-open/WordNet, and P0 already answers 76% of held-out frame
 properties. Expected place on R9's ordering: T5 > T4 ≳ **T1c** > T1-open ≈ WordNet — a small channel gain at most;
 C0′ will lower every stratum (format adaptation), so C5 − C0′ is the readout, not C0′ − P0.
 
-**Items** (`~/data/vsa-llm/t1c/items/`; digests in `experiments/t1c-clinical/items-digests.json`): 300 new words
-(decision 35: `is_a` / `hierarchy` / `semantic_tag` kept, other fillers resampled; 800 property, 800 statement, 600
-entailment items; contamination-checked on 78M characters of training text), 200 edits (finding site → causative agent
-→ associated morphology, decision 40's pattern; 100 held-out, 100 seen; same-hierarchy fillers), track zero-shot items
-on 600 held-out concepts (1,096 property groups × 2 paraphrases, 1,096 entailment pairs). Smokes on the P0 run: track
-zero-shot 80 s / 4.0 GB, editing 183 s / 2.2 GB, channel probes 386 s / 4.8 GB (360M probes need ≈ 5 GB on this
-GPU); 8-step C2 / C5 training smokes on SmolLM2-135M ran on the CPU.
+**Items** (rebuilt on the v2 holdout; `~/data/vsa-llm/t1c/items/`, the v1 sets moved to
+`~/data/vsa-llm/t1c/stale-holdout-fa738430/`; digests in `experiments/t1c-clinical/items-digests.json`): 300 new words
+(decision 35: `is_a` / `hierarchy` / `semantic_tag` kept, other fillers resampled; 817 property, 817 statement, 600
+entailment items; contamination-checked on the training text), 200 edits (finding site → causative agent → associated
+morphology, decision 40's pattern; 100 held-out, 100 seen; same-hierarchy fillers), track zero-shot items on 600 of
+2,039 eligible held-out concepts (1,020 property groups × 2 paraphrases, 1,020 entailment pairs). Smokes on the P0 run:
+track zero-shot 80–94 s / 2.3 GB at batch 8, editing 183 s / 2.2 GB, channel probes 386 s / 4.8 GB (360M probes need
+≈ 5 GB on this GPU); 8-step C2 / C5 training smokes on SmolLM2-135M ran on the CPU.
 
-**Queue** (from the main checkout after merging; nothing queued by WP-T1c; `e9_plan --dry-run`, measured per-run times):
+**Queue** (from the main checkout; not queued by WP-T1c; `e9_plan --dry-run`, measured per-run times). Seed 1 at
+51–54 after T7 and E11 tier 1 (orchestrator's placement); the whole-split rescoring (T1c-2) at 53, after the training
+(51) and evaluations (52), before the report (54):
 
 ```bash
 PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
-# seed 1: SmolLM2-360M + 135M × P0, C0', C2, C5 + chained evaluations, e4_quant (eval-mimic, eval-general), R9 report — ≈ 8.0 GPU-h
-PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t1c --hosts SmolLM2-360M SmolLM2-135M --seeds 1 --priority 62 --queue
-# seeds 2–3 after seed 1 is read — ≈ 15.0 GPU-h
-PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t1c --hosts SmolLM2-360M SmolLM2-135M --seeds 2 3 --priority 66 --queue
-# optional (T1c-2): whole-split bf16 + INT8 rescoring of the 360M C0'/C2/C5 runs for the held-out and rare strata — ≈ 3.5 GPU-h
-PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t1c-quant-full-360M --priority 70 --min-free-gb 5 --no-resume -- \
-  $PY -m vsa_embed.experiments.e4_quant --runs experiments/e9-retrofit/runs/t1c/SmolLM2-360M-full-C0p-s{1,2,3} \
-  experiments/e9-retrofit/runs/t1c/SmolLM2-360M-full-C2-s{1,2,3} experiments/e9-retrofit/runs/t1c/SmolLM2-360M-full-C5-s{1,2,3} \
+# seed 1: SmolLM2-360M + 135M × P0, C0', C2, C5; evaluations at 52, e4_quant (eval-mimic, eval-general) at 53, R9 report at 54
+# — 59 jobs, ≈ 8.2 GPU-h (training and P0 ≈ 5.2)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t1c --hosts SmolLM2-360M SmolLM2-135M --seeds 1 --priority 51 --queue
+# T1c-2: whole-split bf16 + INT8 (variant A) rescoring of the 360M C0'/C2/C5 seed-1 runs (held-out and rare strata) — ≈ 1.5 GPU-h
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t1c-quant-full-s1-SmolLM2-360M --priority 53 --min-free-gb 5 --no-resume -- \
+  $PY -m vsa_embed.experiments.e4_quant --runs experiments/e9-retrofit/runs/t1c/SmolLM2-360M-full-C0p-s1 \
+  experiments/e9-retrofit/runs/t1c/SmolLM2-360M-full-C2-s1 experiments/e9-retrofit/runs/t1c/SmolLM2-360M-full-C5-s1 \
   --output experiments/e9-retrofit/quant-full/t1c --bits 8 --variants A --baseline "C0'" --references C2 --windows 21827 \
-  --resume --title "E9 T1c on the whole eval-mimic split"
+  --resume --title "E9 T1c on the whole eval-mimic split (seed 1)"
+# later, seeds 2–3 (after seed 1 is read) — ≈ 15 GPU-h; extend the rescoring to s2/s3 with the same command (--resume)
 ```
 
 **Decisions taken (WP-T1c).**
@@ -680,13 +687,13 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t1c-quant-full-360M --priori
 | T1c-c | Reference tokenizer | SmolLM2 (no GPT-2 corpus; a from-scratch variant would add one as a host relink) |
 | T1c-d | Patient split, note order | 10% of patients evaluation-only; notes shuffled by `ROW_ID` hash so stream prefixes sample every category |
 | T1c-e | Exact source shares | `build_corpus` records skipped input documents (`skipped_document_indices`; kept out of committed summaries) |
+| T1c-1 | Held-out stratum below decision 17's entries bar at fraction 0.10 | **author, 2026-10-07:** re-freeze at fraction 0.30 before any run (`7369ec27…`; v1 stale) |
+| T1c-2 | Whole-split evaluation for held-out / rare | **author, 2026-10-07:** `e4_quant --windows 21827` on the 360M C0′ / C2 / C5 runs (queued with seed 1 at 53) |
 
 **Open decisions for the author.**
 
 | # | Decision | Default if nothing better |
 |---|---|---|
-| T1c-1 | Held-out stratum below decision 17's entries bar | keep the frozen holdout; held-out and unseen exploratory, 3+-subtoken the gate stratum; or re-freeze at fraction 0.30 before any training (≈ 10 min CPU) |
-| T1c-2 | Whole-split rescoring for held-out / rare | the optional `e4_quant --windows 21827` job above |
 | T1c-3 | C2 at 295k entries is matched to 8 dimensions per entry (T1-open ≈ 76) | as the protocol says; C2f only if C5 shows a gain |
 | T1c-4 | 1,560 acronym synonyms dropped; notes are dense with abbreviations | keep; proposal (d) tests a case-sensitive acronym linker |
 | T1c-5 | Qwen3 on T1c | relink built; Qwen3 E9 runs only if SmolLM2 shows a gain |
@@ -716,10 +723,10 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t1c-quant-full-360M --priori
   the 95th percentile of Ln's scores (pre-registered); baselines `prior_corr`, TransE/RotatE, AMIE on the remaining
   graph. b2: hide causative agent (16.8k edges) with 3 blank slots; slot ↔ relation alignment against Ln. Cost: 18 ×
   0.65 h (135M) + 4 × 1.4 h (360M confirmation) + evaluations ≈ **20 GPU-h**; baselines ≈ 2 CPU-h.
-- **(c) One-shot learning from definitions** (`runs/definitions-v1`; another agent designs read-to-learn).
-  SNOMED text definitions: 6,343 of 310,698 T1c concepts (2.0%), 50 of 1,675 held-out. UMLS MRDEF (English sources,
+- **(c) One-shot learning from definitions** (`runs/definitions-v2`; another agent designs read-to-learn).
+  SNOMED text definitions: 6,343 of 310,698 T1c concepts (2.0%), 75 of 2,069 held-out. UMLS MRDEF (English sources,
   through the SNOMED CT US atoms' CUIs; NCI 24.2k, MeSH 18.6k, SNOMED 6.6k, Orphanet 6.5k, CSP 6.0k, HPO 4.9k): 43,583
-  T1c concepts (14.0%), 265 held-out (15.8%). Local readers only; check each source's restriction level (MRSAB SRL)
+  T1c concepts (14.0%), 498 held-out (24.1%). Local readers only; check each source's restriction level (MRSAB SRL)
   before use. Cost: minutes of CPU, < 1 GPU-h per model.
 - **(d) Acronym-aware linker** (T1c-4): case-sensitive matching for the dropped all-caps synonyms (new linker version,
   relink ≈ 10 min CPU, ½ agent-day); C0′ / C5 seed 1 on 360M ≈ 2.5 GPU-h. Abbreviations are the part of note

@@ -189,7 +189,7 @@ DATA = Path("~/data/vsa-llm").expanduser()
 # are built by the commands of `resources/plan-improvement/execution.md` (E9 on Qwen3).
 # T1c (licensed; decision 58): the SmolLM2 corpora are the reference build; the Qwen3 relink is `hosts/qwen3`
 # (`experiments/t1c-clinical/t1c-qwen3.yaml`).
-T1C_ROOT = DATA / "t1c/snomed-mimic3-smollm2-v1"
+T1C_ROOT = DATA / "t1c/snomed-mimic3-smollm2-v2"     # v2: holdout re-frozen at fraction 0.30 (T1c-1); v1 is stale
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1",
                "t1c": T1C_ROOT / "hosts/qwen3", "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3"}

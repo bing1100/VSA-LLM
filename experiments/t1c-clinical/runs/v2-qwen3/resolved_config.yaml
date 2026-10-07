@@ -1,0 +1,67 @@
+experiment: t1c-clinical-qwen3
+track_label: clinical (SNOMED CT + MIMIC-III)
+seed: 20261007
+tokenizer: HuggingFaceTB/SmolLM2-360M
+workers: 4
+paths:
+  licensed_root: /home/bhux/workplace/VSA-LLM/data
+  notes_dir: ~/data/vsa-llm/t1c/notes-mimic3-v1
+  data_root: ~/data/vsa-llm/t1c/snomed-mimic3-smollm2-v2
+  general_config: experiments/c3-general-corpus/c3.yaml
+mimic:
+  noteevents: /home/bhux/workplace/VSA-LLM/data/physionet.org/files/mimiciii/1.4/NOTEEVENTS.csv.gz
+  eval_buckets: 1000
+  shards: 32
+  categories: null
+umls:
+  meta_dir: /home/bhux/workplace/VSA-LLM/data/umls-2022AB-full/2022AB-full/2022ab-1-meta/2022AB/META
+ontology:
+  adapter: snomed
+  path: /home/bhux/workplace/VSA-LLM/data/SnomedCT_InternationalRF2_PRODUCTION_20220531T120000Z
+  hierarchies:
+  - clinical_finding
+  - procedure
+  - body_structure
+  - substance
+  - product
+  - organism
+  - observable_entity
+  max_atomics: 8192
+  max_degree: 16
+  min_relation_edges: 200
+  aliases:
+    drop_abbreviations: true
+    max_abbreviation_chars: 8
+    min_chars: 3
+    max_words: 8
+mix:
+  domain_share: 0.5
+  calibration_docs: 2000
+data:
+  presample_tokens: 10000000
+  holdout_fraction: 0.3
+  holdout_min_count: 5
+  holdout_min_subtokens: 2
+  holdout_max_containing: 5
+  expected_holdout_sha256: 7369ec276b45465900cc3a9898381392f52fa99d47821a4c6ad80df5eae8cec5
+  min_subtokens: 2
+  train_tokens: 130000000
+  train_min_subtokens: 1
+  eval_domain_docs: 40000
+  eval_general_docs: 5000
+  eval_mix_tokens: 10000000
+  cardinality_docs: 2000
+hosts:
+- name: qwen3
+  tokenizer: Qwen/Qwen3-0.6B-Base
+  train_tokens: 130000000
+cardinality_tokenizers:
+- HuggingFaceTB/SmolLM2-135M
+- Qwen/Qwen3-0.6B-Base
+feasibility:
+  min_occurrences: 2000
+  min_entries: 300
+  exploratory_occurrences: 1000
+  exploratory_entries: 50
+  trainer_windows: 2048
+  window_length: 1024
