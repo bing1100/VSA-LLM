@@ -37,3 +37,18 @@ experiments/e9-retrofit/items/*t1c*/
 experiments/t1c-clinical/**/holdout_*
 experiments/t1c-clinical/**/alias_table*
 experiments/t1c-clinical/items/
+# T1c-F (ICD frequency bias, experiments/t1c-clinical/icd-frequency): run folders keep aggregates only (summaries,
+# metrics, endpoints, report, manifest, resolved config); scores, ranks, code vectors, t-SNE coordinates and figures
+# are written to ~/data/vsa-llm/t1c/icd-frequency-v1/ and are also kept out of git here if misplaced.
+experiments/t1c-clinical/icd-frequency/runs/**
+!experiments/t1c-clinical/icd-frequency/runs/**/
+!experiments/t1c-clinical/icd-frequency/runs/*/summary.json
+!experiments/t1c-clinical/icd-frequency/runs/*/metrics.json
+!experiments/t1c-clinical/icd-frequency/runs/*/endpoints.json
+!experiments/t1c-clinical/icd-frequency/runs/*/report.md
+!experiments/t1c-clinical/icd-frequency/runs/*/manifest.json
+!experiments/t1c-clinical/icd-frequency/runs/*/resolved_config.yaml
+experiments/t1c-clinical/icd-frequency/**/*.npy
+experiments/t1c-clinical/icd-frequency/**/*.npz
+experiments/t1c-clinical/icd-frequency/**/*.pt
+experiments/t1c-clinical/icd-frequency/**/*.png

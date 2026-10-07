@@ -1,0 +1,78 @@
+# T1c-F: ICD-9 coding of MIMIC-III discharge summaries — does an ontology-composed code vector reduce frequency bias and
+# help codes never trained? (preregistration.md in this folder; code: vsa_embed.icd_coding,
+# vsa_embed.experiments.t1c_icd_frequency). Author request 2026-10-07 ("measure the frequency bias improvement like in
+# the original HRR paper with MIMIC and how ontologies improve frequency bias"); T1c proposal (a).
+#
+# LICENCE / DUA: every path under `paths` except the T1c config holds licensed or credentialed data or tables derived
+# from it (mode 700, never committed). Run folders under experiments/t1c-clinical/icd-frequency/runs/ receive aggregates
+# only (.gitignore keeps summary/metrics/endpoints JSON, report.md, manifest.json and resolved_config.yaml).
+experiment: t1c-icd-frequency
+version: v1
+seed: 20261007
+paths:
+  t1c_config: experiments/t1c-clinical/t1c.yaml      # licensed_root, notes_dir, eval_buckets, the SNOMED CT ontology
+  data_root: ~/data/vsa-llm/t1c/icd-frequency-v1      # labels, holdout, tokens, states, head outputs (licensed)
+  ontology_pt: ~/data/vsa-llm/t1c/snomed-mimic3-smollm2-v2/ontology.pt
+  t1c_holdout: ~/data/vsa-llm/t1c/snomed-mimic3-smollm2-v2/holdout_concepts.txt
+  alias_table: ~/data/vsa-llm/t1c/e9/t1c.json         # E9's T1c evaluation alias table (C5 encoder's linker)
+  runs: experiments/t1c-clinical/icd-frequency/runs   # committed aggregates
+sources:                                              # relative to the T1c config's licensed_root
+  diagnoses: physionet.org/files/mimiciii/1.4/DIAGNOSES_ICD.csv.gz
+  titles: physionet.org/files/mimiciii/1.4/D_ICD_DIAGNOSES.csv.gz
+  icd9_map_dir: mimic-iv_data/hosp/Mapping/ICD9CM_DIAGNOSIS_MAP_202112   # NLM ICD9CM_SNOMED_MAP 1TO1 / 1TOM
+labels:
+  note_category: Discharge summary
+  max_concepts: 8               # one-to-many maps: the maximal mapped concepts (most general), at most 8
+  frequency_edges: [-14, -12, -10, -8, -6, -4, -2, 0]   # HRRBERT: ln(relative training frequency), width 2
+split:
+  dev_buckets: [1000, 1500]     # training-side patients with sha256 bucket in [1000, 1500) → dev (early stopping only)
+holdout:
+  salt: t1c-icd-frequency-v1
+  fraction: 0.13                # of the eligible framed codes of each eligible bin
+  bins: [-12, -10, -8]          # lower edges: training counts ≈ 4–25, 26–187, 188–1,355 (head bins −6, −4 excluded)
+  min_count: 5
+  expected_sha256: null         # pinned to the prepare stage's digest before any GPU run (a build that differs fails)
+text:
+  tokenizer: HuggingFaceTB/SmolLM2-360M   # SmolLM2-135M / -360M share it; T1c's reference tokenizer
+  max_tokens: 8192              # first 8,192 tokens of the concatenated discharge summaries (≥ 99% of admissions whole)
+  chunk_tokens: 1024            # independent host windows (E9's sequence length)
+  segment_tokens: 32            # mean-pooled segments the head attends over
+  link_min_subtokens: 2         # C5 encoder: E9's linker setting (prefix boundary)
+  workers: 8
+encode:
+  batch_chunks: 8               # 1,024-token chunks per forward
+  dtype: bfloat16
+head:
+  source_dim: 256
+  attention_dim: 256
+  label_hidden: 512
+  batch: 32
+  lr: 1.0e-3
+  weight_decay: 0.01
+  max_epochs: 12
+  patience: 2
+  free_std: 0.02
+  conditions: [free, composed_head, transe, title, random, gram, composed_free]   # composed_c5 added once C5 exists
+composer:                       # the T1c C5 channel's composer settings (e9_plan C5): hrr, 256, attentive, key 8
+  operator: hrr
+  dimension: 256
+  composition: attentive
+  concept_factor: induced
+  key_dimension: 8
+gram:
+  attention_dim: 128
+kge:                            # TransE as E9's C6g (e9_rowsource.train_transe), on the label concepts' + atomics' frames
+  dimension: 256
+  steps: 20000
+  batch: 1024
+  negatives: 64
+analysis:
+  ks: [10, 100]
+  bootstrap_primary: 2000
+  bootstrap_secondary: 1000
+  rare_below: -10               # rare bins: ln f < −10 (≤ 25 training occurrences)
+  frequent_from: -8             # frequent bins: ln f ≥ −8 (≥ 188)
+  probe_folds: 5
+  neighbours: 10
+  tsne_points: 3000
+  tsne_iterations: 750
