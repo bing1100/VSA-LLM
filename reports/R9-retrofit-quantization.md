@@ -152,7 +152,7 @@ Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entit
 | inside terms | 130,661 | −1.55% [−1.68, −1.42] | −1.13% | −2.03% [−2.19, −1.88] | −1.73% | +0.04% |
 | unlinked text (locality) | 739,780 | −0.01% | −0.01% | −0.03% | −0.02% | −0.03% |
 
-- **The direction replicates on natural text; the size does not.** C5 beats both C0′ and the free table on every term stratum with no locality cost, but by 0.4–3.7% instead of 6–13%. The held-out-term gain, the largest on T5, is the smallest on T4 (−0.4 / −0.6%). Most of T5's held-out effect is therefore likely the copy confound (continuations verbalize frame fillers); the filler / non-filler rescoring (PQ1) quantifies this.
+- **The direction replicates on natural text; the size does not.** C5 beats both C0′ and the free table on every term stratum with no locality cost, but by 0.4–3.7% instead of 6–13%. The held-out-term gain, the largest on T5, is the smallest on T4 (−0.4 / −0.6%). The PQ1 rescoring (section "T5 controls") shows the T4/T5 held-out gap is not filler copying: on T5 only a third of the held-out gain is on filler tokens, two thirds on other tokens (−19.4%), whereas filler copying carries 75–90% of the gain after rare, unseen and multi-subtoken terms. The held-out gap more likely reflects T5's templated, type-specific continuations, which a composed row can predict and natural text lacks; T4's filler share is also far smaller.
 - **The gain is largest after unseen terms** (−2.3 / −3.7%) and **inside terms** (−1.6 / −2.0%; zero on T5). The inside gain is consistent with nested chemical names, where a shorter linked name ends inside a longer one and its injected vector helps predict the rest (not yet checked).
 - **On T4 the smaller host gains more** (135M > 360M on every stratum), the reverse of T5.
 
@@ -188,7 +188,7 @@ A simple novelty index is how much plain continued training (C0′) lowers the l
 
 - **Ordering:** the gain is largest where the vocabulary is newest to the host (T5), smaller on T4, and zero where the host already models the terms (T1, WordNet). Within T4 the unseen stratum is both the most novel (−56%) and the most improved (−2.3%).
 - **Implication for the paper:** the channel is a tool for vocabulary that is genuinely new to the host (invented, private or fast-changing terms), not for terms already well represented in pretraining. That is the defensible scope of claim A, and it matches the host learning to ignore the channel on known vocabulary (engagement check).
-- **Caveat:** three tracks and one copy-confounded synthetic track are not a dose–response curve; T5's size also contains the copy effect. The PQ1 filler / non-filler rescoring and T4 seeds 2–3 sharpen this. A fourth natural track with genuinely new vocabulary (T2 developer tools or T3 product names) would test the ordering directly.
+- **Caveat:** three tracks and one synthetic track are not a dose–response curve. T5's sizes also contain filler copying (75–90% of the gain after rare, unseen and multi-subtoken terms) and templated, type-specific continuations (most of the held-out gain; section "T5 controls"). T4 seeds 2–3 sharpen this, and T7 (MeSH 2026 supplementary-concept names new to the host; queued, decision 55; prediction recorded before running: a gain at least T4's and below T5's) tests the ordering directly.
 
 ## Qwen3 on T5 at 2 seeds (2026-10-06)
 
