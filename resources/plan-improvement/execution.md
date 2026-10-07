@@ -715,6 +715,28 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t1c-quant-full-s1-SmolLM2-36
   unseen (154 framed); a text task on ICD-10 needs MIMIC-IV-Note (not on this machine). The group's `HRR_Atomics/v5`
   (ICD-9/10→SNOMED maps for 14.7k / 95.1k codes, relation maps, 21.5k concept atomic vectors, 50 relations) and
   `mimic-iv_data/{ood,rood}` are the structured-code predecessor; reuse the NLM map files, not the pickled vector spaces.
+  - **Built as T1c-F** (author request 2026-10-07: "measure the frequency bias improvement like in the original HRR
+    paper with MIMIC and how ontologies improve frequency bias").
+    - Pre-registration: `experiments/t1c-clinical/icd-frequency/preregistration.md`, committed before any GPU run.
+    - Code: `vsa_embed.icd_coding` and `vsa_embed.experiments.t1c_icd_frequency`. Tests:
+      `tests/test_icd_frequency.py`, synthetic only.
+    - Design:
+      - HRRBERT's 7 ln-frequency bins.
+      - A frozen, hashed holdout of 382 framed codes (`5450b37b…`), stratified over bins [−12,−10), [−10,−8) and
+        [−8,−6). Held-out codes are scored on all 52,722 admissions.
+      - A label-wise attention head on frozen hosts. Every label parameter, the bias included, comes from the
+        condition's code vector: free, composed (head-trained or the T1c C5 dictionary), TransE, title, random, GRAM, or
+        composed + free.
+    - Primary (P0-360M):
+      - E1: held-out macro-AUC, composed − free.
+      - E2: the slope of per-code AUC on ln f, with a rare-code non-inferiority condition.
+      - Holm over the two; two-way bootstrap over admissions and codes.
+    - CPU stages are done; their aggregates are in `experiments/t1c-clinical/icd-frequency/runs/`.
+    - Smokes (§14 of the pre-registration) passed: the GPU smoke took 2.7 min with a peak of 1.5 GB.
+    - Queue commands are in `experiments/t1c-clinical/icd-frequency/queue-commands.sh`; GPU-h are idle-GPU estimates.
+      - Pass 1 (P0) at 55: ≈ 4.1 GPU-h.
+      - Pass 2 (C0′ / C5 encoders and the C5 dictionary) at 60–61, after T1c seed 1 and WP-UB's 55–59 block: ≈ 9.8 GPU-h.
+    - Complements WP-UB: frequency bias inside the LM there, in a downstream clinical labelling task here.
 - **(b) E10.2 on SNOMED CT (claim D).** Needs E10.9b's learnable-ontology code path (designed above, not built;
   ≈ 2 agent-days) and a null-calibrated acceptance test (R10 B.6). b1: erase 30% of the *non-inherited* finding-site
   and causative-agent edges of training-term heads (an edge implied by a parent's edge would be recovered by graph

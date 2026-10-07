@@ -1,0 +1,191 @@
+{
+  "track": "clinical (SNOMED CT + MIMIC-III)",
+  "task": "ICD-9 diagnosis coding of discharge summaries",
+  "admissions": {
+    "train": 44909,
+    "dev": 2699,
+    "eval": 5114
+  },
+  "admissions_without_framed_label": {
+    "train": 22,
+    "dev": 2,
+    "eval": 2
+  },
+  "notes_per_admission_mean": 1.131330374416752,
+  "diagnoses": {
+    "rows": 651047,
+    "rows_used": 618998,
+    "rows_without_admission_or_code": 47
+  },
+  "icd9_map": {
+    "rows": {
+      "1TO1": 7675,
+      "1TOM": 40795
+    },
+    "codes_1to1": 7667,
+    "codes_1tom": 3441,
+    "codes_in_both": 0
+  },
+  "distinct_codes": 6918,
+  "framed_codes": 5589,
+  "mapping_kinds": {
+    "1to1": 3881,
+    "1toM": 1708
+  },
+  "members_per_code_mean": 1.8599033816425121,
+  "edges_per_frame_mean": 8.689032027196278,
+  "total_train_label_occurrences": 527577,
+  "eval_label_occurrences_framed_share": 0.8815260029967843,
+  "labels": {
+    "trained": 5033,
+    "heldout": 382,
+    "natural_unseen": 174
+  },
+  "bins_trained": {
+    "[-14,-12)": {
+      "codes": 2135,
+      "train_positives": 3486,
+      "eval_positives": 368,
+      "codes_with_eval_positive": 323
+    },
+    "[-12,-10)": {
+      "codes": 1635,
+      "train_positives": 16066,
+      "eval_positives": 1825,
+      "codes_with_eval_positive": 959
+    },
+    "[-10,-8)": {
+      "codes": 880,
+      "train_positives": 59028,
+      "eval_positives": 6587,
+      "codes_with_eval_positive": 871
+    },
+    "[-8,-6)": {
+      "codes": 325,
+      "train_positives": 149386,
+      "eval_positives": 16677,
+      "codes_with_eval_positive": 325
+    },
+    "[-6,-4)": {
+      "codes": 54,
+      "train_positives": 155055,
+      "eval_positives": 17377,
+      "codes_with_eval_positive": 54
+    },
+    "[-4,-2)": {
+      "codes": 4,
+      "train_positives": 49251,
+      "eval_positives": 5409,
+      "codes_with_eval_positive": 4
+    },
+    "[-2,0)": {
+      "codes": 0,
+      "train_positives": 0,
+      "eval_positives": 0,
+      "codes_with_eval_positive": 0
+    }
+  },
+  "bins_heldout_natural_frequency": {
+    "[-14,-12)": {
+      "codes": 0,
+      "train_positives": 0,
+      "eval_positives": 0,
+      "codes_with_eval_positive": 0
+    },
+    "[-12,-10)": {
+      "codes": 202,
+      "train_positives": 2277,
+      "eval_positives": 237,
+      "codes_with_eval_positive": 123
+    },
+    "[-10,-8)": {
+      "codes": 131,
+      "train_positives": 9502,
+      "eval_positives": 1175,
+      "codes_with_eval_positive": 129
+    },
+    "[-8,-6)": {
+      "codes": 49,
+      "train_positives": 22570,
+      "eval_positives": 2588,
+      "codes_with_eval_positive": 49
+    },
+    "[-6,-4)": {
+      "codes": 0,
+      "train_positives": 0,
+      "eval_positives": 0,
+      "codes_with_eval_positive": 0
+    },
+    "[-4,-2)": {
+      "codes": 0,
+      "train_positives": 0,
+      "eval_positives": 0,
+      "codes_with_eval_positive": 0
+    },
+    "[-2,0)": {
+      "codes": 0,
+      "train_positives": 0,
+      "eval_positives": 0,
+      "codes_with_eval_positive": 0
+    }
+  },
+  "holdout": {
+    "per_bin": {
+      "[-12,-10)": {
+        "eligible": 1553,
+        "chosen": 202,
+        "positives_removed": 2277
+      },
+      "[-10,-8)": {
+        "eligible": 1011,
+        "chosen": 131,
+        "positives_removed": 9502
+      },
+      "[-8,-6)": {
+        "eligible": 374,
+        "chosen": 49,
+        "positives_removed": 22570
+      }
+    },
+    "sha256": "5450b37b542048e52e6725d8e567bb9f67296a1d35c0f3eeb17944af5a1df298",
+    "fraction": 0.13,
+    "min_count": 5,
+    "eligible_bins": [
+      -12.0,
+      -10.0,
+      -8.0
+    ],
+    "salt": "t1c-icd-frequency-v1"
+  },
+  "heldout_positives": {
+    "all_admissions": 40503,
+    "eval": 4000,
+    "train_removed": 34349,
+    "share_of_train_labels_removed": 0.06510708389486274
+  },
+  "natural_unseen_positives": {
+    "dev": 82,
+    "eval": 117
+  },
+  "t1c_holdout_interaction": {
+    "labels_with_t1c_heldout_member": 137,
+    "heldout_labels_with_t1c_heldout_member": 7,
+    "trained_labels_with_t1c_heldout_member": 127
+  },
+  "heldout_sharing_member_set_with_trained": 25,
+  "heldout_by_kind": {
+    "1to1": 267,
+    "1toM": 115
+  },
+  "titles_missing": {
+    "all": 108,
+    "heldout": 5
+  },
+  "gram": {
+    "nodes": 7576,
+    "path_length_mean": 3.5246018965825727
+  },
+  "concept_frames_for_transe": 16550,
+  "seconds": 15.7,
+  "data_root": "/home/bhux/data/vsa-llm/t1c/icd-frequency-v1"
+}
