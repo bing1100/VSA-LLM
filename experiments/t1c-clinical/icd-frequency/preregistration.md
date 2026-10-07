@@ -343,7 +343,7 @@ admissions and a dozen gradient steps, so they say nothing about the endpoints. 
 - **Queue commands:** `queue-commands.sh` in this folder, printed by the `plan` stage and never executed here.
   - Pass 1 (P0) is at priority 55, right after T1c seed 1 (51–54). It has no dependency, so a lower number would run it
     first.
-  - Pass 2 (C0′ and C5 encoders, 8 conditions; the C5 dictionary on P0) is at 56, its analyses at 57.
+  - Pass 2 (C0′ and C5 encoders, 8 conditions; the C5 dictionary on P0) is at 60, its analyses at 61 (§15.4).
   - Within a priority, the queue runs jobs in creation order: encode → train → analyze.
 
 ## 15. Deviations and changes after commit
@@ -358,3 +358,13 @@ admissions and a dozen gradient steps, so they say nothing about the endpoints. 
   choice. Batches are copied as float16 and converted on the device.
 - **15.3 — output naming.** `analyze --label` gives the pass-2 analyses their own folders (`analysis-<encoder>-pass2`),
   so pass 1's are not overwritten.
+- **15.4 — queue placement after merging main (WP-UB).** WP-UB (E9 frequency bias and understanding,
+  `experiments/e9-retrofit/preregistration-understanding.md`) occupies priorities 55–59, as do the Qwen3 seed-3 and 4B
+  jobs.
+  - Pass 1 stays at 55, behind the jobs already queued there; equal priorities run in creation order.
+  - Pass 2 moves to 60 (analyses 61), so the two packages do not interleave.
+  - **Relation to WP-UB.** WP-UB measures frequency bias *inside the language model*: loss after terms per training
+    frequency of the term, and the frequency decodability of E9 concept rows. T1c-F measures it in a *downstream
+    clinical task*: code assignment per label frequency, with HRRBERT's natural-log relative-frequency bins.
+  - The two do not share data or outputs. WP-UB's T1c job writes under `~/data/vsa-llm/t1c/` (its own exclusion
+    tables); T1c-F writes under `~/data/vsa-llm/t1c/icd-frequency-v1/`.

@@ -735,7 +735,8 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t1c-quant-full-s1-SmolLM2-36
     - Smokes (§14 of the pre-registration) passed: the GPU smoke took 2.7 min with a peak of 1.5 GB.
     - Queue commands are in `experiments/t1c-clinical/icd-frequency/queue-commands.sh`; GPU-h are idle-GPU estimates.
       - Pass 1 (P0) at 55: ≈ 4.1 GPU-h.
-      - Pass 2 (C0′ / C5 encoders and the C5 dictionary) at 56–57, after T1c seed 1: ≈ 9.8 GPU-h.
+      - Pass 2 (C0′ / C5 encoders and the C5 dictionary) at 60–61, after T1c seed 1 and WP-UB's 55–59 block: ≈ 9.8 GPU-h.
+    - Complements WP-UB: frequency bias inside the LM there, in a downstream clinical labelling task here.
 - **(b) E10.2 on SNOMED CT (claim D).** Needs E10.9b's learnable-ontology code path (designed above, not built;
   ≈ 2 agent-days) and a null-calibrated acceptance test (R10 B.6). b1: erase 30% of the *non-inherited* finding-site
   and causative-agent edges of training-term heads (an edge implied by a parent's edge would be recovered by graph

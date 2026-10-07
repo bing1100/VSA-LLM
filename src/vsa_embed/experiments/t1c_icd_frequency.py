@@ -1390,7 +1390,7 @@ E9_RUNS = Path("experiments/e9-retrofit/runs/t1c")
 CONFIG_ARG = "--config experiments/t1c-clinical/icd-frequency/icd-frequency.yaml"
 
 
-def plan_commands(*, priority_now: int = 55, priority_after: int = 56, gpu_hours: dict[str, float] | None = None) -> str:
+def plan_commands(*, priority_now: int = 55, priority_after: int = 60, gpu_hours: dict[str, float] | None = None) -> str:
     """The exact queue commands (printed; never executed here). GPU-h: idle-GPU estimates scaled from the smoke test
     (§14 of the preregistration), which ran next to another training job."""
     h = {"encode_p0": 1.5, "encode_run": 1.7, "train_seed": 0.8, "train_c5_seed": 0.15, "analyze": 0.15, **(gpu_hours or {})}
@@ -1407,8 +1407,9 @@ def plan_commands(*, priority_now: int = 55, priority_after: int = 56, gpu_hours
              "# GPU-h: idle-GPU estimates from the smoke (§14); the smoke ran beside a training job (≈ 1.6× slower).",
              "# Memory: ≤ 1.5 GB per job measured (encode 1.2 GB, train 1.5 GB); disk: states ≈ 12 GB per encoder, heads ≈ 1.7 GB per job.",
              "set -euo pipefail", ': "${PY:?set PY to the pinned interpreter}"', "",
-             f"# --- pass 1: P0 = frozen SmolLM2-360M (no dependency; could run now). Priority {priority_now} places it right after",
-             f"# T1c seed 1 (51–54); a lower number would run it first. ≈ {h['encode_p0'] + 3 * h['train_seed'] + h['analyze']:.1f} GPU-h ---"]
+             f"# --- pass 1: P0 = frozen SmolLM2-360M (no dependency; could run now). Priority {priority_now}: after T1c seed 1 (51–54),",
+             "# behind the 55 jobs already queued (WP-UB U1, Qwen3 seed 3; equal priority runs in creation order); a lower number",
+             f"# would run it first. ≈ {h['encode_p0'] + 3 * h['train_seed'] + h['analyze']:.1f} GPU-h ---"]
     lines.append(f"{q} --name t1cf-encode-P0-360M --priority {priority_now} --min-free-gb 20 -- {m} encode {CONFIG_ARG} "
                  f"--encoder P0-360M --pretrained HuggingFaceTB/SmolLM2-360M   # ≈ {h['encode_p0']:.1f} GPU-h (resumable)")
     for s in (1, 2, 3):
@@ -1418,7 +1419,8 @@ def plan_commands(*, priority_now: int = 55, priority_after: int = 56, gpu_hours
                  f"{CONFIG_ARG} --encoder P0-360M --seeds 1 2 3 --device cuda   # ≈ {h['analyze']:.2f} GPU-h")
     total2 = 2 * (h["encode_run"] + 3 * h["train_seed"] * 8 / 7) + 3 * h["train_c5_seed"] + 3 * h["analyze"]
     lines += ["", f"# --- pass 2: needs the T1c seed-1 runs SmolLM2-360M-full-C0p-s1 and -C5-s1 (queued at 51). Priority {priority_after}",
-              f"# (analyses {priority_after + 1}). ≈ {total2:.1f} GPU-h ---"]
+              f"# (analyses {priority_after + 1}): after WP-UB's 55–59 block, so the two frequency-bias packages do not interleave.",
+              f"# ≈ {total2:.1f} GPU-h ---"]
     for enc, run, extra in (("C0p-360M", "SmolLM2-360M-full-C0p-s1", ""), ("C5-360M", "SmolLM2-360M-full-C5-s1", " --channel on")):
         lines.append(f"{q} --name t1cf-encode-{enc} --priority {priority_after} --min-free-gb 20 -- {m} encode {CONFIG_ARG} "
                      f"--encoder {enc} --run {E9_RUNS / run}{extra}   # ≈ {h['encode_run']:.1f} GPU-h (resumable)")
