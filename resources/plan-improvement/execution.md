@@ -725,6 +725,20 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t1c-quant-full-360M --priori
   relink ≈ 10 min CPU, ½ agent-day); C0′ / C5 seed 1 on 360M ≈ 2.5 GPU-h. Abbreviations are the part of note
   vocabulary most likely new to the host.
 
+## E11 — read-to-learn (decision 59; WP-E11, 2026-10-07)
+
+Pre-registration: `experiments/e11-read-to-learn/preregistration.md` (committed before any run). A trained E9 C5 model reads a
+term's definition once; a reader writes a frame over the existing atomics and relations; the channel composes the term's row;
+the term is tested with the definition out of context and no gradient step. Readers: oracle, stated, typeprior, pattern,
+**linker** (the model chooses each found concept's relation by the definition's likelihood and self-tests the edge), host
+(E7 prompted extraction), teacher (optional, open licences only), random, none. Text routes on the same items: the definition
+in context (IKE-style) and a compute-matched one-shot gradient update (lr chosen on 40 dev words). Sets: T5 invented words
+(3 definition styles; primary `prose`), T5 held-out terms, T4 held-out ChEBI entities with their ChEBI definitions (natural),
+T4 invented compounds, T1 held-out MeSH (negative control), OpenStax *Chemistry 2e* glossary (exploratory frame swap; the
+book is CC BY-NC-SA 4.0, not CC BY). Primary endpoints: P1 T5 new words, 360M, property, linker − none; P2 T4 held-out ChEBI
+terms, loss after the term, linker − none (Holm over both). Code `vsa_embed.read_to_learn`, `vsa_embed.experiments.e11_read_to_learn`;
+queue commands from `e11_read_to_learn plan` (priority 61–63, evaluation only).
+
 ## E9 new-vocabulary track T7 (decision 55; screened and built 2026-10-07)
 
 **Novelty proxy** (`e9_novelty calibrate`, `experiments/e9-retrofit/novelty/calibration/`).
