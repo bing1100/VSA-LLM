@@ -9,8 +9,8 @@
 # from it (mode 700, never committed). Run folders under experiments/t1c-clinical/runs/ receive aggregates only.
 #   PYTHONPATH=src python -m vsa_embed.experiments.t1c_corpus --config experiments/t1c-clinical/t1c.yaml --stage inventory --output experiments/t1c-clinical/runs/inventory-v1
 #   PYTHONPATH=src python -m vsa_embed.experiments.t1c_corpus --config experiments/t1c-clinical/t1c.yaml --stage extract
-#   PYTHONPATH=src python -m vsa_embed.experiments.t1c_corpus --config experiments/t1c-clinical/t1c.yaml --output experiments/t1c-clinical/runs/v1
-#   PYTHONPATH=src python -m vsa_embed.experiments.t1c_corpus --config experiments/t1c-clinical/t1c.yaml --stage definitions --output experiments/t1c-clinical/runs/v1
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1c_corpus --config experiments/t1c-clinical/t1c.yaml --output experiments/t1c-clinical/runs/v2
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1c_corpus --config experiments/t1c-clinical/t1c.yaml --stage definitions --output experiments/t1c-clinical/runs/definitions-v2
 experiment: t1c-clinical
 track_label: clinical (SNOMED CT + MIMIC-III)
 seed: 20261007
@@ -19,7 +19,7 @@ workers: 4
 paths:
   licensed_root: /home/bhux/workplace/VSA-LLM/data            # the credentialed files (git-ignored)
   notes_dir: ~/data/vsa-llm/t1c/notes-mimic3-v1
-  data_root: ~/data/vsa-llm/t1c/snomed-mimic3-smollm2-v1
+  data_root: ~/data/vsa-llm/t1c/snomed-mimic3-smollm2-v2   # v1 (holdout fa738430…, fraction 0.10) is stale
   general_config: experiments/c3-general-corpus/c3.yaml
 mimic:
   noteevents: /home/bhux/workplace/VSA-LLM/data/physionet.org/files/mimiciii/1.4/NOTEEVENTS.csv.gz
@@ -45,11 +45,12 @@ mix:
   calibration_docs: 2000
 data:
   presample_tokens: 10000000
-  holdout_fraction: 0.10
+  holdout_fraction: 0.30          # T1c-1 (author, 2026-10-07): re-frozen at 0.30 before any run, so the held-out stratum
+                                  # meets decision 17's bar on the whole eval-mimic split (v1 at 0.10: 153 entries >= 5)
   holdout_min_count: 5
   holdout_min_subtokens: 2
   holdout_max_containing: 5
-  expected_holdout_sha256: fa738430fd3b40389d27bb4bc5543b0be6a0e7f8cd9aaaa3adae8e8b226a7d6f   # frozen 2026-10-07 by the first build (pre-sample only), before any training; a build that differs fails
+  expected_holdout_sha256: 7369ec276b45465900cc3a9898381392f52fa99d47821a4c6ad80df5eae8cec5   # re-frozen 2026-10-07 at fraction 0.30 from the same pre-sample (T1c-1), before any run; supersedes fa738430… (fraction 0.10, runs/v1, stale); a build that differs fails
   min_subtokens: 2
   train_tokens: 130000000
   train_min_subtokens: 1          # spans of every length stored
