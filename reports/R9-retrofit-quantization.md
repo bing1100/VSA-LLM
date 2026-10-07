@@ -120,7 +120,7 @@ The composed vector beats all three by wide margins (claim A's refutation readin
 | 3+-subtoken terms (≈ all linked) | −7.6% | −12.5%* | −3.5%* | 0.75 |
 
 - For rare and unseen terms **most of the gain (86–90%) is predicting the frame's filler words**: the copy effect the novelty check warned about. For held-out terms, whose rows come only from composition, two thirds of the gain is on other tokens (−19.4%), consistent with the composed row telling the model what kind of term follows (in T5's templated text, the type-specific continuation) rather than which filler word comes next.
-- Natural text has far fewer filler continuations (T4: 1–10% of targets vs 19–23% here), which fits T4's much smaller effect.
+- Filler shares on T4 (first 256 windows; execution.md, WP-PQ1): 3.7% after any term, 0.8% after held-out, 10.3% after rare and 28.9% after unseen terms, against 18.6–23.9% on T5. T4's largest gain is after unseen terms (−2.3 / −3.7%), its stratum with the most filler continuations, so filler copying plausibly carries much of T4's effect too; the T4 rescoring (queued after T4 seeds 2–3) measures it.
 
 **Claim-B controls (360M, C5 vs C0′; DiD = change of the C5 − C0′ gap from bf16 to 4-bit, positive = the advantage shrinks):**
 
