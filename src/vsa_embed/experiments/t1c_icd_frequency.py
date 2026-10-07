@@ -1024,7 +1024,9 @@ def run_train(config: dict[str, Any], encoder: str, seed: int, *, conditions: Se
                "metrics": metrics, "history": {n: h["history"] for n, h in histories.items()},
                "c5_run": str(c5_run) if c5_run else None, "limits": {"train": limit_train, "eval": limit_eval,
                                                                        "max_epochs": max_epochs, "max_steps": max_steps}}
-    folder = run_folder(config, f"train-{encoder}{tag}-s{seed}" + ("-" + "-".join(conditions) if tag else ""))
+    # A job with another condition set than the config's (e.g. pass 2's composed_c5 on P0) gets its own folder.
+    default = list(config["head"]["conditions"])
+    folder = run_folder(config, f"train-{encoder}{tag}-s{seed}" + ("" if list(conditions) == default else "-" + "-".join(conditions)))
     write_json(folder / "metrics.json", summary)
     record_run(folder, config, git_at_start=git_at_start, device=device, stage="train")
     return summary
