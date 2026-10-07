@@ -690,42 +690,44 @@ def spearman(a: Sequence[float], b: Sequence[float]) -> float:
     return float(spearmanr(a[keep], b[keep]).statistic)
 
 
-def _ridge_fit(x: np.ndarray, y: np.ndarray, alpha: float) -> tuple[np.ndarray, float, np.ndarray, np.ndarray]:
-    mean, std = x.mean(0), x.std(0) + 1e-8
+def _ridge_path(x: Tensor, y: Tensor, alphas: Sequence[float]) -> list[tuple[Tensor, Tensor, Tensor, Tensor]]:
+    """Ridge fits for every penalty from one eigendecomposition of the standardized Gram matrix (float64)."""
+    mean, std = x.mean(0), x.std(0, unbiased=False) + 1e-8
     z = (x - mean) / std
     ym = y.mean()
-    w = np.linalg.solve(z.T @ z + alpha * np.eye(z.shape[1]), z.T @ (y - ym))
-    return w, ym, mean, std
+    values, vectors = torch.linalg.eigh(z.T @ z)
+    projected = vectors.T @ (z.T @ (y - ym))
+    return [(vectors @ (projected / (values + alpha)), ym, mean, std) for alpha in alphas]
 
 
-def _ridge_predict(model: tuple[np.ndarray, float, np.ndarray, np.ndarray], x: np.ndarray) -> np.ndarray:
+def _ridge_predict(model: tuple[Tensor, Tensor, Tensor, Tensor], x: Tensor) -> Tensor:
     w, ym, mean, std = model
     return ((x - mean) / std) @ w + ym
 
 
 def cv_ridge(x: np.ndarray, y: np.ndarray, *, folds: int = 5, alphas: Sequence[float] = (0.1, 1, 10, 100, 1000, 10000),
-             seed: int = 0) -> dict[str, Any]:
+             seed: int = 0, device: torch.device | str = "cpu") -> dict[str, Any]:
     """How decodable `y` (log frequency) is from `x` (code vectors): `folds`-fold cross-validated ridge regression with
     the penalty chosen by an inner 4-fold CV on each training part; out-of-fold R² and Spearman ρ."""
-    x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+    xs = torch.as_tensor(np.asarray(x, dtype=np.float64), device=device)
+    ys = torch.as_tensor(np.asarray(y, dtype=np.float64), device=device)
     rng = np.random.default_rng(seed)
-    fold = rng.permutation(np.arange(y.size) % folds)
-    predicted = np.zeros_like(y)
+    fold = rng.permutation(np.arange(ys.numel()) % folds)
+    predicted = torch.zeros_like(ys)
     chosen = []
     for f in range(folds):
-        train, test = fold != f, fold == f
-        inner = rng.permutation(np.arange(train.sum()) % 4)
-        xt, yt = x[train], y[train]
-        errors = []
-        for alpha in alphas:
-            err = 0.0
-            for g in range(4):
-                model = _ridge_fit(xt[inner != g], yt[inner != g], alpha)
-                err += float(((_ridge_predict(model, xt[inner == g]) - yt[inner == g]) ** 2).sum())
-            errors.append(err)
-        alpha = alphas[int(np.argmin(errors))]
-        chosen.append(alpha)
-        predicted[test] = _ridge_predict(_ridge_fit(xt, yt, alpha), x[test])
+        train = torch.as_tensor(fold != f, device=device)
+        test = torch.as_tensor(fold == f, device=device)
+        inner = torch.as_tensor(rng.permutation(np.arange(int(train.sum())) % 4), device=device)
+        xt, yt = xs[train], ys[train]
+        errors = np.zeros(len(alphas))
+        for g in range(4):
+            for a, model in enumerate(_ridge_path(xt[inner != g], yt[inner != g], alphas)):
+                errors[a] += float(((_ridge_predict(model, xt[inner == g]) - yt[inner == g]) ** 2).sum())
+        best = int(np.argmin(errors))
+        chosen.append(alphas[best])
+        predicted[test] = _ridge_predict(_ridge_path(xt, yt, [alphas[best]])[0], xs[test])
+    predicted, y = predicted.cpu().numpy(), ys.cpu().numpy()
     r2 = 1.0 - float(((predicted - y) ** 2).sum() / ((y - y.mean()) ** 2).sum())
     return {"r2": r2, "spearman": spearman(predicted, y), "alphas": chosen, "n": int(y.size), "dimension": int(x.shape[1])}
 

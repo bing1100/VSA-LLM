@@ -290,8 +290,71 @@ Primary encoder: **P0-360M**. Primary contrast: **`composed_head` − `free`**.
 
 ## 14. Smoke tests and commands
 
-(Added after this commit; labelled SMOKE, not results.)
+### §14 addendum — smoke tests (2026-10-07, after the commit of §§1–13; SMOKE, not results)
+
+The smokes check that every stage runs on the real data and measure cost. Their numbers come from a few hundred
+admissions and a dozen gradient steps, so they say nothing about the endpoints. Aggregates are in
+`runs/*-cpusmoke*` and `runs/*-gpusmoke*`.
+
+- **Unit tests.** `tests/test_icd_frequency.py` has 21 tests on synthetic fixtures. It includes an end-to-end
+  synthetic run checking that the run folders receive no code string and no per-item array.
+- **Pass-2 code path.** This used an existing E9 C5 run (T5 glossary, 135M, read-only), on CPU, with synthetic frames
+  and spans. Results:
+  - the trained composer loads from `final.pt`;
+  - frozen insertion (`add_concepts`) leaves existing rows unchanged;
+  - with the channel on, host states change from the injection position onward and not before.
+  
+  It also found that `load_run` needs the explicit alias table: T1c's `ontology.pt` has no sidecar table and would
+  fall back to WordNet. Fixed before the preregistration commit.
+- **CPU smoke** (SmolLM2-135M on CPU, the first 48 admissions):
+  - encode: 106 s at 1.6k tokens/s;
+  - training, 7 heads × 1 epoch: 6.6 s;
+  - analysis: 820 s, mostly the exact t-SNE (57 s per condition on CPU) and the NumPy ridge CV. Both now run on the
+    analysis device.
+- **GPU smoke** (P0 = SmolLM2-360M bf16, the first 200 admissions = 757,837 tokens). It ran next to a queue training
+  job that used 20.8 GB of memory and 100% of the GPU.
+
+  | stage | wall time | detail | peak GPU memory |
+  |---|---:|---|---:|
+  | encode | 51 s | admissions at 21.9k tokens/s, then 5,589 titles | 1.17 GB |
+  | train (7 heads × 2 epochs, 169 training admissions, batch 32) | 4.6 s | ≈ 0.33 s per batch for all 7 heads, dev included | 1.47 GB |
+  | analyze (1 seed, 200 replicates) | 84 s | — | — |
+
+  Total ≈ 2.7 min, within the ≤ 4 GB / ≤ 5 min smoke limit.
+
+  Smoke aggregates (not results):
+  - seen macro-AUC 0.49–0.59; held-out macro-AUC 0.47–0.57 over the 94 held-out codes with positives among the 200
+    admissions;
+  - ridge R² of ln f from the code vectors (init → trained):
+    - `free` −0.002 → 0.21 after 12 steps;
+    - `composed_head` 0.085 → 0.16;
+    - `gram` 0.088 → 0.34;
+    - `title` 0.22 and `transe` 0.125 (fixed vectors);
+    - `random` ≈ 0.
+- **Cost of the full runs** (idle-GPU estimates; the smoke's shared GPU is taken to be ≈ 1.6× slower — an
+  assumption):
+  - encode, 191.7M tokens: 2.4 h at the smoke's rate, ≈ 1.5 GPU-h idle for P0, ≈ 1.7 GPU-h for C0′ / C5 (fp32
+    weights under autocast);
+  - training, 1,404 batches per epoch: ≈ 7.7 min per epoch at the smoke's rate, ≤ 12 epochs, 6–8 expected. That is
+    ≈ 0.8 GPU-h per 7-condition seed (scoring ≈ 5 min included) and ≈ 0.9 per 8-condition seed;
+  - `composed_c5` alone on P0: ≈ 0.15 GPU-h per seed; analysis ≈ 0.15 GPU-h.
+  - **Pass 1 ≈ 4.1 GPU-h; pass 2 ≈ 9.8 GPU-h.**
+  - Disk: states ≈ 12 GB per encoder; heads ≈ 1.7 GB per train job.
+- **Queue commands:** `queue-commands.sh` in this folder, printed by the `plan` stage and never executed here.
+  - Pass 1 (P0) is at priority 55, right after T1c seed 1 (51–54). It has no dependency, so a lower number would run it
+    first.
+  - Pass 2 (C0′ and C5 encoders, 8 conditions; the C5 dictionary on P0) is at 56, its analyses at 57.
+  - Within a priority, the queue runs jobs in creation order: encode → train → analyze.
 
 ## 15. Deviations and changes after commit
 
-(None yet.)
+- **15.1 (2026-10-07, before any full run) — an added descriptive probe.** Each condition's code vectors are also
+  saved **at initialization**, before any gradient step (`vectors.pt: source_init`). The ridge R² and neighbour
+  agreement are reported for them too, which separates frequency implied by the content (a frame, a title) from
+  frequency learned in training — HRRBERT's claim. No endpoint, rule or condition changes. The CPU-smoke analysis
+  predates it and lacks these columns.
+- **15.2 — implementation, same estimators.** The ridge CV runs in torch on the analysis device: one
+  eigendecomposition of the standardized Gram matrix per split, covering every penalty, with the same inner 4-fold
+  choice. Batches are copied as float16 and converted on the device.
+- **15.3 — output naming.** `analyze --label` gives the pass-2 analyses their own folders (`analysis-<encoder>-pass2`),
+  so pass 1's are not overwritten.

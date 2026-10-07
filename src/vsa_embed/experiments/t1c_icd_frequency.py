@@ -948,6 +948,8 @@ def run_train(config: dict[str, Any], encoder: str, seed: int, *, conditions: Se
         torch.manual_seed(seed * 1000 + 100 + offset)
         heads[name] = ic.LabelAttentionHead(source, store.width, attention_dim=int(head_cfg["attention_dim"]),
                                             hidden=int(head_cfg["label_hidden"]), prior=prior)
+    with torch.no_grad():                         # code vectors before any gradient step (the init probe, §15)
+        init_vectors = {name: head.source(torch.arange(n_labels)).float().cpu() for name, head in heads.items()}
     log_rows: list[dict[str, Any]] = []
 
     def log(row: dict[str, Any]) -> None:
@@ -1003,7 +1005,7 @@ def run_train(config: dict[str, Any], encoder: str, seed: int, *, conditions: Se
             vectors = head.source(ids).float().cpu()
             q, o, b = head.label_parameters(ids)
             effective = torch.cat([q, o, b[:, None]], 1).float().cpu()
-        torch.save({"source": vectors, "effective": effective}, cond_dir / "vectors.pt")
+        torch.save({"source": vectors, "effective": effective, "source_init": init_vectors[name]}, cond_dir / "vectors.pt")
         untrained_positive = np.zeros(untrained_scores.shape, dtype=bool)
         untrained_positive[pair_rows, pair_cols - n_trained] = True
         metrics[name] = {**quick_metrics(scores_eval, [adm_labels[a] for a in eval_adm], labels, untrained_scores,
@@ -1040,10 +1042,15 @@ def load_condition(config: dict[str, Any], encoder: str, seed: int, condition: s
 
 
 def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, conditions: Sequence[str] | None = None,
-                device: str = "cpu", bootstrap: int | None = None, tag: str = "", tsne_seed: int | None = None) -> dict[str, Any]:
+                device: str = "cpu", bootstrap: int | None = None, tag: str = "", tsne_seed: int | None = None,
+                label: str = "") -> dict[str, Any]:
     """Endpoints of the preregistration (§6–§7) for one encoder, with the two-way bootstrap."""
     from vsa_embed.provenance import git_state
     git_at_start = git_state()
+    started = time.monotonic()
+
+    def phase(name: str) -> None:
+        print(json.dumps({"phase": name, "seconds": round(time.monotonic() - started, 1)}), flush=True)
     root = data_root(config)
     an = config["analysis"]
     labels = torch.load(root / "labels.pt", weights_only=False)
@@ -1079,6 +1086,7 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
     held_eval_scored = held_local[untrained_positive[eval_rows][:, held_local].any(0)]
     ks = [int(k) for k in an["ks"]]
 
+    phase("loaded")
     # -- point estimates per condition × seed --
     per: dict[str, dict[int, dict[str, Any]]] = defaultdict(dict)
     eval_pos_rows, eval_pos_cols = np.nonzero(positives)
@@ -1149,6 +1157,7 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
             row["dunnett"][f"top{k}"] = ic.dunnett(vals[CONTROL], {c: v for c, v in vals.items() if c != CONTROL})
         bin_table[name] = row
 
+    phase("point estimates")
     # -- two-way bootstrap (admissions × codes; seeds resampled within each replicate) --
     dev = torch.device(device)
     replicates = int(bootstrap or an["bootstrap_primary"])
@@ -1191,6 +1200,7 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
                 held = torch.stack([p[1][b] for p in chosen]).mean(0)[torch.as_tensor(code_draw_held[b], device=dev)]
                 stats["E1"].append(float(torch.nanmean(held)))
         boot[c] = {k: np.asarray(v, dtype=np.float64) for k, v in stats.items() if v}
+        phase(f"bootstrap {c}")
 
     comparisons: dict[str, Any] = {}
     for metric, direction in (("E1", "higher"), ("E2", "lower"), ("rare", "higher"), ("frequent", "higher"), ("gap", "lower")):
@@ -1229,7 +1239,7 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
 
     # -- frequency information in the code vectors (seed = the first; t-SNE written to the data root only) --
     probes = {}
-    analysis_dir = private_dir(root / "analysis" / f"{encoder}{tag}")
+    analysis_dir = private_dir(root / "analysis" / f"{encoder}{tag}{label}")
     tsne_seed = tsne_seed if tsne_seed is not None else min(seeds)
     trained_ids = np.arange(n_trained)
     y = logf[trained_ids]
@@ -1238,10 +1248,15 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
         for s, r in by_seed.items():
             source = r["vectors"]["source"].numpy()[trained_ids]
             effective = r["vectors"]["effective"].numpy()[trained_ids]
-            rows[s] = {"source_r2": ic.cv_ridge(source, y, folds=int(an["probe_folds"]), seed=s)["r2"],
-                       "effective_r2": ic.cv_ridge(effective, y, folds=int(an["probe_folds"]), seed=s)["r2"],
+            rows[s] = {"source_r2": ic.cv_ridge(source, y, folds=int(an["probe_folds"]), seed=s, device=dev)["r2"],
+                       "effective_r2": ic.cv_ridge(effective, y, folds=int(an["probe_folds"]), seed=s, device=dev)["r2"],
                        "bias_spearman": ic.spearman(effective[:, -1], y),
                        "neighbour_agreement": ic.neighbour_agreement(source, y, k=int(an["neighbours"]), device=dev)}
+            init = r["vectors"].get("source_init")
+            if init is not None:                      # frequency implied by the content alone (before training)
+                init = init.numpy()[trained_ids]
+                rows[s]["source_r2_init"] = ic.cv_ridge(init, y, folds=int(an["probe_folds"]), seed=s, device=dev)["r2"]
+                rows[s]["neighbour_agreement_init"] = ic.neighbour_agreement(init, y, k=int(an["neighbours"]), device=dev)
         probes[c] = {k: float(np.mean([v[k] for v in rows.values()])) for k in next(iter(rows.values()))}
         probes[c]["per_seed"] = rows
         if tsne_seed in by_seed:
@@ -1253,6 +1268,7 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
             seen_pick = pick < n_trained
             probes[c]["tsne_neighbour_agreement"] = ic.neighbour_agreement(coords[seen_pick], logf[pick][seen_pick],
                                                                            k=int(an["neighbours"]), device=dev)
+        phase(f"probes {c}")
     try:
         plot_tsne(analysis_dir, [c for c in runs], tsne_seed)
     except Exception as error:                     # the figure is a convenience; the numbers are the result
@@ -1264,7 +1280,7 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
                         "frequent_seen": int(frequent.sum())},
               "endpoints": endpoints, "primary": primary, "comparisons": comparisons, "specificity": specificity,
               "bins": bin_table, "probes": probes, "decision": decide(endpoints, primary, comparisons, specificity)}
-    folder = run_folder(config, f"analysis-{encoder}{tag}")
+    folder = run_folder(config, f"analysis-{encoder}{tag}{label}")
     write_json(folder / "endpoints.json", result)
     (folder / "report.md").write_text(render_report(result, edges))
     record_run(folder, config, git_at_start=git_at_start, device=device, stage="analyze")
@@ -1357,13 +1373,14 @@ def render_report(result: dict[str, Any], edges: Sequence[float]) -> str:
                  f"{_fmt(row['conditions'][c].get('top100_code_balanced'))}" for c in conds]
         lines.append(f"| {name} | {row['seen_codes']} / {row['heldout_codes']} | " + " | ".join(cells) + " |")
     lines += ["", "## Frequency information in the code vectors", "",
-              "| condition | ridge R² (code vector) | ridge R² (label parameters) | ρ(bias, ln f) | kNN agreement | t-SNE kNN agreement |",
-              "|---|---:|---:|---:|---:|---:|"]
+              "| condition | ridge R² (code vector) | at init | ridge R² (label parameters) | ρ(bias, ln f) | kNN agreement | at init | t-SNE kNN agreement |",
+              "|---|---:|---:|---:|---:|---:|---:|---:|"]
     for c, p in result["probes"].items():
         if c.startswith("_"):
             continue
-        lines.append(f"| {c} | {_fmt(p['source_r2'])} | {_fmt(p['effective_r2'])} | {_fmt(p['bias_spearman'])} | "
-                     f"{_fmt(p['neighbour_agreement'])} | {_fmt(p.get('tsne_neighbour_agreement'))} |")
+        lines.append(f"| {c} | {_fmt(p['source_r2'])} | {_fmt(p.get('source_r2_init'))} | {_fmt(p['effective_r2'])} | "
+                     f"{_fmt(p['bias_spearman'])} | {_fmt(p['neighbour_agreement'])} | {_fmt(p.get('neighbour_agreement_init'))} | "
+                     f"{_fmt(p.get('tsne_neighbour_agreement'))} |")
     return "\n".join(lines) + "\n"
 
 
@@ -1374,49 +1391,52 @@ CONFIG_ARG = "--config experiments/t1c-clinical/icd-frequency/icd-frequency.yaml
 
 
 def plan_commands(*, priority_now: int = 55, priority_after: int = 56, gpu_hours: dict[str, float] | None = None) -> str:
-    """The exact queue commands (printed; never executed here). GPU-h are idle-GPU estimates from the smoke test."""
-    h = {"encode_360m": 1.3, "encode_135m": 0.5, "train_seed": 0.5, "train_c5_seed": 0.15, "analyze": 0.1, **(gpu_hours or {})}
+    """The exact queue commands (printed; never executed here). GPU-h: idle-GPU estimates scaled from the smoke test
+    (§14 of the preregistration), which ran next to another training job."""
+    h = {"encode_p0": 1.5, "encode_run": 1.7, "train_seed": 0.8, "train_c5_seed": 0.15, "analyze": 0.15, **(gpu_hours or {})}
     q = "PYTHONPATH=src $PY -m vsa_embed.jobqueue add"
     m = "$PY -m vsa_embed.experiments.t1c_icd_frequency"
+    c5 = E9_RUNS / "SmolLM2-360M-full-C5-s1"
+    all8 = "free composed_head composed_c5 transe title random gram composed_free"
     lines = ["#!/usr/bin/env bash",
              "# T1c-F (ICD frequency bias; preregistration.md in this folder): exact queue commands. NOT EXECUTED by the agent.",
-             "# Printed by `python -m vsa_embed.experiments.t1c_icd_frequency plan`. Run from the main checkout's root after merging,",
-             "# once the CPU stages (prepare, tokenize, kge) have been run there:",
+             "# Printed by `python -m vsa_embed.experiments.t1c_icd_frequency plan`. Run from the main checkout's root after merging:",
              "#   cd /home/bhux/workplace/VSA-LLM && PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python",
-             f"#   PYTHONPATH=src $PY -m vsa_embed.experiments.t1c_icd_frequency prepare {CONFIG_ARG}   # CPU ≈ 2 min",
-             f"#   PYTHONPATH=src $PY -m vsa_embed.experiments.t1c_icd_frequency tokenize {CONFIG_ARG}  # CPU ≈ 15 min",
-             f"#   PYTHONPATH=src $PY -m vsa_embed.experiments.t1c_icd_frequency kge {CONFIG_ARG}       # CPU ≈ 10 min",
-             "# GPU-h are idle-GPU estimates (smoke throughput scaled to the full set); memory ≤ ≈ 6 GB per job.",
+             "# The CPU stages (prepare, tokenize, kge) have run; their outputs are in ~/data/vsa-llm/t1c/icd-frequency-v1/",
+             "# (shared by every checkout) and prepare re-checks the pinned holdout if re-run.",
+             "# GPU-h: idle-GPU estimates from the smoke (§14); the smoke ran beside a training job (≈ 1.6× slower).",
+             "# Memory: ≤ 1.5 GB per job measured (encode 1.2 GB, train 1.5 GB); disk: states ≈ 12 GB per encoder, heads ≈ 1.7 GB per job.",
              "set -euo pipefail", ': "${PY:?set PY to the pinned interpreter}"', "",
-             f"# --- pass 1 (P0 = frozen SmolLM2-360M, available now): priority {priority_now} ---"]
+             f"# --- pass 1: P0 = frozen SmolLM2-360M (no dependency; could run now). Priority {priority_now} places it right after",
+             f"# T1c seed 1 (51–54); a lower number would run it first. ≈ {h['encode_p0'] + 3 * h['train_seed'] + h['analyze']:.1f} GPU-h ---"]
     lines.append(f"{q} --name t1cf-encode-P0-360M --priority {priority_now} --min-free-gb 20 -- {m} encode {CONFIG_ARG} "
-                 f"--encoder P0-360M --pretrained HuggingFaceTB/SmolLM2-360M   # ≈ {h['encode_360m']:.1f} GPU-h")
+                 f"--encoder P0-360M --pretrained HuggingFaceTB/SmolLM2-360M   # ≈ {h['encode_p0']:.1f} GPU-h (resumable)")
     for s in (1, 2, 3):
         lines.append(f"{q} --name t1cf-train-P0-360M-s{s} --priority {priority_now} --min-free-gb 10 --no-resume -- {m} train "
-                     f"{CONFIG_ARG} --encoder P0-360M --seed {s}   # ≈ {h['train_seed']:.2f} GPU-h")
+                     f"{CONFIG_ARG} --encoder P0-360M --seed {s}   # 7 conditions ≈ {h['train_seed']:.1f} GPU-h")
     lines.append(f"{q} --name t1cf-analyze-P0-360M --priority {priority_now} --min-free-gb 2 --no-resume -- {m} analyze "
                  f"{CONFIG_ARG} --encoder P0-360M --seeds 1 2 3 --device cuda   # ≈ {h['analyze']:.2f} GPU-h")
-    lines += ["", f"# --- pass 2 (after T1c seed 1 trains at 51–54): C0′ and C5 encoders, the C5 dictionary arm; priority {priority_after} ---"]
+    total2 = 2 * (h["encode_run"] + 3 * h["train_seed"] * 8 / 7) + 3 * h["train_c5_seed"] + 3 * h["analyze"]
+    lines += ["", f"# --- pass 2: needs the T1c seed-1 runs SmolLM2-360M-full-C0p-s1 and -C5-s1 (queued at 51). Priority {priority_after}",
+              f"# (analyses {priority_after + 1}). ≈ {total2:.1f} GPU-h ---"]
     for enc, run, extra in (("C0p-360M", "SmolLM2-360M-full-C0p-s1", ""), ("C5-360M", "SmolLM2-360M-full-C5-s1", " --channel on")):
         lines.append(f"{q} --name t1cf-encode-{enc} --priority {priority_after} --min-free-gb 20 -- {m} encode {CONFIG_ARG} "
-                     f"--encoder {enc} --run {E9_RUNS / run}{extra}   # ≈ {h['encode_360m']:.1f} GPU-h")
+                     f"--encoder {enc} --run {E9_RUNS / run}{extra}   # ≈ {h['encode_run']:.1f} GPU-h (resumable)")
         for s in (1, 2, 3):
             lines.append(f"{q} --name t1cf-train-{enc}-s{s} --priority {priority_after} --min-free-gb 10 --no-resume -- {m} train "
-                         f"{CONFIG_ARG} --encoder {enc} --seed {s} --conditions free composed_head composed_c5 transe title random gram composed_free "
-                         f"--c5-run {E9_RUNS / 'SmolLM2-360M-full-C5-s1'}   # ≈ {h['train_seed'] * 8 / 7:.2f} GPU-h")
+                         f"{CONFIG_ARG} --encoder {enc} --seed {s} --conditions {all8} --c5-run {c5}   # 8 conditions ≈ "
+                         f"{h['train_seed'] * 8 / 7:.1f} GPU-h")
     for s in (1, 2, 3):
         lines.append(f"{q} --name t1cf-train-P0-360M-c5dict-s{s} --priority {priority_after} --min-free-gb 10 --no-resume -- {m} train "
-                     f"{CONFIG_ARG} --encoder P0-360M --seed {s} --conditions composed_c5 --c5-run {E9_RUNS / 'SmolLM2-360M-full-C5-s1'}"
-                     f"   # ≈ {h['train_c5_seed']:.2f} GPU-h (same batches as pass 1: paired)")
+                     f"{CONFIG_ARG} --encoder P0-360M --seed {s} --conditions composed_c5 --c5-run {c5}"
+                     f"   # ≈ {h['train_c5_seed']:.2f} GPU-h (same batch order as pass 1: paired)")
     for enc in ("P0-360M", "C0p-360M", "C5-360M"):
-        lines.append(f"{q} --name t1cf-analyze2-{enc} --priority {priority_after + 1} --min-free-gb 2 --no-resume -- {m} analyze "
-                     f"{CONFIG_ARG} --encoder {enc} --seeds 1 2 3 --device cuda   # ≈ {h['analyze']:.2f} GPU-h")
-    total1 = h["encode_360m"] + 3 * h["train_seed"] + h["analyze"]
-    total2 = 2 * (h["encode_360m"] + 3 * h["train_seed"] * 8 / 7) + 3 * h["train_c5_seed"] + 3 * h["analyze"]
-    lines += ["", f"# pass 1 ≈ {total1:.1f} GPU-h; pass 2 ≈ {total2:.1f} GPU-h (idle-GPU estimates)",
-              "# optional: the C5 encoder with its channel off (reads whether a C5-encoder gain comes through the injected rows):",
+        lines.append(f"{q} --name t1cf-analyze-{enc}-pass2 --priority {priority_after + 1} --min-free-gb 2 --no-resume -- {m} analyze "
+                     f"{CONFIG_ARG} --encoder {enc} --seeds 1 2 3 --device cuda --label -pass2   # ≈ {h['analyze']:.2f} GPU-h")
+    lines += ["", "# optional (open decision): the C5 encoder with its channel off — reads whether a C5-encoder gain comes through the",
+              "# injected rows (§6). Then train it like C5-360M (3 seeds) and analyze with --label -pass2:",
               f"# {q} --name t1cf-encode-C5off-360M --priority {priority_after + 2} --min-free-gb 20 -- {m} encode {CONFIG_ARG} "
-              f"--encoder C5off-360M --run {E9_RUNS / 'SmolLM2-360M-full-C5-s1'} --channel off   # ≈ {h['encode_360m']:.1f} GPU-h"]
+              f"--encoder C5off-360M --run {c5} --channel off   # ≈ {h['encode_run']:.1f} GPU-h"]
     return "\n".join(lines) + "\n"
 
 
@@ -1445,6 +1465,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--bootstrap", type=int, default=None)
     parser.add_argument("--kge-steps", type=int, default=None)
     parser.add_argument("--tag", default="", help="suffix of the head / analysis folders (smoke runs)")
+    parser.add_argument("--label", default="", help="analyze: suffix of the analysis folders only (e.g. -pass2)")
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
     if args.stage == "plan":
@@ -1474,7 +1495,7 @@ def main(argv: list[str] | None = None) -> None:
         if not args.encoder:
             parser.error("analyze needs --encoder")
         result = run_analyze(config, args.encoder, args.seeds, conditions=args.conditions, device=args.device,
-                             bootstrap=args.bootstrap, tag=args.tag)
+                             bootstrap=args.bootstrap, tag=args.tag, label=args.label)
         result = {k: result[k] for k in ("encoder", "seeds", "conditions", "codes", "primary", "decision")}
     print(json.dumps(result, indent=1, default=_native)[:6000])
 

@@ -1,7 +1,8 @@
 """T1c-F — ICD frequency bias with structured code vectors (`vsa_embed.icd_coding`, `experiments.t1c_icd_frequency`).
 
 Every fixture here is synthetic: invented codes ("Q…", "W…"), invented concept ids and random states — never MIMIC,
-SNOMED CT or ICD titles.
+SNOMED CT or ICD titles. The ICD-9-CM hierarchy test parses a few textbook code strings of the public classification
+(format examples, not drawn from MIMIC; no titles).
 """
 
 from __future__ import annotations
