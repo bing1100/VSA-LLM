@@ -105,7 +105,13 @@ class MentionCounter:
         return counts
 
     def mentions(self, text: str) -> bool:
-        return bool(self.count(text))
+        """Whether `text` holds at least one key (stops at the first)."""
+        tokens = TOKEN.findall(text.lower())
+        for i, token in enumerate(tokens):
+            longest = self.longest.get(token)
+            if longest and any(" ".join(tokens[i:i + n]) in self.keys for n in range(1, min(longest, len(tokens) - i) + 1)):
+                return True
+        return False
 
 
 def count_mentions(texts: Iterable[str], keys: Iterable[str]) -> tuple[Counter, int]:

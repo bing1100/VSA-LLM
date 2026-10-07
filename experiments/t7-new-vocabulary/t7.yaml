@@ -44,7 +44,7 @@ ontology:
   path: ~/data/vsa-llm/mesh/desc2026.gz
   supplementary_path: ~/data/vsa-llm/mesh/supp-2026/supp2026.gz
   selection: experiments/t7-new-vocabulary/screen/selection.tsv
-  selection_sha256: null         # pinned after the screen stage, before the build
+  selection_sha256: 1ead39e8cc044e4c85c745c58feaff97abb11d07369e8b5a5d964fbed7b186d8   # frozen 2026-10-07 (screen/screen.json: 8,184 SCRs, 11,141 names)
   max_atomics: 8192
   max_degree: 16
   policy:
@@ -60,8 +60,8 @@ mix:
   calibration_docs: 2000
 data:
   domain_filter: mentions        # only abstracts that mention a selected name (training and evaluation sides)
-  presample_tokens: 10000000
-  holdout_fraction: 0.20
+  presample_tokens: 20000000     # ≈ 35% of the training-side domain text: more entries reach the eligibility count
+  holdout_fraction: 0.25         # feasibility simulation from the screen counts: ≈ 550 held-out entries with ≥ 5 evaluation occurrences on the whole pool
   holdout_min_count: 5
   holdout_min_subtokens: 2
   holdout_max_containing: 5
@@ -83,5 +83,5 @@ feasibility:
   heldout_min_occurrences: 2000
   rare_min_entries: 300
   rare_min_occurrences: 2000
-  trainer_windows: 2048
+  trainer_windows: 4096
   window_length: 1024

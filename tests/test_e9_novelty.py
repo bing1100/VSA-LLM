@@ -291,6 +291,21 @@ def test_t7_dry_run_plans_without_queueing(tmp_path: Path) -> None:
     assert e9_plan.job_hours("t7-SmolLM2-360M-full-C5-s1-probes-int4", [], configs) == e9_plan.EVAL_HOURS["SmolLM2-360M"]["probes-int4"]
 
 
+def test_t7_lexicon_wording() -> None:
+    from vsa_embed.experiments.e9_tracks import T7_TEMPLATES, TRACKS, TrackLexicon
+    spec = TRACKS["t7"]
+    lexicon = TrackLexicon("t7", T7_TEMPLATES, {"mesh:D1": "Antibodies, Bispecific", "class:chemical": "chemical",
+                                                "mesh:D3": "Antineoplastic Agents"},
+                           category_relations=spec.category_relations, kept_relations=frozenset(spec.kept_relations),
+                           edit_relations=spec.edit_relations)
+    assert lexicon.prompts("*", "mapped_to") == ["{x} is a kind of", "In MeSH, {x} is indexed under"]
+    assert lexicon.statements("*", "mapped_to") == ["{x} is a type of"]
+    assert lexicon.statement_answer("mapped_to", "Antibodies, Bispecific") == " Antibodies, Bispecific."
+    assert lexicon.statement_answer("record_class", "chemical") == " chemical."
+    assert lexicon.prompts("*", "branch_top") is None and "pharmacological_action" in T7_TEMPLATES
+    assert spec.eval_split == "eval-pubmed" and spec.zeroshot_items is None
+
+
 def test_t1_stream_signature_unchanged_without_t7_keys() -> None:
     from vsa_embed.experiments.t1_open_corpus import TrackDocuments
     common = dict(pubmed_paths=[Path("a.parquet")], eval_buckets=800, general_shards=["g.parquet"], general_skip=10,

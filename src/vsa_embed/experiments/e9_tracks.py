@@ -89,7 +89,7 @@ T1_TEMPLATES = {
 T7_TEMPLATES = {
     **T1_TEMPLATES,
     "mapped_to": RelationTemplates(["{x} is a kind of", "In MeSH, {x} is indexed under"], "{x} is a type of {y}."),
-    "record_class": RelationTemplates(["{x} is a", "{x} is classified as a"], "{x} is a {y}."),
+    "record_class": RelationTemplates(["{x} is classified as a", "In MeSH, {x} is recorded as a"], "{x} is a {y}."),
 }
 
 
