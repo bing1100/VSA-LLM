@@ -1,0 +1,84 @@
+{
+  "schema": "e9-edits/1",
+  "scenario": "e9_edits",
+  "description": "one relation-filler edge of existing concepts replaced by a same-type filler (knowledge editing through the ontology)",
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+  "ontology_alias_sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415",
+  "alias_table": {
+    "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t5.json",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 4319,
+    "sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415"
+  },
+  "tokenizer": "Qwen/Qwen3-0.6B-Base",
+  "min_subtokens": 2,
+  "seed": 0,
+  "count": 700,
+  "heldout_fraction": 0.5,
+  "neighbours": 2,
+  "edited_status": {
+    "frequent": 95,
+    "heldout": 333,
+    "mid": 196,
+    "rare": 76
+  },
+  "selection": "single-concept entries (synthetic entries excluded) with exactly one templated edge of the first of ['owned_by', 'area', 'status'] they have, whose canonical alias has \u2265 \u2113_min subtokens; seeded sample of held-out and seen (training frequency \u2265 1) entries",
+  "rule": "edited relation: the first of ['owned_by', 'area', 'status'] with exactly one templated edge; new filler: same relation, same filler type, not already in the frame, another name (frequency-weighted); control: another filler drawn by the same rule",
+  "candidates": "efficacy/paraphrase [old, new]; neighbourhood [true, edited concept's new]; gold = index 0",
+  "lexicon": "t5",
+  "pool": {
+    "linkable": 4000,
+    "heldout_eligible": 360,
+    "seen_eligible": 3538,
+    "excluded_base_edited": 200,
+    "excluded_base_neighbours": 363,
+    "heldout_left": 233,
+    "seen_left": 3118,
+    "heldout_target": 350,
+    "heldout_capped": true
+  },
+  "base": {
+    "path": "experiments/e9-retrofit/items/edits-t5-qwen3-v1",
+    "concepts": 563,
+    "items": 800,
+    "sha256": {
+      "concepts.jsonl": "6b80f61bdade38da702c5298432e2143220c5f04c8c18df07a66b81e9e34de98",
+      "items.jsonl": "d3f55562d4515a2dbd71d0e72a3fdfe8c9fb911c5ad5e5057fe26597c47e7aef",
+      "manifest.json": "43a0f0e9dd66bb1b3cbabeef66dd3d056e0453d2de2ee7672a88b0f848b1c29b"
+    },
+    "count": 200,
+    "edits": 200,
+    "manifest_counts": {
+      "concepts": 563,
+      "items": 800,
+      "efficacy": 200,
+      "neighbourhood": 400,
+      "paraphrase": 200
+    }
+  },
+  "extension": {
+    "edits": 500,
+    "chosen": 500,
+    "heldout": 233,
+    "items": 2000,
+    "new_neighbour_concepts": 718,
+    "seed": 1,
+    "rule": "the base's rows first and byte-identical (rebuilt and checked); extension entries sampled from the eligible pool minus the base's edited and neighbour concepts (held-out share as the base, seen entries fill up), fillers by the base's rule, neighbours never an edited concept of base or extension, all drawn from random.Random(extension seed)"
+  },
+  "counts": {
+    "concepts": 1781,
+    "items": 2800,
+    "efficacy": 700,
+    "neighbourhood": 1400,
+    "paraphrase": 700
+  },
+  "sha256": {
+    "concepts.jsonl": "a3def1fa7de1a6b6fefa924d52e330fca45f9c3d62da0e3bd119e1fca86839f8",
+    "items.jsonl": "4ff7f60e4ecced7974d5563ded14b4e826f3618d53faebe1aaca58990073c26e"
+  }
+}

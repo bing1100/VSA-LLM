@@ -11,7 +11,9 @@
     python -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3.5-2B-Base Qwen3.5-0.8B-Base --host-mode lora
         --lora-rank 64 [--queue]
     python -m vsa_embed.experiments.e9_plan --track t5 [--stage NAME] [--hosts ...] --dim3-baselines [--seeds 1] [--models ...]
-        [--dim3-weights-on-candidate] [--dry-run] [--queue] [--priority 60]
+        [--dim3-weights-on-candidate] [--items-version v1|v2] [--dry-run] [--queue] [--priority 60]
+    python -m vsa_embed.experiments.e9_plan --track t5 [--stage NAME] [--hosts ...] --item-evals --items-version v2
+        [--seeds ...] [--models ...] [--dry-run] [--queue] [--priority 53]          # decision 56: re-run dimension 3 on v2
 
 writes one YAML per (host, model, seed) under `experiments/e9-retrofit/configs/<stage>/` (stem
 `<host>-<mode>-<model>-s<seed>`; mode `full` for a fully trained host, `lora`, or `frozen` for P0; the stage
@@ -91,6 +93,14 @@ and IKE on every model, ROME / MEMIT / AlphaEdit on P0 and C0′ (and on C5 with
 transplant and channel-off audit on C5, intra-entity locality, row sources on C2/C5) at priority 60, then the stage's R9
 report with the dimension-3 section in `report/<stage>-dim3` at 61; `--dry-run` prints the jobs with GPU estimates
 (`dim3_estimate_hours`).
+
+**Item versions** (decision 56; `--items-version`, default `v1`, which leaves every job as before): `v2` is a strict superset
+of `v1` (T5: 700 new words, 700 edits; the v1 rows first and byte-identical, `e9_tracks items --extend`). Its evaluations
+write to `RUN/edit-v2` / `RUN/edit-v2-int4` and `RUN/dim3-baselines-v2`, never over v1 results. `--items-version v1 v2` on a new
+stage chains both editing evaluations; `--item-evals --items-version v2` queues evaluation-only re-runs for a stage's existing
+runs (P0 / C0′ / C2 / C5 at bf16 and INT4, the WP-PQ1 arms at bf16 as their `pq` chain) at priority 53 with the stage's
+report on v2 (`report/<stage>-items-v2`, with the item × seed section) at 54, GPU-h from the runs' measured v1 scoring
+times scaled by the item count; `--dim3-baselines --items-version v2` plans the baselines on v2 (`report/<stage>-dim3-v2`).
 """
 
 from __future__ import annotations
@@ -146,6 +156,9 @@ BASE = {
 MIN_WINDOWS = 1024
 GATE_BIAS = 0.0
 ITEMS = ROOT / "items"
+# Dimension-3 item versions (decision 56): v1 = 300 new words / 200 edits; v2 = a strict superset (700 / 700 on T5) whose
+# first rows are v1's, byte-identical. Evaluations of v2 write to `edit-v2` (`edit_folder`), never over v1 results.
+ITEM_VERSIONS = ("v1", "v2")
 ZEROSHOT_ITEMS = Path("experiments/e5-explainability/items/c3-synthetic-smollm2-v1")
 ZEROSHOT_SOURCES = "own,none,random,mean_row,surface_mean,graph_projection"     # structure-only (E5.4)
 PRIORITY = 22
@@ -199,11 +212,21 @@ def stage_family(hosts: list[str]) -> str:
     return families.pop()
 
 
-def dimension3_items(track: str, family: str = "smollm2") -> tuple[Path, Path]:
-    """(new-word items, edit items) of a track for a host tokenizer family (the WordNet ones keep their names)."""
+def dimension3_items(track: str, family: str = "smollm2", version: str = "v1") -> tuple[Path, Path]:
+    """(new-word items, edit items) of a track for a host tokenizer family (the WordNet ones keep their names) and item
+    version (`v1`; `v2` = the decision-56 superset of v1, built for T5)."""
+    if version not in ITEM_VERSIONS:
+        raise ValueError(f"unknown item version {version!r}; choose from {', '.join(ITEM_VERSIONS)}")
     if track == "wordnet":
-        return ITEMS / f"new-words-{family}-v1", ITEMS / f"edits-{family}-v1"
-    return ITEMS / f"new-words-{track}-{family}-v1", ITEMS / f"edits-{track}-{family}-v1"
+        return ITEMS / f"new-words-{family}-{version}", ITEMS / f"edits-{family}-{version}"
+    return ITEMS / f"new-words-{track}-{family}-{version}", ITEMS / f"edits-{track}-{family}-{version}"
+
+
+def edit_folder(version: str = "v1", quantized: str | None = None) -> str:
+    """Run subfolder of an ontology-editing evaluation: `edit` / `edit-int4` for v1 (as before), `edit-<version>` /
+    `edit-<version>-int4` otherwise, so a later item version never overwrites earlier results."""
+    base = "edit" if version == "v1" else f"edit-{version}"
+    return f"{base}-{quantized}" if quantized else base
 
 
 def zeroshot_items(family: str = "smollm2") -> Path:
@@ -405,12 +428,29 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
     return paths
 
 
+def edit_job(run_dir: Path, spec: TrackSpec, *, python: str = sys.executable, alias_table: Path | None = None,
+             batch_size: int | None = None, model: str | None = None, version: str = "v1",
+             quantize: str | None = None) -> tuple[str, list[str], list[str]]:
+    """(suffix, command, retry arguments) of one ontology-editing evaluation (`e9_ontology_edit evaluate`) of a run: item
+    version `version` into `RUN/<edit_folder(version, quantize)>`; the shuffled-frame arm C5sh gets the new words only
+    (its entries read other entries' frames, so an edit of an entry's own frame does not apply)."""
+    new_items, edit_items = dimension3_items(spec.name, spec.family, version)
+    shuffled = model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled"
+    folder = edit_folder(version, quantize)
+    command = [python, "-m", "vsa_embed.experiments.e9_ontology_edit", "evaluate", "--run", str(run_dir),
+               "--new-items", str(new_items), *([] if shuffled else ["--edit-items", str(edit_items)]),
+               *(["--alias-table", str(alias_table)] if alias_table else []), *(["--quantize", quantize] if quantize else []),
+               *(["--batch-size", str(int(batch_size))] if batch_size else []), "--output", str(Path(run_dir) / folder)]
+    return folder, command, ["--overwrite"]
+
+
 def evaluation_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executable, alias_table: Path | None = None,
                     int4_probes: str = "all", batch_size: int | None = None, model: str | None = None,
-                    profile: str = "full") -> list[tuple[str, list[str], list[str]]]:
+                    profile: str = "full", item_versions: tuple[str, ...] | list[str] = ("v1",)) -> list[tuple[str, list[str], list[str]]]:
     """(suffix, command, retry arguments) of the per-run evaluations at bf16 and INT4 (variant A).
     `int4_probes` restricts the INT4 probe run to a comma-separated subset (it pairs with the bf16 run on
-    the tables both have); `batch_size` (large-vocabulary hosts) is passed to every evaluation.
+    the tables both have); `batch_size` (large-vocabulary hosts) is passed to every evaluation. `item_versions`: the
+    dimension-3 item versions to evaluate (default v1 only, as before; `v2` adds `edit-v2` / `edit-v2-int4` jobs).
 
     `profile="pq"` (the WP-PQ1 arms): the track zero-shot items and the ontology-editing evaluation at bf16 only, no
     probes (dimensions 1–2 come from the run's own evaluation windows and `e9_rescore`); the shuffled-frame arm C5sh
@@ -419,7 +459,11 @@ def evaluation_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executa
     run = str(run_dir)
     table = ["--alias-table", str(alias_table)] if alias_table else []
     batch = ["--batch-size", str(int(batch_size))] if batch_size else []
-    new_items, edit_items = dimension3_items(spec.name, spec.family)
+    for version in item_versions:
+        dimension3_items(spec.name, spec.family, version)           # validates the version
+    edits = lambda quantize: [edit_job(run_dir, spec, python=python, alias_table=alias_table, batch_size=batch_size,
+                                       model=model if profile == "pq" else None, version=v, quantize=quantize)
+                              for v in item_versions]
     if profile == "pq":
         shuffled = (model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled")
         jobs = []
@@ -431,10 +475,7 @@ def evaluation_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executa
             jobs.append(("zeroshot", [python, "-m", "vsa_embed.experiments.e9_tracks", "zeroshot", "--run", run, "--track", spec.name,
                                       *table, *(["--sources", "own,none,mean_row"] if shuffled else []), *batch,
                                       "--output", str(run_dir / "zeroshot")], ["--overwrite"]))
-        jobs.append(("edit", [python, "-m", "vsa_embed.experiments.e9_ontology_edit", "evaluate", "--run", run,
-                              "--new-items", str(new_items), *([] if shuffled else ["--edit-items", str(edit_items)]), *table,
-                              *batch, "--output", str(run_dir / "edit")], ["--overwrite"]))
-        return jobs
+        return jobs + edits(None)
     if profile != "full":
         raise ValueError("profile must be full or pq")
     jobs = []
@@ -450,9 +491,7 @@ def evaluation_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executa
             jobs.append((f"zeroshot{suffix}", [python, "-m", "vsa_embed.experiments.e9_tracks", "zeroshot", "--run", run,
                                                "--track", spec.name, *table, *quantize, *batch,
                                                "--output", str(run_dir / f"zeroshot{suffix}")], ["--overwrite"]))
-        jobs.append((f"edit{suffix}", [python, "-m", "vsa_embed.experiments.e9_ontology_edit", "evaluate", "--run", run,
-                                       "--new-items", str(new_items), "--edit-items", str(edit_items), *table, *quantize, *batch,
-                                       "--output", str(run_dir / f"edit{suffix}")], ["--overwrite"]))
+        jobs += edits("int4" if suffix else None)
     return jobs
 
 
@@ -500,7 +539,7 @@ def rowsource_jobs(configs: dict[Path, dict[str, Any]], track: str, *, python: s
 
 def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, track: str = "t5", evals: bool = True,
                root: Path = ROOT, queue_dir: Path | None = None, int4_probes: str | None = None,
-               alias_table: Path | None = None, rescore: str = "arms") -> list[str]:
+               alias_table: Path | None = None, rescore: str = "arms", item_versions: tuple[str, ...] | list[str] = ("v1",)) -> list[str]:
     """Training jobs at `priority` (default: the hosts' family's, 22 SmolLM2 / 26 Qwen3); per-run evaluations
     at +1, `e4_quant` over the runs at +2, the R9 report at +3. Names are idempotent: a job that exists is left
     alone (P0, shared by seed batches). Track runs get the evaluation alias table (written here once if
@@ -511,7 +550,8 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     variants) at +1, no `e4_quant` (their INT4 evaluation is the rescoring's `int4-A`); C6 arms whose row-source table
     is missing get an `e9_rowsource build` job at `priority`, queued before the training jobs (the queue runs equal
     priorities first come, first served). `rescore="all"` also rescores P0 / C0′ / C2 / C5 (the `controls` variants:
-    filler strata and the claim-B controls); `"none"` rescores nothing."""
+    filler strata and the claim-B controls); `"none"` rescores nothing. `item_versions` (default v1): the dimension-3
+    item versions of the chained editing evaluations (`v1 v2` adds `edit-v2` / `edit-v2-int4` jobs next to v1's)."""
     from .e9_rescore import profile_variants, rescore_command
     if rescore not in {"arms", "all", "none"}:
         raise ValueError("rescore must be arms, all or none")
@@ -554,7 +594,7 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
             batch = EVAL_JOB_BATCH.get(_config_host(configs[path]) or "")
             for suffix, command, retry in evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
                                                           int4_probes=int4_probes, batch_size=batch, model=model,
-                                                          profile="pq" if model in ARMS else "full"):
+                                                          profile="pq" if model in ARMS else "full", item_versions=item_versions):
                 submit(f"{stage}-{path.stem}-{suffix}", command, priority + 1, min_free_gb=5, resume_args=retry)
             if rescore == "all" or (rescore == "arms" and model in ARMS):
                 submit(f"{stage}-{path.stem}-rescore", rescore_command(run_dir, profile_variants("auto", model), python=python,
@@ -595,6 +635,33 @@ DIM3_WEIGHT_METHODS = ("rome", "memit", "alphaedit")
 DIM3_SECONDS_360M = {"context": 420, "ike": 480, "rome": 720, "memit": 620, "alphaedit": 640, "transplant": 90,
                      "channel_off": 120, "intra": 60, "rows": 360, "second_moments": 30}
 DIM3_SCALE_EXPONENT, DIM3_SCALE_FLOOR = 0.6, 0.75
+DIM3_NEW_WORD_METHODS = ("context", "rows")          # cost ∝ new-word items; every other method ∝ edits
+
+
+def item_counts(track: str, family: str = "smollm2", version: str = "v1") -> dict[str, int] | None:
+    """Sizes of a dimension-3 item version from its manifests (None if not built): new-word concepts and items, edits
+    (efficacy items) and edit items."""
+    new_items, edit_items = dimension3_items(track, family, version)
+    if not (new_items / "manifest.json").exists() or not (edit_items / "manifest.json").exists():
+        return None
+    new, edits = (json.loads((p / "manifest.json").read_text())["counts"] for p in (new_items, edit_items))
+    return {"new_concepts": int(new["concepts"]), "new_items": int(new["items"]), "edits": int(edits.get("efficacy", 0)),
+            "edit_items": int(edits["items"])}
+
+
+def item_scale(track: str, family: str, version: str) -> tuple[float, float]:
+    """(new-word, edit) item ratio of `version` to v1 (1, 1 when either is not built)."""
+    if version == "v1":
+        return 1.0, 1.0
+    base, other = item_counts(track, family, "v1"), item_counts(track, family, version)
+    if base is None or other is None:
+        return 1.0, 1.0
+    return other["new_items"] / base["new_items"], other["edit_items"] / base["edit_items"]
+
+
+def dim3_folder(version: str = "v1") -> str:
+    """Run subfolder of the dimension-3 baselines: `dim3-baselines` (v1, as before) or `dim3-baselines-<version>`."""
+    return DIM3_FOLDER if version == "v1" else f"{DIM3_FOLDER}-{version}"
 
 
 def dim3_methods(model: str, *, weights_on_candidate: bool = False) -> str:
@@ -604,48 +671,56 @@ def dim3_methods(model: str, *, weights_on_candidate: bool = False) -> str:
     return methods
 
 
-def dim3_estimate_hours(host: str, model: str, *, weights_on_candidate: bool = False) -> float:
-    """GPU hours of one dimension-3 baseline evaluation (`DIM3_SECONDS_360M`, scaled to the host)."""
+def dim3_estimate_hours(host: str, model: str, *, weights_on_candidate: bool = False,
+                        scale: tuple[float, float] = (1.0, 1.0)) -> float:
+    """GPU hours of one dimension-3 baseline evaluation (`DIM3_SECONDS_360M`, scaled to the host); `scale` = the item
+    version's (new-word, edit) item ratio to v1 (`item_scale`)."""
     methods = dim3_methods(model, weights_on_candidate=weights_on_candidate).split(",")
-    seconds = sum(DIM3_SECONDS_360M[m] for m in methods)
+    seconds = sum(DIM3_SECONDS_360M[m] * (scale[0] if m in DIM3_NEW_WORD_METHODS else scale[1]) for m in methods)
     if any(m in DIM3_WEIGHT_METHODS for m in methods):
         seconds += DIM3_SECONDS_360M["second_moments"]
-    scale = max(DIM3_SCALE_FLOOR, (HOST_PARAMETERS[host] / HOST_PARAMETERS["SmolLM2-360M"]) ** DIM3_SCALE_EXPONENT)
-    return seconds * scale / 3600
+    host_scale = max(DIM3_SCALE_FLOOR, (HOST_PARAMETERS[host] / HOST_PARAMETERS["SmolLM2-360M"]) ** DIM3_SCALE_EXPONENT)
+    return seconds * host_scale / 3600
+
+
+def dim3_edit_limited(model: str, *, weights_on_candidate: bool = False) -> bool:
+    """Whether a model's baseline job runs a weight editor (the methods `edit_limit` applies to)."""
+    return any(m in DIM3_WEIGHT_METHODS for m in dim3_methods(model, weights_on_candidate=weights_on_candidate).split(","))
 
 
 def dim3_baseline_job(run_dir: Path, spec: TrackSpec, *, model: str, python: str = sys.executable, alias_table: Path | None = None,
-                      batch_size: int | None = None, weights_on_candidate: bool = False) -> tuple[str, list[str], list[str]]:
-    """(suffix, command, retry arguments) of a run's dimension-3 baseline evaluation (`RUN/dim3-baselines`, bf16): the
-    same new-word and edit items as the run's `edit` job."""
-    new_items, edit_items = dimension3_items(spec.name, spec.family)
+                      batch_size: int | None = None, weights_on_candidate: bool = False,
+                      version: str = "v1", edit_limit: int | None = None) -> tuple[str, list[str], list[str]]:
+    """(suffix, command, retry arguments) of a run's dimension-3 baseline evaluation (`RUN/dim3-baselines`, bf16; v2 items:
+    `RUN/dim3-baselines-v2`): the same new-word and edit items as the run's `edit` (`edit-v2`) job. `edit_limit` (jobs with a
+    weight editor only): the first N edited concepts (`--edit-limit`; v2's first 200 are v1's edits)."""
+    new_items, edit_items = dimension3_items(spec.name, spec.family, version)
     table = ["--alias-table", str(alias_table)] if alias_table else []
     batch = ["--batch-size", str(int(batch_size))] if batch_size else []
+    limit = (["--edit-limit", str(int(edit_limit))] if edit_limit and dim3_edit_limited(model, weights_on_candidate=weights_on_candidate)
+             else [])
+    folder = dim3_folder(version)
     command = [python, "-m", "vsa_embed.experiments.e9_dim3_baselines", "evaluate", "--run", str(run_dir),
                "--new-items", str(new_items), "--edit-items", str(edit_items),
-               "--methods", dim3_methods(model, weights_on_candidate=weights_on_candidate), *table, *batch,
-               "--output", str(Path(run_dir) / DIM3_FOLDER)]
-    return DIM3_FOLDER, command, ["--overwrite"]
+               "--methods", dim3_methods(model, weights_on_candidate=weights_on_candidate), *limit, *table, *batch,
+               "--output", str(Path(run_dir) / folder)]
+    return folder, command, ["--overwrite"]
 
 
-def dim3_report_command(stage: str, *, python: str = sys.executable, root: Path = ROOT) -> list[str]:
-    """The R9 report of the stage with the dimension-3 baselines section, in its own folder (`report/<stage>-dim3`)."""
+def dim3_report_command(stage: str, *, python: str = sys.executable, root: Path = ROOT, version: str = "v1") -> list[str]:
+    """The R9 report of the stage with the dimension-3 baselines section, in its own folder (`report/<stage>-dim3`; v2
+    items: `report/<stage>-dim3-v2`, read from the `edit-v2` and `dim3-baselines-v2` folders, with the item × seed
+    section)."""
     quant = root / "quant" / stage
     general = root / "quant-general" / stage
+    versioned = [] if version == "v1" else ["--items-version", version, "--item-seed"]
     return [python, "-m", "vsa_embed.experiments.e9_report", "--runs", str(root / "runs" / stage),
             *(["--quant", str(quant)] if quant.exists() else []), *(["--quant-general", str(general)] if general.exists() else []),
-            "--dim3-baselines", "--output", str(root / "report" / f"{stage}-dim3"), "--overwrite"]
+            "--dim3-baselines", *versioned, "--output",
+            str(root / "report" / (f"{stage}-dim3" if version == "v1" else f"{stage}-dim3-{version}")), "--overwrite"]
 
 
-def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, queue_dir: Path | None = None,
-                         priority: int = DIM3_PRIORITY, models: list[str] | None = None, seeds: list[int] | None = None,
-                         alias_table: Path | None = None, weights_on_candidate: bool = False, queue: bool = True
-                         ) -> tuple[list[str], list[tuple[str, list[str], float]]]:
-    """Evaluation-only dimension-3 baseline jobs for the stage's existing configs (`configs/<stage>/*.yaml`; no
-    training is queued or re-planned): one job per run at `priority` (after the run's training, whose priority is
-    lower), the stage's report with the dimension-3 section at `priority + 1`. Returns (queued names, planned jobs
-    as (name, command, GPU-h estimate)); `queue=False` only plans."""
-    from vsa_embed.jobqueue import DEFAULT_DIR, add
+def _stage_configs(stage: str, root: Path) -> tuple[list[Path], dict[Path, dict[str, Any]], str, str]:
     paths = sorted((root / "configs" / stage).glob("*.yaml"))
     if not paths:
         raise FileNotFoundError(f"no configs under {root / 'configs' / stage} (plan the stage first)")
@@ -653,13 +728,43 @@ def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, qu
     families = {c.get("e9_family", "smollm2") for c in configs.values()}
     if len(families) != 1:
         raise ValueError("one E9 stage per host tokenizer family")
-    family = families.pop()
     hosts = [h for h in (_config_host(c) for c in configs.values()) if h is not None]
-    python = stage_python(hosts) if hosts else pinned_python()
+    return paths, configs, families.pop(), stage_python(hosts) if hosts else pinned_python()
+
+
+def _add_planned(planned: list[tuple[str, list[str], float, int]], *, queue: bool, queue_dir: Path | None, retry_level: int) -> list[str]:
+    from vsa_embed.jobqueue import DEFAULT_DIR, add
+    queued: list[str] = []
+    if queue:
+        for name, command, _, level in planned:
+            try:
+                add(queue_dir or DEFAULT_DIR, command, name=name, priority=level, min_free_gb=1 if level > retry_level else 6,
+                    env={"PYTHONPATH": "src"}, resume_args=["--overwrite"] if level == retry_level else [])
+                queued.append(name)
+            except FileExistsError:
+                pass
+    return queued
+
+
+def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, queue_dir: Path | None = None,
+                         priority: int = DIM3_PRIORITY, models: list[str] | None = None, seeds: list[int] | None = None,
+                         alias_table: Path | None = None, weights_on_candidate: bool = False, queue: bool = True,
+                         version: str = "v1", edit_limit: int | None = None) -> tuple[list[str], list[tuple[str, list[str], float]]]:
+    """Evaluation-only dimension-3 baseline jobs for the stage's existing configs (`configs/<stage>/*.yaml`; no
+    training is queued or re-planned): one job per run at `priority` (after the run's training, whose priority is
+    lower), the stage's report with the dimension-3 section at `priority + 1`. `version` = the item version (v2: job
+    names `…-dim3-baselines-v2`, folders `RUN/dim3-baselines-v2`, report `<stage>-report-dim3-v2`; estimates scaled by the
+    item count). `edit_limit`: the jobs with a weight editor (P0, C0′; C5 with `weights_on_candidate`) score only the first
+    N edits (on v2, 200 = v1's edits: the weight editors dominate the cost and the C5-vs-editor contrasts are large).
+    Returns (queued names, planned jobs as (name, command, GPU-h estimate)); `queue=False` only plans."""
+    paths, configs, family, python = _stage_configs(stage, root)
     spec = track_spec(track, family)
     if alias_table is None:
         alias_table = ensure_alias_table(spec) if queue else spec.alias_table_path
-    planned: list[tuple[str, list[str], float]] = []
+    scale = item_scale(spec.name, family, version)
+    base_edits = (item_counts(spec.name, family, "v1") or {}).get("edits")
+    limited = (scale[0], min(scale[1], edit_limit / base_edits)) if edit_limit and base_edits else scale
+    planned: list[tuple[str, list[str], float, int]] = []
     for path in paths:
         stem = path.stem
         model, seed = stem.rsplit("-s", 1)[0].rsplit("-", 1)[1], int(stem.rsplit("-s", 1)[1])
@@ -668,22 +773,109 @@ def queue_dim3_baselines(stage: str, *, track: str = "t5", root: Path = ROOT, qu
         host = _config_host(configs[path]) or ""
         run_dir = root / "runs" / stage / stem
         suffix, command, _ = dim3_baseline_job(run_dir, spec, model=model, python=python, alias_table=alias_table,
-                                               batch_size=EVAL_JOB_BATCH.get(host), weights_on_candidate=weights_on_candidate)
-        hours = dim3_estimate_hours(host, model, weights_on_candidate=weights_on_candidate) if host in HOST_PARAMETERS else float("nan")
-        planned.append((f"{stage}-{stem}-{suffix}", command, hours))
-    planned.append((f"{stage}-report-dim3", dim3_report_command(stage, python=python, root=root), 0.0))
-    queued: list[str] = []
-    if queue:
-        target = queue_dir or DEFAULT_DIR
-        for name, command, _ in planned:
-            level = priority + 1 if name.endswith("-report-dim3") else priority
-            try:
-                add(target, command, name=name, priority=level, min_free_gb=1 if level > priority else 6,
-                    env={"PYTHONPATH": "src"}, resume_args=["--overwrite"] if level == priority else [])
-                queued.append(name)
-            except FileExistsError:
-                pass
-    return queued, planned
+                                               batch_size=EVAL_JOB_BATCH.get(host), weights_on_candidate=weights_on_candidate,
+                                               version=version, edit_limit=edit_limit)
+        cut = limited if dim3_edit_limited(model, weights_on_candidate=weights_on_candidate) else scale
+        hours = (dim3_estimate_hours(host, model, weights_on_candidate=weights_on_candidate, scale=cut)
+                 if host in HOST_PARAMETERS else float("nan"))
+        planned.append((f"{stage}-{stem}-{suffix}", command, hours, priority))
+    report = f"{stage}-report-dim3" if version == "v1" else f"{stage}-report-dim3-{version}"
+    planned.append((report, dim3_report_command(stage, python=python, root=root, version=version), 0.0, priority + 1))
+    queued = _add_planned(planned, queue=queue, queue_dir=queue_dir, retry_level=priority)
+    return queued, [(name, command, hours) for name, command, hours, _ in planned]
+
+
+# ---------------------------------------------------------------- dimension-3 re-evaluation on another item version (decision 56)
+
+ITEM_EVAL_PRIORITY = 53
+# Seconds a per-run editing job spends outside the scoring that `RUN/edit/summary.json` times; measured as queue wall time −
+# (new-word + edit seconds) over the 64 finished T5 v1 jobs (2026-10-07): 3.9–6.0 s on every host, bf16 and INT4 alike.
+# Qwen3-4B and Qwen3.5 are not measured yet (set from the largest measured value).
+EDIT_JOB_OVERHEAD_S = {"SmolLM2-135M": 4.5, "SmolLM2-360M": 5.0, "Qwen3-0.6B-Base": 5.0, "Qwen3-1.7B-Base": 6.0,
+                       "Qwen3-4B-Base": 8.0, "Qwen3.5-0.8B-Base": 6.0, "Qwen3.5-2B-Base": 8.0}
+
+
+def measured_edit_seconds(run_dir: Path, quantize: str | None = None) -> tuple[float, float] | None:
+    """(new-word, edit) scoring seconds of a run's v1 editing evaluation (`RUN/edit[-<q>]/summary.json`), None if absent."""
+    path = Path(run_dir) / edit_folder("v1", quantize) / "summary.json"
+    if not path.exists():
+        return None
+    document = json.loads(path.read_text())
+    return (float((document.get("new_words") or {}).get("seconds") or 0.0), float((document.get("edits") or {}).get("seconds") or 0.0))
+
+
+def edit_estimate_hours(run_dir: Path, *, host: str, quantize: str | None, scale: tuple[float, float],
+                        siblings: list[Path] = (), edits: bool = True) -> tuple[float, str]:
+    """GPU hours of an editing evaluation on scaled items, from the run's measured v1 scoring times (or a sibling run's of
+    the same host and channel kind when the run has none yet): overhead + new-word seconds × new-word ratio + edit
+    seconds × edit ratio. Returns (hours, basis)."""
+    found, basis = measured_edit_seconds(run_dir, quantize), "measured"
+    for sibling in siblings:
+        if found is not None:
+            break
+        found, basis = measured_edit_seconds(sibling, quantize), f"sibling {Path(sibling).name}"
+    if found is None:
+        return float("nan"), "no measurement"
+    new_s, edit_s = found
+    seconds = EDIT_JOB_OVERHEAD_S.get(host, 30.0) + new_s * scale[0] + (edit_s * scale[1] if edits else 0.0)
+    return seconds / 3600, basis
+
+
+def _channel_kind(model: str) -> str:
+    return "none" if model in {"P0", "C0p"} else "free" if model == "C2" else "compose"
+
+
+def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2", root: Path = ROOT, queue_dir: Path | None = None,
+                           priority: int = ITEM_EVAL_PRIORITY, models: list[str] | None = None, seeds: list[int] | None = None,
+                           hosts: list[str] | None = None, alias_table: Path | None = None, queue: bool = True,
+                           report: bool = True) -> tuple[list[str], list[tuple[str, list[str], float, str]]]:
+    """Evaluation-only re-runs of the per-run ontology-editing evaluation on item `version` for the stage's existing
+    configs (nothing is trained or re-planned): P0 / C0′ / C2 / C5 at bf16 and INT4 as their chained `edit` /
+    `edit-int4` jobs (→ `edit-v2`, `edit-v2-int4`), the WP-PQ1 arms at bf16 as their `pq` chain (C5sh: new words only);
+    then the stage's report on that version with the item × seed section (`report/<stage>-items-<version>`) at
+    `priority + 1` (job `<stage>-report-items-<version>`, with `-s<seeds>` when `seeds` filters, so a later seed batch
+    queues its own report into the same folder). Job names `<stage>-<stem>-edit-<version>[-int4]`. GPU-h from the run's
+    measured v1 scoring times scaled by the item ratio (`edit_estimate_hours`). Returns (queued names, planned (name,
+    command, hours, basis))."""
+    if version == "v1":
+        raise ValueError("v1 evaluations are the chained `edit` jobs; choose another item version")
+    paths, configs, family, python = _stage_configs(stage, root)
+    spec = track_spec(track, family)
+    if item_counts(spec.name, family, version) is None:
+        raise FileNotFoundError(f"items {version} for {spec.name} / {family} are not built ({dimension3_items(spec.name, family, version)})")
+    if alias_table is None:
+        alias_table = ensure_alias_table(spec) if queue else spec.alias_table_path
+    scale = item_scale(spec.name, family, version)
+    runs = root / "runs" / stage
+    planned: list[tuple[str, list[str], float, int, str]] = []
+    for path in paths:
+        stem, config = path.stem, configs[path]
+        model, seed = stem_model(stem), int(stem.rsplit("-s", 1)[1])
+        host = _config_host(config) or ""
+        if (models and model not in models) or (seeds and model != "P0" and seed not in seeds) or (hosts and host not in hosts):
+            continue
+        reference = "C5" if model in ARMS else model                 # the arms are costed like C5 (a channel per entry)
+        siblings = sorted((p for p in runs.glob(f"{host}-*-s*") if p.name != stem
+                           and _channel_kind(stem_model(p.name)) == _channel_kind(reference)
+                           and (model not in ARMS or stem_model(p.name) == "C5")),
+                          key=lambda p: (stem_model(p.name) != reference, p.name))      # the same model first
+        shuffled = model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled"
+        for quantize in ([None] if model in ARMS else [None, "int4"]):
+            suffix, command, _ = edit_job(runs / stem, spec, python=python, alias_table=alias_table,
+                                          batch_size=EVAL_JOB_BATCH.get(host), model=model, version=version, quantize=quantize)
+            hours, basis = edit_estimate_hours(runs / stem, host=host, quantize=quantize, scale=scale, siblings=siblings,
+                                               edits=not shuffled)
+            planned.append((f"{stage}-{stem}-{suffix}", command, hours, priority, basis))
+    if report:
+        quant, general = root / "quant" / stage, root / "quant-general" / stage
+        command = [python, "-m", "vsa_embed.experiments.e9_report", "--runs", str(runs),
+                   *(["--quant", str(quant)] if quant.exists() else []), *(["--quant-general", str(general)] if general.exists() else []),
+                   "--items-version", version, "--item-seed", "--output", str(root / "report" / f"{stage}-items-{version}"),
+                   "--overwrite"]
+        batch = f"-s{'-'.join(map(str, sorted(seeds)))}" if seeds else ""      # a seed batch reports again (same folder)
+        planned.append((f"{stage}-report-items-{version}{batch}", command, 0.0, priority + 1, "report"))
+    queued = _add_planned([(n, c, h, l) for n, c, h, l, _ in planned], queue=queue, queue_dir=queue_dir, retry_level=priority)
+    return queued, [(n, c, h, b) for n, c, h, _, b in planned]
 
 
 def describe_plan(paths: list[Path], plans: dict[str, dict[str, Any]]) -> list[str]:
@@ -748,20 +940,48 @@ def main(argv: list[str] | None = None) -> None:
                              f"existing configs and runs (no training; default priority {DIM3_PRIORITY}; --seeds/--models filter)")
     parser.add_argument("--dim3-weights-on-candidate", action="store_true",
                         help="with --dim3-baselines: also run ROME/MEMIT/AlphaEdit on C5's host weights (ontology edit + ROME)")
-    parser.add_argument("--dry-run", action="store_true", help="with --dim3-baselines: print the jobs and GPU estimates only")
+    parser.add_argument("--dim3-edit-limit", type=int, default=None,
+                        help="with --dim3-baselines: jobs with a weight editor (P0, C0p) score only the first N edits "
+                             "(e9_dim3_baselines --edit-limit; on v2, 200 = the v1 edits)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="with --dim3-baselines or --item-evals: print the jobs and GPU estimates only")
+    parser.add_argument("--items-version", nargs="+", default=["v1"], choices=list(ITEM_VERSIONS),
+                        help="dimension-3 item version(s) (decision 56): of the chained editing evaluations (default v1; "
+                             "`v1 v2` adds edit-v2 jobs), or the single version of --dim3-baselines / --item-evals")
+    parser.add_argument("--item-evals", action="store_true",
+                        help="queue only evaluation-only re-runs of the ontology-editing evaluation on --items-version (v2) for "
+                             "the stage's existing configs: P0/C0p/C2/C5 at bf16 and INT4, WP-PQ1 arms at bf16 (edit-v2, "
+                             f"edit-v2-int4), then the stage's report on that version (default priority {ITEM_EVAL_PRIORITY}; "
+                             "--seeds/--models/--hosts filter)")
     args = parser.parse_args(argv)
     family = stage_family(args.hosts)
     stage = args.stage or f"{args.track}{FAMILIES[family]['suffix']}"
+    given = sys.argv[1:] if argv is None else argv
+    explicit, seeds_given, hosts_given = "--models" in given, "--seeds" in given, "--hosts" in given
+    if (args.dim3_baselines or args.item_evals) and len(args.items_version) != 1:
+        parser.error("--dim3-baselines and --item-evals take one --items-version")
     if args.dim3_baselines:
-        given = sys.argv[1:] if argv is None else argv
-        explicit, seeds_given = "--models" in given, "--seeds" in given
         queued, planned = queue_dim3_baselines(
             stage, track=args.track, priority=args.priority if args.priority is not None else DIM3_PRIORITY,
             models=args.models if explicit else None, seeds=args.seeds if seeds_given else None,
-            weights_on_candidate=args.dim3_weights_on_candidate, queue=args.queue and not args.dry_run)
+            weights_on_candidate=args.dim3_weights_on_candidate, queue=args.queue and not args.dry_run,
+            version=args.items_version[0], edit_limit=args.dim3_edit_limit)
         for name, command, hours in planned:
             print(f"{name}  ≈ {hours:.2f} GPU-h\n  {' '.join(command)}")
         print(f"≈ {sum(h for _, _, h in planned if h == h):.1f} GPU-h for {len(planned) - 1} evaluation job(s); queued {len(queued)} job(s)")
+        return
+    if args.item_evals:
+        if args.items_version[0] == "v1":
+            parser.error("--item-evals re-runs another item version (e.g. --items-version v2); v1 is the chained edit job")
+        queued, planned = queue_item_evaluations(
+            stage, track=args.track, version=args.items_version[0],
+            priority=args.priority if args.priority is not None else ITEM_EVAL_PRIORITY,
+            models=args.models if explicit else None, seeds=args.seeds if seeds_given else None,
+            hosts=args.hosts if hosts_given else None, queue=args.queue and not args.dry_run)
+        for name, command, hours, basis in planned:
+            print(f"{name}  ≈ {hours:.3f} GPU-h ({basis})\n  {' '.join(command)}")
+        print(f"≈ {sum(h for _, _, h, _ in planned if h == h):.2f} GPU-h for {len(planned) - 1} evaluation job(s); "
+              f"queued {len(queued)} job(s)")
         return
     memory = load_memory_report(args.memory_report or FAMILIES[family]["memory_report"])
     paths = write_stage(stage, hosts=args.hosts, models=args.models, seeds=args.seeds, track=args.track, mode=args.host_mode,
@@ -776,7 +996,7 @@ def main(argv: list[str] | None = None) -> None:
         print("\n".join(describe_plan(paths, plans)))
     if args.queue:
         queued = queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
-                            rescore=args.rescore)
+                            rescore=args.rescore, item_versions=args.items_version)
         print(f"queued {len(queued)} job(s)")
 
 

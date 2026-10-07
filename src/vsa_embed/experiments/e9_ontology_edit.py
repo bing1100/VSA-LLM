@@ -363,6 +363,112 @@ def _distractors(rng: random.Random, pool: Sequence[str], exclude: set[str], k: 
     return rng.sample(options, k) if len(options) >= k else None
 
 
+class _NewWordContext:
+    """The ontology views shared by the new-word builders (`build_new_word_items`, `extend_new_word_items`): pools,
+    edge index, eligible donors, distractor texts — everything that does not consume the random stream."""
+
+    def __init__(self, ontology_path: Path, *, tokenizer_name: str, wordnet: Any, alias_table: Path | None, lexicon: Any) -> None:
+        from transformers import AutoTokenizer
+        self.wordnet, self.lexicon = wordnet, lexicon
+        self.ontology = ontology = torch.load(ontology_path, weights_only=False)
+        self.table, self.table_info = cp.resolve_alias_table(ontology, Path(ontology_path), alias_table=alias_table)
+        self.view = view = OntologyView(ontology, self.table, lexicon)
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
+        self.index = view.edge_index()
+        self.pools = view.filler_pools()
+        self.category_ids = {view.relation_id[r] for r in lexicon.category_relations if r in view.relation_id}
+        self.kept_ids = {view.relation_id[r] for r in lexicon.kept_relations if r in view.relation_id}
+        synthetic = {int(e) for e in ontology.get("synthetic_entries", ())}
+        # "pairwise": no entry holds the category edge with any resampled edge (WordNet, whose fillers are
+        # many); "frame": no entry holds the category edge with all resampled edges together (track ontologies
+        # with small categorical pools, where every (type, area) pair exists).
+        self.pairwise = getattr(lexicon, "combination", "pairwise") == "pairwise"
+        # Readable filler texts per (POS, relation name) for distractors (as E5.4).
+        texts: dict[tuple[str, str], set[str]] = defaultdict(set)
+        for (pos, r), counter in self.pools.items():
+            name = view.relation_names[r]
+            if lexicon.prompts(pos, name) is not None:
+                texts[(pos, name)] |= {t for t in (view.text(f) for f in counter) if t}
+        self.text_pools = {key: sorted(values) for key, values in texts.items()}
+        self.eligible = []
+        for e in range(view.entry_count):
+            if len(self.table.entry_concepts[e]) != 1 or e in view.heldout or e in synthetic or view.pos[e] not in lexicon.donor_pos:
+                continue
+            frame = view.frame(e)
+            categories = [(r, f) for r, f in frame if r in self.category_ids and self.templated(view.pos[e], r, f)]
+            others = [(r, f) for r, f in frame if r not in self.kept_ids]
+            if categories and any(lexicon.prompts(view.pos[e], view.relation_names[r]) is not None for r, _ in others):
+                self.eligible.append(e)
+
+    def templated(self, pos: str, r: int, f: int) -> bool:
+        return self.lexicon.prompts(pos, self.view.relation_names[r]) is not None and self.view.text(f) is not None
+
+    def frames_seen(self) -> set[frozenset]:
+        return {frozenset(self.view.frame(e)) for e in range(self.view.entry_count)}
+
+    def build_frames(self, rng: random.Random, donors: Iterable[int], count: int, frames_seen: set[frozenset],
+                     rejected: Counter) -> list[dict[str, Any]]:
+        """New-combination frames from `donors` in order until `count` are built (`frames_seen` and `rejected` are
+        updated; every donor tried is either built or counted in `rejected`)."""
+        view, index, pools, lexicon, pairwise = self.view, self.index, self.pools, self.lexicon, self.pairwise
+        built: list[dict[str, Any]] = []
+        for donor in donors:
+            if len(built) >= count:
+                break
+            pos, frame = view.pos[donor], view.frame(donor)
+            category = next((r, f) for r, f in frame if r in self.category_ids and self.templated(pos, r, f))
+            with_category = index[category]
+            new_frame: list[tuple[int, int]] = []
+            resampled: list[tuple[int, int]] = []
+            ok = True
+            for r, f in frame:
+                if r in self.kept_ids:
+                    new_frame.append((r, f)); continue
+                current = {x for _, x in frame} | {x for _, x in new_frame}
+                category_text = view.text(category[1])
+                needs_text = lexicon.prompts(pos, view.relation_names[r]) is not None
+                choice = _weighted_choice(
+                    rng, pools[(pos, r)], current | {f},
+                    lambda x, r=r, needs_text=needs_text: (not pairwise or not (with_category & index.get((r, x), set())))
+                    and (not needs_text or (view.text(x) is not None and view.text(x) != category_text)))
+                if choice is None:
+                    ok = False; break
+                new_frame.append((r, choice)); resampled.append((r, choice))
+            if not ok:
+                rejected["no filler"] += 1; continue
+            key = frozenset(new_frame)
+            together = set(with_category)                  # entries holding the category and every resampled edge
+            for edge_ in ([] if pairwise else resampled):
+                together &= index.get(edge_, set())
+            if key in frames_seen or not any(self.templated(pos, r, f) for r, f in resampled) or (not pairwise and together):
+                rejected["combination exists"] += 1; continue
+            frames_seen.add(key)
+            random_frame = [(r, _weighted_choice(rng, pools[(pos, r)], set())) for r, _ in new_frame]
+            built.append({"donor": donor, "pos": pos, "frame": new_frame, "category": category, "resampled": resampled,
+                          "random_frame": random_frame})
+        return built
+
+    def surfaces(self, count: int, *, min_subtokens: int, name_seed: int, contamination_texts: Iterable[str],
+                 reserved_names: Iterable[str]) -> tuple[list[str], dict[str, Any]]:
+        """The first `count` invented names (`zs.invent_names` is sequential, so the first k names of a longer list are
+        the names of a shorter one) after removing reserved names."""
+        reserved = {n.lower() for n in reserved_names}
+        names, checks = zs.invent_names(list(range(count + 64)), self.tokenizer, self.table, self.wordnet,
+                                        min_subtokens=min_subtokens, seed=name_seed, contamination_texts=contamination_texts)
+        surfaces = [n for _, n in sorted(names.items()) if n.lower() not in reserved][:count]
+        if len(surfaces) < count:
+            raise ValueError("not enough invented names after removing reserved ones")
+        if len({s.lower() for s in surfaces}) != len(surfaces):
+            raise ValueError("invented names are not unique")
+        checks.update(reserved_names=len(reserved), reserved_clashes=sum(n.lower() in reserved for n in names.values()))
+        return surfaces, checks
+
+    def records(self, built: Sequence[dict[str, Any]], surfaces: Sequence[str], rng: random.Random, *, distractors: int,
+                prefix: str, start: int = 0) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Concept records and items (property, statement, entailment) of built frames; ids from `start`."""
+        return _new_word_records(self, built, surfaces, rng, distractors=distractors, prefix=prefix, start=start)
+
+
 def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str, count: int = 300, distractors: int = 4,
                          seed: int = 0, min_subtokens: int = 2, wordnet: Any = None, alias_table: Path | None = None,
                          contamination_texts: Iterable[str] = (), reserved_names: Iterable[str] = (),
@@ -371,97 +477,67 @@ def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: 
 
     `lexicon` words the items (default: `WordNetLexicon`, the E5.4 conventions); track ontologies
     pass `e9_tracks.TrackLexicon` (the track's own relation templates and filler names)."""
-    from transformers import AutoTokenizer
     if wordnet is None:
         from nltk.corpus import wordnet
     lexicon = lexicon or WordNetLexicon(wordnet)
-    ontology = torch.load(ontology_path, weights_only=False)
-    table, table_info = cp.resolve_alias_table(ontology, Path(ontology_path), alias_table=alias_table)
-    view = OntologyView(ontology, table, lexicon)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
+    ctx = _NewWordContext(ontology_path, tokenizer_name=tokenizer_name, wordnet=wordnet, alias_table=alias_table, lexicon=lexicon)
     rng = random.Random(seed)
-    index = view.edge_index()
-    pools = view.filler_pools()
-    category_ids = {view.relation_id[r] for r in lexicon.category_relations if r in view.relation_id}
-    kept_ids = {view.relation_id[r] for r in lexicon.kept_relations if r in view.relation_id}
-    synthetic = {int(e) for e in ontology.get("synthetic_entries", ())}
-    # "pairwise": no entry holds the category edge with any resampled edge (WordNet, whose fillers are
-    # many); "frame": no entry holds the category edge with all resampled edges together (track ontologies
-    # with small categorical pools, where every (type, area) pair exists).
-    pairwise = getattr(lexicon, "combination", "pairwise") == "pairwise"
-    # Readable filler texts per (POS, relation name) for distractors (as E5.4).
-    texts: dict[tuple[str, str], set[str]] = defaultdict(set)
-    for (pos, r), counter in pools.items():
-        name = view.relation_names[r]
-        if lexicon.prompts(pos, name) is not None:
-            texts[(pos, name)] |= {t for t in (view.text(f) for f in counter) if t}
-    text_pools = {key: sorted(values) for key, values in texts.items()}
-
-    def templated(pos: str, r: int, f: int) -> bool:
-        return lexicon.prompts(pos, view.relation_names[r]) is not None and view.text(f) is not None
-
-    eligible = []
-    for e in range(view.entry_count):
-        if len(table.entry_concepts[e]) != 1 or e in view.heldout or e in synthetic or view.pos[e] not in lexicon.donor_pos:
-            continue
-        frame = view.frame(e)
-        categories = [(r, f) for r, f in frame if r in category_ids and templated(view.pos[e], r, f)]
-        others = [(r, f) for r, f in frame if r not in kept_ids]
-        if categories and any(lexicon.prompts(view.pos[e], view.relation_names[r]) is not None for r, _ in others):
-            eligible.append(e)
-    order = eligible[:]
+    order = ctx.eligible[:]
     rng.shuffle(order)
-    frames_seen = {frozenset(view.frame(e)) for e in range(view.entry_count)}
-    built: list[dict[str, Any]] = []
     rejected = Counter()
-    for donor in order:
-        if len(built) >= count:
-            break
-        pos, frame = view.pos[donor], view.frame(donor)
-        category = next((r, f) for r, f in frame if r in category_ids and templated(pos, r, f))
-        with_category = index[category]
-        new_frame: list[tuple[int, int]] = []
-        resampled: list[tuple[int, int]] = []
-        ok = True
-        for r, f in frame:
-            if r in kept_ids:
-                new_frame.append((r, f)); continue
-            current = {x for _, x in frame} | {x for _, x in new_frame}
-            category_text = view.text(category[1])
-            needs_text = lexicon.prompts(pos, view.relation_names[r]) is not None
-            choice = _weighted_choice(
-                rng, pools[(pos, r)], current | {f},
-                lambda x, r=r, needs_text=needs_text: (not pairwise or not (with_category & index.get((r, x), set())))
-                and (not needs_text or (view.text(x) is not None and view.text(x) != category_text)))
-            if choice is None:
-                ok = False; break
-            new_frame.append((r, choice)); resampled.append((r, choice))
-        if not ok:
-            rejected["no filler"] += 1; continue
-        key = frozenset(new_frame)
-        together = set(with_category)                  # entries holding the category and every resampled edge
-        for edge_ in ([] if pairwise else resampled):
-            together &= index.get(edge_, set())
-        if key in frames_seen or not any(templated(pos, r, f) for r, f in resampled) or (not pairwise and together):
-            rejected["combination exists"] += 1; continue
-        frames_seen.add(key)
-        random_frame = [(r, _weighted_choice(rng, pools[(pos, r)], set())) for r, _ in new_frame]
-        built.append({"donor": donor, "pos": pos, "frame": new_frame, "category": category, "resampled": resampled,
-                      "random_frame": random_frame})
+    built = ctx.build_frames(rng, order, count, ctx.frames_seen(), rejected)
     if len(built) < count:
         raise ValueError(f"only {len(built)} new-combination frames could be built (asked for {count})")
-    reserved = {n.lower() for n in reserved_names}
-    names, checks = zs.invent_names(list(range(count + 64)), tokenizer, table, wordnet, min_subtokens=min_subtokens,
-                                    seed=name_seed, contamination_texts=contamination_texts)
-    surfaces = [n for _, n in sorted(names.items()) if n.lower() not in reserved][:count]
-    if len(surfaces) < count:
-        raise ValueError("not enough invented names after removing reserved ones")
-    checks.update(reserved_names=len(reserved), reserved_clashes=sum(n.lower() in reserved for n in names.values()))
-    concept_names = ontology.get("concept_names")
+    surfaces, checks = ctx.surfaces(count, min_subtokens=min_subtokens, name_seed=name_seed,
+                                    contamination_texts=contamination_texts, reserved_names=reserved_names)
+    concepts, items = ctx.records(built, surfaces, rng, distractors=distractors, prefix=prefix)
+    manifest = _new_word_manifest(ctx, ontology_path, tokenizer_name=tokenizer_name, min_subtokens=min_subtokens, seed=seed,
+                                  name_seed=name_seed, count=count, distractors=distractors, checks=checks, built=built,
+                                  rejected=rejected)
+    return _write_items(out_dir, SCHEMA_NEW, manifest, concepts, items)
+
+
+def _new_word_manifest(ctx: _NewWordContext, ontology_path: Path, *, tokenizer_name: str, min_subtokens: int, seed: int,
+                       name_seed: int, count: int, distractors: int, checks: dict[str, Any], built: Sequence[dict[str, Any]],
+                       rejected: Counter) -> dict[str, Any]:
+    lexicon, view, pairwise = ctx.lexicon, ctx.view, ctx.pairwise
+    degrees = Counter(len(s["frame"]) for s in built)
+    donor_degrees = Counter(len(view.frame(e)) for e in ctx.eligible)
+    manifest = {"scenario": "e9_new_words", "contamination_free": True, "lexicon": lexicon.name,
+                "description": "new concepts with invented names and frames that are new combinations of existing atomics "
+                               "and relations (zero-shot insertion by ontology editing)",
+                "ontology": str(ontology_path), "ontology_alias_sha256": ctx.table.digest(), "alias_table": ctx.table_info,
+                "tokenizer": tokenizer_name, "min_subtokens": min_subtokens, "seed": seed, "name_seed": name_seed,
+                "count": count, "distractors": distractors, "null_surface": lexicon.null_surface, "checks": checks,
+                "construction": {"donors_eligible": len(ctx.eligible), "donors_tried": sum(rejected.values()) + len(built),
+                                 "rejected": dict(rejected), "kept_relations": sorted(lexicon.kept_relations),
+                                 "rule": "category edges of a real donor kept; every other filler resampled (frequency-weighted, "
+                                         "same relation and part of speech) so that no existing entry has the category edge "
+                                         "together with any resampled edge; donors are not held out",
+                                 "degree_histogram": dict(sorted(degrees.items())),
+                                 "eligible_donor_degree_histogram": dict(sorted(donor_degrees.items()))},
+                "statement_templates": "STATEMENT_TEMPLATES (held-out wordings, never the property templates)"}
+    if lexicon.name != "wordnet":                    # WordNet manifests stay as they were
+        if not pairwise:
+            manifest["construction"]["rule"] = ("category edges of a real donor kept; every other filler resampled (frequency-weighted, "
+                                                "same relation) so that no existing entry has the category edge together with all "
+                                                "resampled edges and no entry has the same frame; donors are neither held out nor "
+                                                "synthetic")
+        manifest["statement_templates"] = "the track's held-out wording (third paraphrase or statement; never a property template)"
+        manifest["entailment"] = "true vs corrupted frame statement (the ontology has no hierarchy the items use)"
+    else:
+        del manifest["lexicon"]
+    return manifest
+
+
+def _new_word_records(ctx: _NewWordContext, built: Sequence[dict[str, Any]], surfaces: Sequence[str], rng: random.Random, *,
+                      distractors: int, prefix: str, start: int = 0) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    lexicon, view, table, text_pools = ctx.lexicon, ctx.view, ctx.table, ctx.text_pools
+    concept_names = ctx.ontology.get("concept_names")
     concepts, items = [], []
     noun_pool, verb_pool = text_pools.get(("n", "hypernym"), []), text_pools.get(("v", "hypernym"), [])
     exclude_ancestors = set(lexicon.category_relations) | {"lexname"}
-    for i, (spec, surface) in enumerate(zip(built, surfaces)):
+    for i, (spec, surface) in enumerate(zip(built, surfaces), start=start):
         cid = f"{prefix}-{i:04d}"
         pos, category = spec["pos"], spec["category"]
         ancestors = lexicon.hierarchy(view.atomic_names[category[1]])
@@ -524,148 +600,246 @@ def build_new_word_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: 
                               "templates": lexicon.statements(pos, relation), "null": lexicon.null_surface,
                               "candidates": [lexicon.statement_answer(relation, c) for c in candidates],
                               "gold": candidates.index(right)})
-    degrees = Counter(len(s["frame"]) for s in built)
-    donor_degrees = Counter(len(view.frame(e)) for e in eligible)
-    manifest = {"scenario": "e9_new_words", "contamination_free": True, "lexicon": lexicon.name,
-                "description": "new concepts with invented names and frames that are new combinations of existing atomics "
-                               "and relations (zero-shot insertion by ontology editing)",
-                "ontology": str(ontology_path), "ontology_alias_sha256": table.digest(), "alias_table": table_info,
-                "tokenizer": tokenizer_name, "min_subtokens": min_subtokens, "seed": seed, "name_seed": name_seed,
-                "count": count, "distractors": distractors, "null_surface": lexicon.null_surface, "checks": checks,
-                "construction": {"donors_eligible": len(eligible), "donors_tried": sum(rejected.values()) + len(built),
-                                 "rejected": dict(rejected), "kept_relations": sorted(lexicon.kept_relations),
-                                 "rule": "category edges of a real donor kept; every other filler resampled (frequency-weighted, "
-                                         "same relation and part of speech) so that no existing entry has the category edge "
-                                         "together with any resampled edge; donors are not held out",
-                                 "degree_histogram": dict(sorted(degrees.items())),
-                                 "eligible_donor_degree_histogram": dict(sorted(donor_degrees.items()))},
-                "statement_templates": "STATEMENT_TEMPLATES (held-out wordings, never the property templates)"}
-    if lexicon.name != "wordnet":                    # WordNet manifests stay as they were
-        if not pairwise:
-            manifest["construction"]["rule"] = ("category edges of a real donor kept; every other filler resampled (frequency-weighted, "
-                                                "same relation) so that no existing entry has the category edge together with all "
-                                                "resampled edges and no entry has the same frame; donors are neither held out nor "
-                                                "synthetic")
-        manifest["statement_templates"] = "the track's held-out wording (third paraphrase or statement; never a property template)"
-        manifest["entailment"] = "true vs corrupted frame statement (the ontology has no hierarchy the items use)"
-    else:
-        del manifest["lexicon"]
-    return _write_items(out_dir, SCHEMA_NEW, manifest, concepts, items)
+    return concepts, items
+
+
+# -- item versions: a superset of a base item directory (v2 ⊃ v1; decision 56) -------------------------------------------
+
+def _jsonl_text(rows: Sequence[dict[str, Any]]) -> str:
+    return "".join(json.dumps(json_ready(r)) + "\n" for r in rows)
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _check_replay(base_dir: Path, concepts: Sequence[dict[str, Any]], items: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """The base directory's files must be exactly what the builder produces again (same ontology, tokenizer, corpus
+    and code): the extension then starts from the base's state and the base's results replay."""
+    base_dir = Path(base_dir)
+    for name, rows in (("concepts.jsonl", concepts), ("items.jsonl", items)):
+        if _jsonl_text(rows) != (base_dir / name).read_text():
+            raise ValueError(f"{base_dir / name} is not reproduced by the builder (other ontology, tokenizer, corpus or "
+                             "code?); refusing to extend it")
+    return {"path": str(base_dir), "concepts": len(concepts), "items": len(items),
+            "sha256": {name: _sha256(base_dir / name) for name in ("concepts.jsonl", "items.jsonl", "manifest.json")}}
+
+
+def _write_extension(out_dir: Path, base_dir: Path, schema: str, manifest: dict[str, Any], concepts: list[dict[str, Any]],
+                     items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Write base files byte for byte, then the extension's rows (the v1 rows stay first and identical)."""
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    base_concepts, base_items = (Path(base_dir) / "concepts.jsonl").read_text(), (Path(base_dir) / "items.jsonl").read_text()
+    (out_dir / "concepts.jsonl").write_text(base_concepts + _jsonl_text(concepts))
+    (out_dir / "items.jsonl").write_text(base_items + _jsonl_text(items))
+    read = lambda name: [json.loads(line) for line in (out_dir / name).read_text().splitlines() if line.strip()]
+    all_concepts, all_items = read("concepts.jsonl"), read("items.jsonl")
+    if len({c["concept"] for c in all_concepts}) != len(all_concepts) or len({i["id"] for i in all_items}) != len(all_items):
+        raise ValueError("the extension repeats a concept or item id of the base")
+    counts = Counter(item["test"] for item in all_items)
+    manifest = {"schema": schema, **manifest,
+                "counts": {"concepts": len(all_concepts), "items": len(all_items), **dict(sorted(counts.items()))},
+                "sha256": {name: _sha256(out_dir / name) for name in ("concepts.jsonl", "items.jsonl")}}
+    write_json(out_dir / "manifest.json", manifest)
+    load_item_dir(out_dir, schema)                     # well-formed, every item's concept known
+    return manifest
+
+
+def extend_new_word_items(base_dir: Path, ontology_path: Path, out_dir: Path, *, tokenizer_name: str, count: int,
+                          extension_seed: int = 1, wordnet: Any = None, alias_table: Path | None = None,
+                          contamination_texts: Iterable[str] = (), reserved_names: Iterable[str] = (),
+                          lexicon: Any = None) -> dict[str, Any]:
+    """A new-word item directory of `count` concepts that is a strict superset of `base_dir` (decision 56, items `-v2`).
+
+    The base is rebuilt with its own parameters (seed, name seed, ℓ_min, distractors) and must reproduce its files
+    byte for byte; its rows are copied first and unchanged, so every base result replays. The extension continues the
+    base's shuffled donor order after the last donor the base tried (no donor is reused), builds frames under the same
+    rule (decision 35: category edges kept, the other fillers resampled so that no entry — base new words included —
+    holds the combination), takes the next invented names of the same sequence (`zs.invent_names` is sequential: the
+    base's names are the first ones; same contamination-free and reserved-name checks over all names) and draws the
+    extension's frames and items from `random.Random(extension_seed)`."""
+    if wordnet is None:
+        from nltk.corpus import wordnet
+    lexicon = lexicon or WordNetLexicon(wordnet)
+    base_manifest, base_concepts, _ = load_item_dir(base_dir, SCHEMA_NEW)
+    n_base = len(base_concepts)
+    if count <= n_base:
+        raise ValueError(f"count {count} must exceed the base's {n_base} concepts")
+    ctx = _NewWordContext(ontology_path, tokenizer_name=tokenizer_name, wordnet=wordnet, alias_table=alias_table, lexicon=lexicon)
+    if ctx.table.digest() != base_manifest["ontology_alias_sha256"]:
+        raise ValueError("the ontology's alias table differs from the base items'")
+    seed, name_seed = int(base_manifest["seed"]), int(base_manifest["name_seed"])
+    min_subtokens, distractors = int(base_manifest["min_subtokens"]), int(base_manifest["distractors"])
+    prefix = base_concepts[0]["concept"].rsplit("-", 1)[0]
+    contamination_texts = list(contamination_texts)
+    # 1. the base, replayed
+    rng = random.Random(seed)
+    order = ctx.eligible[:]
+    rng.shuffle(order)
+    frames_seen, rejected = ctx.frames_seen(), Counter()
+    built = ctx.build_frames(rng, order, n_base, frames_seen, rejected)
+    tried = sum(rejected.values()) + len(built)
+    surfaces, checks = ctx.surfaces(count, min_subtokens=min_subtokens, name_seed=name_seed,
+                                    contamination_texts=contamination_texts, reserved_names=reserved_names)
+    replay = _check_replay(base_dir, *ctx.records(built, surfaces[:n_base], rng, distractors=distractors, prefix=prefix))
+    # 2. the extension
+    ext_rng = random.Random(extension_seed)
+    ext_rejected = Counter()
+    ext_built = ctx.build_frames(ext_rng, order[tried:], count - n_base, frames_seen, ext_rejected)
+    if len(ext_built) < count - n_base:
+        raise ValueError(f"only {len(ext_built)} more new-combination frames could be built (asked for {count - n_base}; "
+                         f"{len(order) - tried} donors left)")
+    concepts, items = ctx.records(ext_built, surfaces[n_base:count], ext_rng, distractors=distractors, prefix=prefix, start=n_base)
+    manifest = _new_word_manifest(ctx, ontology_path, tokenizer_name=tokenizer_name, min_subtokens=min_subtokens, seed=seed,
+                                  name_seed=name_seed, count=count, distractors=distractors, checks=checks,
+                                  built=built + ext_built, rejected=rejected + ext_rejected)
+    manifest["construction"]["donors_left"] = len(order) - tried - (sum(ext_rejected.values()) + len(ext_built))
+    manifest["base"] = {**replay, "count": n_base, "manifest_counts": base_manifest.get("counts")}
+    manifest["extension"] = {
+        "concepts": len(ext_built), "items": len(items), "seed": extension_seed, "first_concept": f"{prefix}-{n_base:04d}",
+        "rule": "the base's rows first and byte-identical (rebuilt and checked); then the base's shuffled donor order "
+                "continued after its last tried donor, frames by the same new-combination rule against the ontology and the "
+                "base's new frames, the next invented names of the same sequence, frames and items drawn from "
+                "random.Random(extension seed)"}
+    return _write_extension(out_dir, base_dir, SCHEMA_NEW, manifest, concepts, items)
 
 
 # -- (b) edited words: items ----------------------------------------------------------------------------
 
-def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str, count: int = 200, heldout_fraction: float = 0.5,
-                     neighbors: int = 2, seed: int = 0, min_subtokens: int = 2, wordnet: Any = None,
-                     alias_table: Path | None = None, lexicon: Any = None) -> dict[str, Any]:
-    """Item directory for (b): one category edge of existing concepts changed to a same-type filler
-    (`lexicon`: WordNet hypernyms by default; tracks edit the relation their lexicon names)."""
-    from transformers import AutoTokenizer
-    if wordnet is None and lexicon is None:
-        from nltk.corpus import wordnet
-    lexicon = lexicon or WordNetLexicon(wordnet)
-    ontology = torch.load(ontology_path, weights_only=False)
-    table, table_info = cp.resolve_alias_table(ontology, Path(ontology_path), alias_table=alias_table)
-    view = OntologyView(ontology, table, lexicon)
-    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
-    rng = random.Random(seed)
-    names = ontology["concept_names"]
-    pools = view.filler_pools()
-    synthetic = {int(e) for e in ontology.get("synthetic_entries", ())}
-    edges: dict[int, tuple[int, int] | None] = {}
+class _EditContext:
+    """The ontology views shared by the edit builders (`build_edit_items`, `extend_edit_items`): the eligible
+    held-out and seen entries, their edited edge and displayed surface, the filler pools — nothing that consumes the
+    random stream."""
 
-    def edge(e: int) -> tuple[int, int] | None:
-        if e not in edges:
-            edges[e] = lexicon.edit_edge(view, e)
-        return edges[e]
+    def __init__(self, ontology_path: Path, *, tokenizer_name: str, min_subtokens: int, alias_table: Path | None,
+                 lexicon: Any) -> None:
+        from transformers import AutoTokenizer
+        self.lexicon = lexicon
+        self.ontology = ontology = torch.load(ontology_path, weights_only=False)
+        self.table, self.table_info = cp.resolve_alias_table(ontology, Path(ontology_path), alias_table=alias_table)
+        self.view = view = OntologyView(ontology, self.table, lexicon)
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
+        self.names = ontology["concept_names"]
+        self.pools = view.filler_pools()
+        synthetic = {int(e) for e in ontology.get("synthetic_entries", ())}
+        self._edges: dict[int, tuple[int, int] | None] = {}
+        single = [e for e in range(view.entry_count) if len(self.table.entry_concepts[e]) == 1 and view.pos[e] in lexicon.donor_pos
+                  and e not in synthetic and self.edge(e) is not None]
+        self.surfaces = canonical_surfaces(self.table, tokenizer, min_subtokens, single)
+        self.linkable = [e for e in single if e in self.surfaces and self.surfaces[e]["linkable"]]
+        frequency = view.frequency if view.frequency is not None else np.zeros(view.entry_count)
+        self.held = [e for e in self.linkable if e in view.heldout]
+        self.seen = [e for e in self.linkable if e not in view.heldout and frequency[e] >= 1]
+        self.index = view.edge_index()
+        self.linkable_set = set(self.linkable)
 
-    single = [e for e in range(view.entry_count) if len(table.entry_concepts[e]) == 1 and view.pos[e] in lexicon.donor_pos
-              and e not in synthetic and edge(e) is not None]
-    surfaces = canonical_surfaces(table, tokenizer, min_subtokens, single)
-    linkable = [e for e in single if e in surfaces and surfaces[e]["linkable"]]
+    def edge(self, e: int) -> tuple[int, int] | None:
+        if e not in self._edges:
+            self._edges[e] = self.lexicon.edit_edge(self.view, e)
+        return self._edges[e]
 
-    def shown(e: int) -> str:
+    def shown(self, e: int) -> str:
         """The surface shown in prompts: the canonical alias, in the concept's own casing when the lexicon
         keeps it (track names are title case in their text; WordNet aliases stay lower case)."""
-        return lexicon.display_surface(surfaces[e]["surface"], names[table.entry_concepts[e][0]]) \
-            if hasattr(lexicon, "display_surface") else surfaces[e]["surface"]
+        surface = self.surfaces[e]["surface"]
+        return self.lexicon.display_surface(surface, self.names[self.table.entry_concepts[e][0]]) \
+            if hasattr(self.lexicon, "display_surface") else surface
 
-    frequency = view.frequency if view.frequency is not None else np.zeros(view.entry_count)
-    held = [e for e in linkable if e in view.heldout]
-    seen = [e for e in linkable if e not in view.heldout and frequency[e] >= 1]
-    n_held = min(len(held), round(count * heldout_fraction))
-    chosen = rng.sample(held, n_held) + rng.sample(seen, min(len(seen), count - n_held))
-    edits: list[dict[str, Any]] = []
-    for e in chosen:
-        r, old = edge(e)
-        concept = names[table.entry_concepts[e][0]]
-        old_text, surface = view.text(old), shown(e)
-        frame_fillers = {f for _, f in view.frame(e)}
+    def draw_edits(self, rng: random.Random, chosen: Sequence[int]) -> list[dict[str, Any]]:
+        """Per chosen entry a plausible new filler and a control filler (entries without both are skipped)."""
+        view, lexicon = self.view, self.lexicon
+        edits: list[dict[str, Any]] = []
+        for e in chosen:
+            r, old = self.edge(e)
+            concept = self.names[self.table.entry_concepts[e][0]]
+            old_text, surface = view.text(old), self.shown(e)
+            frame_fillers = {f for _, f in view.frame(e)}
 
-        def plausible(x: int) -> bool:
-            if not view.text(x) or view.text(x) in {old_text, surface}:
-                return False
-            return lexicon.plausible_edit(concept, view.atomic_names[old], view.atomic_names[x])
+            def plausible(x: int) -> bool:
+                if not view.text(x) or view.text(x) in {old_text, surface}:
+                    return False
+                return lexicon.plausible_edit(concept, view.atomic_names[old], view.atomic_names[x])
 
-        new = _weighted_choice(rng, pools[(view.pos[e], r)], frame_fillers | {old}, plausible)
-        control = None if new is None else _weighted_choice(
-            rng, pools[(view.pos[e], r)], frame_fillers | {old, new}, lambda x: plausible(x) and view.text(x) != view.text(new))
-        if new is None or control is None:
-            continue
-        edits.append({"entry": e, "relation": r, "old": old, "new": new, "control": control, "surface": surface})
-    edited = {d["entry"] for d in edits}
-    index = view.edge_index()
-    linkable_set = set(linkable)
-    concepts, items = [], []
-    neighbour_concepts: dict[int, dict[str, Any]] = {}
-    for d in edits:
-        e, r, pos = d["entry"], d["relation"], view.pos[d["entry"]]
-        relation = view.relation_names[r]
-        cid = f"e9e-{e}"
-        status = cp.entry_status([e], view.heldout, view.frequency)
-        old_text, new_text, control_text = view.text(d["old"]), view.text(d["new"]), view.text(d["control"])
-        siblings = sorted(x for x in index[(r, d["old"])] if x in linkable_set and x not in edited and view.pos[x] == pos)
-        picked = rng.sample(siblings, min(neighbors, len(siblings)))
-        for _ in range(1000):                     # fill up with other linked concepts of the same part of speech
-            if len(picked) >= neighbors:
-                break
-            x = rng.choice(linkable)
-            if x not in edited and x not in picked and view.pos[x] == pos and view.text(edge(x)[1]) != new_text:
-                picked.append(x)
-        neighbour_ids = []
-        for x in picked:
-            xr, xf = edge(x)
-            nid = f"e9e-nb-{x}"
-            neighbour_concepts.setdefault(x, {"concept": nid, "role": "neighbour", "entry": x, "surface": shown(x),
-                                              "pos": view.pos[x], "source_concept": names[table.entry_concepts[x][0]],
-                                              "relation": view.relation_names[xr], "true": view.atomic_names[xf],
-                                              "true_text": view.text(xf), "status": cp.entry_status([x], view.heldout, view.frequency)})
-            neighbour_ids.append(nid)
-            true_text = view.text(xf)
-            if true_text == new_text:
+            new = _weighted_choice(rng, self.pools[(view.pos[e], r)], frame_fillers | {old}, plausible)
+            control = None if new is None else _weighted_choice(
+                rng, self.pools[(view.pos[e], r)], frame_fillers | {old, new}, lambda x: plausible(x) and view.text(x) != view.text(new))
+            if new is None or control is None:
                 continue
-            x_relation = view.relation_names[xr]
-            items.append({"id": f"{cid}-neighbourhood-{x}", "concept": nid, "edit": cid, "test": "neighbourhood",
-                          "relation": x_relation, "templates": lexicon.prompts(pos, x_relation),
-                          "null": lexicon.null_surface,
-                          "candidates": [lexicon.answer(x_relation, true_text), lexicon.answer(x_relation, new_text)], "gold": 0})
-        concepts.append({"concept": cid, "role": "edited", "entry": e, "surface": d["surface"], "pos": pos,
-                         "source_concept": names[table.entry_concepts[e][0]], "status": status, "relation": relation,
-                         "old": view.atomic_names[d["old"]], "new": view.atomic_names[d["new"]],
-                         "control": view.atomic_names[d["control"]], "old_text": old_text, "new_text": new_text,
-                         "control_text": control_text, "neighbours": neighbour_ids})
-        for test, templates, answer in (("efficacy", lexicon.prompts(pos, relation), lexicon.answer),
-                                        ("paraphrase", lexicon.statements(pos, relation), lexicon.statement_answer)):
-            if not templates:
-                continue
-            items.append({"id": f"{cid}-{test}", "concept": cid, "edit": cid, "test": test, "relation": relation,
-                          "templates": templates, "null": lexicon.null_surface,
-                          "candidates": [answer(relation, old_text), answer(relation, new_text)], "gold": 0})
-    concepts += [neighbour_concepts[x] for x in sorted(neighbour_concepts)]
+            edits.append({"entry": e, "relation": r, "old": old, "new": new, "control": control, "surface": surface})
+        return edits
+
+    def records(self, edits: Sequence[dict[str, Any]], rng: random.Random, *, edited: set[int], neighbors: int,
+                neighbour_concepts: dict[int, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Edited-concept records and items (efficacy, paraphrase, neighbourhood); neighbours are never in `edited` (every
+        edit applied at once); new neighbour records are added to `neighbour_concepts`."""
+        view, lexicon, names, table, linkable = self.view, self.lexicon, self.names, self.table, self.linkable
+        concepts, items = [], []
+        for d in edits:
+            e, r, pos = d["entry"], d["relation"], view.pos[d["entry"]]
+            relation = view.relation_names[r]
+            cid = f"e9e-{e}"
+            status = cp.entry_status([e], view.heldout, view.frequency)
+            old_text, new_text, control_text = view.text(d["old"]), view.text(d["new"]), view.text(d["control"])
+            siblings = sorted(x for x in self.index[(r, d["old"])] if x in self.linkable_set and x not in edited and view.pos[x] == pos)
+            picked = rng.sample(siblings, min(neighbors, len(siblings)))
+            for _ in range(1000):                     # fill up with other linked concepts of the same part of speech
+                if len(picked) >= neighbors:
+                    break
+                x = rng.choice(linkable)
+                if x not in edited and x not in picked and view.pos[x] == pos and view.text(self.edge(x)[1]) != new_text:
+                    picked.append(x)
+            neighbour_ids = []
+            for x in picked:
+                xr, xf = self.edge(x)
+                nid = f"e9e-nb-{x}"
+                neighbour_concepts.setdefault(x, {"concept": nid, "role": "neighbour", "entry": x, "surface": self.shown(x),
+                                                  "pos": view.pos[x], "source_concept": names[table.entry_concepts[x][0]],
+                                                  "relation": view.relation_names[xr], "true": view.atomic_names[xf],
+                                                  "true_text": view.text(xf), "status": cp.entry_status([x], view.heldout, view.frequency)})
+                neighbour_ids.append(nid)
+                true_text = view.text(xf)
+                if true_text == new_text:
+                    continue
+                x_relation = view.relation_names[xr]
+                items.append({"id": f"{cid}-neighbourhood-{x}", "concept": nid, "edit": cid, "test": "neighbourhood",
+                              "relation": x_relation, "templates": lexicon.prompts(pos, x_relation),
+                              "null": lexicon.null_surface,
+                              "candidates": [lexicon.answer(x_relation, true_text), lexicon.answer(x_relation, new_text)], "gold": 0})
+            concepts.append({"concept": cid, "role": "edited", "entry": e, "surface": d["surface"], "pos": pos,
+                             "source_concept": names[table.entry_concepts[e][0]], "status": status, "relation": relation,
+                             "old": view.atomic_names[d["old"]], "new": view.atomic_names[d["new"]],
+                             "control": view.atomic_names[d["control"]], "old_text": old_text, "new_text": new_text,
+                             "control_text": control_text, "neighbours": neighbour_ids})
+            for test, templates, answer in (("efficacy", lexicon.prompts(pos, relation), lexicon.answer),
+                                            ("paraphrase", lexicon.statements(pos, relation), lexicon.statement_answer)):
+                if not templates:
+                    continue
+                items.append({"id": f"{cid}-{test}", "concept": cid, "edit": cid, "test": test, "relation": relation,
+                              "templates": templates, "null": lexicon.null_surface,
+                              "candidates": [answer(relation, old_text), answer(relation, new_text)], "gold": 0})
+        return concepts, items
+
+    def base_edits(self, *, count: int, heldout_fraction: float, neighbors: int, seed: int
+                   ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[int, dict[str, Any]], list[dict[str, Any]]]:
+        """(edits, concepts, items, neighbour records) of the seeded construction (`build_edit_items`)."""
+        rng = random.Random(seed)
+        n_held = min(len(self.held), round(count * heldout_fraction))
+        chosen = rng.sample(self.held, n_held) + rng.sample(self.seen, min(len(self.seen), count - n_held))
+        edits = self.draw_edits(rng, chosen)
+        neighbours: dict[int, dict[str, Any]] = {}
+        concepts, items = self.records(edits, rng, edited={d["entry"] for d in edits}, neighbors=neighbors, neighbour_concepts=neighbours)
+        return edits, concepts + [neighbours[x] for x in sorted(neighbours)], neighbours, items
+
+
+def _edit_manifest(ctx: _EditContext, ontology_path: Path, concepts: Sequence[dict[str, Any]], *, tokenizer_name: str,
+                   min_subtokens: int, seed: int, count: int, heldout_fraction: float, neighbors: int) -> dict[str, Any]:
+    lexicon = ctx.lexicon
     statuses = Counter(c["status"] for c in concepts if c["role"] == "edited")
     manifest = {"scenario": "e9_edits", "description": "one hypernym edge of existing concepts replaced by a same-type filler "
                 "(knowledge editing through the ontology)", "ontology": str(ontology_path),
-                "ontology_alias_sha256": table.digest(), "alias_table": table_info, "tokenizer": tokenizer_name,
+                "ontology_alias_sha256": ctx.table.digest(), "alias_table": ctx.table_info, "tokenizer": tokenizer_name,
                 "min_subtokens": min_subtokens, "seed": seed, "count": count, "heldout_fraction": heldout_fraction,
                 "neighbours": neighbors, "edited_status": dict(sorted(statuses.items())),
                 "selection": "single-concept noun/verb entries with exactly one templated hypernym/instance-hypernym edge whose "
@@ -679,7 +853,94 @@ def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str,
                         selection=f"single-concept entries (synthetic entries excluded) with exactly one templated edge of the "
                                   f"first of {list(lexicon.edit_relations)} they have, whose canonical alias has ≥ ℓ_min "
                                   "subtokens; seeded sample of held-out and seen (training frequency ≥ 1) entries")
+    return manifest
+
+
+def build_edit_items(ontology_path: Path, out_dir: Path, *, tokenizer_name: str, count: int = 200, heldout_fraction: float = 0.5,
+                     neighbors: int = 2, seed: int = 0, min_subtokens: int = 2, wordnet: Any = None,
+                     alias_table: Path | None = None, lexicon: Any = None) -> dict[str, Any]:
+    """Item directory for (b): one category edge of existing concepts changed to a same-type filler
+    (`lexicon`: WordNet hypernyms by default; tracks edit the relation their lexicon names)."""
+    if wordnet is None and lexicon is None:
+        from nltk.corpus import wordnet
+    lexicon = lexicon or WordNetLexicon(wordnet)
+    ctx = _EditContext(ontology_path, tokenizer_name=tokenizer_name, min_subtokens=min_subtokens, alias_table=alias_table,
+                       lexicon=lexicon)
+    _, concepts, _, items = ctx.base_edits(count=count, heldout_fraction=heldout_fraction, neighbors=neighbors, seed=seed)
+    manifest = _edit_manifest(ctx, ontology_path, concepts, tokenizer_name=tokenizer_name, min_subtokens=min_subtokens, seed=seed,
+                              count=count, heldout_fraction=heldout_fraction, neighbors=neighbors)
     return _write_items(out_dir, SCHEMA_EDITS, manifest, concepts, items)
+
+
+def edit_pool(ontology_path: Path, *, tokenizer_name: str, min_subtokens: int = 2, alias_table: Path | None = None,
+              lexicon: Any = None, wordnet: Any = None) -> dict[str, int]:
+    """Sizes of the eligible edit pool (the entries `build_edit_items` samples from): held-out and seen."""
+    if wordnet is None and lexicon is None:
+        from nltk.corpus import wordnet
+    ctx = _EditContext(ontology_path, tokenizer_name=tokenizer_name, min_subtokens=min_subtokens, alias_table=alias_table,
+                       lexicon=lexicon or WordNetLexicon(wordnet))
+    return {"linkable": len(ctx.linkable), "heldout": len(ctx.held), "seen": len(ctx.seen)}
+
+
+def extend_edit_items(base_dir: Path, ontology_path: Path, out_dir: Path, *, tokenizer_name: str, count: int,
+                      extension_seed: int = 1, wordnet: Any = None, alias_table: Path | None = None,
+                      lexicon: Any = None) -> dict[str, Any]:
+    """An edit item directory of `count` edits that is a strict superset of `base_dir` (decision 56, items `-v2`).
+
+    The base is rebuilt with its own parameters and must reproduce its files byte for byte; its rows are copied first and
+    unchanged. Every edit is applied at once at evaluation, so the extension never edits a base edited or neighbour
+    concept (a base neighbour's row would change and its base results would not replay), and its own neighbours avoid
+    every edited concept. Selection as the base (`heldout_fraction` of all edits held out, the rest seen; when the
+    held-out pool left after those exclusions is too small, all of it is taken and seen entries fill up, as
+    `build_edit_items` does), fillers by the same rule, drawn from `random.Random(extension_seed)`. The manifest records
+    the pool sizes and whether the held-out pool capped the target."""
+    if wordnet is None and lexicon is None:
+        from nltk.corpus import wordnet
+    lexicon = lexicon or WordNetLexicon(wordnet)
+    base_manifest, base_concepts, _ = load_item_dir(base_dir, SCHEMA_EDITS)
+    seed, fraction = int(base_manifest["seed"]), float(base_manifest["heldout_fraction"])
+    neighbors, min_subtokens = int(base_manifest["neighbours"]), int(base_manifest["min_subtokens"])
+    ctx = _EditContext(ontology_path, tokenizer_name=tokenizer_name, min_subtokens=min_subtokens, alias_table=alias_table,
+                       lexicon=lexicon)
+    if ctx.table.digest() != base_manifest["ontology_alias_sha256"]:
+        raise ValueError("the ontology's alias table differs from the base items'")
+    base, concepts0, neighbours, items0 = ctx.base_edits(count=int(base_manifest["count"]), heldout_fraction=fraction,
+                                                         neighbors=neighbors, seed=seed)
+    replay = _check_replay(base_dir, concepts0, items0)
+    n_base = len(base)
+    if count <= n_base:
+        raise ValueError(f"count {count} must exceed the base's {n_base} edits")
+    base_edited = {d["entry"] for d in base}
+    excluded = base_edited | set(neighbours)
+    base_held = sum(d["entry"] in ctx.view.heldout for d in base)
+    held_left = [e for e in ctx.held if e not in excluded]
+    seen_left = [e for e in ctx.seen if e not in excluded]
+    held_target = round(count * fraction)
+    n_held = min(len(held_left), max(0, held_target - base_held))
+    n_seen = min(len(seen_left), count - n_base - n_held)
+    rng = random.Random(extension_seed)
+    chosen = rng.sample(held_left, n_held) + rng.sample(seen_left, n_seen)
+    edits = ctx.draw_edits(rng, chosen)
+    edited = base_edited | {d["entry"] for d in edits}
+    new_neighbours = dict(neighbours)
+    concepts, items = ctx.records(edits, rng, edited=edited, neighbors=neighbors, neighbour_concepts=new_neighbours)
+    concepts += [new_neighbours[x] for x in sorted(new_neighbours) if x not in neighbours]
+    all_concepts = concepts0 + concepts
+    manifest = _edit_manifest(ctx, ontology_path, all_concepts, tokenizer_name=tokenizer_name, min_subtokens=min_subtokens,
+                              seed=seed, count=count, heldout_fraction=fraction, neighbors=neighbors)
+    manifest["pool"] = {"linkable": len(ctx.linkable), "heldout_eligible": len(ctx.held), "seen_eligible": len(ctx.seen),
+                        "excluded_base_edited": len(base_edited), "excluded_base_neighbours": len(set(neighbours) - base_edited),
+                        "heldout_left": len(held_left), "seen_left": len(seen_left), "heldout_target": held_target,
+                        "heldout_capped": base_held + n_held < held_target}
+    manifest["base"] = {**replay, "count": int(base_manifest["count"]), "edits": n_base, "manifest_counts": base_manifest.get("counts")}
+    manifest["extension"] = {
+        "edits": len(edits), "chosen": len(chosen), "heldout": sum(d["entry"] in ctx.view.heldout for d in edits),
+        "items": len(items), "new_neighbour_concepts": len(concepts) - len(edits), "seed": extension_seed,
+        "rule": "the base's rows first and byte-identical (rebuilt and checked); extension entries sampled from the eligible "
+                "pool minus the base's edited and neighbour concepts (held-out share as the base, seen entries fill up), "
+                "fillers by the base's rule, neighbours never an edited concept of base or extension, all drawn from "
+                "random.Random(extension seed)"}
+    return _write_extension(out_dir, base_dir, SCHEMA_EDITS, manifest, concepts, items)
 
 
 # -- evaluation: channel surgery -------------------------------------------------------------------------
@@ -1120,11 +1381,20 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
 def run_items(args: argparse.Namespace) -> dict[str, Any]:
     if args.output.exists() and any(args.output.iterdir()):
         raise FileExistsError(f"{args.output} is not empty")
+    if args.extend is not None and not args.count:
+        raise ValueError("--extend needs --count (the total of the superset)")
     if args.kind == "new":
         texts = _contamination_texts(args.contamination_corpus, args.tokenizer, args.contamination_tokens)
+        if args.extend is not None:
+            return extend_new_word_items(args.extend, args.ontology, args.output, tokenizer_name=args.tokenizer, count=args.count,
+                                         extension_seed=args.extension_seed, contamination_texts=texts,
+                                         reserved_names=_reserved_names(args.reserved_names))
         return build_new_word_items(args.ontology, args.output, tokenizer_name=args.tokenizer, count=args.count or 300,
                                     seed=args.seed, min_subtokens=args.min_subtokens, contamination_texts=texts,
                                     reserved_names=_reserved_names(args.reserved_names), name_seed=args.name_seed)
+    if args.extend is not None:
+        return extend_edit_items(args.extend, args.ontology, args.output, tokenizer_name=args.tokenizer, count=args.count,
+                                 extension_seed=args.extension_seed)
     return build_edit_items(args.ontology, args.output, tokenizer_name=args.tokenizer, count=args.count or 200, seed=args.seed,
                             min_subtokens=args.min_subtokens)
 
@@ -1144,6 +1414,10 @@ def main(argv: list[str] | None = None) -> None:
     build.add_argument("--contamination-tokens", type=int, default=20_000_000)
     build.add_argument("--reserved-names", type=Path, nargs="*", default=[],
                        help="item directories whose surfaces the invented names must avoid (e.g. the E5.4 synthetic items)")
+    build.add_argument("--extend", type=Path, default=None,
+                       help="build a strict superset of this item directory (its rows first and byte-identical; --count = "
+                            "the new total; its seeds and settings are reused)")
+    build.add_argument("--extension-seed", type=int, default=1, help="random stream of the extension's rows (with --extend)")
     ev = sub.add_parser("evaluate", help="evaluate a trained run on the new-word and/or edit items")
     ev.add_argument("--run", type=Path, required=True); ev.add_argument("--output", type=Path, required=True)
     ev.add_argument("--new-items", type=Path, default=None); ev.add_argument("--edit-items", type=Path, default=None)
