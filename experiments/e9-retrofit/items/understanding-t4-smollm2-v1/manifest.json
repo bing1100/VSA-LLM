@@ -1,0 +1,355 @@
+{
+  "schema": "e9-understanding/1",
+  "track": "t4",
+  "family": "smollm2",
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "seed": 0,
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+  "ontology_alias_sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a",
+  "alias_table": "/home/bhux/data/vsa-llm/e9/alias-tables/t4.json",
+  "new_items": "experiments/e9-retrofit/items/new-words-t4-smollm2-v1",
+  "counts_requested": {
+    "seen": 300,
+    "rare": 300
+  },
+  "anchors": {
+    "heldout": 686,
+    "new": 300,
+    "rare": 300,
+    "seen": 300
+  },
+  "families": [
+    "two_hop",
+    "affordance",
+    "paraphrase",
+    "reverse",
+    "comparison",
+    "negation"
+  ],
+  "items": 17058,
+  "items_by": {
+    "heldout/affordance/affordance": 578,
+    "heldout/comparison/comparison": 2196,
+    "heldout/negation/affirm": 1165,
+    "heldout/negation/negate": 1165,
+    "heldout/paraphrase/paraphrase": 1022,
+    "heldout/reverse/reverse": 1165,
+    "heldout/two_hop/bridge": 195,
+    "heldout/two_hop/hop1": 222,
+    "heldout/two_hop/two_hop": 222,
+    "new/affordance/affordance": 280,
+    "new/comparison/comparison": 884,
+    "new/negation/affirm": 456,
+    "new/negation/negate": 456,
+    "new/paraphrase/paraphrase": 544,
+    "new/reverse/reverse": 456,
+    "new/two_hop/bridge": 54,
+    "new/two_hop/hop1": 55,
+    "new/two_hop/two_hop": 55,
+    "rare/affordance/affordance": 272,
+    "rare/comparison/comparison": 866,
+    "rare/negation/affirm": 427,
+    "rare/negation/negate": 427,
+    "rare/paraphrase/paraphrase": 521,
+    "rare/reverse/reverse": 427,
+    "rare/two_hop/bridge": 42,
+    "rare/two_hop/hop1": 42,
+    "rare/two_hop/two_hop": 42,
+    "seen/affordance/affordance": 206,
+    "seen/comparison/comparison": 748,
+    "seen/negation/affirm": 447,
+    "seen/negation/negate": 447,
+    "seen/paraphrase/paraphrase": 389,
+    "seen/reverse/reverse": 447,
+    "seen/two_hop/bridge": 46,
+    "seen/two_hop/hop1": 46,
+    "seen/two_hop/two_hop": 46
+  },
+  "rules": {
+    "overlap": "an option sharing a content-word stem (\u2265 3 letters, not a stopword) with any verbalization within two hops of the term (exclusion table) is not used",
+    "two_hop": "answer = the first sorted r2 filler of the r1 filler's frame that is not in the term's frame (atom or text); distractors = other r2 fillers not in the term's frame",
+    "scoring": "PMI against the null prompt (term \u2192 'this'/'that'; reverse: cue \u2192 'we mean'); argmax per template"
+  },
+  "spec": {
+    "anchor": {
+      "relation": "branch",
+      "values": [
+        "branch:chemical entity"
+      ]
+    },
+    "two_hop": [
+      {
+        "path": [
+          "has_functional_parent",
+          "has_role"
+        ],
+        "templates": [
+          "{x} is derived from a parent compound that has a role as",
+          "The functional parent of {x} has a role as"
+        ]
+      },
+      {
+        "path": [
+          "is_conjugate_acid_of",
+          "has_role"
+        ],
+        "templates": [
+          "The conjugate base of {x} has a role as",
+          "Deprotonating {x} gives a compound that has a role as"
+        ]
+      },
+      {
+        "path": [
+          "is_conjugate_base_of",
+          "has_role"
+        ],
+        "templates": [
+          "The conjugate acid of {x} has a role as",
+          "Protonating {x} gives a compound that has a role as"
+        ]
+      },
+      {
+        "path": [
+          "is_a",
+          "has_role"
+        ],
+        "templates": [
+          "{x} belongs to a chemical class that has a role as",
+          "A class of compounds that includes {x} has a role as"
+        ]
+      }
+    ],
+    "affordance": {
+      "relation": "charge",
+      "items": {
+        "electrophoresis": {
+          "templates": [
+            "In electrophoresis, {x} migrates toward",
+            "In an electric field, {x} drifts toward"
+          ],
+          "options": {
+            "charge:negative": " the anode",
+            "charge:positive": " the cathode",
+            "charge:neutral": " neither electrode"
+          }
+        }
+      }
+    },
+    "paraphrase": {
+      "contains_element": {
+        "templates": [
+          "{x} contains atoms of",
+          "Among the elements in {x} is"
+        ],
+        "k": 5,
+        "skip": [
+          "element:C",
+          "element:H"
+        ],
+        "options": {
+          "element:H": [
+            " hydrogen"
+          ],
+          "element:B": [
+            " boron"
+          ],
+          "element:C": [
+            " carbon"
+          ],
+          "element:N": [
+            " nitrogen"
+          ],
+          "element:O": [
+            " oxygen"
+          ],
+          "element:F": [
+            " fluorine"
+          ],
+          "element:Na": [
+            " sodium"
+          ],
+          "element:Mg": [
+            " magnesium"
+          ],
+          "element:Al": [
+            " aluminium"
+          ],
+          "element:Si": [
+            " silicon"
+          ],
+          "element:P": [
+            " phosphorus"
+          ],
+          "element:S": [
+            " sulfur"
+          ],
+          "element:Cl": [
+            " chlorine"
+          ],
+          "element:K": [
+            " potassium"
+          ],
+          "element:Ca": [
+            " calcium"
+          ],
+          "element:Mn": [
+            " manganese"
+          ],
+          "element:Fe": [
+            " iron"
+          ],
+          "element:Co": [
+            " cobalt"
+          ],
+          "element:Ni": [
+            " nickel"
+          ],
+          "element:Cu": [
+            " copper"
+          ],
+          "element:Zn": [
+            " zinc"
+          ],
+          "element:As": [
+            " arsenic"
+          ],
+          "element:Se": [
+            " selenium"
+          ],
+          "element:Br": [
+            " bromine"
+          ],
+          "element:Ag": [
+            " silver"
+          ],
+          "element:Sn": [
+            " tin"
+          ],
+          "element:I": [
+            " iodine"
+          ],
+          "element:Pt": [
+            " platinum"
+          ],
+          "element:Au": [
+            " gold"
+          ],
+          "element:Hg": [
+            " mercury"
+          ],
+          "element:Pb": [
+            " lead"
+          ],
+          "element:Li": [
+            " lithium"
+          ],
+          "element:Gd": [
+            " gadolinium"
+          ],
+          "element:Tc": [
+            " technetium"
+          ],
+          "element:Ga": [
+            " gallium"
+          ],
+          "element:Cr": [
+            " chromium"
+          ],
+          "element:Mo": [
+            " molybdenum"
+          ],
+          "element:Bi": [
+            " bismuth"
+          ],
+          "element:Sb": [
+            " antimony"
+          ],
+          "element:Ba": [
+            " barium"
+          ]
+        }
+      },
+      "charge": {
+        "templates": [
+          "Overall, {x} has",
+          "Each particle of {x} has"
+        ],
+        "k": 3,
+        "options": {
+          "charge:negative": [
+            " more electrons than protons"
+          ],
+          "charge:positive": [
+            " fewer electrons than protons"
+          ],
+          "charge:neutral": [
+            " as many electrons as protons"
+          ]
+        }
+      }
+    },
+    "reverse": {
+      "has_role": {
+        "cue": "that has a role as {t}",
+        "match": null,
+        "article": true
+      },
+      "is_a": {
+        "cue": "that is classified as {t}",
+        "match": null
+      }
+    },
+    "reverse_templates": [
+      "Of {x} and {y}, the one {c} is",
+      "Between {y} and {x}, the one {c} is"
+    ],
+    "comparison": {
+      "is_a": {
+        "templates": [
+          "{x} and {y} belong to",
+          "Chemically, {x} and {y} fall into"
+        ],
+        "candidates": [
+          " the same chemical class",
+          " two different chemical classes"
+        ]
+      },
+      "charge": {
+        "templates": [
+          "{x} and {y} carry",
+          "Overall, {x} and {y} have"
+        ],
+        "candidates": [
+          " the same net charge",
+          " different net charges"
+        ]
+      }
+    },
+    "negation": {
+      "has_role": {
+        "affirm": [
+          "{x} has a role as",
+          "One role of {x} is that of"
+        ],
+        "negate": [
+          "{x} does not have a role as",
+          "One role that {x} lacks is that of"
+        ]
+      },
+      "is_a": {
+        "affirm": [
+          "{x} is a member of the class of",
+          "Chemically, {x} is classified among the"
+        ],
+        "negate": [
+          "{x} is not a member of the class of",
+          "Chemically, {x} is not classified among the"
+        ]
+      }
+    }
+  },
+  "sha256": {
+    "concepts.jsonl": "afb8a5c8343fdf66bf65ad4d8acae7c8ffd3e408a5e9f4f38980967f1813e4f0",
+    "items.jsonl.gz": "af8f22b56175ffd419f03a0419aa5d99612e9b28ee7e5c6e0602943d531d7f92"
+  }
+}

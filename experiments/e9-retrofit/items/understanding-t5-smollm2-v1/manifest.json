@@ -1,0 +1,452 @@
+{
+  "schema": "e9-understanding/1",
+  "track": "t5",
+  "family": "smollm2",
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "seed": 0,
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+  "ontology_alias_sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415",
+  "alias_table": "/home/bhux/data/vsa-llm/e9/alias-tables/t5.json",
+  "new_items": "experiments/e9-retrofit/items/new-words-t5-smollm2-v2",
+  "counts_requested": {
+    "seen": 300,
+    "rare": 300
+  },
+  "anchors": {
+    "heldout": 560,
+    "new": 700,
+    "rare": 300,
+    "seen": 300
+  },
+  "families": [
+    "two_hop",
+    "affordance",
+    "paraphrase",
+    "reverse",
+    "comparison",
+    "negation"
+  ],
+  "items": 48786,
+  "items_by": {
+    "heldout/affordance/affordance": 1012,
+    "heldout/comparison/comparison": 3182,
+    "heldout/negation/affirm": 2124,
+    "heldout/negation/negate": 2124,
+    "heldout/paraphrase/paraphrase": 1970,
+    "heldout/reverse/reverse": 1120,
+    "heldout/two_hop/bridge": 1070,
+    "heldout/two_hop/hop1": 1115,
+    "heldout/two_hop/two_hop": 1115,
+    "new/affordance/affordance": 1152,
+    "new/comparison/comparison": 3922,
+    "new/negation/affirm": 2553,
+    "new/negation/negate": 2553,
+    "new/paraphrase/paraphrase": 2341,
+    "new/reverse/reverse": 1337,
+    "new/two_hop/bridge": 1322,
+    "new/two_hop/hop1": 1386,
+    "new/two_hop/two_hop": 1386,
+    "rare/affordance/affordance": 529,
+    "rare/comparison/comparison": 1586,
+    "rare/negation/affirm": 1144,
+    "rare/negation/negate": 1144,
+    "rare/paraphrase/paraphrase": 1070,
+    "rare/reverse/reverse": 600,
+    "rare/two_hop/bridge": 630,
+    "rare/two_hop/hop1": 670,
+    "rare/two_hop/two_hop": 670,
+    "seen/affordance/affordance": 545,
+    "seen/comparison/comparison": 1616,
+    "seen/negation/affirm": 1149,
+    "seen/negation/negate": 1149,
+    "seen/paraphrase/paraphrase": 1071,
+    "seen/reverse/reverse": 600,
+    "seen/two_hop/bridge": 589,
+    "seen/two_hop/hop1": 620,
+    "seen/two_hop/two_hop": 620
+  },
+  "rules": {
+    "overlap": "an option sharing a content-word stem (\u2265 3 letters, not a stopword) with any verbalization within two hops of the term (exclusion table) is not used",
+    "two_hop": "answer = the first sorted r2 filler of the r1 filler's frame that is not in the term's frame (atom or text); distractors = other r2 fillers not in the term's frame",
+    "scoring": "PMI against the null prompt (term \u2192 'this'/'that'; reverse: cue \u2192 'we mean'); argmax per template"
+  },
+  "spec": {
+    "anchor": {
+      "relation": "is_a",
+      "values": [
+        "type:system",
+        "type:process",
+        "type:metric",
+        "type:policy",
+        "type:document",
+        "type:project",
+        "type:dataset",
+        "type:tool"
+      ]
+    },
+    "two_hop": [
+      {
+        "path": [
+          "owned_by",
+          "reports_to"
+        ],
+        "templates": [
+          "{x} is owned by a team that reports to",
+          "The team that owns {x} sits within"
+        ]
+      },
+      {
+        "path": [
+          "governed_by",
+          "approved_by"
+        ],
+        "templates": [
+          "{x} is governed by a policy that is approved by",
+          "The policy that governs {x} needs sign-off from"
+        ]
+      },
+      {
+        "path": [
+          "governed_by",
+          "owned_by"
+        ],
+        "templates": [
+          "{x} is governed by a policy that is owned by",
+          "The policy that governs {x} is owned by"
+        ]
+      },
+      {
+        "path": [
+          "part_of",
+          "sponsored_by"
+        ],
+        "templates": [
+          "{x} is part of a project that is sponsored by",
+          "The project that {x} belongs to is sponsored by"
+        ]
+      },
+      {
+        "path": [
+          "measured_by",
+          "owned_by"
+        ],
+        "templates": [
+          "{x} is measured by a metric that is owned by",
+          "The metric that measures {x} is owned by"
+        ]
+      },
+      {
+        "path": [
+          "depends_on",
+          "owned_by"
+        ],
+        "templates": [
+          "{x} depends on something that is owned by",
+          "Something that {x} depends on is owned by"
+        ]
+      },
+      {
+        "path": [
+          "uses",
+          "owned_by"
+        ],
+        "templates": [
+          "{x} uses something that is owned by",
+          "Something that {x} uses is owned by"
+        ]
+      }
+    ],
+    "affordance": {
+      "relation": "is_a",
+      "items": {
+        "use": {
+          "templates": [
+            "Most people interact with {x} by",
+            "The usual way to work with {x} is by"
+          ],
+          "options": {
+            "type:system": " logging in to it",
+            "type:process": " carrying out its steps in order",
+            "type:metric": " checking whether its value went up or down",
+            "type:policy": " making sure they comply with it",
+            "type:document": " reading it from start to finish",
+            "type:project": " helping it finish before its deadline",
+            "type:dataset": " querying its rows",
+            "type:tool": " installing it on their laptop"
+          }
+        },
+        "event": {
+          "templates": [
+            "Last week, {x}",
+            "According to the latest update, {x}"
+          ],
+          "options": {
+            "type:system": " crashed and had to be restarted",
+            "type:process": " was carried out late again",
+            "type:metric": " dropped by three percent",
+            "type:policy": " was violated twice",
+            "type:document": " was edited and signed again",
+            "type:project": " slipped past its deadline",
+            "type:dataset": " was downloaded by an analyst",
+            "type:tool": " was installed on every laptop"
+          }
+        }
+      }
+    },
+    "paraphrase": {
+      "is_a": {
+        "templates": [
+          "{x} is best described as",
+          "In plain words, {x} is"
+        ],
+        "k": 5,
+        "options": {
+          "type:system": [
+            " a piece of software infrastructure",
+            " a computer platform that other software connects to"
+          ],
+          "type:process": [
+            " a sequence of steps that people carry out",
+            " a routine that staff follow"
+          ],
+          "type:metric": [
+            " a number that is watched over time",
+            " a quantity that is tracked as a figure"
+          ],
+          "type:policy": [
+            " a set of rules everyone must obey",
+            " a binding rule set"
+          ],
+          "type:document": [
+            " a written text you can read",
+            " a piece of writing"
+          ],
+          "type:project": [
+            " a temporary effort with a goal and an end date",
+            " a time-limited undertaking"
+          ],
+          "type:dataset": [
+            " a collection of stored records",
+            " a table of stored entries"
+          ],
+          "type:tool": [
+            " a small utility that staff use",
+            " a handy application for employees"
+          ]
+        }
+      },
+      "area": {
+        "templates": [
+          "{x} is mainly concerned with",
+          "The work around {x} is about"
+        ],
+        "k": 5,
+        "options": {
+          "area:finance": [
+            " money, budgets and accounting",
+            " the company's money"
+          ],
+          "area:logistics": [
+            " moving and storing goods",
+            " getting goods from place to place"
+          ],
+          "area:security": [
+            " protecting the company from attackers",
+            " keeping intruders out"
+          ],
+          "area:people operations": [
+            " hiring and looking after employees",
+            " staff and their careers"
+          ],
+          "area:sales": [
+            " selling to clients",
+            " closing deals with buyers"
+          ],
+          "area:compliance": [
+            " following laws and regulations",
+            " obeying regulators"
+          ],
+          "area:engineering": [
+            " building and shipping software",
+            " writing code"
+          ],
+          "area:customer support": [
+            " helping users who have problems",
+            " answering complaints from users"
+          ],
+          "area:procurement": [
+            " buying what the company needs from outside firms",
+            " purchasing from outside firms"
+          ],
+          "area:data": [
+            " organising information so it can be analysed",
+            " analytics and information management"
+          ]
+        }
+      },
+      "status": {
+        "templates": [
+          "Right now, {x} is",
+          "These days, {x} is"
+        ],
+        "k": 4,
+        "options": {
+          "status:active": [
+            " in everyday use",
+            " fully in service"
+          ],
+          "status:pilot": [
+            " being trialled by a small group",
+            " in an early trial"
+          ],
+          "status:deprecated": [
+            " being phased out",
+            " on its way out"
+          ],
+          "status:planned": [
+            " not yet built",
+            " still only an idea"
+          ]
+        }
+      },
+      "cadence": {
+        "templates": [
+          "{x} takes place",
+          "{x} is scheduled to happen"
+        ],
+        "k": 4,
+        "options": {
+          "cadence:daily": [
+            " every working morning",
+            " each morning"
+          ],
+          "cadence:weekly": [
+            " once every seven days",
+            " every seven days"
+          ],
+          "cadence:monthly": [
+            " twelve times a year",
+            " once in each calendar period of about thirty days"
+          ],
+          "cadence:quarterly": [
+            " four times a year",
+            " every three months"
+          ]
+        }
+      },
+      "tier": {
+        "templates": [
+          "{x} is supported",
+          "When {x} breaks, it is supported"
+        ],
+        "k": 3,
+        "options": {
+          "tier:tier 1": [
+            " with the highest priority",
+            " first, before anything else"
+          ],
+          "tier:tier 2": [
+            " with medium priority",
+            " after the most critical services"
+          ],
+          "tier:tier 3": [
+            " with the lowest priority",
+            " last, when there is time"
+          ]
+        }
+      }
+    },
+    "reverse": {
+      "owned_by": {
+        "cue": "owned by {t}",
+        "match": "is_a"
+      },
+      "area": {
+        "cue": "in the {t} area",
+        "match": "is_a"
+      }
+    },
+    "reverse_templates": [
+      "Of {x} and {y}, the one {c} is",
+      "Between {y} and {x}, the one {c} is"
+    ],
+    "comparison": {
+      "owned_by": {
+        "templates": [
+          "{x} and {y} are owned by",
+          "Ownership of {x} and {y} lies with"
+        ],
+        "candidates": [
+          " the same team",
+          " two different teams"
+        ]
+      },
+      "area": {
+        "templates": [
+          "{x} and {y} belong to",
+          "In the org chart, {x} and {y} sit in"
+        ],
+        "candidates": [
+          " the same area",
+          " two different areas"
+        ]
+      },
+      "is_a": {
+        "templates": [
+          "{x} and {y} are",
+          "In the glossary, {x} and {y} are filed as"
+        ],
+        "candidates": [
+          " the same kind of thing",
+          " two different kinds of things"
+        ]
+      }
+    },
+    "negation": {
+      "owned_by": {
+        "affirm": [
+          "{x} is owned by",
+          "Ownership of {x} lies with"
+        ],
+        "negate": [
+          "{x} is not owned by",
+          "Ownership of {x} does not lie with"
+        ]
+      },
+      "area": {
+        "affirm": [
+          "{x} belongs to the",
+          "In the org chart, {x} sits in the"
+        ],
+        "negate": [
+          "{x} does not belong to the",
+          "In the org chart, {x} does not sit in the"
+        ]
+      },
+      "status": {
+        "affirm": [
+          "{x} is currently",
+          "At the moment, {x} is"
+        ],
+        "negate": [
+          "{x} is not currently",
+          "At the moment, {x} is not"
+        ]
+      },
+      "is_a": {
+        "affirm": [
+          "The kind of thing {x} is: a",
+          "In the glossary, {x} is filed under the type"
+        ],
+        "negate": [
+          "The kind of thing {x} is not: a",
+          "In the glossary, {x} is not filed under the type"
+        ]
+      }
+    }
+  },
+  "sha256": {
+    "concepts.jsonl": "a35dd11fe643f1e4fa83440d2a4f4a942dc394cb1f0e1b03150d6c238c1f57dd",
+    "items.jsonl.gz": "f1b998ee42efe7a25a94270f26eff0d6c2645d1daf5daa232b3bcae67eb75751"
+  }
+}
