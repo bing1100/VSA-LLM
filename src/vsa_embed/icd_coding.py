@@ -364,7 +364,7 @@ class SegmentStore:
     def batch(self, admissions: Sequence[int], device: torch.device | str = "cpu") -> tuple[Tensor, Tensor]:
         lengths = [int(self.offsets[a + 1] - self.offsets[a]) for a in admissions]
         n = max(1, max(lengths))
-        states = np.zeros((len(admissions), n, self.width), dtype=np.float32)
+        states = np.zeros((len(admissions), n, self.width), dtype=self.segments.dtype)   # copied as stored (float16)
         mask = np.zeros((len(admissions), n), dtype=bool)
         for row, (a, length) in enumerate(zip(admissions, lengths)):
             if length:
@@ -372,7 +372,7 @@ class SegmentStore:
                 mask[row, :length] = True
             else:                                   # an empty document attends to one zero segment
                 mask[row, 0] = True
-        return torch.from_numpy(states).to(device, non_blocking=True), torch.from_numpy(mask).to(device)
+        return torch.from_numpy(states).to(device).float(), torch.from_numpy(mask).to(device)
 
 
 def length_batches(lengths: np.ndarray, indices: np.ndarray, batch: int, rng: np.random.Generator, *,

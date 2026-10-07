@@ -577,7 +577,7 @@ class HostEncoder:
     its span channel on or off."""
 
     def __init__(self, *, pretrained: str | None = None, run: Path | None = None, channel: bool = True,
-                 device: torch.device | str = "cuda", dtype: str = "bfloat16") -> None:
+                 device: torch.device | str = "cuda", dtype: str = "bfloat16", alias_table: Path | None = None) -> None:
         self.device = torch.device(device)
         self.dtype = getattr(torch, dtype)
         self.channel = False
@@ -592,7 +592,8 @@ class HostEncoder:
             self.info = {"pretrained": pretrained, "channel": False}
         else:
             from vsa_embed.evaluation.channel_probes import load_run
-            adapter = load_run(Path(run), device=self.device)
+            # The explicit alias table: T1c's ontology.pt has no sidecar table (load_run would fall back to WordNet).
+            adapter = load_run(Path(run), device=self.device, alias_table=alias_table)
             self.model = adapter.model.eval()
             self.base = None
             self.channel = bool(channel and self.model.channel is not None)
@@ -751,7 +752,8 @@ def run_encode(config: dict[str, Any], encoder_name: str, *, pretrained: str | N
     previous = json.loads(meta_path.read_text()) if meta_path.exists() else None
     if previous and previous.get("complete") and not resume:
         raise FileExistsError(f"states of {encoder_name} exist; pass --resume to keep them")
-    encoder = HostEncoder(pretrained=pretrained, run=run, channel=channel, device=device, dtype=enc_cfg["dtype"])
+    encoder = HostEncoder(pretrained=pretrained, run=run, channel=channel, device=device, dtype=enc_cfg["dtype"],
+                          alias_table=Path(config["paths"]["alias_table"]).expanduser())
     shape = (int(seg_offsets[-1]), encoder.width)
     mode = "r+" if (resume and (folder / "segments.f16").exists()) else "w+"
     segments = np.memmap(folder / "segments.f16", dtype=np.float16, mode=mode, shape=shape)
