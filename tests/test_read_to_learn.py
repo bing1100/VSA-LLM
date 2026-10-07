@@ -169,6 +169,27 @@ def test_linker_reader_chooses_by_gain_and_self_tests() -> None:
     assert kept[0].frame is None
 
 
+def test_linker_joint_revises_the_type_prior_in_a_full_frame() -> None:
+    typing, lexicon = _typing(), _lexicon()
+    task = _task("Zed Tool: a tool; the Brix Squad; Kord Hub; active.", [])
+    mentions = rtl.mentions_of(task, lexicon)
+    value = {(R["is_a"], A["type:tool"]): 2.0, (R["owned_by"], A["term:Brix Squad"]): 0.5, (R["depends_on"], A["term:Kord Hub"]): 0.1,
+             (R["uses"], A["term:Kord Hub"]): 1.0, (R["status"], A["status:active"]): -0.3}
+    calls = []
+
+    def scorer(tasks, variants):                       # additive: a frame scores the sum of its edges' values
+        calls.append(variants)
+        return [np.asarray([sum(value[e] for e in (v or [])) for v in vs]) for vs in variants]
+
+    prior = rtl.read_typeprior(task, mentions, typing).frame
+    result = rtl.read_linker_joint([task], [mentions], typing, scorer)[0]
+    assert len(calls) == 2 and sorted(calls[0][0][0]) == sorted(prior)          # the sweep starts from the type-prior frame
+    assert set(result.frame) == {(R["is_a"], A["type:tool"]), (R["owned_by"], A["term:Brix Squad"]), (R["uses"], A["term:Kord Hub"])}
+    assert result.details["dropped_by_self_test"] == 1 and result.reader == "linker-joint"
+    candidates = len(rtl.linker_candidates(task, mentions, typing))
+    assert result.cost["forward_passes"] == candidates + 1 + 4 + 1
+
+
 def test_host_reader_parses_resolves_and_drops_ill_typed_edges() -> None:
     typing, lexicon = _typing(), _lexicon()
     task = _task("Zed Tool: a tool owned by the Brix Squad.", [])

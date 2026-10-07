@@ -44,8 +44,8 @@ import numpy as np
 from .span_channel import AliasTable, CausalLinker, normalize_alias
 
 Frame = list[tuple[int, int]]           # (relation id, atom id) edges
-READERS = ("oracle", "stated", "typeprior", "pattern", "linker", "linker-all", "host", "teacher", "random", "none")
-MODEL_READERS = frozenset({"linker", "linker-all", "host"})          # need the trained run
+READERS = ("oracle", "stated", "typeprior", "pattern", "linker", "linker-all", "linker-joint", "host", "teacher", "random", "none")
+MODEL_READERS = frozenset({"linker", "linker-all", "linker-joint", "host"})          # need the trained run
 STATIC_READERS = ("oracle", "stated", "typeprior", "pattern", "random", "none")
 WORDISH = re.compile(r"\w+|[^\w\s]")
 
@@ -512,6 +512,63 @@ def read_linker(tasks: Sequence[ReadTask], mentions: Sequence[Sequence[Mention]]
         kept.append(ReadResult(task.concept, task.style, "linker", accepted or None, dict(cost), details))
         every.append(ReadResult(task.concept, task.style, "linker-all", everything or None, dict(cost), details))
     return kept, every
+
+
+def read_linker_joint(tasks: Sequence[ReadTask], mentions: Sequence[Sequence[Mention]], typing: RelationTyping, scorer: Scorer, *,
+                      margin: float = 0.0, token_count: Callable[[str], int] | None = None) -> list[ReadResult]:
+    """The model revises the type table inside a full frame (declared after the smoke test, preregistration §13: a
+    single-edge row is unlike any trained row, which have ≈ 7 edges). Start from the `typeprior` frame F0; one Jacobi
+    sweep: for each mention, every (relation, atom) candidate replaces the mention's edge in F0 (or is added to it), all
+    other edges fixed, and the best-scoring candidate is kept; then a leave-one-out self-test on the swept frame F1: an
+    edge stays iff removing it lowers the definition's log-likelihood by more than `margin`. Cost: 1 + Σ candidates + 1 +
+    |F1| forward passes over the definition."""
+    candidates = [linker_candidates(t, m, typing) for t, m in zip(tasks, mentions)]
+    initial: list[dict[int, tuple[int, int]]] = []
+    for task, found in zip(tasks, mentions):
+        edges = []
+        for i, m in enumerate(found):
+            atom = _pick_atom(m.atoms, typing)
+            relation = typing.prior(atom) if atom is not None else None
+            if relation is not None:
+                edges.append((relation, atom, -float(i)))
+        kept = set(functional_dedupe(edges, typing.functional))
+        initial.append({i: (r, a) for i, (r, a, _) in enumerate(edges) if (r, a) in kept})
+
+    def frame_without(base: dict[int, tuple[int, int]], skip: int | None) -> Frame:
+        return [edge for i, edge in sorted(base.items()) if i != skip]
+
+    started = time.monotonic()
+    sweep_variants = [[frame_without(init, None) or None] + [frame_without(init, i) + [(r, a)] for i, r, a in cands]
+                      for init, cands in zip(initial, candidates)]
+    sweep = scorer(tasks, sweep_variants) if any(len(v) > 1 for v in sweep_variants) else [np.zeros(1) for _ in tasks]
+    swept: list[dict[int, tuple[int, int]]] = []
+    for init, cands, score in zip(initial, candidates, sweep):
+        best: dict[int, tuple[int, int, float]] = {}
+        for (i, r, a), s in zip(cands, np.asarray(score[1:], dtype=float).tolist()):
+            if i not in best or s > best[i][2]:
+                best[i] = (r, a, s)
+        frame = functional_dedupe([best[i] for i in sorted(best)], typing.functional)
+        chosen = {}
+        for i in sorted(best):
+            if (best[i][0], best[i][1]) in frame and (best[i][0], best[i][1]) not in chosen.values():
+                chosen[i] = (best[i][0], best[i][1])
+        swept.append(chosen)
+    test_variants = [[frame_without(f, None) or None] + [frame_without(f, i) or None for i in sorted(f)] for f in swept]
+    tests = scorer(tasks, test_variants) if any(len(v) > 1 for v in test_variants) else [np.zeros(1) for _ in tasks]
+    seconds = (time.monotonic() - started) / max(1, len(tasks))
+    out = []
+    for task, cands, f, init, score in zip(tasks, candidates, swept, initial, tests):
+        drops = np.asarray(score[0], dtype=float) - np.asarray(score[1:], dtype=float) if len(score) > 1 else np.zeros(0)
+        frame = [f[i] for i, d in zip(sorted(f), drops.tolist()) if d > margin]
+        tokens = token_count(task.text) if token_count else len(task.text.split())
+        passes = float(len(cands) + 1 + len(f) + 1)
+        changed = sum(1 for i, edge in f.items() if init.get(i) != edge)
+        out.append(ReadResult(task.concept, task.style, "linker-joint", frame or None,
+                              {"forward_passes": passes, "forward_tokens": passes * tokens, "seconds": seconds},
+                              {"candidates": len(cands), "prior_edges": len(init), "relations_changed_from_prior": changed,
+                               "dropped_by_self_test": len(f) - len(frame),
+                               "leave_one_out": [[typing.relation_names[f[i][0]], int(f[i][1]), round(d, 4)] for i, d in zip(sorted(f), drops.tolist())]}))
+    return out
 
 
 def host_prompt(task: ReadTask, relations: Sequence[str], demonstrations: Sequence[dict[str, Any]]) -> str:

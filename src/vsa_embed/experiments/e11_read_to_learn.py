@@ -265,50 +265,82 @@ def _entry_concept_name(ctx: TrackContext, entry: int) -> str:
     return ctx.ontology["concept_names"][ctx.table.entry_concepts[entry][0]]
 
 
-def heldout_definitions(track: str, ctx: TrackContext, entries: Sequence[int], styles: Sequence[str], *, seed: int = 0
+def linkable_headwords(ctx: TrackContext, names: dict[int, str], tokenizer: Any, min_subtokens: int
+                       ) -> dict[int, tuple[str, str]]:
+    """Per entry the headword a definition is read under: its display name if the track linker links it to **this**
+    entry (in '<headword>: …'), else the entry's canonical linkable alias (`canonical_surfaces`); entries with neither
+    are left out (the channel could not read them). Values: (headword, "name" | "alias")."""
+    from ..span_channel import CausalLinker
+    from .e5_common import canonical_surfaces
+    linker = CausalLinker(ctx.table, min_subtokens=min_subtokens)
+    canonical = canonical_surfaces(ctx.table, tokenizer, min_subtokens, list(names))
+
+    def links(text: str, entry: int) -> bool:
+        offsets = [tuple(o) for o in tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)["offset_mapping"]]
+        return any(span.entry == entry for span in linker.link(text, offsets))
+
+    out: dict[int, tuple[str, str]] = {}
+    for entry, name in names.items():
+        alias = canonical.get(entry, {})
+        for source, headword in (("name", name), ("alias", alias.get("surface") if alias.get("linkable") else None)):
+            if headword and links(f"{headword}: x", entry):
+                out[entry] = (headword, source)
+                break
+    return out
+
+
+def heldout_definitions(track: str, ctx: TrackContext, entries: Sequence[int], styles: Sequence[str], *, seed: int = 0,
+                        tokenizer: Any = None, min_subtokens: int = 2
                         ) -> tuple[dict[int, str], dict[int, list[dict[str, Any]]], dict[str, Any]]:
-    """(headword per entry, definitions per entry, source info) of held-out real terms."""
+    """(headword per entry, definitions per entry, source info) of held-out real terms. With a `tokenizer`, headwords are
+    link-checked (`linkable_headwords`): a term whose headword the linker would not link to its entry is left out."""
     from . import e9_tracks as tracks
-    headwords: dict[int, str] = {}
-    out: dict[int, list[dict[str, Any]]] = {}
+    names: dict[int, str] = {}
+    texts: dict[int, Any] = {}
     info: dict[str, Any] = {}
     if track == "t5":
         for e in entries:
-            name = _entry_concept_name(ctx, e)
-            headwords[e] = name
-            facts = ctx.facts(ctx.frame(e))
-            out[e] = [{"style": s, "text": rtl.t5_definition(name, facts, s, random.Random(f"{seed}|{name}|{s}")),
-                       "source": "written from the gold frame", "licence": LICENCES["t5"]} for s in styles]
+            names[e] = _entry_concept_name(ctx, e).removeprefix("synthetic:")
         info["source"] = "T5 generator glossary (gold frames)"
-        return headwords, out, info
-    spec = tracks.track_spec(track)
-    frame_ontology, _, _ = tracks.track_frame_ontology(spec)
-    if track == "t4":
-        records, names = frame_ontology.metadata["records"], frame_ontology.metadata["all_names"]
-        for e in entries:
-            cid = _entry_concept_name(ctx, e)
-            record = records.get(cid) or {}
-            definition = rtl.strip_markup(record.get("definition") or "")
-            if not definition:
-                continue
-            headwords[e] = names.get(cid, record.get("name") or cid)
-            out[e] = [{"style": "chebi", "text": f"{headwords[e]}: {definition}", "source": f"ChEBI release 255 definition ({cid})",
-                       "licence": LICENCES["chebi"], "raw_name": record.get("name")}]
-        info["source"] = "ChEBI 255 OBO `def:` (HTML stripped), read as '<name>: <definition>'"
-    elif track == "t1":
-        notes = dict(zip(frame_ontology.concept_names, frame_ontology.metadata.get("scope_notes", [])))
-        headings = dict(zip(frame_ontology.concept_names, frame_ontology.metadata["headings"]))
-        for e in entries:
-            cid = _entry_concept_name(ctx, e)
-            note = " ".join((notes.get(cid) or "").split())
-            if not note:
-                continue
-            headwords[e] = headings.get(cid, cid)
-            out[e] = [{"style": "scope", "text": f"{headwords[e]}: {note}", "source": f"MeSH 2026 scope note ({cid})",
-                       "licence": LICENCES["mesh"]}]
-        info["source"] = "MeSH 2026 ScopeNote of the preferred concept, read as '<heading>: <note>'"
     else:
-        raise ValueError(f"held-out definitions are not defined for track {track!r}")
+        spec = tracks.track_spec(track)
+        frame_ontology, _, _ = tracks.track_frame_ontology(spec)
+        if track == "t4":
+            records, all_names = frame_ontology.metadata["records"], frame_ontology.metadata["all_names"]
+            for e in entries:
+                cid = _entry_concept_name(ctx, e)
+                record = records.get(cid) or {}
+                definition = rtl.strip_markup(record.get("definition") or "")
+                if definition:
+                    names[e] = all_names.get(cid, record.get("name") or cid)
+                    texts[e] = (definition, f"ChEBI release 255 definition ({cid})", LICENCES["chebi"], "chebi")
+            info["source"] = "ChEBI 255 OBO `def:` (HTML stripped), read as '<headword>: <definition>'"
+        elif track == "t1":
+            notes = dict(zip(frame_ontology.concept_names, frame_ontology.metadata.get("scope_notes", [])))
+            headings = dict(zip(frame_ontology.concept_names, frame_ontology.metadata["headings"]))
+            for e in entries:
+                cid = _entry_concept_name(ctx, e)
+                note = " ".join((notes.get(cid) or "").split())
+                if note:
+                    names[e] = headings.get(cid, cid)
+                    texts[e] = (note, f"MeSH 2026 scope note ({cid})", LICENCES["mesh"], "scope")
+            info["source"] = "MeSH 2026 ScopeNote of the preferred concept, read as '<headword>: <note>'"
+        else:
+            raise ValueError(f"held-out definitions are not defined for track {track!r}")
+    chosen = linkable_headwords(ctx, names, tokenizer, min_subtokens) if tokenizer is not None else {e: (n, "name") for e, n in names.items()}
+    info["headwords"] = dict(Counter(source for _, source in chosen.values()))
+    info["headwords"]["not linkable (left out)"] = len(names) - len(chosen)
+    headwords = {e: h for e, (h, _) in chosen.items()}
+    out: dict[int, list[dict[str, Any]]] = {}
+    for e, headword in headwords.items():
+        if track == "t5":
+            facts = ctx.facts(ctx.frame(e))
+            out[e] = [{"style": s, "text": rtl.t5_definition(headword, facts, s, random.Random(f"{seed}|{headword}|{s}")),
+                       "source": "written from the gold frame", "licence": LICENCES["t5"]} for s in styles]
+        else:
+            body, source, licence, style = texts[e]
+            out[e] = [{"style": style, "text": f"{headword}: {body}", "source": source, "licence": licence,
+                       "display_name": names[e]}]
     return headwords, out, info
 
 
@@ -321,7 +353,7 @@ def eval_occurrences(corpus_path: Path, entries: Sequence[int], min_subtokens: i
 
 def build_heldout_set(track: str, out_dir: Path, ctx: TrackContext, *, styles: Sequence[str] | None = None, seed: int = 0,
                       limit: int | None = None, include_synthetic: bool = True, wpc7_dir: Path | None = None,
-                      eval_corpus: Path | None = None, min_subtokens: int = 2) -> dict[str, Any]:
+                      eval_corpus: Path | None = None, min_subtokens: int = 2, tokenizer: Any = None) -> dict[str, Any]:
     """Held-out real terms of a track (never linked in training) with their definitions, gold frames, WP-C7 items and
     evaluation-text occurrence counts. T5 also reads its zero-shot synthetic terms (in no document: items only)."""
     from . import e9_tracks as tracks
@@ -331,9 +363,10 @@ def build_heldout_set(track: str, out_dir: Path, ctx: TrackContext, *, styles: S
     synthetic = sorted(int(e) for e in o.get("synthetic_entries", ())) if include_synthetic and track == "t5" else []
     entries = [e for e in real + synthetic if len(ctx.table.entry_concepts[e]) == 1 and ctx.frame(e)]
     filters = {"held_out": len(real) + len(synthetic), "single_concept_with_frame": len(entries)}
-    headwords, definitions, info = heldout_definitions(track, ctx, entries, styles, seed=seed)
+    headwords, definitions, info = heldout_definitions(track, ctx, entries, styles, seed=seed, tokenizer=tokenizer,
+                                                       min_subtokens=min_subtokens)
     entries = [e for e in entries if e in definitions]
-    filters["with_definition"] = len(entries)
+    filters["with_definition_and_linkable_headword"] = len(entries)
     info["filters"] = filters
     if limit:
         entries = entries[:limit]
@@ -712,6 +745,11 @@ def run_readers(run: E5Run | None, read_set: ReadSet, ctx: TrackContext, readers
             kept, every = rtl.read_linker(tasks, [mentions[(t.concept, t.style)] for t in tasks], ctx.typing, scorer,
                                           token_count=token_count)
             results += kept + (every if "linker-all" in readers else [])
+        elif name == "linker-joint":
+            if scorer is None:
+                continue
+            results += rtl.read_linker_joint(tasks, [mentions[(t.concept, t.style)] for t in tasks], ctx.typing, scorer,
+                                             token_count=getattr(scorer, "token_count", None))
         elif name == "host":
             if generator is None:
                 continue
@@ -853,7 +891,8 @@ class ItemScorer:
                 items = with_context(items, {i["id"]: contexts[i["concept"]] + "\n" for i in items if i["concept"] in contexts})
             prompt_items = [i for i in items if i["test"] in {"property", "entailment"}]
             statement_items = [i for i in items if i["test"] == "statement"]
-            with self.condition(frames), _smaller(self.adapter, 2 if contexts else 1):
+            # Prompts with a definition in front are ≈ 3–5× longer: half the batch keeps the peak memory of a plain pass.
+            with self.condition(frames), _smaller(self.adapter, 2 if contexts else 1), fast_continuations():
                 prompts, _ = zs.score_prompts(self.adapter, prompt_items, self.surface) if prompt_items else ([], None)
                 statements = edit.score_statements(self.adapter, statement_items, self.surface) if statement_items else []
             self.passes += 1
@@ -867,6 +906,52 @@ class ItemScorer:
             for c in todo:
                 self.cache[key_of[c]] = fresh.get(c, [])
         return {c: self.cache[key_of[c]] for c in concepts}
+
+
+@torch.no_grad()
+def continuation_scores(adapter: Any, prefixes: Sequence[str], continuations: Sequence[str]) -> tuple[np.ndarray, np.ndarray]:
+    """Σ log p(continuation | prefix) and the number of continuation tokens, as `channel_probes.continuation_logprob` /
+    `e9_ontology_edit.continuation_stats` compute them (same batch forward, spans, autocast and output head), but with
+    output logits only at the positions that predict a continuation token and with texts batched by length. The shared
+    adapter materializes full-vocabulary log-probabilities at every position, which dominates the cost of prompts with a
+    definition in front (tested equal on the CPU)."""
+    from torch.nn import functional as F
+    texts = [p + c for p, c in zip(prefixes, continuations)]
+    sums, counts = np.zeros(len(texts)), np.zeros(len(texts))
+    order = sorted(range(len(texts)), key=lambda i: len(texts[i]))
+    for start in range(0, len(order), adapter.batch_size):
+        chunk = order[start:start + adapter.batch_size]
+        encoded, out, head = adapter._run_batch([texts[i] for i in chunk])
+        mask = encoded["attention_mask"]
+        rows, cols, targets, owners = [], [], [], []
+        for r, i in enumerate(chunk):
+            n = int(mask[r].sum())
+            offsets = encoded["offset_mapping"][r, :n].tolist()
+            for t in range(1, n):
+                if offsets[t][1] > len(prefixes[i]):
+                    rows.append(r); cols.append(t - 1); targets.append(int(encoded["input_ids"][r, t])); owners.append(i)
+        if not rows:
+            continue
+        hidden = out.hidden_states[-1]
+        with adapter._autocast():
+            logits = F.linear(hidden[torch.tensor(rows, device=hidden.device), torch.tensor(cols, device=hidden.device)].float(),
+                              head.weight.float())
+        picked = torch.log_softmax(logits.float(), -1).gather(-1, torch.tensor(targets, device=logits.device)[:, None]).squeeze(-1)
+        np.add.at(sums, owners, picked.cpu().double().numpy())
+        np.add.at(counts, owners, 1.0)
+    return sums, counts
+
+
+@contextlib.contextmanager
+def fast_continuations() -> Iterator[None]:
+    """Within the block the E5.4 / E9 scorers (`zs.score_prompts`, `edit.score_statements`) use `continuation_scores`."""
+    saved = cp.continuation_logprob, edit.continuation_stats
+    cp.continuation_logprob = lambda adapter, prefixes, continuations: continuation_scores(adapter, prefixes, continuations)[0]
+    edit.continuation_stats = continuation_scores
+    try:
+        yield
+    finally:
+        cp.continuation_logprob, edit.continuation_stats = saved
 
 
 @contextlib.contextmanager
@@ -1179,7 +1264,7 @@ def frames_by_condition(results: Sequence[rtl.ReadResult]) -> dict[tuple[str, st
 def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: Sequence[str], styles: Sequence[str],
              primary_style: str, gradient_lr: float | None = None, gradient_factors: Sequence[float] = (1.0, 4.0),
              gradient_optimizer: str = "adam", gradient_backup: str = "gpu", teacher_frames: Path | None = None,
-             max_windows: int | None = None, resamples: int = 2000, seed: int = 0,
+             max_windows: int | None = None, window_gradient: bool = False, resamples: int = 2000, seed: int = 0,
              log: Callable[[str], None] = print) -> dict[str, Any]:
     started = time.monotonic()
     ctx = run_context(run)
@@ -1189,7 +1274,7 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
     if not compose:                                      # frames are only consumed by a composing channel
         readers = [r for r in readers if r in {"none"}] or ["none"]
         model_readers = []
-    scorer = DefinitionScorer(run, read_set) if compose and {"linker", "linker-all"} & set(readers) else None
+    scorer = DefinitionScorer(run, read_set) if compose and {"linker", "linker-all", "linker-joint"} & set(readers) else None
     generator = host_generator(run) if compose and "host" in readers else None
     timings: dict[str, float] = {}
     t0 = time.monotonic()
@@ -1265,8 +1350,8 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
             concept_frames = conditions[(style, reader)]
             with swapped_frames(run.channel, {entry_of[c]: concept_frames.get(c) for c in concept_frames}) if compose else contextlib.nullcontext():
                 per_condition[f"{style}|{reader}"] = window_term_losses(run, corpus_path, wset)
-        if "gradient" in methods and gradient_lr is not None and read_set.kind == "heldout":
-            per_condition[f"{primary_style}|gradient×1.0"] = window_gradient(run, read_set, ctx, wset, corpus_path, style=primary_style,
+        if window_gradient and "gradient" in methods and gradient_lr is not None and read_set.kind == "heldout":
+            per_condition[f"{primary_style}|gradient×1.0"] = window_gradient_losses(run, read_set, ctx, wset, corpus_path, style=primary_style,
                                                                               lr=gradient_lr, optimizer=gradient_optimizer,
                                                                               backup=gradient_backup)
         windows_out = {"windows": len(wset.starts), "occurrences": sum(len(s) for s in wset.spans), "own_occurrences": wset.excluded_own,
@@ -1284,7 +1369,7 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
     return {"document": document, "frames": frames, "item_rows": item_rows, "windows": windows_out, "gradient": gradient_records}
 
 
-def window_gradient(run: E5Run, read_set: ReadSet, ctx: TrackContext, wset: WindowSet, corpus_path: Path, *, style: str, lr: float,
+def window_gradient_losses(run: E5Run, read_set: ReadSet, ctx: TrackContext, wset: WindowSet, corpus_path: Path, *, style: str, lr: float,
                     optimizer: str, backup: str) -> dict[str, np.ndarray]:
     """Per term: compute-matched host updates on its definition, then the after-term loss of its own occurrences only."""
     tasks = {t.concept: t for t in read_tasks(read_set, ctx, [style])}
@@ -1323,6 +1408,7 @@ def summarize_items(item_rows: dict[str, dict[str, list[dict[str, Any]]]], kind:
     for style in styles:
         pairs = [("linker", "none"), ("oracle", "none"), ("linker", "oracle"), ("linker", "typeprior"), ("linker", "random"),
                  ("linker", "pattern"), ("linker", "host"), ("linker", "linker-all"), ("teacher", "none"), ("stated", "none"),
+                 ("linker-joint", "none"), ("linker-joint", "typeprior"), ("linker-joint", "oracle"), ("linker-joint", "linker"),
                  ("context", "linker"), ("context+linker", "context"), ("context", "none")]
         pairs += [(f"gradient×{f}", "linker") for f in ("1.0", "4.0")] + [(f"gradient×{f}", "none") for f in ("1.0", "4.0")]
         for a, b in pairs:
@@ -1446,12 +1532,13 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     config = {"experiment": "e11-read-to-learn", "run": str(args.run), "items": str(args.items), "limit": args.limit,
               "methods": methods, "readers": readers, "styles": styles, "primary_style": primary, "gradient_lr": lr,
               "gradient_factors": args.gradient_factors, "gradient_optimizer": args.gradient_optimizer,
-              "gradient_backup": args.gradient_backup, "max_windows": args.max_windows, "seed": args.seed,
+              "gradient_backup": args.gradient_backup, "max_windows": args.max_windows, "window_gradient": args.window_gradient,
+              "seed": args.seed,
               "resamples": args.resamples, "alias_table": str(args.alias_table) if args.alias_table else None,
               "teacher_frames": str(args.teacher_frames) if args.teacher_frames else None, "smoke": bool(args.smoke)}
     if args.overwrite:
         clear_output(args.output)
-        for extra in ("frames.jsonl", "windows.npz"):
+        for extra in ("frames.jsonl", "windows.npz", "gradient_records.json"):
             (Path(args.output) / extra).unlink(missing_ok=True)
     git_at_start = start_output(args.output, config)
     run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size, alias_table=args.alias_table)
@@ -1459,7 +1546,7 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     result = evaluate(run, read_set, methods=methods, readers=readers, styles=styles, primary_style=primary, gradient_lr=lr,
                       gradient_factors=args.gradient_factors, gradient_optimizer=args.gradient_optimizer,
                       gradient_backup=args.gradient_backup, teacher_frames=teacher, max_windows=args.max_windows,
-                      resamples=args.resamples, seed=args.seed)
+                      window_gradient=args.window_gradient, resamples=args.resamples, seed=args.seed)
     header = {"source": run.describe(), "smoke": bool(args.smoke)}
     document = {**header, **result["document"]}
     _write_jsonl(args.output / "frames.jsonl", result["frames"])
@@ -1607,6 +1694,7 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
             if kind == "new":
                 for test in ("property", "entailment", "paraphrase", "statement_accuracy"):
                     for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"),
+                                 ("linker-joint", "none"), ("linker-joint", "typeprior"),
                                  ("linker", "oracle"), ("context", "linker"), ("context+linker", "context"), ("gradient×1.0", "linker")):
                         result = pooled_item_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", test, resamples=args.resamples)
                         if result:
@@ -1615,12 +1703,14 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
                              else secondary).append(row)
             if kind == "heldout":
                 for test in HELDOUT_TESTS:
-                    for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("context", "linker")):
+                    for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("context", "linker"),
+                                 ("linker-joint", "none"), ("linker-joint", "typeprior")):
                         result = pooled_item_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", test, resamples=args.resamples)
                         if result:
                             secondary.append({"track": track, "kind": kind, "size": size, "model": condition, "a": a, "b": b,
                                               "test": test, **result})
-                for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"), ("gradient×1.0", "none")):
+                for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"), ("gradient×1.0", "none"),
+                             ("linker-joint", "none"), ("linker-joint", "typeprior")):
                     result = pooled_window_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", resamples=args.resamples)
                     if result:
                         row = {"track": track, "kind": kind, "size": size, "model": condition, "a": a, "b": b, "test": "loss after term", **result}
@@ -1652,69 +1742,135 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
 
 E9_RUNS = Path("experiments/e9-retrofit/runs")
 PLAN_PRIORITY = 62
-SECONDS_360M = {"t5-new": 2700, "t5-heldout": 2400, "t4-heldout": 1500, "t4-new": 1500, "t1-heldout": 900}
-SECONDS_OTHER_MODEL = 0.35            # C0′ / C2 / P0: text routes only (no reader passes), fraction of the C5 time
-SCALE_135M = 0.55
+# Per-concept seconds at SmolLM2-360M, measured in the GPU smoke test (preregistration §12; 2026-10-07) while a training job
+# held the GPU at 100%: model readers per definition, one persistence condition, one in-context condition, the gradient
+# baseline (×1, ×4 incl. scoring and restore), and the per-term gradient on windows (T4-H); `windows` = windows per run.
+# `CONTENTION` converts them to an idle GPU (the queue runs one job at a time); `SCALE_135M` for the smaller host.
+SMOKE_SECONDS = {
+    "t5-new": {"reader": 1.3, "persist": 0.55, "context": 2.3, "grad1": 2.4, "grad4": 4.6},
+    "t5-heldout": {"reader": 1.3, "persist": 0.28, "context": 1.15, "grad1": 1.6, "grad4": 3.8, "windows": 2000},
+    "t4-heldout": {"reader": 1.5, "persist": 0.26, "context": 0.65, "grad1": 2.0, "grad4": 7.0, "windows": 1000, "wgrad": 2.5},
+    "t4-new": {"reader": 2.5, "persist": 0.3, "context": 1.2, "grad1": 3.0, "grad4": 9.0},
+    "t1-heldout": {"reader": 1.3, "persist": 0.0, "context": 0.0, "grad1": 0.0, "grad4": 0.0, "windows": 2048},
+}
+WINDOW_SECONDS = 0.06                 # one 1,024-token window under one condition (smoke)
+CONTENTION, SCALE_135M = 2.0, 0.55
+SETS = {("t5", "new"): ("t5-new-smollm2-v1", 300, ["glossary", "dictionary", "prose"]),
+        ("t5", "heldout"): ("t5-heldout-smollm2-v1", 560, ["prose"]),
+        ("t4", "heldout"): ("t4-heldout-smollm2-v1", 341, ["chebi"]),
+        ("t4", "new"): ("t4-new-smollm2-v1", 300, ["chebi"]),
+        ("t1", "heldout"): ("t1-heldout-smollm2-v1", 1972, ["scope"])}
+C5_READERS = "oracle,stated,typeprior,pattern,linker,linker-all,linker-joint,host,teacher,random,none"
+READER_CONDITIONS = 10                # persistence / window conditions of a C5 run (teacher only if its frames exist)
 
 
-def plan_jobs(*, tracks: Sequence[str] = ("t5", "t4"), hosts: Sequence[str] = ("SmolLM2-360M", "SmolLM2-135M"),
+def job_hours(track: str, kind: str, model: str, host: str, styles: Sequence[str]) -> float:
+    """GPU hours of one evaluation job on an idle GPU (`SMOKE_SECONDS` / `CONTENTION`)."""
+    _, concepts, _ = SETS[(track, kind)]
+    c = SMOKE_SECONDS[f"{track}-{kind}"]
+    n_styles = len(styles)
+    windows = c.get("windows", 0) * WINDOW_SECONDS
+    if model == "C5":
+        persist_conditions = READER_CONDITIONS * (1 + 0.6 * (n_styles - 1) if kind == "new" else n_styles)
+        seconds = concepts * (c["reader"] * n_styles + c["persist"] * persist_conditions + c["context"] * (2 * n_styles + 1)
+                              + c["grad1"] + c["grad4"] + c.get("wgrad", 0.0)) + windows * READER_CONDITIONS
+    elif model == "C0p":
+        seconds = concepts * (c["persist"] + c["context"] + c["grad1"] + c["grad4"] + c.get("wgrad", 0.0)) + windows
+    else:
+        seconds = concepts * (c["persist"] + c["context"]) + windows
+    return seconds / CONTENTION / 3600 * (1.0 if "360M" in host else SCALE_135M)
+
+
+def tier_of(track: str, kind: str, host: str, model: str, seed: int) -> int:
+    """1: the primary endpoints and their key comparators (T5-N 360M C5/C0′ seeds 1–3; T4-H 360M C5/C0′, seeds 2–3 once
+    trained); 2: replications and controls; 3: T5-H and T4-N on 135M. Priority = PLAN_PRIORITY + tier."""
+    if "360M" in host and model in {"C5", "C0p"} and (track, kind) in {("t5", "new"), ("t4", "heldout")}:
+        return 1
+    if (track, kind) in {("t5", "heldout"), ("t4", "new")} and "135M" in host:
+        return 3
+    return 2
+
+
+def plan_jobs(*, tracks: Sequence[str] = ("t5", "t4", "t1"), hosts: Sequence[str] = ("SmolLM2-360M", "SmolLM2-135M"),
               seeds: Sequence[int] = (1, 2, 3), python: str = "$PY", priority: int = PLAN_PRIORITY,
               runs_root: Path = E9_RUNS) -> list[dict[str, Any]]:
-    """One evaluation job per (set, run): C5 with every method and reader, C0′ / C2 / P0 with the text routes; the dev lr
-    selection first (priority − 1), the pooled report last (priority + 1)."""
-    sets = {"t5": [("new", ITEMS / "t5-new-smollm2-v1"), ("heldout", ITEMS / "t5-heldout-smollm2-v1")],
-            "t4": [("heldout", ITEMS / "t4-heldout-smollm2-v1"), ("new", ITEMS / "t4-new-smollm2-v1")],
-            "t1": [("heldout", ITEMS / "t1-heldout-smollm2-v1")]}
+    """The E11 evaluation jobs (nothing is submitted): the gradient lr choice on the dev words first (`priority`), then
+    one job per (set, run) at `priority + tier` (`tier_of`), the pooled report last (`priority + 4`).
+
+    Scope (preregistration §§5, 8, 13.5): C5 runs every reader and method; C0′ the text routes (no frame, in context,
+    gradient); C2 and P0 no frame and in context only (the gradient comparator is C0′). T5-N reads all three styles; the
+    secondary sets read their primary style. T4 runs past seed 1 wait for their training (`after_training`). T1-H
+    (negative control) runs SmolLM2-360M seed 1 (frames and loss after the term; no items exist), windows capped at
+    2,048."""
     jobs: list[dict[str, Any]] = []
     for host in hosts:
-        dev_run = runs_root / "t5" / f"{host}-full-C0p-s1"
-        dev_out = ROOT / "dev" / host
-        jobs.append({"name": f"e11-gradient-dev-{host}", "priority": priority - 1, "min_free_gb": 10, "hours": 0.15 if "360M" in host else 0.08,
-                     "command": [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "gradient-dev", "--run", str(dev_run),
-                                 "--items", str(ITEMS / "t5-dev-smollm2-v1"), "--output", str(dev_out)]})
-    for track in tracks:
-        for kind, items in sets[track]:
-            for host in hosts:
-                for model in ("C5", "C0p", "C2", "P0"):
-                    for seed in (seeds if model != "P0" else (1,)):
-                        mode = "frozen" if model == "P0" else "full"
-                        run = runs_root / track / f"{host}-{mode}-{model}-s{seed}"
-                        if track == "t4" and seed > 1 and model != "P0":
-                            pending = True
-                        else:
-                            pending = False
-                        methods = ("frames,persistence,context,gradient,windows,locality" if model == "C5"
-                                   else "persistence,context,gradient,windows")
-                        if kind == "new":
-                            methods = methods.replace(",windows", "")
-                        readers = ("oracle,stated,typeprior,pattern,linker,linker-all,host,teacher,random,none" if model == "C5" else "none")
-                        out = run / f"{FOLDER}-{track}-{kind}"
-                        hours = SECONDS_360M[f"{track}-{kind}"] / 3600 * (1.0 if model == "C5" else SECONDS_OTHER_MODEL)
-                        hours *= 1.0 if "360M" in host else SCALE_135M
-                        table = ["--alias-table", str(Path("~/data/vsa-llm/e9/alias-tables").expanduser() / f"{track}.json")]
-                        jobs.append({"name": f"e11-{track}-{kind}-{host}-{model}-s{seed}", "priority": priority,
-                                     "min_free_gb": 10 if model != "P0" else 6, "hours": round(hours, 3), "after_training": pending,
-                                     "command": [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "evaluate", "--run", str(run),
-                                                 "--items", str(items), "--methods", methods, "--readers", readers, *table,
-                                                 "--gradient-lr-from", str(ROOT / "dev" / host / "gradient_lr.json"),
-                                                 "--output", str(out)]})
-    jobs.append({"name": "e11-report", "priority": priority + 1, "min_free_gb": 1, "hours": 0.0,
-                 "command": [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "report", "--runs",
-                             *[j["command"][-1] for j in jobs if j["name"].startswith("e11-t")], "--output", str(ROOT / "report")]})
+        jobs.append({"name": f"e11-gradient-dev-{host}", "priority": priority, "min_free_gb": 10, "tier": 0,
+                     "hours": round(40 * 3 * 2.4 / CONTENTION / 3600 * (1.0 if "360M" in host else SCALE_135M), 3),
+                     "command": [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "gradient-dev", "--run",
+                                 str(runs_root / "t5" / f"{host}-full-C0p-s1"), "--items", str(ITEMS / "t5-dev-smollm2-v1"),
+                                 "--output", str(ROOT / "dev" / host)]})
+    for (track, kind), (folder, _, styles) in SETS.items():
+        if track not in tracks:
+            continue
+        for host in hosts:
+            if track == "t1" and "360M" not in host:
+                continue
+            for model in ("C5", "C0p", "C2", "P0"):
+                if track == "t1" and model not in {"C5", "C0p"}:
+                    continue
+                run_seeds = (1,) if model == "P0" or track == "t1" else tuple(seeds)
+                for seed in run_seeds:
+                    mode = "frozen" if model == "P0" else "full"
+                    run = runs_root / track / f"{host}-{mode}-{model}-s{seed}"
+                    if model == "C5":
+                        methods, readers = "frames,persistence,context,gradient,windows,locality", C5_READERS
+                    elif model == "C0p":
+                        methods, readers = "persistence,context,gradient,windows", "none"
+                    else:
+                        methods, readers = "persistence,context,windows", "none"
+                    if kind == "new":
+                        methods = methods.replace(",windows", "")
+                    if track == "t1":
+                        methods = ",".join(m for m in methods.split(",") if m in {"frames", "windows", "locality"})
+                    command = [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "evaluate", "--run", str(run),
+                               "--items", str(ITEMS / folder), "--methods", methods, "--readers", readers,
+                               "--styles", ",".join(styles), "--alias-table",
+                               str(Path("~/data/vsa-llm/e9/alias-tables").expanduser() / f"{track}.json")]
+                    if "gradient" in methods:
+                        command += ["--gradient-lr-from", str(ROOT / "dev" / host / "gradient_lr.json")]
+                    if (track, kind) == ("t4", "heldout") and "gradient" in methods:
+                        command.append("--window-gradient")
+                    if track == "t1":
+                        command += ["--max-windows", "2048"]
+                    command += ["--output", str(run / f"{FOLDER}-{track}-{kind}")]
+                    tier = tier_of(track, kind, host, model, seed)
+                    hours = job_hours(track, kind, model, host, styles) if track != "t1" or model == "C5" else \
+                        2048 * WINDOW_SECONDS / CONTENTION / 3600
+                    jobs.append({"name": f"e11-{track}-{kind}-{host}-{model}-s{seed}", "priority": priority + tier, "tier": tier,
+                                 "min_free_gb": 10, "after_training": track == "t4" and seed > 1, "hours": round(hours, 3),
+                                 "command": command})
+    outputs = [j["command"][-1] for j in jobs if j["name"].startswith("e11-t")]
+    jobs.append({"name": "e11-report", "priority": priority + 4, "min_free_gb": 1, "hours": 0.0, "tier": 4,
+                 "command": [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "report", "--runs", *outputs,
+                             "--output", str(ROOT / "report")]})
     return jobs
 
 
 def run_plan(args: argparse.Namespace) -> list[dict[str, Any]]:
     jobs = plan_jobs(tracks=args.tracks, hosts=args.hosts, seeds=args.seeds, priority=args.priority)
-    total = 0.0
+    totals: dict[str, float] = defaultdict(float)
     for job in jobs:
-        if job.get("after_training") and not args.include_pending:
+        pending = job.get("after_training")
+        if pending and not args.include_pending:
+            totals["pending: T4 seeds 2-3 (not printed; --include-pending)"] += job["hours"]
             continue
-        total += job["hours"]
+        totals[f"tier {job['tier']}" + (" (after T4 seeds 2-3 train)" if pending else "")] += job["hours"]
         command = " ".join(job["command"])
         print(f"PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name {job['name']} --priority {job['priority']} "
               f"--min-free-gb {job['min_free_gb']} --no-resume -- {command}   # ≈ {job['hours']:.2f} GPU-h")
-    print(f"# total ≈ {total:.1f} GPU-h")
+    for key, hours in sorted(totals.items()):
+        print(f"# {key}: ≈ {hours:.1f} GPU-h")
+    print(f"# total printed ≈ {sum(h for k, h in totals.items() if not k.startswith('pending')):.1f} GPU-h (idle-GPU estimate)")
     return jobs
 
 
@@ -1728,10 +1884,12 @@ def run_items(args: argparse.Namespace) -> dict[str, Any]:
     if args.kind == "new":
         return build_new_set(args.new_items, args.output, ctx, styles=args.styles, seed=args.seed)
     if args.kind == "heldout":
+        from transformers import AutoTokenizer
         spec = tracks.track_spec(args.track)
+        tokenizer = AutoTokenizer.from_pretrained(tracks.FAMILY_TOKENIZERS["smollm2"], local_files_only=True)
         return build_heldout_set(args.track, args.output, ctx, styles=args.styles, seed=args.seed, limit=args.limit,
                                  wpc7_dir=spec.zeroshot_items, eval_corpus=spec.eval_corpus,
-                                 min_subtokens=int(ctx.ontology.get("min_subtokens", 2)))
+                                 min_subtokens=int(ctx.ontology.get("min_subtokens", 2)), tokenizer=tokenizer)
     return build_swap_set(args.glossary, args.output, ctx)
 
 
@@ -1764,6 +1922,8 @@ def main(argv: list[str] | None = None) -> None:
             ev.add_argument("--gradient-lr", type=float, default=None); ev.add_argument("--gradient-lr-from", type=Path, default=None)
             ev.add_argument("--gradient-factors", type=float, nargs="*", default=[1.0, 4.0])
             ev.add_argument("--teacher-frames", type=Path, default=None); ev.add_argument("--max-windows", type=int, default=None)
+            ev.add_argument("--window-gradient", action="store_true",
+                            help="with gradient on a held-out set: also the per-term update's loss after the term (T4-H)")
             ev.add_argument("--seed", type=int, default=0); ev.add_argument("--resamples", type=int, default=2000)
             ev.add_argument("--overwrite", action="store_true"); ev.add_argument("--smoke", action="store_true",
                                                                                    help="label the outputs as a smoke test")
@@ -1773,7 +1933,7 @@ def main(argv: list[str] | None = None) -> None:
     report.add_argument("--runs", type=Path, nargs="+", required=True); report.add_argument("--output", type=Path, required=True)
     report.add_argument("--resamples", type=int, default=2000)
     plan = sub.add_parser("plan", help="print the queue commands (nothing is submitted)")
-    plan.add_argument("--tracks", nargs="*", default=["t5", "t4"]); plan.add_argument("--hosts", nargs="*", default=["SmolLM2-360M", "SmolLM2-135M"])
+    plan.add_argument("--tracks", nargs="*", default=["t5", "t4", "t1"]); plan.add_argument("--hosts", nargs="*", default=["SmolLM2-360M", "SmolLM2-135M"])
     plan.add_argument("--seeds", type=int, nargs="*", default=[1, 2, 3]); plan.add_argument("--priority", type=int, default=PLAN_PRIORITY)
     plan.add_argument("--include-pending", action="store_true", help="also print jobs whose runs are still training (T4 seeds 2–3)")
     args = parser.parse_args(argv)

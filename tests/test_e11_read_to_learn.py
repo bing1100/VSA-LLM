@@ -108,7 +108,7 @@ def test_new_word_evaluation_matches_e9_and_restores_everything(world, items, se
     read_set = e11.load_read_set(sets["new"])
     state_before = {k: v.clone() for k, v in run.model.state_dict().items()}
     rows_before = common.entry_rows(run.channel, torch.arange(run.channel.entry_count))
-    result = e11.evaluate(run, read_set, methods=list(e11.METHODS), readers=["oracle", "stated", "typeprior", "pattern", "linker",
+    result = e11.evaluate(run, read_set, methods=list(e11.METHODS), readers=["oracle", "stated", "typeprior", "pattern", "linker", "linker-joint",
                                                                              "linker-all", "host", "random", "none"],
                           styles=["dictionary"], primary_style="dictionary", gradient_lr=1e-3, gradient_factors=(1.0,),
                           gradient_optimizer="sgd", resamples=50, log=QUIET)
@@ -120,7 +120,7 @@ def test_new_word_evaluation_matches_e9_and_restores_everything(world, items, se
     assert run.channel.entry_count == world["ontology"]["entry_count"]
     frames = document["frames"]["dictionary"]
     assert frames["oracle"]["f1"] == 1.0 and frames["none"]["empty"] == 6 and frames["linker"]["cost_per_word"]["forward_passes"] > 1
-    assert frames["host"]["cost_per_word"]["generated_tokens"] == 5
+    assert frames["host"]["cost_per_word"]["generated_tokens"] == 5 and frames["linker-joint"]["frames"] == 6
     means = document["items"]["means"]
     for cond in ("dictionary|oracle", "dictionary|none", "dictionary|linker", "dictionary|context", "dictionary|context+linker",
                  "dictionary|gradient×1.0"):
@@ -131,7 +131,7 @@ def test_new_word_evaluation_matches_e9_and_restores_everything(world, items, se
     ours = {c: e11.test_values(result["item_rows"][f"dictionary|{c}"], "new") for c in ("oracle", "none")}
     for source, cond in (("own", "oracle"), ("none", "none")):
         for test in ("property", "entailment", "statement_accuracy"):
-            assert ours[cond][test] == pytest.approx(e9_values[source][test], abs=1e-9), (cond, test)
+            assert ours[cond][test] == pytest.approx(e9_values[source][test], abs=1e-6), (cond, test)
     assert document["locality"]["max_abs_row_change"] == 0.0
     gradient = document["gradient"]["×1.0"]
     assert gradient["steps_mean"] >= 1 and np.isfinite(gradient["general_delta_mean"])
@@ -199,10 +199,44 @@ def test_cli_run_folder_report_and_plan(world, sets, tmp_path, capsys) -> None:
     assert "e11-t5-new-SmolLM2-360M-C5-s3" in names and "e11-t4-heldout-SmolLM2-360M-P0-s1" in names
     pending = {j["name"] for j in jobs if j.get("after_training")}
     assert "e11-t4-heldout-SmolLM2-360M-C5-s2" in pending and "e11-t5-new-SmolLM2-360M-C5-s2" not in pending
-    c5 = next(j for j in jobs if j["name"] == "e11-t4-heldout-SmolLM2-360M-C5-s1")["command"]
-    assert "windows" in c5[c5.index("--methods") + 1] and "linker" in c5[c5.index("--readers") + 1]
+    c5 = next(j for j in jobs if j["name"] == "e11-t4-heldout-SmolLM2-360M-C5-s1")
+    command = c5["command"]
+    assert "windows" in command[command.index("--methods") + 1] and "linker-joint" in command[command.index("--readers") + 1]
+    assert "--window-gradient" in command and c5["tier"] == 1 and c5["priority"] == e11.PLAN_PRIORITY + 1
     new = next(j for j in jobs if j["name"] == "e11-t5-new-SmolLM2-360M-C0p-s1")["command"]
     assert "windows" not in new[new.index("--methods") + 1] and new[new.index("--readers") + 1] == "none"
+    assert new[new.index("--styles") + 1] == "glossary,dictionary,prose"
+    c2 = next(j for j in jobs if j["name"] == "e11-t5-heldout-SmolLM2-360M-C2-s1")["command"]
+    assert c2[c2.index("--methods") + 1] == "persistence,context,windows" and "--gradient-lr-from" not in c2
+    assert c2[c2.index("--styles") + 1] == "prose"
+    assert all(j["hours"] > 0 for j in jobs if j["name"].startswith("e11-t")) and jobs[-1]["priority"] == e11.PLAN_PRIORITY + 4
+
+
+def test_fast_continuation_scores_equal_the_shared_scorer(world, items) -> None:
+    from vsa_embed.evaluation import channel_probes as cp
+    run = common.open_run(world["runs"]["C5"], device="cpu", batch_size=3)
+    prefixes = ["The house cat is a kind of", "A tea kettle has a", "Paracetamol is", "The bike"]
+    continuations = [" feline", " lid and a handle", " an analgesic drug", " wheel"]
+    sums, counts = e11.continuation_scores(run.adapter, prefixes, continuations)
+    np.testing.assert_allclose(sums, cp.continuation_logprob(run.adapter, prefixes, continuations), atol=1e-5)
+    reference_sums, reference_counts = edit.continuation_stats(run.adapter, prefixes, continuations)
+    np.testing.assert_allclose(sums, reference_sums, atol=1e-5) and np.testing.assert_array_equal(counts, reference_counts)
+    with e11.fast_continuations():
+        assert cp.continuation_logprob is not None and edit.continuation_stats is e11.continuation_scores
+    assert edit.continuation_stats is not e11.continuation_scores                # restored
+
+
+def test_headwords_are_link_checked(world) -> None:
+    from transformers import AutoTokenizer
+    ctx = e11.make_context("wordnet", world["ontology"], world["table"], edit.WordNetLexicon())
+    tokenizer = AutoTokenizer.from_pretrained("gpt2", local_files_only=True)
+    aliases = common.entry_aliases(world["table"])
+    entries = sorted(world["table"].heldout_entries())
+    names = {entries[0]: sorted(aliases[entries[0]])[0], entries[1]: "not an alias at all", entries[2]: sorted(aliases[entries[1]])[0]}
+    chosen = e11.linkable_headwords(ctx, names, tokenizer, min_subtokens=1)
+    assert chosen[entries[0]] == (names[entries[0]], "name")
+    assert chosen[entries[1]][1] == "alias" and chosen[entries[1]][0] in aliases[entries[1]]
+    assert chosen[entries[2]][1] == "alias" and chosen[entries[2]][0] in aliases[entries[2]]   # its name links to another entry
 
 
 def test_teacher_reads_open_licence_text_only(tmp_path) -> None:

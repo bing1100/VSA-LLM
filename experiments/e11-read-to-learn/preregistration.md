@@ -71,9 +71,9 @@ All sets were built before any run with
 |---|---|---|---|---|---|
 | **T5-N** `t5-new-smollm2-v1` | 300 invented words: the E9 `new-words-t5-smollm2-v1` items, new combinations of existing atomics | Written from the gold frame in 3 styles (below) | The E9 item frame | E9 dimension 3: property (1,529 items), entailment (600), paraphrase, statement (1,529) | Project-generated |
 | **T5-H** `t5-heldout-smollm2-v1` | 560 T5 terms: 360 held-out real terms (in evaluation documents only) + 200 zero-shot terms (in no document) | Written from the gold frame in the same 3 styles | Ontology frame | WP-C7 zero-shot items of those terms (1,566 property groups × 3 paraphrases; 1,680 entailment pairs); loss after the term in the run's evaluation text: 17,513 occurrences of the 360 held-out terms | Project-generated |
-| **T4-H** `t4-heldout-smollm2-v1` (natural) | 348 held-out real ChEBI entities: of 551 held out, 423 are single-concept entries with a frame, and 348 of those have a ChEBI definition | The entity's own ChEBI 255 `def:` (HTML stripped), read as `<name>: <definition>` | Ontology frame (ChEBI relations) | WP-C7 zero-shot items (416 property groups, 416 entailment pairs); loss after the term in the T4 evaluation text: 242 terms, 3,595 occurrences | CC BY 4.0 |
+| **T4-H** `t4-heldout-smollm2-v1` (natural) | 341 held-out real ChEBI entities (amended §13.1; was 348): of 551 held out, 423 are single-concept entries with a frame, 348 of those have a ChEBI definition, and 341 have a headword the linker links | The entity's own ChEBI 255 `def:` (HTML stripped), read as `<headword>: <definition>` | Ontology frame (ChEBI relations) | WP-C7 zero-shot items (407 property groups, 407 entailment pairs); loss after the term in the T4 evaluation text: 242 terms, 3,595 occurrences | CC BY 4.0 |
 | **T4-N** `t4-new-smollm2-v1` | 300 invented compounds (E9 `new-words-t4-smollm2-v1`) | Written from the gold frame: `chebi` (the PubChem/ChEBI phrasing of the T4 training entry texts) and `prose` | E9 item frame | E9 dimension 3 (711 property, 600 entailment, 711 statement) | Project-generated; ChEBI names CC BY 4.0 |
-| **T1-H** `t1-heldout-smollm2-v1` (negative control) | 1,974 held-out MeSH descriptors with a scope note | MeSH 2026 ScopeNote, read as `<heading>: <note>` | Ontology frame (parent, pharmacological action, see also, tree branches) | Loss after the term in `eval-pubmed`: 1,296 terms, 46,310 occurrences. No WP-C7 items exist for T1 | Public domain (NLM) |
+| **T1-H** `t1-heldout-smollm2-v1` (negative control) | 1,972 held-out MeSH descriptors with a scope note and a linkable headword (amended §13.1; was 1,974) | MeSH 2026 ScopeNote, read as `<headword>: <note>` | Ontology frame (parent, pharmacological action, see also, tree branches) | Loss after the term in `eval-pubmed`: 1,295 terms, 46,278 occurrences. No WP-C7 items exist for T1 | Public domain (NLM) |
 | **Textbook** `~/data/vsa-llm/e11/items/t4-swap-openstax-chem2e-v1` (exploratory, not committed) | OpenStax *Chemistry 2e* glossary mapped onto ChEBI entries by alias (exact, then singular/plural): 85 of 752 unique terms map (11%), 77 usable, 5 of them held out | The glossary line `<term>: <meaning>` | The entry's trained frame | Frame precision/recall; **frame swap**: the read frame replaces the trained one; loss after the term | **CC BY-NC-SA 4.0** (not CC BY, see §10) |
 | **Dev** `t5-dev-smollm2-v1` | 40 extra invented T5 words: E9 builder, seed 101, names reserved against T5-N | 3 styles | Item frame | Used **only** to choose the gradient baseline's learning rate (§5) | Project-generated |
 
@@ -128,6 +128,7 @@ All sets were built before any run with
 | `pattern` | Hearst patterns (E7 `hearst_extract`, mapped to the track's is-a / part relations) + a relation-name cue phrase within 60 characters before a found filler, in the same sentence (`owned_by` → "owned by", `has_functional_parent` → "functional parent"). A filler without a cue writes nothing | no |
 | **`linker`** (primary reader; "self-reflective") | Finder + the trained model chooses each filler's relation, then self-tests the edge (algorithm below) | yes |
 | `linker-all` | `linker` without the self-test (every found filler keeps its best relation) | yes (same scores) |
+| `linker-joint` (**declared after the smoke test, §13.3; secondary**) | Starts from the `typeprior` frame. The model re-chooses each mention's relation inside the full frame (one Jacobi sweep), then a leave-one-out self-test | yes |
 | `host` | Prompted extraction by the run's own host weights (channel not used). E7's constrained few-shot template (`authoring_prompt_fewshot`) with 2 style-matched demonstrations from seen training terms (never a read term), greedy decoding, ≤ 96 new tokens, E7 parser (`relation: filler` lines); fillers resolved through the finder; ill-typed edges dropped | yes |
 | `teacher` (optional) | Claude via the B13 runner (`claude -p`, model pinned `claude-opus-5-5`; E7 `TeacherAuthor`, cached), 8 definitions per call; **open-licence text only** (T5, ChEBI, MeSH; the code refuses NC and credentialed sets) | no (external) |
 | `random` | Random frame of equal degree to gold: the E9 rule, same relations, fillers frequency-weighted from each relation's pool | no |
@@ -304,10 +305,17 @@ Forward passes and tokens (linker), prompt and generated tokens (host), USD (tea
 - **Per run:**
   - C5 runs every method and reader;
   - C0′, C2 and P0 run the text routes (`none`, `context`, `gradient`; and loss after the term on T4-H / T5-H).
-- **Order:**
-  1. the dev learning-rate jobs;
-  2. the evaluations, priority 62 (after the pending 51–61 queue);
-  3. the report (63).
+- **Order** (amended in §13.5):
+
+  | Priority | Jobs |
+  |---|---|
+  | 62 | the dev learning-rate jobs |
+  | 63 | tier 1: the primary endpoints' runs |
+  | 64 | tier 2 |
+  | 65 | tier 3 |
+  | 66 | the pooled report |
+
+  All of these run after the pending 51–61 queue.
 - The exact commands and GPU-hour estimates (measured in the smoke test, §12) are in §12 and come from
   `python -m vsa_embed.experiments.e11_read_to_learn plan`.
 - **Qwen3 hosts are not part of this pre-registration.** The code supports them once Qwen3 E11 item sets are built.
@@ -402,6 +410,153 @@ gold:
 
 **GPU smoke test and commands:** added below after this document was committed (§12 addendum).
 
+### §12 addendum — GPU smoke test (2026-10-07; SMOKE, not a result)
+
+**Setup.**
+- **Run:** SmolLM2-360M C5 seed 1. T5 checkpoint for T5-N, T4 checkpoint for T4-H.
+- **Memory:** hard cap of 4 GB (`torch.cuda.set_per_process_memory_fraction`).
+- **Shared GPU:** an E9 training job held the GPU at 100% throughout.
+- **Optimizer:** the gradient arm used SGD (lr 1e-3, CPU weight backup) to stay under 4 GB. The full runs use Adam with
+  the dev-chosen lr.
+- **Outputs:**
+  - `experiments/e11-read-to-learn/smoke/` (final code);
+  - `smoke/v0-before-fixes/` (the first run, which motivated §13.1–13.3).
+
+| Smoke | Size | Wall time | Peak memory | Breakdown (s) |
+|---|---|---|---|---|
+| T5-N prose | 20 words, 228 items, 10 readers, in context, gradient ×1, locality | 324 s | 3.0 GB | readers 26, persistence 111, in context 138, gradient 47 |
+| T4-H chebi | 40 terms, 108 items, 9 readers, in context, 48 windows, locality | 256 s | 3.1 GB | readers 42, persistence 92, in context 78, windows 26 |
+
+Both exceed the 5-minute target, because the GPU was shared. On an idle GPU the same runs take an estimated ≈ 2–3 min
+each (assumption: 2× contention).
+
+**Checks passed:**
+- every definition headword links (T5-N 766 / 766, T4-H 2,796 / 2,796 scored texts);
+- rows of 2,000 other entries are unchanged (max |Δ| 1.5e-7, bf16 noise);
+- weights are restored after the gradient arm.
+
+**Smoke numbers.** Too few items for any inference; not used for any decision except §13.
+
+| Measure | Smoke value (n) |
+|---|---|
+| T5-N frame F1 | oracle 1.00, typeprior 0.90, linker-all 0.82, linker-joint 0.59, linker 0.55, host 0.76, pattern 0.25 |
+| T5-N property | none 0.19, oracle 0.21, linker 0.19, linker-joint 0.21, typeprior 0.22, host 0.23, random 0.17 |
+| T5-N in context (definition prepended) | 0.61 (`context − linker` +0.42 [+0.34, +0.50], n = 94 items) |
+| T5-N `context+linker − context` | −0.01 [−0.04, +0.02] |
+| T4-H loss after the term in other documents, vs none (470 targets, 64 occurrences) | oracle −0.91% [−1.10, −0.51], typeprior −0.72% [−0.89, −0.33], linker −0.49% [−0.92, +0.08], random −0.47% [−1.12, +0.67] |
+| T4-H frame precision | typeprior 0.35, linker 0.04 |
+
+**Exact queue commands.** `experiments/e11-read-to-learn/queue-commands.sh`, printed by
+`python -m vsa_embed.experiments.e11_read_to_learn plan --include-pending`.
+- **Jobs:** 61 runnable now; 24 more once T4 seeds 2–3 are trained.
+- **Estimated GPU hours** (idle GPU, from the per-concept smoke timings ÷ 2):
+
+  | Tier | Contents | Now | After T4 seeds 2–3 train |
+  |---|---|---|---|
+  | dev lr | | 0.1 h | — |
+  | 1 | T5-N 360M C5/C0′ s1–3, T4-H 360M C5/C0′ s1 | 7.6 h | +3.0 h |
+  | 2 | | 12.9 h | +4.8 h |
+  | 3 | | 4.0 h | +1.7 h |
+  | **Total** | | **≈ 24.6 GPU-h** | **+ 9.5 GPU-h** |
+
 ## 13. Deviations and changes after commit
 
-(None yet.)
+All of these were made on 2026-10-07, after the labelled GPU smoke test (§12) and **before any full run**. None changes
+P1, P2, the decision rule or the refutation readings.
+
+### 13.1 Held-out headwords are link-checked (a construction bug fix)
+
+**Bug.** The smoke test found that a read headword sometimes did not link to its own entry. The definition scorer then
+cannot inject the term's row; 238 of 1,330 T4 scored texts were affected. A build-time check found the causes:
+
+| Track | Cause | Count |
+|---|---|---|
+| T5 | The 200 zero-shot terms were read under their internal concept name `synthetic:<Name>` | 200 |
+| T4 | The ChEBI display name is an alias of *another* entry | 44 |
+| T4 | Charged names such as `quinine(1+)` do not link | 13 |
+| T1 | Inverted MeSH headings (`RNA, Ribosomal, 16S`) are not aliases | 265 |
+| T1 | Single-token headings cannot link at ℓ_min = 2 | — |
+
+**Fix** (`linkable_headwords`). The headword is the display name if the track linker links it to the term's own entry
+in `<headword>: …`. Otherwise it is the entry's canonical linkable alias (`canonical_surfaces`). Otherwise the term is
+left out.
+
+| Set | Headword source | Left out | Size |
+|---|---|---|---|
+| T5-H | name 560 (prefix removed) | 0 | 560 |
+| T4-H | name 291, alias 50 | 7 | 348 → **341** (WP-C7 items 416 → 407) |
+| T1-H | name 1,699, alias 273 | 2 | 1,974 → **1,972** |
+
+The loss-after-the-term occurrences are unchanged for T4 (3,595) and almost unchanged for T1. No item, frame or
+analysis rule changed.
+
+### 13.2 A faster continuation scorer (numerically equal)
+
+In-context prompts are 3–5× longer. The shared adapter computes full-vocabulary log-probabilities at every position,
+so the in-context step took 223 of 406 s in the T5 smoke test.
+
+`continuation_scores` computes output logits only at the positions that predict continuation tokens, in batches
+sorted by length. It runs the same forward pass, spans, autocast and output head. It is used inside `ItemScorer` for
+every condition. A test checks it equals `channel_probes.continuation_logprob` / `e9_ontology_edit.continuation_stats`
+to 1e-5 on the CPU. The E9-consistency test (E11 `oracle` / `none` = E9 `own` / `none`) still passes at 1e-6.
+
+### 13.3 A declared secondary reader: `linker-joint`
+
+**Motivation** (the frame metrics of the smoke test). Single-edge scoring, the pre-registered `linker`, is a poor
+relation chooser:
+
+| Smoke set | Measure | `linker` | `typeprior` |
+|---|---|---|---|
+| T5-N, prose, 20 words | Edge precision | 0.74 | 0.90 |
+| T5-N, prose, 20 words | Relation accuracy on ambiguous fillers | 0.30 | 0.64 |
+| T4-H, 40 terms | Edge precision | 0.07 | 0.36 |
+| T4-H, 40 terms | Relation accuracy on ambiguous fillers | 0.18 | 0.84 |
+
+The T5 self-test also rejected many correct edges: recall 0.43, against 0.82 without it.
+
+The likely mechanism: a row composed from a single edge is unlike any trained row (trained frames have ≈ 7 edges), so
+its likelihood says more about the row being off-distribution than about the relation.
+
+**`linker-joint`** (`read_to_learn.read_linker_joint`):
+
+1. Start from the `typeprior` frame F0 (all found fillers with their prior relation).
+2. **One Jacobi sweep.** For each mention, every type-admitted (relation, atom) candidate replaces that mention's
+   edge in F0, or is added to F0 if the mention has no edge there. All other edges stay fixed. The best-scoring
+   candidate is kept, and functional relations are de-duplicated.
+3. **Leave-one-out self-test** on the swept frame F1: an edge stays iff removing it lowers the definition's
+   log-likelihood (margin 0).
+4. **Cost:** 1 + Σ candidates + 1 + |F1| forward passes. The gradient baseline's compute match stays tied to `linker`'s
+   cost; `linker-joint` costs about the same.
+
+**Status: declared secondary.**
+- The primary reader, P1 and P2 stay `linker`, as pre-registered.
+- `linker-joint` gets the S1–S6 contrasts (`linker-joint − none`, `− typeprior`, `− oracle`, `− linker`) as
+  secondaries, labelled "declared after the smoke test".
+- **Open decision for the author:** promote `linker-joint` to primary before the full runs. That would be recorded
+  here as a pre-run amendment, with this disclosure.
+
+**What the smoke test saw.** SmolLM2-360M C5 seed 1:
+- the first 20 T5-N concepts (`e9n-0000` – `e9n-0019`), prose style;
+- the first 40 T4-H concepts (pre-§13.1 ordering).
+
+Only the frame metrics above motivated the change. The item-test numbers of those concepts are in the smoke reports
+(`experiments/e11-read-to-learn/smoke/v0-before-fixes/`).
+
+### 13.4 Implementation details settled by the smoke test
+
+- **In-context batches** are halved (they were not reduced before §13.2).
+- **Memory.** Peak allocated memory at 360M was 3.0–3.1 GB with SGD and a CPU weight backup (smoke). The full runs use
+  Adam with a GPU backup, ≈ 7 GB, which is why their queue jobs ask for an otherwise idle GPU.
+
+### 13.5 Plan scope (cost; secondary sets only)
+
+The smoke timings put the full design at ≈ 34 GPU-h. To bound the cost, the plan (`plan_jobs`) does the following.
+None of it touches P1, P2 or their comparators.
+
+1. **Gradient arm only on C0′ and C5**, as §5 already says; C2 and P0 get no frame and in context only.
+2. **Secondary sets read their primary style only:** T5-H prose, T4-N chebi. T5-N keeps all three styles (S7).
+3. **The per-term gradient on windows runs on T4-H only** (`--window-gradient`), as §5 says.
+4. **T1-H** (negative control) runs SmolLM2-360M seed 1, C5 and C0′. It measures frames and loss after the term only
+   (no items exist), with windows capped at 2,048 (the T1 evaluation size of decision 12).
+5. **Tiers.** The primary endpoints and their key comparators are tier 1 (priority 63); replications and controls are
+   tier 2 (64); 135M runs on T5-H and T4-N are tier 3 (65).
