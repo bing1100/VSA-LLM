@@ -1,0 +1,21 @@
+experiment: e11-many
+run: /home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-135M-full-C0p-s1
+items: experiments/e11-read-to-learn/items/t5-many-smollm2-v1
+routes:
+- frames
+- gradient
+readers:
+- none
+sizes:
+- 25
+budgets:
+- 2048
+- 7168
+rag_k:
+- 1
+- 3
+gradient_lr: 0.0001
+gradient_optimizer: adam
+gradient_backup: gpu
+alias_table: /home/bhux/data/vsa-llm/e9/alias-tables/t5.json
+smoke: true

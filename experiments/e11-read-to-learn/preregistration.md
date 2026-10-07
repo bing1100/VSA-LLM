@@ -560,3 +560,205 @@ None of it touches P1, P2 or their comparators.
    (no items exist), with windows capped at 2,048 (the T1 evaluation size of decision 12).
 5. **Tiers.** The primary endpoints and their key comparators are tier 1 (priority 63); replications and controls are
    tier 2 (64); 135M runs on T5-H and T4-N are tier 3 (65).
+
+### 13.6 The author's decisions of 2026-10-07 (recorded, not deviations)
+
+- **Primary reader:** keep the pre-registered `linker`; `linker-joint` stays secondary (§13.3).
+- **Queued:**
+  - tier 1 (gradient-dev 360M at priority 51; T5-N 360M C5/C0′ seeds 1–3 and T4-H 360M C5/C0′ seed 1 at 52);
+  - `e11-report` at 54.
+  - Tiers 2–3 wait until tier 1 has been read.
+- **OpenStax textbook** (CC BY-NC-SA 4.0): approved for non-commercial research, local only, never sent to Claude.
+- **Claude teacher reader:** not approved; `teacher` is not run.
+
+## 14. Amendment (2026-10-07, before any run): E11-M, many terms read once each
+
+**Origin.** The author approved a follow-up after the smoke test showed that one definition in context beats every
+frame (T5 property 0.61 vs ≤ 0.23). The question is whether the picture flips when a model must learn many new terms
+from one reading each and then use them together. Code `vsa_embed.experiments.e11_many`; tests `tests/test_e11_many.py`.
+
+### 14.1 Question
+
+When N new terms (N = 25 … 400) have each been read once, how well does each route answer questions about them and
+read text that uses several of them? How does that change as N grows, and at what cost per use?
+
+- **In context:** all definitions in the prompt, cut at the window.
+- **Retrieval:** the relevant definitions retrieved into the prompt.
+- **Frames:** every definition written once into the ontology, used at no context cost.
+- **Gradient:** the definitions learned one after another.
+
+### 14.2 Sets (built 2026-10-07, committed)
+
+**T5-M** `items/t5-many-smollm2-v1`:
+- **Terms:** the 700 invented words of `t5-new-smollm2-v2`. That set is new: the E9 v2 items of decision 56, with
+  definitions written in the same 3 styles as T5-N; it is also T5-N's v2 replication set of §9.
+- **Reading:** prose definitions, mean 110 tokens.
+- **Episodes:** one seeded order (seed 0). The episode of size N ∈ {25, 50, 100, 200, 400} is its first N terms, so the
+  episodes are nested.
+- **Items:** the E9 dimension-3 items of those terms (5.1 property items per term).
+- **Passages:** 50 per size. Each uses 4 of the first N terms, with 2 facts per term in the training fact templates and
+  boilerplate between term blocks. Every mention is recorded.
+
+**T4-M** `items/t4-many-smollm2-v1` (natural):
+- **Terms:** the 242 T4-H terms that occur in the evaluation text, in one seeded order.
+- **Sizes:** 25, 50, 100, 200, 242.
+- **Tests:** the WP-C7 items, and the T4 evaluation windows that hold ≥ 2 distinct read terms among the first N. The
+  full set has 721 such 1,024-token tiles. The loss is the after-mention window, other documents as in §6.3.
+
+**How many definitions fit the budget** (SmolLM2 tokenizer; measured):
+
+| Set | Budget | N = 25 | 50 | 100 | 200 | 400 / 242 |
+|---|---|---|---|---|---|---|
+| T5-M | 2,048 | 18 | 18 | 19 | 17 | 22 |
+| T5-M | 7,168 | 25 | 50 | 65 | 66 | 70 |
+| T4-M | 2,048 | 25 | 50 | 49 | 49 | 48 |
+| T4-M | 7,168 | 25 | 50 | 100 | 173 | 167 |
+
+### 14.3 Routes (all on the same items, passages and windows)
+
+| Route | Condition | What it does |
+|---|---|---|
+| Frames | `frame:<reader>`, readers `oracle`, `linker`, `linker-joint`, `typeprior`; `none` = no frame | Every term's frame is written at once. A use costs no context token |
+| In context | `context:B<budget>`, B ∈ {2,048, 7,168} | The first N definitions in a seeded order under the header "Glossary of new terms:", whole definitions up to B tokens. 7,168 is the 8,192-token window minus 1,024 for the task. The prefix is read once and cached (`PrefixCache`); rows of the new terms are zero |
+| Retrieval | `rag:k<k>`, k ∈ {1, 3} | BM25 over the N definitions. Query for items: the term's first prompt; for passages: the passage, retrieving k × (terms in the passage); for windows: the window's text. The top-k definitions form the prefix. Recall@k (the term's own definition retrieved) is recorded |
+| Gradient | `gradient` | One pass over the definitions in order. For each: compute-matched Adam steps (as §5), the dev learning rate, the term's own row dropped. Checkpoints after 25, 50, … terms on the same sequence. Weights restored at the end. Runs on C0′ and C5 |
+
+**Models:** SmolLM2-360M C5 (all routes) and C0′ (in context, retrieval, gradient, no frame). Seeds 1–3 on T5-M; T4-M
+seed 1 first, then seeds 2–3 once trained.
+
+### 14.4 Metrics
+
+1. Per-term dimension-3 accuracy (property, entailment, paraphrase, statement) on the first N terms, against N.
+2. Loss after the new-term mentions in passages (T5-M) and natural windows (T4-M) against N, relative to `none`, with a
+   cluster bootstrap over passages / terms.
+3. **Interference.**
+   - Frames: the first 25 terms scored with only them written vs with all N written. Rows are independent, so the
+     maximum margin change must be ≈ 0.
+   - Gradient: the property accuracy of the first 25 terms at each later checkpoint (forgetting).
+   - In context: accuracy against the share of definitions that fit; each item records whether its term's definition
+     was in the prompt.
+4. **Cost.**
+   - Context tokens and prefill FLOPs (2 · parameters · tokens) per use.
+   - Write cost: reader forward tokens, or gradient steps, tokens and FLOPs.
+
+### 14.5 Primary endpoint and decision rule
+
+**Primary M1.**
+- Set and model: T5-M, SmolLM2-360M C5, N = 200.
+- Measure: **property** accuracy, `frame:linker − context:B2048`, over the items of all 200 terms.
+- Statistics: paired over items, item differences of seeds 1–3 pooled, percentile bootstrap (2,000), two-sided
+  α = 0.05.
+- M1 is its own family. It answers a different question from P1 and P2 and is not adjusted with them.
+- **Power:** ≈ 1,035 property items × 3 seeds ≈ 3,100 paired differences; minimal detectable effect ≈ 0.012.
+
+**Decision rule** (fixed now):
+
+| Reading | Conditions |
+|---|---|
+| **(M-a) "Writing frames beats reading definitions in context once there are many terms"** | M1 > 0 and p < 0.05 |
+| **(M-b) "…only with better reading"** | M1 is not significantly positive, but `frame:oracle − context:B2048` at N = 200 is (CI excludes 0). The reader is the bottleneck |
+| **(M-c) "In context still wins at N = 200 within 2,048 tokens"** | M1 < 0 (CI excludes 0). The channel's only advantage is the cost per use: 0 context tokens against 2,048, and no prefill |
+| **(M-d) Crossover N\*** (descriptive) | Per budget, the smallest N at which `frame:linker` ≥ `context:B` on the seed-pooled point estimates. The oracle and the 7,168 budget are reported alongside |
+| **(M-e) "Retrieval removes the scaling problem"** | `rag:k1 − frame:linker` ≥ 0 at every N (CI includes 0 or positive). The channel then keeps only zero per-use context and no retrieval step |
+| **(M-f) "A gradient pass scales as well"** | `gradient − frame:linker` ≥ 0 at N = 200, **and** the first 25 terms lose ≤ 0.02 property accuracy between N = 25 and N = 400 |
+
+**Refutation readings:**
+- **Rows depend on N** (interference check > 1e-3 in margin). This would contradict row independence, so the run is
+  invalid.
+- **Passages and windows disagree with the items** (the frame route helps the item tests but not the loss after
+  mentions in multi-term text, or the reverse). Report both. The paper claim needs both.
+
+**Prediction** (written before any run, from the E11 smoke test; not an input to any decision):
+- At B = 2,048 only ≈ 17 of 200 definitions fit. One definition in context added ≈ +0.42 property, so
+  `context:B2048` should sit ≈ +0.04 above `none` at N = 200 and ≈ +0.02 at N = 400.
+- The linker frame added ≈ 0 and the oracle frame ≈ +0.02 in the smoke test.
+- We therefore expect M1 ≈ 0 or slightly negative (M-c or no difference) at N = 200, and a crossover only for the
+  oracle route near N ≈ 400 at B = 2,048.
+- We expect retrieval at k = 1 to stay near the single-definition in-context level at every N (M-e).
+
+### 14.6 What it means for the paper
+
+**If M-a holds,** the read-to-learn story gains its strongest form: "with many new terms, writing each definition once
+into the ontology beats reading definitions in context at a fixed context budget, at zero context tokens per use".
+
+**If M-c and M-e hold,** the honest claim is narrower:
+- the channel is a zero-token persistence mechanism;
+- in-context reading and retrieval are more accurate at these sizes;
+- the channel's niche is when neither the context budget nor a retrieval step is available.
+
+### 14.7 Compute and placement
+
+The estimate is in the §14 addendum below (CPU smoke test and commands). The recommended placement is priority 53:
+after the tier-1 evaluations (52) and before `e11-report` (54). The T4 seeds 2–3 jobs follow their training.
+
+### §14 addendum — CPU smoke test (2026-10-07; SMOKE, not a result) and commands
+
+**Setup.**
+- **Run:** SmolLM2-135M T5 seed 1 on the CPU (6 threads); the GPU queue was busy. N = 25, the first episode.
+- **Model and routes:**
+  - C5: frames (oracle, linker, typeprior, none), in context at 2,048 tokens, retrieval k = 1;
+  - C0′: the gradient route (Adam, lr 1e-4, the dev lr not yet chosen).
+- **Outputs:** `smoke/many-t5-SmolLM2-135M-C5-s1-cpu/`, `smoke/many-t5-SmolLM2-135M-C0p-s1-cpu-gradient/`.
+
+**Timing.**
+- The C5 smoke took 546 s, over the 5-minute target. The cause was the CPU: the 2,048-token prefix route took 231 s.
+- A first attempt scored all 400 terms because the read set was not restricted to the requested sizes. It was stopped
+  and fixed (`evaluate_many` now reads and scores only the first max(sizes) terms).
+- The C0′ gradient smoke took 163 s.
+
+**Smoke numbers.** One seed, 25 terms, 135M, so not evidence for anything:
+
+| Condition | Property accuracy | Loss after mentions in passages |
+|---|---|---|
+| none | 0.15 | 2.54 |
+| frame:oracle | 0.18 | 2.43 |
+| frame:linker | 0.18 | 2.50 |
+| frame:typeprior | 0.20 | 2.43 |
+| context:B2048 (18/25 definitions fit) | 0.39 | 1.85 |
+| rag:k1 (recall 1.00) | 0.63 | 1.38 |
+| C0′ none | 0.16 | 2.40 |
+| C0′ gradient | 0.23 | 3.36 |
+
+- The sequential updates help the items but damage text prediction.
+- The frame interference check gives exactly 0.0 (306 items, CPU).
+
+**Commands.** `experiments/e11-read-to-learn/queue-commands-many.sh`, printed by
+`python -m vsa_embed.experiments.e11_many plan`.
+
+| Jobs | Priority | Idle-GPU estimate |
+|---|---|---|
+| 6 × T5-M (360M C5 / C0′ s1–3) | 53 | ≈ 0.89 / 0.67 GPU-h each |
+| 2 × T4-M s1 | 53 | ≈ 0.56 / 0.40 GPU-h each |
+| e11-many-report | 54 | — |
+| **Total now** | | **≈ 5.6 GPU-h** |
+| 4 × T4-M seeds 2–3 (after their training) | 53 | ≈ 1.9 GPU-h |
+
+- **T7-H** (§15): 2 jobs after T7's E9 runs train, ≈ 1.0 GPU-h, commented in the same file.
+
+## 15. Amendment (2026-10-07): dictionary sources for "read a dictionary", and the T7 dictionary set
+
+**Survey** (probed 2026-10-07; one or two requests per service; `DATA_SOURCES.md` §15):
+
+| Source | Licence and access | New words? | Gold frames? | Occurrences in local text | Verdict |
+|---|---|---|---|---|---|
+| Wiktionary (dumps; MediaWiki API; Wikimedia REST `page/definition`) | CC BY-SA 4.0 (+ GFDL); no key; serial requests with a user agent | `Category:English neologisms`: 1,267 pages, 1,175 with English definitions. 855 are dated by quotations; 342 first quoted ≥ 2020, 157 ≥ 2023. There are no "coined in <year>" categories | None: 50 of the titles are WordNet lemmas, and frames would have to come from the definition itself (circular) | Of 146 titles first quoted ≥ 2023, **8** occur in 300,000 FineWeb-Edu documents (40 occurrences). There is no local 2025–26 general text | **Not feasible** for the E11 tests now (no gold, no occurrences, and the host track for general words is WordNet, where the channel is null). Feasible only with a new 2025–26 web-text download (author decision) |
+| Free Dictionary API (dictionaryapi.dev) | Wiktionary-derived (CC BY-SA); no key | as Wiktionary | — | — | HTTP 522 (origin down) on 2026-10-07; adds nothing over Wiktionary |
+| Wikidata lexemes | CC0; SPARQL endpoint (60 s queries); no key | 100,837 English lexemes. Recent words exist with short glosses (rizz, delulu, enshittification); no attestation dates | Sense → item links are sparse; mappings to WordNet synsets are rare for new words | — | CC0 glosses only; not a test set |
+| Wordnik | Account and API key; content from several dictionaries under mixed terms | — | — | — | Excluded: not open-licence |
+| Merriam-Webster | Free for non-commercial use, ≤ 1,000 queries / day / key, ≤ 2 reference APIs | — | — | — | Excluded: not open-licence |
+| Oxford | Free trial; enterprise licences from £5,000 / year / language | — | — | — | Excluded |
+| WordNet 3.0 glosses (local) | WordNet licence (permissive) | No new words (2006) | Yes (WordNet relations) | C3 text | Negative control only: the channel is null on the WordNet track (R9) |
+| **MeSH 2026 supplementary-record notes** (local; T7's ontology) | Public domain (NLM) | New *to the host*: 0 mentions in 300k general documents, T7's selection; but only 5 of the usable terms were introduced ≥ 2023 | Yes (T7 frames: mapped heading, pharmacological action, class) | T7 `eval-pubmed`, 2026 PubMed | **Feasible once T7 is trained**: built as an E11 set, below |
+
+**T7-H** `items/t7-heldout-smollm2-v1` (built; runs need T7's E9 checkpoints, not yet queued):
+- **Terms:** 908 T7 held-out records. 487 have an informative note and a linkable headword (369 under their name, 118
+  under an alias). 372 occur in the 2026 PubMed evaluation text (4,834 occurrences).
+- **Reading:** the note with its bibliographic parts removed, read as `<headword>: <note>` (e.g. "1,10-phenanthroline:
+  inhibits Zn-dependent metalloproteinases").
+- **Caveat (measured):** the notes rarely name the gold fillers.
+  - The concept finder sees 1.9% of gold fillers, and `stated` covers 2.1% of the gold edges.
+  - The notes describe activities; the frames name MeSH headings, e.g. pharmacological action "Matrix Metalloproteinase
+    Inhibitors".
+  - So the frame readers will write almost nothing (R7). On T7-H, E11 tests the text routes and the gold frame; the
+    reading itself is untestable without a semantic filler matcher, and the Claude teacher is not approved.
+- **Proposed runs** (once T7 trains): the E11 `heldout` evaluation, as T4-H in tier 2.
