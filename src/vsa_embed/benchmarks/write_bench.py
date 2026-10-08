@@ -133,7 +133,8 @@ def plan_jobs(*, python: str = "$PY", hosts: Sequence[str] = HOSTS, models: Sequ
                     outputs.append(out)
                     command = [python, "-m", "vsa_embed.benchmarks.ranking", "evaluate", "--run", str(run), "--items", str(items),
                                "--conditions", ",".join(conditions_for(model, set_name)), "--batch-size", str(BATCH),
-                               "--token-budget", str(TOKEN_BUDGET), "--max-length", "2048", "--output", str(out)]
+                               "--token-budget", str(TOKEN_BUDGET), "--max-length", "2048", "--output", str(out),
+                               "--overwrite"]               # a retried job rewrites its own (partial) output
                     jobs.append({"name": f"tk-bench-{set_name}-{host}-{model}-s{seed}", "priority": GPU_PRIORITY, "min_free_gb": 6,
                                  "lane": "gpu", "hours": job_hours(host, model, set_name, counts.get(set_name, 0), smoke),
                                  "command": command})
