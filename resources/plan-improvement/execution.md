@@ -1137,3 +1137,15 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-binding-step3 --pr
 
 Every `queue` command takes `--dry-run` (2026-10-08: the counts above; T4's seed-1 C5 jobs are skipped by name in C3e). Every
 job writes into its run folder or `report/<stage>-binding` / `report/binding-sweep`, never `report/<stage>` (§12.4).
+
+**Optional (BU-8, not queued): a 50M from-scratch readout screen** through `e4_plan`, in the `opscreen` stage so that its
+C0 / C2 / C5 runs (same recipe, same windows) are the baselines; the readout sits at layer 3 of the 50M model's 8. Four arms ×
+seeds 1–3 ≈ 12 runs × 0.44 GPU-h × 1.15 ≈ **6 GPU-h**; `e4_report` over the stage reads them as conditions `C5@U5`, ….
+
+```bash
+for spec in "U5 hrr" "U5ut untyped" "U5tr translation" "U5u unitary_hrr"; do
+  set -- $spec
+  PYTHONPATH=src $PY -m vsa_embed.experiments.e4_plan --stage opscreen --conditions C5@$1 --seeds 1 2 3 --priority 59 --queue \
+    --overrides "{\"train\": {\"micro_batch\": 32, \"grad_accum\": 1, \"total_tokens\": 100000000, \"lr\": 0.002, \"warmup_tokens\": 5000000, \"checkpoint_minutes\": 5}, \"eval\": {\"save_window_losses\": true}, \"channel\": {\"operator\": \"$2\", \"readout\": {\"layer\": \"third\", \"window\": 32, \"gate_bias\": 0.0, \"beta\": 16.0, \"steps\": 1, \"typed\": true, \"source\": \"static\"}}}"
+done
+```
