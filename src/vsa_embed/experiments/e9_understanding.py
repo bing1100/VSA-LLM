@@ -302,7 +302,60 @@ T7_SPEC: dict[str, Any] = {
         "pharmacological_action": {"affirm": ["The pharmacological action of {x} is", "{x} is classed among the"],
                                    "negate": ["The pharmacological action of {x} is not", "{x} is not classed among the"]}},
 }
-TRACK_SPECS = {"t5": T5_SPEC, "t4": T4_SPEC, "t7": T7_SPEC}
+# T8 (Wikidata entities, decision 63): anchors are entities of common types (P31); two-hop paths follow a filler entity's
+# own frame (birthplace → its country, citizenship → that country's capital, author → the author's citizenship, …).
+_T8_TYPES = {"wd:Q5": "person", "wd:Q11424": "film", "wd:Q7725634": "literary work", "wd:Q7889": "video game",
+             "wd:Q482994": "album", "wd:Q4830453": "business", "wd:Q3918": "university", "wd:Q5398426": "television series",
+             "wd:Q215380": "musical group", "wd:Q515": "city", "wd:Q6256": "country", "wd:Q3624078": "sovereign state"}
+T8_SPEC: dict[str, Any] = {
+    "anchor": {"relation": "instance_of", "values": sorted(_T8_TYPES)},
+    "two_hop": [
+        {"path": ("place_of_birth", "country"), "templates": ["{x} was born in a place located in",
+                                                              "The birthplace of {x} lies in the country of"]},
+        {"path": ("country_of_citizenship", "capital"), "templates": ["The capital of the country {x} is a citizen of is",
+                                                                      "{x} holds the citizenship of a country whose capital is"]},
+        {"path": ("author", "country_of_citizenship"), "templates": ["The author of {x} is a citizen of",
+                                                                     "{x} was written by a citizen of"]},
+        {"path": ("director", "country_of_citizenship"), "templates": ["The director of {x} is a citizen of",
+                                                                       "{x} was directed by a citizen of"]},
+        {"path": ("headquarters_location", "country"), "templates": ["{x} is headquartered in a city in the country of",
+                                                                     "The headquarters of {x} lie in the country of"]},
+        {"path": ("educated_at", "country"), "templates": ["{x} studied at an institution located in",
+                                                           "{x} was educated in the country of"]},
+        {"path": ("developer", "country"), "templates": ["{x} was developed by a company based in",
+                                                         "The developer of {x} is based in the country of"]},
+    ],
+    "affordance": {"relation": "instance_of", "items": {
+        "experience": {"templates": ["Most people come across {x} by", "People usually experience {x} by"],
+                       "options": {"wd:Q5": " meeting this person or reading about them", "wd:Q11424": " watching it in a cinema",
+                                   "wd:Q7725634": " reading its pages", "wd:Q7889": " playing it on a console",
+                                   "wd:Q482994": " listening to its tracks", "wd:Q515": " walking through its streets"}}}},
+    "paraphrase": {
+        "instance_of": {"templates": ["Put simply, {x} is", "In plain words, {x} is"], "k": 4, "options": {
+            "wd:Q5": [" a man or a woman"], "wd:Q11424": [" a motion picture"], "wd:Q7725634": [" a book"],
+            "wd:Q7889": [" a game played on computers"], "wd:Q482994": [" a collection of recorded songs"],
+            "wd:Q4830453": [" a company"], "wd:Q3918": [" a place of higher education"], "wd:Q5398426": [" a show on TV"],
+            "wd:Q215380": [" a band"], "wd:Q515": [" a town"], "wd:Q6256": [" a nation"], "wd:Q3624078": [" an independent nation"]}}},
+    "reverse": {"country_of_citizenship": {"cue": "who is a citizen of {t}", "match": "instance_of"},
+                "author": {"cue": "written by {t}", "match": "instance_of"},
+                "country": {"cue": "located in {t}", "match": "instance_of"}},
+    "reverse_templates": ["Of {x} and {y}, the one {c} is", "Between {y} and {x}, the one {c} is"],
+    "comparison": {
+        "country_of_citizenship": {"templates": ["{x} and {y} are citizens of", "By citizenship, {x} and {y} belong to"],
+                                   "candidates": [" the same country", " two different countries"]},
+        "instance_of": {"templates": ["{x} and {y} are", "In Wikidata, {x} and {y} are recorded as"],
+                        "candidates": [" the same kind of thing", " two different kinds of things"]},
+        "country": {"templates": ["{x} and {y} are located in", "Geographically, {x} and {y} lie in"],
+                    "candidates": [" the same country", " two different countries"]}},
+    "negation": {
+        "country_of_citizenship": {"affirm": ["{x} is a citizen of", "{x} holds the citizenship of"],
+                                   "negate": ["{x} is not a citizen of", "{x} does not hold the citizenship of"]},
+        "occupation": {"affirm": ["{x} works as", "By profession, {x} is"],
+                       "negate": ["{x} does not work as", "By profession, {x} is not"]},
+        "country": {"affirm": ["{x} is located in the country of", "{x} is in"],
+                    "negate": ["{x} is not located in the country of", "{x} is not in"]}},
+}
+TRACK_SPECS = {"t5": T5_SPEC, "t4": T4_SPEC, "t7": T7_SPEC, "t8": T8_SPEC}
 
 
 # ---------------------------------------------------------------- build context
