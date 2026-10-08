@@ -1,0 +1,127 @@
+{
+  "set": "oet-snomed",
+  "version": "v1",
+  "built": "2026-10-08",
+  "source": "Zenodo 10.5281/zenodo.10432003 (OET ver4), CC-BY-4.0; Dong, Chen, He, Horrocks, CIKM 2023",
+  "licence": "SNOMED CT-derived (licence held; decision 58): every item and snapshot stays under ~/data/vsa-llm (mode 700); this manifest carries counts and digests only",
+  "releases": {
+    "before": "SNOMED CT US Edition 20140901",
+    "after": "SNOMED CT US Edition 20170301",
+    "shipped_in_zip": "both as OWL (`*-final.owl`) plus the 2014 entity / edge catalogues",
+    "held_locally": "SNOMED CT International 2022-05-31 (RF2 Full + Snapshot) — not needed by the adapter",
+    "missing_for_rebuilding_from_scratch": [
+      "SNOMED CT US Edition 20140901 RF2",
+      "SNOMED CT US Edition 20170301 RF2",
+      "UMLS 2017AA (MedMentions' UMLS)",
+      "MedMentions st21pv"
+    ]
+  },
+  "protocol": "official split: valid-NIL → dev, test-NIL → test (ver4: out-of-KB mentions only in evaluation); OET ranks edges <parent, child> from candidate_edges (child null = leaf position); gold edges in meta.positions",
+  "sets": {
+    "oet-snomed-disease": {
+      "files": {
+        "placement-dev": {
+          "file": "placement-dev.jsonl",
+          "items": 66,
+          "sha256": "10db5b44507dc22847621ddbc34f1f6a21dc11e348e6a5a5e1e88f4d2d208a24"
+        },
+        "placement-test": {
+          "file": "placement-test.jsonl",
+          "items": 48,
+          "sha256": "6987dbcefcadda118be4374db18e6979bec9027c3e413c4fb9bffc618a703c8c"
+        }
+      },
+      "local": "/home/bhux/data/vsa-llm/toolkit-learn/oet-snomed-v1/disease",
+      "concepts": {
+        "dev": 66,
+        "test": 48
+      },
+      "mentions": {
+        "dev": 329,
+        "test": 276
+      },
+      "concepts_in_both_dev_and_test": 20,
+      "note_split": "OET splits mentions, not concepts: test items with meta.also_in_dev=true were also seen in dev; filter them for a concept-disjoint test",
+      "items_with_complex_parent": {
+        "dev": 2,
+        "test": 2
+      },
+      "gold_parents_missing_from_snapshot": 1,
+      "named_from_owl": 114,
+      "snapshot": {
+        "nodes": {
+          "file": "nodes.jsonl.gz",
+          "items": 65725,
+          "sha256": "a805e05a4f7529ee4c889dd7b5872a97bdbb6efbe8699fbc92e4171c48d60ba4"
+        },
+        "edges": {
+          "file": "edges.jsonl.gz",
+          "items": 173757,
+          "sha256": "0d8a165bc5f16759b071aca1cfc3740bfddcdead7e21ef1b49126bc22823321c"
+        },
+        "node_kinds": {
+          "complex": 825,
+          "concept": 64900
+        },
+        "candidate_edges": {
+          "file": "candidate_edges.jsonl.gz",
+          "items": 237826,
+          "sha256": "369cedcf63922d48b0b6ae6634282fbfce43117f71dedae594f29e929e55adf8"
+        }
+      }
+    },
+    "oet-snomed-cpp": {
+      "files": {
+        "placement-dev": {
+          "file": "placement-dev.jsonl",
+          "items": 143,
+          "sha256": "e0ac3ad7c87a24ef0eb250779c8270150dcfe0ed79f65a572f57a55e727ed4e5"
+        },
+        "placement-test": {
+          "file": "placement-test.jsonl",
+          "items": 97,
+          "sha256": "5a8b134cdb646a86cbee8889c5ccdbceff492200439f3cb843ab04884acc3401"
+        }
+      },
+      "local": "/home/bhux/data/vsa-llm/toolkit-learn/oet-snomed-v1/cpp",
+      "concepts": {
+        "dev": 143,
+        "test": 97
+      },
+      "mentions": {
+        "dev": 568,
+        "test": 432
+      },
+      "concepts_in_both_dev_and_test": 38,
+      "note_split": "OET splits mentions, not concepts: test items with meta.also_in_dev=true were also seen in dev; filter them for a concept-disjoint test",
+      "items_with_complex_parent": {
+        "dev": 7,
+        "test": 7
+      },
+      "gold_parents_missing_from_snapshot": 3,
+      "named_from_owl": 240,
+      "snapshot": {
+        "nodes": {
+          "file": "nodes.jsonl.gz",
+          "items": 178614,
+          "sha256": "b6d0f1218b5f34568b6a6ae7f868d8b74b36daa5c112d9321d9f5358a9391065"
+        },
+        "edges": {
+          "file": "edges.jsonl.gz",
+          "items": 452075,
+          "sha256": "e86b17be867b094589016730bf29fcf971cce79982e6af187366c83d52b7fc8d"
+        },
+        "node_kinds": {
+          "complex": 2719,
+          "concept": 175895
+        },
+        "candidate_edges": {
+          "file": "candidate_edges.jsonl.gz",
+          "items": 625994,
+          "sha256": "5fcd84b456c90a8f7f6c69f64b0fd0e8ddf1ceab765c1a27688d9f9957cf2279"
+        }
+      }
+    }
+  },
+  "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data oet"
+}

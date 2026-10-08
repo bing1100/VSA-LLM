@@ -1,0 +1,108 @@
+{
+  "set": "medconceptsqa-icd10cm",
+  "version": "v1",
+  "built": "2026-10-08",
+  "source": "huggingface.co/datasets/ofir408/MedConceptsQA@98c30d83762e51a397c9a7b0eeee6722e751da17 (icd10cm_easy/medium/hard)",
+  "licence": "Apache-2.0 (MedConceptsQA, Shoham & Rappoport 2024); modified: converted to the ranking format",
+  "committed": {
+    "dev": {
+      "file": "dev.jsonl",
+      "items": 12,
+      "sha256": "835166b526875410e9f8a85af62ace834e098e768aa6cdd957b80859639fff4b"
+    },
+    "test-sample": {
+      "file": "test-sample.jsonl",
+      "items": 1511,
+      "sha256": "c20b6a0771f970ddb1ed7bc0da6512d11ef339dfbed38a98d3e3494976f61236"
+    }
+  },
+  "local": {
+    "path": "/home/bhux/data/vsa-llm/toolkit-learn/medconceptsqa-icd10cm-v1",
+    "files": {
+      "easy-dev": {
+        "file": "easy-dev.jsonl.gz",
+        "items": 4,
+        "sha256": "1911e7191d56bf2f176b86885b91c58453087f4455906aec18f84bf1589df613"
+      },
+      "easy-test": {
+        "file": "easy-test.jsonl.gz",
+        "items": 94574,
+        "sha256": "8f08074279607fb3391be9e126b7908ce56247eb4150a50ccb68cef93f505286"
+      },
+      "medium-dev": {
+        "file": "medium-dev.jsonl.gz",
+        "items": 4,
+        "sha256": "9ab3802aa0e6c7cd9ea3a72b3979e7a239e3a75b26c2e4f88578f83d6b6baf55"
+      },
+      "medium-test": {
+        "file": "medium-test.jsonl.gz",
+        "items": 81703,
+        "sha256": "afb8601c51234e0d6e3143ee21786f43f907115f623279f76fc3dcf18447b7ea"
+      },
+      "hard-dev": {
+        "file": "hard-dev.jsonl.gz",
+        "items": 4,
+        "sha256": "67f589c90c71ccb5bbcbbb158293ed0dc8267f01f130c972ea6b7522eedec84a"
+      },
+      "hard-test": {
+        "file": "hard-test.jsonl.gz",
+        "items": 87979,
+        "sha256": "afab0fcd8b8a671309f8425a8fd2a0263bbab47a1592e9e93ac83898a0974db4"
+      }
+    }
+  },
+  "stats": {
+    "easy-dev": {
+      "rows": 4,
+      "items": 4,
+      "skipped": {},
+      "codes_not_in_fy2026": 0,
+      "codes_not_in_fy2027": 0
+    },
+    "easy-test": {
+      "rows": 94576,
+      "items": 94574,
+      "skipped": {
+        "duplicate options": 2
+      },
+      "codes_not_in_fy2026": 263,
+      "codes_not_in_fy2027": 284
+    },
+    "medium-dev": {
+      "rows": 4,
+      "items": 4,
+      "skipped": {},
+      "codes_not_in_fy2026": 0,
+      "codes_not_in_fy2027": 0
+    },
+    "medium-test": {
+      "rows": 81753,
+      "items": 81703,
+      "skipped": {
+        "duplicate options": 50
+      },
+      "codes_not_in_fy2026": 143,
+      "codes_not_in_fy2027": 160
+    },
+    "hard-dev": {
+      "rows": 4,
+      "items": 4,
+      "skipped": {},
+      "codes_not_in_fy2026": 0,
+      "codes_not_in_fy2027": 0
+    },
+    "hard-test": {
+      "rows": 88009,
+      "items": 87979,
+      "skipped": {
+        "duplicate options": 30
+      },
+      "codes_not_in_fy2026": 266,
+      "codes_not_in_fy2027": 287
+    }
+  },
+  "sample_rule": "sha256('toolkit-learn-v1:mcqa:<question_id>') < 500/n per level (≈ 500 per level)",
+  "format": "ranking item: context = question line; options = option1..4; answer = index of answer_id; meta.mcq_prompt = the original lettered question",
+  "fy2027_overlap": "MedConceptsQA predates FY2027: none of the H3 new codes can occur (see codes_not_in_fy2027 for codes deleted since)",
+  "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data medconceptsqa"
+}

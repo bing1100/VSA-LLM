@@ -1,0 +1,270 @@
+{
+  "set": "taxonomy-expansion",
+  "version": "v1",
+  "built": "2026-10-08",
+  "sources": "TaxoExpan Google Drive folder (README.txt, wordnet_{noun,verb}.{terms,taxo}, dataset pickles); TMN uses the same files (identical node/edge counts) — its split files are unavailable",
+  "licence": "TaxoExpan code Apache-2.0; data: WordNet 3.0 (Princeton WordNet licence) + SemEval-2016 Task 14 lemmas (Wiktionary-derived, CC BY-SA) — no explicit data licence, so items stay local; counts and digests here",
+  "unavailable": {
+    "tmn-wordnet-noun": "https://drive.google.com/file/d/1S6ijwV7phg6ZlJbUgSZjPuJTcN98bWwe (TMN README) → HTTP 404",
+    "tmn-wordnet-verb": "https://drive.google.com/file/d/13LqeaaPq6vS8ah-dgkJO2eWGp107eSfT (TMN README) → HTTP 404"
+  },
+  "skipped": {
+    "MAG-CS / MAG-Full / MAG-Psy": "Microsoft Academic Graph retired (decision 63 instruction: skip)"
+  },
+  "leakage_note": "siblings of test nodes in the training taxonomy are allowed by both protocols and reported; every WordNet synset of the TMN-protocol sets is also a concept of the repository's WordNet track (models trained there have seen its edges)",
+  "sets": {
+    "taxoexpan-semeval-noun": {
+      "protocol": "taxoexpan",
+      "official_split": true,
+      "split_source": "TaxoExpan dataset pickle (train/validation/test_node_ids)",
+      "nodes": 83073,
+      "edges": 76812,
+      "split_sizes": {
+        "train": 82115,
+        "validation": 349,
+        "test": 516
+      },
+      "split_sha256": "2356f273d4131aeac9fbdb7b417ef03841a48db4c22a3619efd0b3a3007065df",
+      "files": {
+        "placement-dev": {
+          "file": "placement-dev.jsonl",
+          "items": 349,
+          "sha256": "3b1fa6cc6b2cda0fe513004cbf91b633d54d021959b28ecca637b85d1b9f7810"
+        },
+        "placement-test": {
+          "file": "placement-test.jsonl",
+          "items": 516,
+          "sha256": "8f0375cd94452ed181608b522610dd16056d6b88c3b4cb6aee0ee2943a89f24f"
+        }
+      },
+      "local": "/home/bhux/data/vsa-llm/toolkit-learn/taxonomy-expansion-v1/taxoexpan-semeval-noun",
+      "snapshot": {
+        "nodes": {
+          "file": "nodes.jsonl.gz",
+          "items": 82115,
+          "sha256": "2411b3bc7396d7813d68e6966f697d26ccda64d7de04d88cb1f7c6020678de19"
+        },
+        "edges": {
+          "file": "edges.jsonl.gz",
+          "items": 75850,
+          "sha256": "a1d24a43c8239e0397840802187c5e759ba20c087c369c9c20631e777e9d0de8"
+        }
+      },
+      "leakage": {
+        "dev": {
+          "items": 349,
+          "with_training_sibling": 273,
+          "share_with_training_sibling": 0.7822,
+          "mean_training_siblings": 10.89,
+          "name_equals_training_node": 56,
+          "gold_parent_bridged": 0,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 0,
+          "leaves": 349
+        },
+        "test": {
+          "items": 516,
+          "with_training_sibling": 408,
+          "share_with_training_sibling": 0.7907,
+          "mean_training_siblings": 11.39,
+          "name_equals_training_node": 68,
+          "gold_parent_bridged": 0,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 0,
+          "leaves": 516
+        }
+      },
+      "with_definition": 0
+    },
+    "tmn-wordnet-noun": {
+      "protocol": "tmn",
+      "official_split": false,
+      "split_source": "re-drawn with seed 20210202 (TMN's own split files unavailable: Google Drive 404)",
+      "nodes": 83073,
+      "edges": 76812,
+      "split_sizes": {
+        "train": 81073,
+        "validation": 1000,
+        "test": 1000
+      },
+      "split_sha256": "aab500d598cd02fffde60ed1078e0dcce132a4c0b59dfd34af56867bc5311238",
+      "files": {
+        "placement-dev": {
+          "file": "placement-dev.jsonl",
+          "items": 1000,
+          "sha256": "22ea50162e602e0145f0c5d08bac2501da81de9cb1ee5595c9a0e291c99936a3"
+        },
+        "placement-test": {
+          "file": "placement-test.jsonl",
+          "items": 1000,
+          "sha256": "82cab64c38313fe6e7c02db6813dc266dc7c2422d63860ed824d1596cfa2812e"
+        }
+      },
+      "local": "/home/bhux/data/vsa-llm/toolkit-learn/taxonomy-expansion-v1/tmn-wordnet-noun",
+      "snapshot": {
+        "nodes": {
+          "file": "nodes.jsonl.gz",
+          "items": 81073,
+          "sha256": "38c7ba7dca78dbc4390e567a275c76496314c2a5370927b4803656eeca674a01"
+        },
+        "edges": {
+          "file": "edges.jsonl.gz",
+          "items": 74878,
+          "sha256": "ef9fe90c66a202ea51cefe8ebd017d8960cc9d6394e8a15f88827de4cee05dda"
+        }
+      },
+      "leakage": {
+        "dev": {
+          "items": 1000,
+          "with_training_sibling": 932,
+          "share_with_training_sibling": 0.932,
+          "mean_training_siblings": 37.11,
+          "name_equals_training_node": 272,
+          "gold_parent_bridged": 34,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 979,
+          "leaves": 799
+        },
+        "test": {
+          "items": 1000,
+          "with_training_sibling": 918,
+          "share_with_training_sibling": 0.918,
+          "mean_training_siblings": 32.86,
+          "name_equals_training_node": 290,
+          "gold_parent_bridged": 29,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 990,
+          "leaves": 788
+        }
+      },
+      "with_definition": 1969
+    },
+    "taxoexpan-semeval-verb": {
+      "protocol": "taxoexpan",
+      "official_split": true,
+      "split_source": "TaxoExpan dataset pickle (train/validation/test_node_ids)",
+      "nodes": 13936,
+      "edges": 13408,
+      "split_sizes": {
+        "train": 13767,
+        "validation": 51,
+        "test": 84
+      },
+      "split_sha256": "922c6609980f4bcff057bb92944cf4a52bacfd369f4c564a85cdb9fa5e8e160a",
+      "files": {
+        "placement-dev": {
+          "file": "placement-dev.jsonl",
+          "items": 51,
+          "sha256": "b8560d5a13c5bd8f08d90dd97148da8326cdad69ae2e908194ee96111c0d356c"
+        },
+        "placement-test": {
+          "file": "placement-test.jsonl",
+          "items": 84,
+          "sha256": "eee5ff8f0d02a08b8a88d1b86cd379b21e47d05ff7f9f2b26aba446113523335"
+        }
+      },
+      "local": "/home/bhux/data/vsa-llm/toolkit-learn/taxonomy-expansion-v1/taxoexpan-semeval-verb",
+      "snapshot": {
+        "nodes": {
+          "file": "nodes.jsonl.gz",
+          "items": 13767,
+          "sha256": "5bc7a3d33fe39b4ded1a34fe474716e7ba7b6d25531d1254c8497530619e4870"
+        },
+        "edges": {
+          "file": "edges.jsonl.gz",
+          "items": 13239,
+          "sha256": "844b1a603dff767fc68da11309a05362e82b7978a582704f06f0d5bb034c8508"
+        }
+      },
+      "leakage": {
+        "dev": {
+          "items": 51,
+          "with_training_sibling": 34,
+          "share_with_training_sibling": 0.6667,
+          "mean_training_siblings": 7.61,
+          "name_equals_training_node": 13,
+          "gold_parent_bridged": 0,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 0,
+          "leaves": 51
+        },
+        "test": {
+          "items": 84,
+          "with_training_sibling": 58,
+          "share_with_training_sibling": 0.6905,
+          "mean_training_siblings": 12.45,
+          "name_equals_training_node": 12,
+          "gold_parent_bridged": 0,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 0,
+          "leaves": 84
+        }
+      },
+      "with_definition": 0
+    },
+    "tmn-wordnet-verb": {
+      "protocol": "tmn",
+      "official_split": false,
+      "split_source": "re-drawn with seed 20210202 (TMN's own split files unavailable: Google Drive 404)",
+      "nodes": 13936,
+      "edges": 13408,
+      "split_sizes": {
+        "train": 11936,
+        "validation": 1000,
+        "test": 1000
+      },
+      "split_sha256": "406c95f751564f399b69c029eb9b9ae29d87fff466e390e0c3476fa4f7d37d03",
+      "files": {
+        "placement-dev": {
+          "file": "placement-dev.jsonl",
+          "items": 1000,
+          "sha256": "513914ccaea27243205e26a5717c44869d28bee924688bd9e3329b2d7dc35137"
+        },
+        "placement-test": {
+          "file": "placement-test.jsonl",
+          "items": 1000,
+          "sha256": "34cb5863e6c7ea4e6a694a2c9c0be6174963117223b5cea0c8ad8f34cb577bb1"
+        }
+      },
+      "local": "/home/bhux/data/vsa-llm/toolkit-learn/taxonomy-expansion-v1/tmn-wordnet-verb",
+      "snapshot": {
+        "nodes": {
+          "file": "nodes.jsonl.gz",
+          "items": 11936,
+          "sha256": "b844535b4db96cb2e5e95f6d6ccb7e306c3b74a22651a0b204185bb35ec34697"
+        },
+        "edges": {
+          "file": "edges.jsonl.gz",
+          "items": 11403,
+          "sha256": "082442689bf435260126e3d43d246c14d8cf55eb8fd6011b0bba4df1274fc71e"
+        }
+      },
+      "leakage": {
+        "dev": {
+          "items": 1000,
+          "with_training_sibling": 881,
+          "share_with_training_sibling": 0.881,
+          "mean_training_siblings": 27.62,
+          "name_equals_training_node": 620,
+          "gold_parent_bridged": 113,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 990,
+          "leaves": 774
+        },
+        "test": {
+          "items": 1000,
+          "with_training_sibling": 869,
+          "share_with_training_sibling": 0.869,
+          "mean_training_siblings": 20.63,
+          "name_equals_training_node": 646,
+          "gold_parent_bridged": 120,
+          "no_gold_parent": 0,
+          "wordnet_synsets": 986,
+          "leaves": 760
+        }
+      },
+      "with_definition": 1976
+    }
+  },
+  "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data taxo"
+}
