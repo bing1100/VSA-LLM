@@ -1,0 +1,98 @@
+{
+  "track": "clinical ROOD (SNOMED CT + MIMIC-III; ROOD patients and mentions excluded)",
+  "rule": {
+    "salt": "t1c-rood-v1",
+    "bins": [
+      -12,
+      -10,
+      -8
+    ],
+    "quotas": [
+      24,
+      16,
+      8
+    ],
+    "min_admissions": 10,
+    "concept_disjoint": true,
+    "max_containing": 5,
+    "exclusion": "patient"
+  },
+  "eligibility": {
+    "framed_codes": 5589,
+    "t1cf_trained_not_heldout": 5033,
+    "with_at_least_10_admissions": 2084,
+    "and_concept_disjoint": 1596,
+    "and_hub_free": 1257,
+    "eligible_by_bin": {
+      "[-14,-12)": 1,
+      "[-12,-10)": 538,
+      "[-10,-8)": 519,
+      "[-8,-6)": 173,
+      "[-6,-4)": 26
+    }
+  },
+  "chosen": {
+    "codes": 48,
+    "per_bin": {
+      "[-12,-10)": {
+        "eligible": 538,
+        "chosen": 24
+      },
+      "[-10,-8)": {
+        "eligible": 519,
+        "chosen": 16
+      },
+      "[-8,-6)": {
+        "eligible": 173,
+        "chosen": 8
+      }
+    },
+    "sha256": "cb7eb61c85ed40c880724439777c960dfb19edaf35e1271dafb25aea345708f6",
+    "admissions_per_code": {
+      "min": 10,
+      "median": 28.0,
+      "max": 1078,
+      "sum": 5734
+    },
+    "t1cf_training_positives_of_rood_codes": 4861,
+    "one_to_many_maps": 10,
+    "member_concepts": 80
+  },
+  "exclusion_mimic3": {
+    "admissions_with_diagnoses": 58929,
+    "patients": 46517,
+    "rood_patients": 4888,
+    "rood_patient_share": 0.10507986327579165,
+    "admissions_with_rood_code": 5483,
+    "admissions_of_rood_patients": 8661,
+    "rood_admissions_with_rood_principal_diagnosis": 499
+  },
+  "exclusion_t1cf": {
+    "admissions_of_rood_patients": {
+      "train": 7215,
+      "dev": 451,
+      "eval": 743
+    },
+    "admissions_with_rood_code": {
+      "train": 4529,
+      "dev": 272,
+      "eval": 533
+    },
+    "train_dev_admissions_removed_share": 0.16102335741892118,
+    "train_side_patients_removed_share": 0.11559350428274204
+  },
+  "concept_holdout": {
+    "member_concepts": 80,
+    "member_concepts_without_alias": 2,
+    "seed_entries": 78,
+    "closure_entries": 123,
+    "held_concepts": 125,
+    "sha256": "34fc579eec1e1658654953dc6130cbb63e955be64a84b7ca0d383f2187fdcfc2"
+  },
+  "diagnoses": {
+    "rows": 651047,
+    "rows_without_admission_or_code": 47
+  },
+  "seconds": 35.1,
+  "data_root": "/home/bhux/data/vsa-llm/t1c/rood-v1"
+}

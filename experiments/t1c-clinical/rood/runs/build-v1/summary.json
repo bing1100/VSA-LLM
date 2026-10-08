@@ -1,0 +1,407 @@
+{
+  "track": "clinical ROOD (SNOMED CT + MIMIC-III; ROOD patients and mentions excluded)",
+  "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+  "data_root": "/home/bhux/data/vsa-llm/t1c/rood-v1/lm",
+  "holdout": {
+    "concepts": 125,
+    "entries": 123,
+    "aliases": 268,
+    "sha256": "34fc579eec1e1658654953dc6130cbb63e955be64a84b7ca0d383f2187fdcfc2",
+    "mention_filter_aliases": 268,
+    "mention_filter_sha256": "4c452dab72b9d9c51f0aeffc830a536f95194dfb0a72debf77ce3e463e777e84"
+  },
+  "alias_table_sha256": "fbd7fc7b88b187b0473aeb15707b746c7724802fb34b18cd856b5ae90f3e2dd3",
+  "mix": {
+    "chars_per_token": {
+      "mimic": 3.275138678676575,
+      "general": 4.579549140644206
+    }
+  },
+  "corpora": {
+    "train": {
+      "tokens": 130005024,
+      "documents": 181832,
+      "spans": 6372565,
+      "skipped_documents": 26,
+      "alias_table_sha256": "a5cea58c9838fcff8687cc9f965757a048b153533a3be52280c2d42e0fe66045"
+    },
+    "eval-rood": {
+      "tokens": 4983507,
+      "documents": 1039,
+      "spans": 321266,
+      "skipped_documents": 0,
+      "alias_table_sha256": "fbd7fc7b88b187b0473aeb15707b746c7724802fb34b18cd856b5ae90f3e2dd3"
+    },
+    "eval-general": {
+      "tokens": 4998786,
+      "documents": 5000,
+      "spans": 207825,
+      "skipped_documents": 0,
+      "alias_table_sha256": "fbd7fc7b88b187b0473aeb15707b746c7724802fb34b18cd856b5ae90f3e2dd3"
+    },
+    "eval-mimic": {
+      "tokens": 22352802,
+      "documents": 39993,
+      "spans": 1311829,
+      "skipped_documents": 7,
+      "alias_table_sha256": "fbd7fc7b88b187b0473aeb15707b746c7724802fb34b18cd856b5ae90f3e2dd3"
+    }
+  },
+  "source_shares": {
+    "train": {
+      "exact": true,
+      "documents": {
+        "mimic": 120846,
+        "general": 60986
+      },
+      "tokens": {
+        "mimic": 65003052,
+        "general": 65001972
+      },
+      "share": {
+        "mimic": 0.5000041536856299,
+        "general": 0.4999958463143701
+      }
+    }
+  },
+  "ontology_sha256": "c1289035fda28d10219e731060b579a73fc8b1ca9dfdf381a18f4dea0ea1ec5c",
+  "linked_entries_in_train": 29216,
+  "feasibility": {
+    "criteria": {
+      "min_occurrences": 1000,
+      "min_entries": 20,
+      "exploratory_occurrences": 500,
+      "exploratory_entries": 10,
+      "trainer_windows": 2048,
+      "window_length": 1024
+    },
+    "by_split": {
+      "eval-rood": [
+        {
+          "min_subtokens": 2,
+          "tokens": 4983507,
+          "windows_for_whole_split": 4865,
+          "strata": {
+            "after_heldout": {
+              "split": {
+                "occurrences": 1560,
+                "entries": 29,
+                "entries_5plus": 16
+              },
+              "verdict_split": "feasible (entries counted with \u2265 1 occurrence)",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 676,
+                "entries": 21,
+                "entries_5plus": 12
+              },
+              "verdict_trainer_windows": "exploratory-feasible",
+              "windows_needed": null
+            },
+            "after_unseen": {
+              "split": {
+                "occurrences": 581,
+                "entries": 416,
+                "entries_5plus": 10
+              },
+              "verdict_split": "exploratory-feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 266,
+                "entries": 223,
+                "entries_5plus": 1
+              },
+              "verdict_trainer_windows": "infeasible",
+              "windows_needed": null
+            },
+            "after_rare_seen": {
+              "split": {
+                "occurrences": 2850,
+                "entries": 1512,
+                "entries_5plus": 96
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 1200,
+                "entries": 847,
+                "entries_5plus": 13
+              },
+              "verdict_trainer_windows": "feasible (entries counted with \u2265 1 occurrence)",
+              "windows_needed": 3072
+            },
+            "after_len3plus": {
+              "split": {
+                "occurrences": 110330,
+                "entries": 6184,
+                "entries_5plus": 2321
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 46299,
+                "entries": 4528,
+                "entries_5plus": 1373
+              },
+              "verdict_trainer_windows": "feasible",
+              "windows_needed": 1024
+            }
+          },
+          "linked_spans_split": 184837
+        },
+        {
+          "min_subtokens": 3,
+          "tokens": 4983507,
+          "windows_for_whole_split": 4865,
+          "strata": {
+            "after_heldout": {
+              "split": {
+                "occurrences": 1540,
+                "entries": 29,
+                "entries_5plus": 16
+              },
+              "verdict_split": "feasible (entries counted with \u2265 1 occurrence)",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 670,
+                "entries": 21,
+                "entries_5plus": 11
+              },
+              "verdict_trainer_windows": "exploratory-feasible",
+              "windows_needed": null
+            },
+            "after_unseen": {
+              "split": {
+                "occurrences": 643,
+                "entries": 458,
+                "entries_5plus": 10
+              },
+              "verdict_split": "exploratory-feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 286,
+                "entries": 241,
+                "entries_5plus": 1
+              },
+              "verdict_trainer_windows": "infeasible",
+              "windows_needed": null
+            },
+            "after_rare_seen": {
+              "split": {
+                "occurrences": 2999,
+                "entries": 1607,
+                "entries_5plus": 96
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 1271,
+                "entries": 909,
+                "entries_5plus": 12
+              },
+              "verdict_trainer_windows": "feasible (entries counted with \u2265 1 occurrence)",
+              "windows_needed": 3072
+            },
+            "after_len3plus": {
+              "split": {
+                "occurrences": 110330,
+                "entries": 6184,
+                "entries_5plus": 2321
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 46299,
+                "entries": 4528,
+                "entries_5plus": 1373
+              },
+              "verdict_trainer_windows": "feasible",
+              "windows_needed": 1024
+            }
+          },
+          "linked_spans_split": 110330
+        }
+      ],
+      "eval-mimic": [
+        {
+          "min_subtokens": 2,
+          "tokens": 22352802,
+          "windows_for_whole_split": 21827,
+          "strata": {
+            "after_heldout": {
+              "split": {
+                "occurrences": 269,
+                "entries": 14,
+                "entries_5plus": 9
+              },
+              "verdict_split": "infeasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 18,
+                "entries": 6,
+                "entries_5plus": 1
+              },
+              "verdict_trainer_windows": "infeasible",
+              "windows_needed": null
+            },
+            "after_unseen": {
+              "split": {
+                "occurrences": 1418,
+                "entries": 813,
+                "entries_5plus": 33
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 122,
+                "entries": 103,
+                "entries_5plus": 1
+              },
+              "verdict_trainer_windows": "infeasible",
+              "windows_needed": 16384
+            },
+            "after_rare_seen": {
+              "split": {
+                "occurrences": 6632,
+                "entries": 2653,
+                "entries_5plus": 327
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 669,
+                "entries": 527,
+                "entries_5plus": 2
+              },
+              "verdict_trainer_windows": "exploratory-feasible",
+              "windows_needed": 6144
+            },
+            "after_len3plus": {
+              "split": {
+                "occurrences": 377116,
+                "entries": 8901,
+                "entries_5plus": 4242
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 35564,
+                "entries": 3913,
+                "entries_5plus": 1198
+              },
+              "verdict_trainer_windows": "feasible",
+              "windows_needed": 1024
+            }
+          },
+          "linked_spans_split": 691843
+        },
+        {
+          "min_subtokens": 3,
+          "tokens": 22352802,
+          "windows_for_whole_split": 21827,
+          "strata": {
+            "after_heldout": {
+              "split": {
+                "occurrences": 269,
+                "entries": 14,
+                "entries_5plus": 9
+              },
+              "verdict_split": "infeasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 18,
+                "entries": 6,
+                "entries_5plus": 1
+              },
+              "verdict_trainer_windows": "infeasible",
+              "windows_needed": null
+            },
+            "after_unseen": {
+              "split": {
+                "occurrences": 1474,
+                "entries": 889,
+                "entries_5plus": 32
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 129,
+                "entries": 110,
+                "entries_5plus": 1
+              },
+              "verdict_trainer_windows": "infeasible",
+              "windows_needed": 21827
+            },
+            "after_rare_seen": {
+              "split": {
+                "occurrences": 6822,
+                "entries": 2802,
+                "entries_5plus": 328
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 692,
+                "entries": 554,
+                "entries_5plus": 2
+              },
+              "verdict_trainer_windows": "exploratory-feasible",
+              "windows_needed": 6144
+            },
+            "after_len3plus": {
+              "split": {
+                "occurrences": 377116,
+                "entries": 8901,
+                "entries_5plus": 4242
+              },
+              "verdict_split": "feasible",
+              "trainer_windows": {
+                "windows": 2048,
+                "occurrences": 35564,
+                "entries": 3913,
+                "entries_5plus": 1198
+              },
+              "verdict_trainer_windows": "feasible",
+              "windows_needed": 1024
+            }
+          },
+          "linked_spans_split": 377116
+        }
+      ]
+    }
+  },
+  "leakage_audit": {
+    "training_spans_of_heldout_entries": 0,
+    "stream_counts": {
+      "train_notes": {
+        "yielded": 122109,
+        "dropped_excluded_subject": 30006,
+        "dropped_by_filter": 392
+      },
+      "train_general": {
+        "yielded": 61699,
+        "dropped_by_filter": 51
+      }
+    },
+    "decoded_training_corpus": {
+      "documents": 181832,
+      "documents_mentioning": 0,
+      "mentions": 0
+    },
+    "note_identity": {
+      "rood_patient_training_side_notes": 372399,
+      "rood_note_texts": 361994,
+      "rood_note_texts_shared_with_other_patients": 1437,
+      "rood_only_note_texts_in_training": 0,
+      "shared_note_texts_in_training": 394,
+      "other_patients_note_texts_in_training": 119815
+    },
+    "decoded_eval_rood": {
+      "documents": 1039,
+      "documents_mentioning": 1039,
+      "mentions": 1572
+    }
+  },
+  "leakage_failures": {},
+  "seconds": 534.4
+}

@@ -1,0 +1,58 @@
+{
+  "admissions": {
+    "train": 37694,
+    "dev": 2248,
+    "eval": 4371,
+    "rood": 8409
+  },
+  "evaluation_pool": 12780,
+  "labels": {
+    "trained": 4733,
+    "t1cf_heldout": 382,
+    "rood": 48,
+    "never_trained": 426,
+    "trained_lost_by_exclusion": 252
+  },
+  "total_train_label_occurrences": 418294,
+  "subsets": {
+    "rood_any": 5334,
+    "rood_majority": 13,
+    "rood_primary": 482
+  },
+  "subsets_by_patient_side": {
+    "rood_any": {
+      "train_side": 4801,
+      "eval_side": 533
+    },
+    "rood_majority": {
+      "train_side": 11,
+      "eval_side": 2
+    },
+    "rood_primary": {
+      "train_side": 435,
+      "eval_side": 47
+    }
+  },
+  "rood_codes_per_rood_admission": {
+    "mean": 1.0749906261717286,
+    "max": 4
+  },
+  "rood_positives": {
+    "pool": 5734,
+    "codes_with_10plus_positives": 48
+  },
+  "rood_codes_by_natural_bin": {
+    "[-12,-10)": 24,
+    "[-10,-8)": 16,
+    "[-8,-6)": 8
+  },
+  "leakage_audit": {
+    "train_dev_admissions_with_rood_code": 0,
+    "train_dev_admissions_of_rood_patients": 0,
+    "rood_labels_in_trained_range": 0,
+    "rood_labels_with_training_positive": 0
+  },
+  "rood_sha256": "cb7eb61c85ed40c880724439777c960dfb19edaf35e1271dafb25aea345708f6",
+  "seconds": 3.0,
+  "data_root": "/home/bhux/data/vsa-llm/t1c/rood-v1/coding"
+}
