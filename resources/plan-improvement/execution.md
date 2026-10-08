@@ -1324,9 +1324,14 @@ queue order is decisive first):
 |---|---|---|---|
 | TK-Q | Qwen3-1.7B (LoRA) on real tracks: T4 now; T7 after its Qwen3 relink; T1c (licensed, decision 58 rules) after T1c's SmolLM2 seed-1 report | this session | T4 queued 2026-10-08 |
 | TK-H1 | T7-ROOD: document-exclusion holdout + date split of the records into round 1 / round 2 (for E13); T7 Qwen3 relink; E9 configs | this session (agent) | building |
-| TK-H3L | data for *learn* and H3: MeSH 2025 → 2026 time split (placement items), ICD-10-CM FY2027 new codes (frames from the hierarchy; parent and code↔title items), SNOMED time-split enrichment (Zenodo, licence held), TaxoExpan/TMN WordNet sets | this session (agent) | building |
+| TK-H3L | data for *learn* and H3: MeSH 2025 → 2026 time split (placement items), ICD-10-CM FY2027 new codes (frames from the hierarchy; parent and code↔title items), SNOMED time-split enrichment (Zenodo, licence held), TaxoExpan/TMN WordNet sets | this session (agent) | built 2026-10-08 (`f797622`): `experiments/toolkit-learn/` — MeSH 2025→2026 (179 primary items: 120 descriptors + 59 SCRs; 520 low-evidence; 584 new edges), H3 ICD-10-CM FY2027 (190 billable + 48 headers; 238 placement + 476 choice items), MedConceptsQA (264k, local; 1,511-item frozen sample committed), OET SNOMED 2014→2017 (local, licensed), TaxoExpan official + TMN re-drawn (local; sibling leakage reported); 23 tests. Evaluation policy: on T7-trained models the primary MeSH set excludes the SCRs T7 trained with their gold frames; OET primary = concept-disjoint; TMN re-drawn = secondary, not comparable to published numbers |
 | TK-B | benchmark adapters and a log-prob ranking harness: COMPS-WUGS, ALCUNA, Entity Inferences, reversal (fictitious), LRE relations, BEAR, PopQA; T8 Wikidata-framed track for the Wikidata-entity sets | this session (agent) | building |
 | TK-E13 | the learning cycle (stages 0–5, endpoints L1–L5), on T5 first, then T7-ROOD; frozen 4-bit host + QLoRA baseline; thin `ConceptStore` facade (M2) | this session (agent) | building |
 | TK-L | *learn* redesign: decompose-then-verify with a null-calibrated acceptance test (M3); evaluation on the TK-H3L sets | this session (agent) | building |
-| TK-H2 | T1c-ROOD (MIMIC; decision 58 rules) | peer session's T1c code, coordinated | after the peer confirms |
-| E11 / E12 additions | E11 adds the *write* benchmarks; E12 adds the *read* and *meta* benchmarks | peer session owns E11/E12; adapters from TK-B | coordinated |
+| TK-H2 | T1c-ROOD (MIMIC; decision 58 rules) | this session (vsa-llm-79's packages transferred by the user, 2026-10-08) | after the CPU load of the current builds drops |
+| E11 / E12 additions | E11 adds the *write* benchmarks; E12 adds the *read* and *meta* benchmarks; E12 3b / 3c harnesses (`e12_traces`, `e12_critique`; not started) | this session (transferred from vsa-llm-79) | after TK-B |
+
+**Ownership (user, 2026-10-08 evening).** vsa-llm-79 ended. Its packages now belong to workplace-aa: binding (decisions
+60–61), E11, E12, T1c, T1c-F, WP-UB, the opscreen write-up and the global framing (title, abstract, outline). workplace-aa
+also owns decision 63. workplace-9a owns queue monitoring, R9 except its T1c section, the claims E9 rows, §5.8 and the
+Qwen3.5 block. Commits are path-scoped, and numbers for R9 or the claims go to workplace-9a.
