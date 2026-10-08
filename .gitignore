@@ -52,6 +52,23 @@ experiments/t1c-clinical/icd-frequency/**/*.npy
 experiments/t1c-clinical/icd-frequency/**/*.npz
 experiments/t1c-clinical/icd-frequency/**/*.pt
 experiments/t1c-clinical/icd-frequency/**/*.png
+# T1c-ROOD (decision 63 H2, experiments/t1c-clinical/rood): run folders keep aggregates only, as T1c-F's; the ROOD code
+# list, patients, admissions, concept closure, label tables, corpora, scores and per-code results live under
+# ~/data/vsa-llm/t1c/rood-v1/ and are also kept out of git here if misplaced.
+experiments/t1c-clinical/rood/runs/**
+!experiments/t1c-clinical/rood/runs/**/
+!experiments/t1c-clinical/rood/runs/*/summary.json
+!experiments/t1c-clinical/rood/runs/*/metrics.json
+!experiments/t1c-clinical/rood/runs/*/endpoints.json
+!experiments/t1c-clinical/rood/runs/*/report.md
+!experiments/t1c-clinical/rood/runs/*/manifest.json
+!experiments/t1c-clinical/rood/runs/*/resolved_config.yaml
+experiments/t1c-clinical/rood/**/*.npy
+experiments/t1c-clinical/rood/**/*.npz
+experiments/t1c-clinical/rood/**/*.pt
+experiments/t1c-clinical/rood/**/*.png
+experiments/t1c-clinical/rood/**/*.txt
+experiments/t1c-clinical/rood/**/*.tsv
 
 # TK-H3L learn data (decision 63): SNOMED-, UMLS- and WordNet/Wiktionary-derived items and the before snapshots live under
 # ~/data/vsa-llm/toolkit-learn/ (decision 58 for the licensed ones); the repository keeps manifests (counts, sha256) only.

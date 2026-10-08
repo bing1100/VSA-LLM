@@ -85,6 +85,13 @@ def data_root(config: dict[str, Any]) -> Path:
     return private_dir(Path(config["paths"]["data_root"]))
 
 
+def base_root(config: dict[str, Any]) -> Path:
+    """Where the shared inputs are read from: `paths.base_root` (opt-in; T1c-ROOD reads T1c-F's tokens, TransE vectors
+    and P0 states from there, read-only) or, by default, the data root itself."""
+    base = config["paths"].get("base_root")
+    return Path(base).expanduser() if base else data_root(config)
+
+
 def licensed_root(config: dict[str, Any]) -> Path:
     return Path(config["_t1c"]["paths"]["licensed_root"]).expanduser()
 
@@ -722,8 +729,16 @@ def states_dir(config: dict[str, Any], encoder: str) -> Path:
     return data_root(config) / "states" / encoder
 
 
+def resolve_states_dir(config: dict[str, Any], encoder: str) -> Path:
+    """The encoder's states: under the data root, else (opt-in `paths.base_root`) under the base root."""
+    own = states_dir(config, encoder)
+    if (own / "meta.json").exists() or not config["paths"].get("base_root"):
+        return own
+    return base_root(config) / "states" / encoder
+
+
 def open_store(config: dict[str, Any], encoder: str) -> ic.SegmentStore:
-    folder = states_dir(config, encoder)
+    folder = resolve_states_dir(config, encoder)
     meta = json.loads((folder / "meta.json").read_text())
     if not meta.get("complete"):
         raise RuntimeError(f"states of {encoder} are incomplete: run the encode stage (with --resume) first")
@@ -737,11 +752,10 @@ def run_encode(config: dict[str, Any], encoder_name: str, *, pretrained: str | N
                tokens_dir: str = "tokens") -> dict[str, Any]:
     from vsa_embed.provenance import git_state
     git_at_start = git_state()
-    root = data_root(config)
     text_cfg, enc_cfg = config["text"], config["encode"]
     chunk, segment = int(text_cfg["chunk_tokens"]), int(text_cfg["segment_tokens"])
-    tokens = load_tokens(root / tokens_dir / "admissions")
-    titles = load_tokens(root / tokens_dir / "titles")
+    tokens = load_tokens(base_root(config) / tokens_dir / "admissions")     # the data root unless `paths.base_root`
+    titles = load_tokens(base_root(config) / tokens_dir / "titles")
     n = tokens["offsets"].size - 1 if limit is None else min(limit, tokens["offsets"].size - 1)
     if limit is not None:
         tokens = {**tokens, "offsets": tokens["offsets"][:n + 1]}
@@ -936,10 +950,14 @@ def run_train(config: dict[str, Any], encoder: str, seed: int, *, conditions: Se
     train_labels = np.arange(n_trained)
     positives_per_adm = np.mean([np.sum(l < n_trained) for l in (adm_labels[a] for a in train_adm)])
     prior = float(positives_per_adm / n_trained)
-    folder_states = states_dir(config, encoder)
+    folder_states = resolve_states_dir(config, encoder)
     titles = np.load(folder_states / "titles.npy") if "title" in conditions else None
-    kge_path = root / "kge" / f"transe-d{config['kge']['dimension']}.pt"
+    kge_path = base_root(config) / "kge" / f"transe-d{config['kge']['dimension']}.pt"
     transe = torch.load(kge_path, weights_only=False)["vectors"] if "transe" in conditions else None
+    if "source_index" in labels:                  # opt-in (T1c-ROOD): a reordered label space; titles and TransE rows
+        order = np.asarray(labels["source_index"], dtype=np.int64)     # were computed in the base (T1c-F) label order
+        titles = titles[order] if titles is not None else None
+        transe = transe[torch.as_tensor(order)] if transe is not None else None
     composer = load_c5_composer(c5_run, Path(config["paths"]["ontology_pt"]).expanduser()) if "composed_c5" in conditions else None
     sources = build_sources(conditions, labels, config=config, seed=seed, title_vectors=titles, transe_vectors=transe,
                             c5_composer=composer)
@@ -976,11 +994,20 @@ def run_train(config: dict[str, Any], encoder: str, seed: int, *, conditions: Se
         pairs_by_row[int(r)].append(k)
     all_ids = np.arange(n_labels)
     metrics: dict[str, Any] = {}
-    for name, head in heads.items():
+    # Opt-in (T1c-ROOD, `head.free_fallbacks`): the trained `free` head is also scored with the rows of never-trained
+    # labels replaced by a fallback (`free_mean`, `free_zero`; no extra training: those rows never enter the loss).
+    scored: list[tuple[str, Any, str]] = [(name, head, name) for name, head in heads.items()]
+    if "free" in heads:
+        scored += [(f"free_{mode}", ic.with_fallback(heads["free"], n_trained, mode), "free")
+                   for mode in config["head"].get("free_fallbacks") or []]
+    midranks = bool(config.get("analysis", {}).get("midranks"))      # opt-in: tie-aware ranks as well
+    for name, head, trained_as in scored:
         scores_eval = ic.score_admissions(head, store, eval_adm, all_ids, batch=32, device=device)
         untrained_scores = np.zeros((all_adm.size, untrained.size), dtype=np.float32)
         general = np.zeros(pair_rows.size, dtype=np.int64)
         zero_shot = np.zeros(pair_rows.size, dtype=np.int64)
+        mid = {"general_mid": np.zeros(pair_rows.size, dtype=np.float32),
+               "zero_shot_mid": np.zeros(pair_rows.size, dtype=np.float32)} if midranks else {}
         cursor = {"row": 0}
         subset = torch.as_tensor(untrained, device=device)
 
@@ -993,25 +1020,29 @@ def run_train(config: dict[str, Any], encoder: str, seed: int, *, conditions: Se
                 cols = torch.as_tensor(pair_cols[ks], device=logits.device)
                 general[ks] = ic.ranks_in_rows(logits, rows, cols).cpu().numpy()
                 zero_shot[ks] = ic.ranks_in_rows(logits, rows, cols, subset).cpu().numpy()
+                if mid:
+                    mid["general_mid"][ks] = ic.ranks_in_rows(logits, rows, cols, ties="half").cpu().numpy()
+                    mid["zero_shot_mid"][ks] = ic.ranks_in_rows(logits, rows, cols, subset, ties="half").cpu().numpy()
             cursor["row"] += chunk.size
         ic.score_admissions(head, store, all_adm, all_ids, batch=32, device=device, reduce=reduce)
         cond_dir = private_dir(out_dir / name)
         np.save(cond_dir / "scores_eval.npy", scores_eval)
         np.save(cond_dir / "scores_untrained_all.npy", untrained_scores)
-        np.savez(cond_dir / "ranks_untrained_all.npz", rows=pair_rows, cols=pair_cols, general=general, zero_shot=zero_shot)
+        np.savez(cond_dir / "ranks_untrained_all.npz", rows=pair_rows, cols=pair_cols, general=general, zero_shot=zero_shot,
+                 **mid)
         with torch.no_grad():
             ids = torch.arange(n_labels, device=device)
             head.eval()
             vectors = head.source(ids).float().cpu()
             q, o, b = head.label_parameters(ids)
             effective = torch.cat([q, o, b[:, None]], 1).float().cpu()
-        torch.save({"source": vectors, "effective": effective, "source_init": init_vectors[name]}, cond_dir / "vectors.pt")
+        torch.save({"source": vectors, "effective": effective, "source_init": init_vectors[trained_as]}, cond_dir / "vectors.pt")
         untrained_positive = np.zeros(untrained_scores.shape, dtype=bool)
         untrained_positive[pair_rows, pair_cols - n_trained] = True
         metrics[name] = {**quick_metrics(scores_eval, [adm_labels[a] for a in eval_adm], labels, untrained_scores,
                                          untrained_positive),
-                         "best_epoch": histories[name]["best_epoch"], "epochs": histories[name]["epochs"],
-                         "best_dev_loss": histories[name]["best_dev_loss"],
+                         "best_epoch": histories[trained_as]["best_epoch"], "epochs": histories[trained_as]["epochs"],
+                         "best_dev_loss": histories[trained_as]["best_dev_loss"],
                          "heldout_generalized_top100_all": float((general[labels["heldout"][pair_cols]] <= 100).mean())
                          if pair_cols.size else None}
     np.save(out_dir / "eval_admissions.npy", eval_adm)

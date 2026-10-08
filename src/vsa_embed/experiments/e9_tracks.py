@@ -190,6 +190,11 @@ DATA = Path("~/data/vsa-llm").expanduser()
 # T1c (licensed; decision 58): the SmolLM2 corpora are the reference build; the Qwen3 relink is `hosts/qwen3`
 # (`experiments/t1c-clinical/t1c-qwen3.yaml`).
 T1C_ROOT = DATA / "t1c/snomed-mimic3-smollm2-v2"     # v2: holdout re-frozen at fraction 0.30 (T1c-1); v1 is stale
+# T1c-ROOD (decision 63, H2 design (A); `experiments/t1c-clinical/rood/`): T1c with every ROOD patient's notes and every
+# training document mentioning a ROOD concept dropped; held-out = the ROOD concepts' closure; evaluation on `eval-rood`.
+T1C_ROOD_ROOT = DATA / "t1c/rood-v1/lm"
+# Tracks built from SNOMED CT on MIMIC-III notes by `t1c_corpus` (same ontology adapter and lexicon).
+T1C_TRACKS = ("t1c", "t1c-rood")
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1",
                "t1c": T1C_ROOT / "hosts/qwen3", "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3"}
@@ -220,6 +225,14 @@ TRACKS: dict[str, TrackSpec] = {
                      edit_relations=("finding_site", "causative_agent", "associated_morphology"),
                      family_roots={"qwen3": QWEN3_ROOTS["t1c"]}, alias_table_dir=DATA / "t1c/e9",
                      items_root=DATA / "t1c/items", items_dir=DATA / "t1c/items/zeroshot-t1c-v1", licensed=True),
+    # No dimension-3 items: T1c's are built on its own holdout (trained here); the ROOD endpoints are the loss strata
+    # on `eval-rood` and the coding task (`t1c_rood`). SmolLM2 only.
+    "t1c-rood": TrackSpec("t1c-rood", "T1c-ROOD clinical (SNOMED CT + MIMIC-III, ROOD excluded)", T1C_ROOD_ROOT,
+                          eval_split="eval-rood", windows=2048, config=Path("experiments/t1c-clinical/rood/t1c-rood.yaml"),
+                          holdout_names=T1C_ROOD_ROOT / "holdout_concepts.txt", category_relations=("is_a",),
+                          kept_relations=("is_a", "hierarchy", "semantic_tag"),
+                          edit_relations=("finding_site", "causative_agent", "associated_morphology"),
+                          alias_table_dir=DATA / "t1c/e9", items_root=DATA / "t1c/rood-v1/items", licensed=True),
     "wordnet": TrackSpec("wordnet", "WordNet general (C3)", DATA / "c3/wordnet-smollm2-v1", general_split=None,
                          category_relations=edit.CATEGORY_RELATIONS, kept_relations=tuple(sorted(edit.KEPT_RELATIONS)),
                          edit_relations=edit.CATEGORY_RELATIONS, family_roots={"qwen3": QWEN3_ROOTS["wordnet"], "qwen3_5": QWEN35_ROOTS["wordnet"]}),
@@ -259,7 +272,7 @@ def track_frame_ontology(spec: TrackSpec) -> tuple[Any, list[int], dict[str, Any
     if spec.name in ("t1", "t7"):              # built by t1_open_corpus (adapters `mesh`, `mesh_novel`)
         from .t1_open_corpus import build_track_ontology
         return build_track_ontology(config["ontology"]), [], config
-    if spec.name == "t1c":
+    if spec.name in T1C_TRACKS:
         from .t1c_corpus import build_track_ontology as build_t1c_ontology
         return build_t1c_ontology(config["ontology"]), [], config
     from ..tracks import load_track
@@ -447,7 +460,7 @@ def track_lexicon(spec: TrackSpec, ontology: dict[str, Any] | None = None) -> Tr
             elif kind == "class":
                 texts[atom] = value
         templates = T7_TEMPLATES
-    elif spec.name == "t1c":
+    elif spec.name in T1C_TRACKS:
         # Filler names are the concepts' preferred terms (licensed: they only reach item files under `items_root`);
         # the filler type is its top-level hierarchy, so an edit keeps e.g. a body structure a body structure.
         frame_ontology, _, _ = track_frame_ontology(spec)

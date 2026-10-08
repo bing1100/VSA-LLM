@@ -281,6 +281,44 @@ class GramSource(LabelSource):
         return (weights.unsqueeze(-1) * e).sum(1)
 
 
+#: Fallbacks of a free table for a code it never trained (T1c-ROOD): its untouched initial row (T1c-F's `free`,
+#: HRRBERT's unstructured), the mean of the trained rows, or a zero vector.
+FALLBACKS = ("init", "mean", "zero")
+
+
+class FallbackSource(LabelSource):
+    """A trained source whose rows for never-trained labels (ids ≥ `trained`) are replaced at scoring time by a
+    fallback (`FALLBACKS`): a free table has no learned row for a code it never saw, so it must be scored by a rule
+    that does not depend on that code. `mean` and `zero` give every never-trained code the same vector; `init` keeps
+    the base rows (for a `FreeSource`, their initialization). Wraps the base without copying it (scoring only)."""
+
+    def __init__(self, base: LabelSource, trained: int, mode: str = "mean") -> None:
+        super().__init__()
+        if mode not in FALLBACKS:
+            raise ValueError(f"fallback must be one of {FALLBACKS}")
+        self.base, self.trained, self.mode, self.dimension = base, int(trained), mode, base.dimension
+
+    def fallback_row(self, device: torch.device | str = "cpu") -> Tensor:
+        if self.mode == "zero":
+            return torch.zeros(self.dimension, device=device)
+        return self.base(torch.arange(self.trained, device=device)).mean(0)
+
+    def forward(self, ids: Tensor) -> Tensor:
+        rows = self.base(ids)
+        if self.mode == "init":
+            return rows
+        untrained = (ids >= self.trained)[:, None]
+        return torch.where(untrained, self.fallback_row(rows.device).to(rows.dtype).expand_as(rows), rows)
+
+
+def with_fallback(head: "LabelAttentionHead", trained: int, mode: str) -> "LabelAttentionHead":
+    """A copy of a trained head whose code vectors of never-trained labels come from `FallbackSource` (scoring only)."""
+    import copy
+    derived = copy.deepcopy(head)
+    derived.source = FallbackSource(derived.source, trained, mode)
+    return derived
+
+
 class SumSource(LabelSource):
     """Composed + free (HRRBERT's HRRAdd): the free part of a never-trained code stays at its small initialization."""
 
@@ -600,11 +638,21 @@ def positive_ranks(scores: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np
     return out
 
 
-def ranks_in_rows(logits: Tensor, rows: Tensor, cols: Tensor, subset: Tensor | None = None) -> Tensor:
-    """Torch version on one batch: rank of `logits[rows, cols]` among the row's labels (or among `subset` columns)."""
+def ranks_in_rows(logits: Tensor, rows: Tensor, cols: Tensor, subset: Tensor | None = None, *, ties: str = "strict") -> Tensor:
+    """Torch version on one batch: rank of `logits[rows, cols]` among the row's labels (or among `subset` columns).
+    `ties="half"` (opt-in) counts every other label with an equal score as half above (a float midrank), so a rule that
+    gives many codes one score (a constant fallback row) is not ranked first by its ties."""
     values = logits[rows, cols]
     pool = logits[rows] if subset is None else logits[rows][:, subset]
-    return (pool > values[:, None]).sum(1) + 1
+    above = (pool > values[:, None]).sum(1)
+    if ties == "strict":
+        return above + 1
+    if ties != "half":
+        raise ValueError("ties must be strict or half")
+    equal = (pool == values[:, None]).sum(1) - 1        # the positive itself is one of the equal scores when in the pool
+    if subset is not None:
+        equal = equal + (~(subset[None, :] == cols[:, None]).any(1)).long()   # positive outside the subset: not counted
+    return above.float() + 0.5 * equal.clamp_min(0).float() + 1.0
 
 
 def topk_by_code(ranks: np.ndarray, codes: np.ndarray, code_count: int, k: int) -> tuple[np.ndarray, np.ndarray]:

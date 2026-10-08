@@ -22,7 +22,7 @@ import hashlib
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 NOTE_COLUMNS = ("ROW_ID", "SUBJECT_ID", "HADM_ID", "CATEGORY", "ISERROR", "TEXT")
 SPLITS = ("train", "eval")
@@ -126,8 +126,15 @@ def extract_notes(source: Path, out_dir: Path, *, eval_buckets: int, shards: int
 
 
 def iter_notes(notes_dir: Path, split: str, *, shards: int | None = None, limit: int | None = None,
-               categories: frozenset[str] | None = None) -> Iterator[str]:
-    """Texts of `split` in shard order (shard 0 first), optionally restricted to note categories."""
+               categories: frozenset[str] | None = None, exclude_subjects: frozenset[int] | None = None,
+               admissions: frozenset[int] | None = None, keep: Callable[[str], bool] | None = None,
+               log: Counter | None = None) -> Iterator[str]:
+    """Texts of `split` in shard order (shard 0 first), optionally restricted to note categories.
+
+    Opt-in filters (T1c-ROOD; all None leaves the stream unchanged): `exclude_subjects` drops every note of these
+    patients (`SUBJECT_ID`, any admission or none), `admissions` keeps only notes of these `HADM_ID`s, `keep(text)`
+    drops a note when it returns False (a mention filter). `log` (a Counter) receives aggregate counts of what each
+    filter dropped and how many notes were yielded; `limit` counts yielded notes."""
     import pyarrow.parquet as pq
 
     if split not in SPLITS:
@@ -136,17 +143,30 @@ def iter_notes(notes_dir: Path, split: str, *, shards: int | None = None, limit:
     if shards is None:
         shards = int(json.loads((notes_dir / "extract.json").read_text())["shards"])
     produced = 0
+    columns = ["text"] + (["category"] if categories else []) + (["subject_id"] if exclude_subjects is not None else []) \
+        + (["hadm_id"] if admissions is not None else [])
     for s in range(shards):
         parquet = pq.ParquetFile(shard_path(notes_dir, split, s))   # keep referenced while iterating
-        columns = ["text", "category"] if categories else ["text"]
         for batch in parquet.iter_batches(columns=columns, batch_size=2048):
             data = batch.to_pydict()
             for i, text in enumerate(data["text"]):
                 if categories and data["category"][i] not in categories:
                     continue
+                if exclude_subjects is not None and int(data["subject_id"][i]) in exclude_subjects:
+                    if log is not None:
+                        log["dropped_excluded_subject"] += 1
+                    continue
+                if admissions is not None and int(data["hadm_id"][i]) not in admissions:
+                    continue
+                if keep is not None and not keep(text):
+                    if log is not None:
+                        log["dropped_by_filter"] += 1
+                    continue
                 if limit is not None and produced >= limit:
                     return
                 produced += 1
+                if log is not None:
+                    log["yielded"] += 1
                 yield text
 
 

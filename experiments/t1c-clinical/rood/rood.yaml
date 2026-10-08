@@ -1,0 +1,101 @@
+# T1c-ROOD (decision 63, holdout H2, design (A); TK-H2): HRRBERT's "really out of distribution" protocol on clinical
+# text. A frozen, hashed, frequency-stratified set of ICD-9 diagnosis codes (the ROOD codes) is withheld entirely: every
+# admission of every patient with any ROOD code leaves all training data — the coding head's train / dev admissions
+# (T1c-F's task) and the T1c language-model corpus (t1c-rood.yaml) — and the ROOD admissions form the test set. Code
+# vectors of ROOD codes are composed zero-shot from SNOMED CT frames; the free table has no trained row for them.
+# preregistration.md in this folder; code: vsa_embed.experiments.t1c_rood (stages select, prepare, build, alias-table,
+# analyze, report, plan) and vsa_embed.experiments.t1c_icd_frequency (encode, train) with this config.
+#
+# This file is a T1c-F config (icd-frequency.yaml's keys and values, unchanged where not noted) plus the opt-in keys
+# `paths.base_root`, `head.free_fallbacks`, `analysis.midranks` and the `rood` block.
+#
+# LICENCE / DUA: every path under `paths` except the configs holds licensed or credentialed data or tables derived
+# from it (mode 700, never committed). Run folders under experiments/t1c-clinical/rood/runs/ receive aggregates only.
+experiment: t1c-rood
+version: v1
+seed: 20261007                                      # T1c-F's: identical batch orders per seed (the label set differs)
+paths:
+  t1c_config: experiments/t1c-clinical/t1c.yaml
+  base_root: ~/data/vsa-llm/t1c/icd-frequency-v1    # T1c-F v1 (read-only): labels, admissions, tokens, TransE, P0 states
+  data_root: ~/data/vsa-llm/t1c/rood-v1/coding      # ROOD label space, admissions, heads, analyses, ROOD encoders' states
+  ontology_pt: ~/data/vsa-llm/t1c/rood-v1/lm/ontology.pt   # the ROOD LM corpus's channel ontology (the C5-ROOD composer)
+  t1c_holdout: ~/data/vsa-llm/t1c/rood-v1/lm/holdout_concepts.txt
+  alias_table: ~/data/vsa-llm/t1c/e9/t1c-rood.json  # E9's t1c-rood evaluation alias table (the C5-ROOD encoder's linker)
+  runs: experiments/t1c-clinical/rood/runs          # committed aggregates
+sources:                                            # relative to the T1c config's licensed_root
+  diagnoses: physionet.org/files/mimiciii/1.4/DIAGNOSES_ICD.csv.gz
+  titles: physionet.org/files/mimiciii/1.4/D_ICD_DIAGNOSES.csv.gz
+  icd9_map_dir: mimic-iv_data/hosp/Mapping/ICD9CM_DIAGNOSIS_MAP_202112
+labels:
+  note_category: Discharge summary
+  max_concepts: 8
+  frequency_edges: [-14, -12, -10, -8, -6, -4, -2, 0]
+split:
+  dev_buckets: [1000, 1500]
+holdout:                                            # T1c-F's label holdout, kept (its 382 codes stay label-only held out)
+  salt: t1c-icd-frequency-v1
+  fraction: 0.13
+  bins: [-12, -10, -8]
+  min_count: 5
+  expected_sha256: 5450b37b542048e52e6725d8e567bb9f67296a1d35c0f3eeb17944af5a1df298
+text:
+  tokenizer: HuggingFaceTB/SmolLM2-360M
+  max_tokens: 8192
+  chunk_tokens: 1024
+  segment_tokens: 32
+  link_min_subtokens: 2
+  workers: 6
+encode:
+  batch_chunks: 8
+  dtype: bfloat16
+head:
+  source_dim: 256
+  attention_dim: 256
+  label_hidden: 512
+  batch: 32
+  lr: 1.0e-3
+  weight_decay: 0.01
+  max_epochs: 12
+  patience: 2
+  free_std: 0.02
+  conditions: [free, composed_head, transe, title, random, gram, composed_free]   # composed_c5 added with the C5-ROOD run
+  free_fallbacks: [mean, zero]   # opt-in: the trained `free` head also scored with never-trained rows = mean / zero (free_mean, free_zero)
+composer:
+  operator: hrr
+  dimension: 256
+  composition: attentive
+  concept_factor: induced
+  key_dimension: 8
+gram:
+  attention_dim: 128
+kge:
+  dimension: 256
+  steps: 20000
+  batch: 1024
+  negatives: 64
+analysis:
+  ks: [10, 100]
+  bootstrap_primary: 2000
+  bootstrap_secondary: 1000
+  rare_below: -10
+  frequent_from: -8
+  probe_folds: 5
+  neighbours: 10
+  tsne_points: 3000
+  tsne_iterations: 750
+  midranks: true                 # opt-in: also save tie-aware (half-counted) ranks of never-trained positives
+rood:
+  lm_config: experiments/t1c-clinical/rood/t1c-rood.yaml
+  root: ~/data/vsa-llm/t1c/rood-v1              # code list, patients, concept closure (licensed)
+  salt: t1c-rood-v1
+  bins: [-12, -10, -8]           # T1c-F natural ln-frequency bins (lower edges) the ROOD codes are drawn from
+  quotas: [24, 16, 8]            # codes per bin (48 = 1.5 × HRRBERT's 32; ≈ 10% of patients excluded)
+  min_admissions: 10             # discharge-summary admissions carrying the code (all splits): ≥ 10 test positives
+  concept_disjoint: true         # no member concept shared with any other framed code (no copied or co-trained vector)
+  max_containing: 5              # T1c's hub rule: every entry of a member concept is contained in ≤ 5 other entries' aliases
+  exclusion: patient             # every admission of a ROOD patient leaves training (T1c's split is by patient)
+  majority_share: 0.5            # ROOD-majority: ROOD codes ≥ half of the admission's framed codes
+  primary: composed_head
+  control: free_mean             # pre-registered fallback of the free head for a code it never trained (§5)
+  expected_sha256: cb7eb61c85ed40c880724439777c960dfb19edaf35e1271dafb25aea345708f6   # frozen 2026-10-08 by `select` (48 codes), before any run; a rebuild that differs fails
+  expected_concept_holdout_sha256: 34fc579eec1e1658654953dc6130cbb63e955be64a84b7ca0d383f2187fdcfc2   # 125 concepts (80 members + closure), frozen 2026-10-08

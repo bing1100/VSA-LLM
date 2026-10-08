@@ -1,0 +1,39 @@
+# T1c-ROOD language-model corpus (decision 63, holdout H2 design (A); TK-H2; preregistration.md in this folder): the T1c
+# track (t1c.yaml: SNOMED CT International 2022-05-31 × MIMIC-III 1.4 notes, 50/50 with the C3 FineWeb-Edu stream) with
+# HRRBERT's "really out of distribution" exclusion carried to text:
+#   - every note of every ROOD patient (a patient with any admission carrying a ROOD code) is dropped from training;
+#   - the concept holdout is the alias-disjoint closure of the ROOD codes' SNOMED concepts (not T1c's 2,069-concept
+#     holdout), so the channel never links a ROOD concept in training;
+#   - every training document (note or general text) that mentions an alias of a held-out entry as whole words is
+#     dropped (H1's document exclusion), so continued pretraining never reads a ROOD concept's name;
+#   - the domain evaluation split is `eval-rood`: the discharge summaries of the admissions with a ROOD code (both sides
+#     of T1c's patient split; none is trained on) that mention a held-out alias — the stratum exists only there (a first
+#     build over all 5,980 such summaries, 23.5M tokens, had 1,561 held-out occurrences; selecting by mention keeps them
+#     and makes the whole-split rescoring ≈ 5× cheaper). `eval-mimic` (T1c's) and `eval-general` (locality) are built too.
+# The ROOD code set, the patients and the concept closure come from `t1c_rood select` (rood.yaml) and are pinned there.
+#
+# LICENCE / DUA: every path under `paths` holds licensed or credentialed data or tables derived from it (mode 700,
+# never committed). Run folders under experiments/t1c-clinical/rood/runs/ receive aggregates only.
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1c_rood build --config experiments/t1c-clinical/rood/rood.yaml
+extends: ../t1c.yaml
+experiment: t1c-rood
+track_label: clinical ROOD (SNOMED CT + MIMIC-III; ROOD patients and mentions excluded)
+workers: 4
+paths:
+  data_root: ~/data/vsa-llm/t1c/rood-v1/lm      # the E9 track root (`e9_tracks` "t1c-rood"; SmolLM2 corpora)
+data:
+  # No pre-sample and no frequency-chosen holdout: the concept holdout is the ROOD closure written by `select`.
+  expected_holdout_sha256: null                 # T1c's pin does not apply; the ROOD pin is rood.expected_concept_holdout_sha256
+  eval_domain_docs: 40000                       # eval-mimic: T1c's first 40,000 evaluation-patient notes (comparability)
+rood:
+  eval_categories: [Discharge summary]          # eval-rood: discharge summaries of the ROOD admissions
+  eval_mentions_only: true                      # … that mention a held-out alias (whole words; the text, not an outcome)
+  mention_filter: true                          # drop training documents mentioning a held-out alias (whole words)
+  corpora: [train, eval-rood, eval-mimic, eval-general]
+feasibility:                                    # the ROOD bar (preregistration §6): ~50 codes cannot meet decision 17's 300 entries
+  min_occurrences: 1000
+  min_entries: 20
+  exploratory_occurrences: 500
+  exploratory_entries: 10
+  trainer_windows: 2048
+  window_length: 1024
