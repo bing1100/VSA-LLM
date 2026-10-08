@@ -8,17 +8,21 @@ sample (500 per level, chosen by the sha256 of the question id) are committed wi
 
 **OET** (Dong, Chen, He, Horrocks, CIKM 2023; Zenodo 10.5281/zenodo.10432003, ver4, CC-BY-4.0; SNOMED CT-derived): the
 concept-placement data of MM-S14-Disease and MM-S14-CPP. One placement item per out-of-KB (new in SNOMED CT US
-2017-03-01) concept of the official `valid-NIL` (→ dev) and `test-NIL` (→ test) files, gold parents = the parents in the
+2017-03-01) concept of the official `valid-NIL` (→ dev) and `test-NIL` files, gold parents = the parents in the
 2014-09-01 release (atomic SCTIDs or complex `[EX.]` expressions), gold relations add the children (positions
-`<parent, child>` in `meta.positions`), the MedMentions contexts in `meta.contexts`. The before snapshot is the 2014
-entity and edge catalogue. Everything SNOMED-derived stays under `~/data/vsa-llm/toolkit-learn/` (mode 700).
+`<parent, child>` in `meta.positions`), the MedMentions contexts in `meta.contexts`. OET splits mentions, not concepts:
+the **primary test** (`placement-test.jsonl`) keeps the test-NIL concepts absent from valid-NIL (concept-disjoint); the
+mention split (`placement-test-mention-split.jsonl`, every test-NIL concept) is secondary. The before snapshot is the
+2014 entity and edge catalogue. Everything SNOMED-derived stays under `~/data/vsa-llm/toolkit-learn/` (mode 700).
 
 **TaxoExpan / TMN** (Shen et al. WWW 2020; Zhang et al. AAAI 2021): the WordNet 3.0 noun and verb taxonomies with the
 SemEval-2016 Task 14 lemmas, as distributed by TaxoExpan (`wordnet_{noun,verb}.terms/.taxo`).
-- `taxoexpan-semeval-{noun,verb}`: TaxoExpan's official split, read from its dataset pickle (`train/validation/
-  test_node_ids`) with a stub unpickler that executes nothing; the before taxonomy is the training-node subgraph.
-- `tmn-wordnet-{noun,verb}`: TMN's datasets are these same files (identical node and edge counts) but TMN's split files
-  are gone (Google Drive 404, `learn_data.UNAVAILABLE`), so the TMN protocol is re-drawn: 1,000 validation and 1,000
+- `taxoexpan-semeval-{noun,verb}` (**primary**): TaxoExpan's official split, read from its dataset pickle (`train/
+  validation/test_node_ids`) with a stub unpickler that executes nothing; the before taxonomy is the training-node
+  subgraph.
+- `tmn-wordnet-{noun,verb}` (**secondary; not comparable to published TMN numbers**): TMN's datasets are these same files
+  (identical node and edge counts) but TMN's split files are gone (Google Drive 404, `learn_data.UNAVAILABLE`), so the
+  TMN protocol is re-drawn: 1,000 validation and 1,000
   test nodes sampled from all non-root nodes (seeded), the before taxonomy keeps the other nodes and bridges each
   removed node's parents to its children; gold = nearest kept ancestors (parents) and descendants (children).
 - **Leakage check** (`leakage_report`): test nodes with siblings in the training taxonomy (allowed by the protocol,
@@ -46,6 +50,10 @@ MCQA_SET = "medconceptsqa-icd10cm"
 MCQA_LEVELS = ("easy", "medium", "hard")
 OET_PARTS = {"disease": "MM-S14-Disease", "cpp": "MM-S14-CPP"}
 TAXO_SETS = {"noun": "semeval-noun/wordnet_noun", "verb": "semeval-verb/wordnet_verb"}
+TAXO_ROLES = {   # author, 2026-10-08
+    "taxoexpan": {"role": "primary", "label": "TaxoExpan official split"},
+    "tmn": {"role": "secondary", "label": "TMN protocol, re-drawn split: not comparable to published TMN numbers"},
+}
 VERSION = "v1"
 
 
@@ -216,13 +224,16 @@ def build_oet(out_dir: Path, local_dir: Path, *, zip_path: Path = RAW / "oet" / 
         items_by_split = {split: oet_items(split_rows, set_name=set_name, split=split, labels=labels)
                           for split, split_rows in rows.items()}
         dev_concepts = {i["record"] for i in items_by_split["dev"]}
-        files = {}
         for split, items in items_by_split.items():
             for item in items:
                 item["meta"]["gold_parents_not_in_snapshot"] = [p for p in item["gold_parents"] if p not in snapshot_ids]
                 if split == "test":
                     item["meta"]["also_in_dev"] = item["record"] in dev_concepts
-            files[f"placement-{split}"] = ld.write_jsonl(target / f"placement-{split}.jsonl", items)
+        disjoint = [i for i in items_by_split["test"] if not i["meta"]["also_in_dev"]]
+        files = {"placement-dev": ld.write_jsonl(target / "placement-dev.jsonl", items_by_split["dev"]),
+                 "placement-test": ld.write_jsonl(target / "placement-test.jsonl", disjoint),
+                 "placement-test-mention-split": ld.write_jsonl(target / "placement-test-mention-split.jsonl",
+                                                                items_by_split["test"])}
         snapshot = ld.write_snapshot(target / "snapshot-2014", nodes, triples, description={
             "ontology": f"SNOMED CT US {part} subset", "release": "20140901 (OET entity + edge catalogue, atomic + complex)",
             "source": f"{zip_path.name}:{part}/ontology", "licence": "SNOMED CT (licensed) / OET CC-BY-4.0: local only"})
@@ -230,11 +241,13 @@ def build_oet(out_dir: Path, local_dir: Path, *, zip_path: Path = RAW / "oet" / 
         overlap = sum(1 for i in items_by_split["test"] if i["meta"]["also_in_dev"])
         summary[set_name] = {
             "files": files, "local": str(target),
-            "concepts": {s: len(v) for s, v in items_by_split.items()},
+            "concepts": {"dev": len(items_by_split["dev"]), "test (primary, concept-disjoint)": len(disjoint),
+                         "test-mention-split (secondary)": len(items_by_split["test"])},
             "mentions": {s: len(v) for s, v in rows.items()},
             "concepts_in_both_dev_and_test": overlap,
-            "note_split": "OET splits mentions, not concepts: test items with meta.also_in_dev=true were also seen in dev; "
-                          "filter them for a concept-disjoint test",
+            "note_split": "OET splits mentions, not concepts. Primary test = placement-test.jsonl, the test-NIL concepts that "
+                          "do not occur in valid-NIL (author, 2026-10-08); secondary = placement-test-mention-split.jsonl, "
+                          "every test-NIL concept (meta.also_in_dev marks the overlap)",
             "items_with_complex_parent": {s: sum(1 for i in v if i["meta"]["complex_parents"]) for s, v in items_by_split.items()},
             "gold_parents_missing_from_snapshot": sum(1 for v in items_by_split.values() for i in v
                                                       for p in i["gold_parents"] if p not in snapshot_ids),
@@ -252,7 +265,8 @@ def build_oet(out_dir: Path, local_dir: Path, *, zip_path: Path = RAW / "oet" / 
                      "held_locally": "SNOMED CT International 2022-05-31 (RF2 Full + Snapshot) — not needed by the adapter",
                      "missing_for_rebuilding_from_scratch": ["SNOMED CT US Edition 20140901 RF2", "SNOMED CT US Edition 20170301 RF2",
                                                             "UMLS 2017AA (MedMentions' UMLS)", "MedMentions st21pv"]},
-        "protocol": "official split: valid-NIL → dev, test-NIL → test (ver4: out-of-KB mentions only in evaluation); OET "
+        "protocol": "valid-NIL → dev; primary test = test-NIL concepts absent from valid-NIL (concept-disjoint); secondary "
+                    "test = OET's mention split (all test-NIL concepts). ver4 has out-of-KB mentions only in evaluation. OET "
                     "ranks edges <parent, child> from candidate_edges (child null = leaf position); gold edges in meta.positions",
         "sets": summary,
         "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data oet",
@@ -407,7 +421,8 @@ def leakage_report(items: Sequence[dict[str, Any]], terms: dict[str, str], edges
     return out
 
 
-def build_taxo(out_dir: Path, local_dir: Path, *, raw: Path = RAW / "taxoexpan", seed: int = 20210202) -> dict[str, Any]:
+def build_taxo(out_dir: Path, local_dir: Path, *, raw: Path = RAW / "taxoexpan", seed: int = 20210202,
+               tmn_size: int = 1000) -> dict[str, Any]:
     out_dir, local_dir = Path(out_dir), Path(local_dir)
     sets = {}
     for pos, stem in TAXO_SETS.items():
@@ -420,9 +435,12 @@ def build_taxo(out_dir: Path, local_dir: Path, *, raw: Path = RAW / "taxoexpan",
                 completion = False
             else:
                 set_name = f"tmn-wordnet-{pos}"
-                split = tmn_split(terms, edges, seed=seed)
+                split = tmn_split(terms, edges, seed=seed, size=tmn_size)
                 completion = True
             items, before = taxo_items(set_name, terms, edges, split, completion=completion, definitions=definitions)
+            role = TAXO_ROLES[protocol]
+            for item in items:
+                item["meta"].update(role)
             kept = set(split["train"])
             target = local_dir / set_name
             files = {f"placement-{s}": ld.write_jsonl(target / f"placement-{s}.jsonl", [i for i in items if i["meta"]["split"] == s])
@@ -435,7 +453,7 @@ def build_taxo(out_dir: Path, local_dir: Path, *, raw: Path = RAW / "taxoexpan",
                 "release": f"training taxonomy of the {protocol} split", "source": str(raw / stem)})
             (target / "split.json").write_text(json.dumps(split) + "\n")
             sets[set_name] = {
-                "protocol": protocol, "official_split": protocol == "taxoexpan",
+                **role, "protocol": protocol, "official_split": protocol == "taxoexpan",
                 "split_source": "TaxoExpan dataset pickle (train/validation/test_node_ids)" if protocol == "taxoexpan"
                 else f"re-drawn with seed {seed} (TMN's own split files unavailable: Google Drive 404)",
                 "nodes": len(terms), "edges": len(edges), "split_sizes": {k: len(v) for k, v in split.items()},

@@ -312,7 +312,7 @@ def test_mesh_diff_gold_and_new_edges(mesh_releases) -> None:
     stats = changes["stats"]
     assert stats["new_descriptors"] == 3 and stats["new_scrs"] == 3 and stats["deleted_scrs"] == 2
     desc = {d["ui"]: d for d in changes["descriptors"]}
-    assert desc["D006"]["gold_parents"] == ["D002"] and desc["D006"]["meta"]["promoted_from_scr_2025"] == "C100"
+    assert desc["D006"]["gold_parents"] == ["D002"] and desc["D006"]["meta"]["promoted_from_scr_before"] == "C100"
     assert desc["D008"]["gold_parents"] == ["D005"] and desc["D008"]["meta"]["parents_new"] == ["D007"]
     scrs = {s["ui"]: s for s in changes["scrs"]}
     assert scrs["C200"]["relations"] == [("mapped_to", "D003"), ("pharmacological_action", "D003")]
@@ -356,6 +356,23 @@ def test_mesh_build_end_to_end(mesh_releases, tmp_path: Path) -> None:
     nodes, edges = ld.load_snapshot(tmp_path / "local" / "snapshot-2025")
     assert ("D005", "parent", "D004") in edges and "D006" not in nodes
     assert [json.loads(l)["source"] for l in (tmp_path / "out" / "new-edges.jsonl").read_text().splitlines()] == ["C101"]
+    # the ≥ 1-abstract secondary set is a superset of the primary one; every item carries its T7 group
+    min1 = {i["record"] for f in ("placement-min1-dev.jsonl", "placement-min1-test.jsonl") for i in ld.read_jsonl(tmp_path / "out" / f)}
+    assert min1 == {"C200", "C201", "D006", "D008"} and manifest["secondary_min1"]["items"] == 4    # D007: 0 abstracts
+    assert manifest["role"] == "primary" and "t7_policy" in manifest and manifest["t7_policy"]["field"].startswith("meta.t7_group")
+    assert {i["meta"]["t7_group"] for i in items.values()} == {"eval"}
+    # the same code builds the secondary 2024 → 2025 split under its own set name and snapshot year
+    second = lm.build(tmp_path / "out24", tmp_path / "local24", workers=1, pubmed=[path], before=mesh_releases["before"],
+                      after=mesh_releases["after"], tensor=False, split="2024-2025")
+    assert second["set"] == "mesh-2024-2025" and second["role"] == "secondary" and "caveat" in second
+    assert (tmp_path / "local24" / "snapshot-2024" / "nodes.jsonl.gz").exists()
+    assert {i["set"] for i in ld.read_jsonl(tmp_path / "out24" / "placement-test.jsonl")} <= {"mesh-2024-2025"}
+
+
+def test_t7_group_rule() -> None:
+    assert lm.t7_group("scr", True, False) == "seen"
+    assert lm.t7_group("scr", True, True) == "eval" and lm.t7_group("scr", False, False) == "eval"
+    assert lm.t7_group("descriptor", True, False) == "eval"
 
 
 # -- MedConceptsQA ----------------------------------------------------------------------------------------------------------------
@@ -479,3 +496,88 @@ def test_tmn_split_is_seeded_and_excludes_roots() -> None:
     assert first == lp.tmn_split(terms, edges, seed=3, size=5)
     assert len(first["validation"]) == 5 and len(first["test"]) == 5 and "n0" in first["train"]
     assert not set(first["validation"]) & set(first["test"])
+
+
+# -- author decisions of 2026-10-08: primary / secondary roles, committed ICD snapshot ------------------------------------------
+
+
+def test_icd_build_writes_the_committed_snapshot(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    releases = {"fy2026": (ORDER_2026, [("I30-I5A", "Other forms of heart disease", ["I42", "I43"]),
+                                        ("K65-K68", "Diseases of peritoneum", ["K65"])], 2026),
+                "fy2027": (ORDER_2027, [("I30-I5A", "Other forms of heart disease", ["I42", "I43"]),
+                                        ("K65-K6A", "Diseases of peritoneum and pelvis", ["K65", "K6A"])], 2027)}
+    for name, (order, blocks, year) in releases.items():
+        for (archive, member), text in ((icd.ORDER_FILES[name], "\r\n".join(_order_line(i, *r) for i, r in enumerate(order, 1))),
+                                        (icd.TABULAR_FILES[name], _tabular(year, blocks))):
+            with zipfile.ZipFile(raw / archive, "a") as handle:
+                handle.writestr(member, text)
+    manifest = icd.build(tmp_path / "out", tmp_path / "local", raw=raw, seed=1)
+    assert manifest["snapshot"]["committed"] and manifest["snapshot"]["path"].endswith(icd.SNAPSHOT_DIR)
+    nodes, edges = ld.load_snapshot(tmp_path / "out" / icd.SNAPSHOT_DIR)
+    assert "I42.0" in nodes and "K6A" not in nodes and not (tmp_path / "local" / "snapshot-fy2026").exists()
+    assert not icd.SNAPSHOT_DIR.startswith("snapshot-")          # the ignore rule `**/snapshot-*/` must not catch it
+    files = manifest["files"]
+    assert manifest["stats"]["new_codes"] == 7 and files["placement-test"]["items"] + files["placement-dev"]["items"] == 7
+
+
+def _oet_zip(path: Path) -> Path:
+    def lines(rows: list[dict]) -> str:
+        return "\n".join(json.dumps(r) for r in rows) + "\n"
+
+    with zipfile.ZipFile(path, "w") as archive:
+        for part in lp.OET_PARTS.values():
+            kind = part.split("-")[-1]
+            base = f"{part}/mention-level-(concept-placement)"
+            archive.writestr(f"{base}/valid-NIL.jsonl", lines([_oet_row("700", "renal failure", "100"),
+                                                                _oet_row("701", "kidney stone", "200")]))
+            archive.writestr(f"{base}/test-NIL.jsonl", lines([_oet_row("700", "renal failure", "100"),
+                                                               _oet_row("702", "new syndrome", "100", children="200")]))
+            archive.writestr(f"{part}/ontology/SNOMEDCT-US-20170301-{kind}-final.owl",
+                             'AnnotationAssertion(rdfs:label <http://snomed.info/id/702> "New syndrome (disorder)"@en)\n')
+            archive.writestr(f"{part}/ontology/SNOMEDCT-US-20140901-{kind}_syn_attr_hyp-all.jsonl",
+                             lines([{"idx": "100", "title": "disorder (disorder)", "synonyms": "disorder", "text": ""},
+                                    {"idx": "200", "title": "stone (disorder)", "synonyms": "stone", "text": ""}]))
+            archive.writestr(f"{part}/ontology/SNOMEDCT-US-20140901-{kind}-edges-all.jsonl",
+                             lines([{"parent_idx": "100", "child_idx": "200", "parent": "disorder", "child": "stone"},
+                                    {"parent_idx": "200", "child_idx": "SCTID_NULL", "parent": "stone", "child": "NULL"}]))
+    return path
+
+
+def test_oet_primary_test_is_concept_disjoint(tmp_path: Path) -> None:
+    manifest = lp.build_oet(tmp_path / "out", tmp_path / "local", zip_path=_oet_zip(tmp_path / "oet.zip"))
+    base = tmp_path / "local" / "disease"
+    assert [i["record"] for i in ld.read_jsonl(base / "placement-test.jsonl")] == ["702"]
+    assert [i["record"] for i in ld.read_jsonl(base / "placement-test-mention-split.jsonl")] == ["700", "702"]
+    assert [i["record"] for i in ld.read_jsonl(base / "placement-dev.jsonl")] == ["700", "701"]
+    counts = manifest["sets"]["oet-snomed-disease"]["concepts"]
+    assert counts == {"dev": 2, "test (primary, concept-disjoint)": 1, "test-mention-split (secondary)": 2}
+    assert next(ld.read_jsonl(base / "placement-test.jsonl"))["name"] == "New syndrome (disorder)"
+    assert not list((tmp_path / "out").glob("*.jsonl"))                     # only the manifest goes to the repository
+
+
+def test_taxo_roles_primary_and_secondary(tmp_path: Path, monkeypatch) -> None:
+    raw = tmp_path / "raw" / "toy"
+    raw.mkdir(parents=True)
+    terms = {"entity.n.01": "entity", "animal.n.01": "animal", "dog.n.01": "dog", "cat.n.01": "cat", "puppy.n.01": "puppy",
+             "plant.n.01": "plant", "tree.n.01": "tree", "test.test.1": "wug", "train.withdef.2": "dax"}
+    edges = [("entity.n.01", "animal.n.01"), ("entity.n.01", "plant.n.01"), ("animal.n.01", "dog.n.01"),
+             ("animal.n.01", "cat.n.01"), ("dog.n.01", "puppy.n.01"), ("plant.n.01", "tree.n.01"),
+             ("animal.n.01", "test.test.1"), ("plant.n.01", "train.withdef.2")]
+    (raw / "wordnet_noun.terms").write_text("".join(f"{t}\t{s}||{t}\n" for t, s in terms.items()))
+    (raw / "wordnet_noun.taxo").write_text("".join(f"{p}\t{c}\n" for p, c in edges))
+    order = list(terms)
+    (raw / "wordnet_noun.fasttext_mode4.pickle.bin").write_bytes(pickle.dumps(
+        {"vocab": [f"{terms[t]}||{t}@@@{i}" for i, t in enumerate(order)], "train_node_ids": list(range(7)),
+         "validation_node_ids": [8], "test_node_ids": [7]}))
+    monkeypatch.setattr(lp, "TAXO_SETS", {"noun": "toy/wordnet_noun"})
+    manifest = lp.build_taxo(tmp_path / "out", tmp_path / "local", raw=tmp_path / "raw", tmn_size=2)
+    sets = manifest["sets"]
+    assert sets["taxoexpan-semeval-noun"]["role"] == "primary" and sets["tmn-wordnet-noun"]["role"] == "secondary"
+    assert "not comparable to published TMN numbers" in sets["tmn-wordnet-noun"]["label"]
+    test = next(ld.read_jsonl(tmp_path / "local" / "tmn-wordnet-noun" / "placement-test.jsonl"))
+    assert test["meta"]["role"] == "secondary" and "not comparable" in test["meta"]["label"]
+    official = next(ld.read_jsonl(tmp_path / "local" / "taxoexpan-semeval-noun" / "placement-test.jsonl"))
+    assert official["record"] == "test.test.1" and official["gold_parents"] == ["animal.n.01"]
+    assert official["meta"]["role"] == "primary"

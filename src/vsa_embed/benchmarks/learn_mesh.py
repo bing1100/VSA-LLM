@@ -17,8 +17,17 @@
   name shared with any other 2026 record is not counted. Descriptors also get the number of those abstracts NLM
   indexed with them. `pubmed_2025_26_eval_docs` counts abstracts on T7's evaluation side (PMID bucket < 2,000).
 - **Primary set:** ≥ 5 mentioning abstracts. Dev 20% / test 80% by `learn_data.split_of(UI)`; the rest is in
-  `placement-low-evidence.jsonl` with its split assigned the same way.
-- `meta.t7_selected` / `meta.t7_heldout`: overlap with T7's frozen selection and holdout.
+  `placement-low-evidence.jsonl` with its split assigned the same way. **Secondary:** the ≥ 1-abstract variant
+  (`placement-min1-{dev,test}.jsonl`, a superset of the primary set; same ids).
+- `meta.t7_selected` / `meta.t7_heldout`: overlap with T7's frozen selection and holdout. **T7 policy** (author,
+  2026-10-08): on T7-trained models the evaluation set is the descriptors plus the SCRs T7 did not train linked to
+  their gold frames (`meta.t7_group == "eval"`: not selected, or held out); the T7-trained SCRs
+  (`t7_group == "seen"`) are reported separately as "seen (sanity)". On other hosts every item counts.
+
+**Splits** (`SPLITS`): `2025-2026` is the primary set; `2024-2025` (MeSH 2024 → 2025, same code) is secondary — its
+records are older, so their names may be in the hosts' pretraining text. The 2024 "before" release is NLM's 2024 archive
+as of 2024-08-12 (the year archive's top level), so SCRs created from August to December 2024 count as new in 2025.
+Evidence for both splits is the same PubMed 2025–26 text.
 
 **New edges for known records** (`new-edges.jsonl`): edges added in 2026 between records that both exist in 2025
 (descriptor parent / pharmacological action / see-related; SCR mapped heading / pharmacological action) — the
@@ -47,6 +56,21 @@ VERSION = "v1"
 MESH_DIR = ld.DATA_ROOT / "mesh"
 BEFORE = {"desc": MESH_DIR / "2025" / "desc2025.gz", "supp": MESH_DIR / "2025" / "supp2025.gz"}
 AFTER = {"desc": MESH_DIR / "desc2026.gz", "supp": MESH_DIR / "supp-2026" / "supp2026.gz"}
+BEFORE_2024 = {"desc": MESH_DIR / "2024" / "desc2024.gz", "supp": MESH_DIR / "2024" / "supp2024.gz"}
+SPLITS: dict[str, dict[str, Any]] = {
+    "2025-2026": {"set": "mesh-2025-2026", "before": BEFORE, "after": AFTER, "before_year": 2025, "role": "primary",
+                  "releases": "MeSH 2025 (NLM 2025 archive, Last-Modified 2026-01-08) -> MeSH 2026 (2026-08-12; T7's files)"},
+    "2024-2025": {"set": "mesh-2024-2025", "before": BEFORE_2024, "after": BEFORE, "before_year": 2024, "role": "secondary",
+                  "releases": "MeSH 2024 (NLM 2024 archive, Last-Modified 2024-08-12) -> MeSH 2025 (2026-01-08)",
+                  "caveat": "2024-25 records may be in the hosts' pretraining text (older than the 2026 records); SCRs "
+                            "created August-December 2024 count as new (the 2024 archive is the 2024-08-12 state)"},
+}
+T7_POLICY = {
+    "rule": "on T7-trained models the primary MeSH evaluation is the descriptors plus the SCRs that T7 did not train linked "
+            "to their gold frames (t7_selected false, or t7_heldout true) = meta.t7_group 'eval'; the T7-trained SCRs "
+            "(meta.t7_group 'seen') are reported separately as 'seen (sanity)'; on hosts not trained on T7 every item counts",
+    "decided": "author, 2026-10-08",
+}
 PUBMED_DIRS = (ld.DATA_ROOT / "pubmed" / "text-updates-2026", ld.DATA_ROOT / "pubmed" / "text-2026")
 MIN_PMID = 41_025_505            # T7's `pubmed.min_pmid`
 EVAL_BUCKETS = 2_000             # T7's `pubmed.eval_buckets`
@@ -140,11 +164,11 @@ def diff(before_desc: Sequence[dict[str, Any]], before_supp: Sequence[dict[str, 
             "relations": [("parent", p) for p in gold]
                          + [("pharmacological_action", a) for a in record["actions"] if a in existing]
                          + [("see_also", r) for r in record["related"] if r in existing],
-            "meta": {"trees_2026": record["trees"], "tree_parents_2026": immediate,
+            "meta": {"trees_after": record["trees"], "tree_parents_after": immediate,
                      "parents_new": [p for p in immediate if p not in existing],
                      "top_branches": sorted({t[0] for t in record["trees"]}), "descriptor_class": record["descriptor_class"],
-                     "introduced": record["introduced"], "promoted_from_scr_2025": promoted,
-                     "promoted_scr_still_in_2026": bool(promoted and promoted in supp_after),
+                     "introduced": record["introduced"], "promoted_from_scr_before": promoted,
+                     "promoted_scr_still_after": bool(promoted and promoted in supp_after),
                      "actions_new": [a for a in record["actions"] if a not in existing],
                      "top_level": not record["trees"] or all("." not in t for t in record["trees"])}})
 
@@ -160,8 +184,8 @@ def diff(before_desc: Sequence[dict[str, Any]], before_supp: Sequence[dict[str, 
                          + [("pharmacological_action", a) for a in nearest_existing(
                              [a for a in record["actions"] if a in desc_after], parents_after, existing)],
             "meta": {"record_class": mesh_novel.SCR_CLASSES.get(record["scr_class"], record["scr_class"]),
-                     "mapped_2026": record["mapped"], "mapped_major": record["mapped_major"],
-                     "mapped_new": [m for m in mapped if m not in existing], "actions_2026": record["actions"],
+                     "mapped_after": record["mapped"], "mapped_major": record["mapped_major"],
+                     "mapped_new": [m for m in mapped if m not in existing], "actions_after": record["actions"],
                      "introduced": record["introduced"]}})
 
     new_edges = []
@@ -174,7 +198,7 @@ def diff(before_desc: Sequence[dict[str, Any]], before_supp: Sequence[dict[str, 
             for target in after_targets:
                 if target not in before_targets and target in existing:
                     new_edges.append({"source": ui, "kind": "descriptor", "relation": relation, "target": target,
-                                      "removed_in_2026": sorted(set(before_targets) - set(after_targets))})
+                                      "removed_in_after": sorted(set(before_targets) - set(after_targets))})
     for ui in sorted(set(supp_before) & set(supp_after)):
         old, new = supp_before[ui], supp_after[ui]
         for relation, before_targets, after_targets in (("mapped_to", old["mapped"], new["mapped"]),
@@ -182,9 +206,9 @@ def diff(before_desc: Sequence[dict[str, Any]], before_supp: Sequence[dict[str, 
             for target in after_targets:
                 if target not in before_targets and target in existing:
                     new_edges.append({"source": ui, "kind": "scr", "relation": relation, "target": target,
-                                      "removed_in_2026": sorted(set(before_targets) - set(after_targets))})
-    stats = {"descriptors_2025": len(desc_before), "descriptors_2026": len(desc_after),
-             "scrs_2025": len(supp_before), "scrs_2026": len(supp_after),
+                                      "removed_in_after": sorted(set(before_targets) - set(after_targets))})
+    stats = {"descriptors_before": len(desc_before), "descriptors_after": len(desc_after),
+             "scrs_before": len(supp_before), "scrs_after": len(supp_after),
              "new_descriptors": len(new_desc), "new_scrs": len(new_supp),
              "deleted_descriptors": len(set(desc_before) - set(desc_after)),
              "deleted_scrs": len(set(supp_before) - set(supp_after)),
@@ -302,19 +326,27 @@ def read_t7(repo: Path = Path(".")) -> tuple[set[str], set[str]]:
     return selected, held
 
 
+def t7_group(kind: str, selected: bool, heldout: bool) -> str:
+    """`seen` for an SCR that T7 trained linked to its gold frame (selected, not held out); else `eval` (T7 policy)."""
+    return "seen" if kind == "scr" and selected and not heldout else "eval"
+
+
 def make_items(changes: dict[str, Any], *, evidence: dict[str, dict[str, Any]], t7_selected: set[str], t7_heldout: set[str],
-               definitions: dict[str, str | None], min_docs: int = MIN_DOCS) -> list[dict[str, Any]]:
+               definitions: dict[str, str | None], min_docs: int = MIN_DOCS, set_name: str = SET_NAME,
+               before_year: int = 2025) -> list[dict[str, Any]]:
     items = []
     for record in [*changes["descriptors"], *changes["scrs"]]:
         ui = record["ui"]
         found = evidence.get(ui, {"pubmed_2025_26_docs": 0})
+        selected, heldout = ui in t7_selected, ui in t7_heldout
         meta = {"kind": record["kind"], **record["meta"], "split": ld.split_of(ui),
                 "primary": found["pubmed_2025_26_docs"] >= min_docs and bool(record["gold_parents"]),
-                "t7_selected": ui in t7_selected, "t7_heldout": ui in t7_heldout}
+                "min1": found["pubmed_2025_26_docs"] >= 1 and bool(record["gold_parents"]),
+                "t7_selected": selected, "t7_heldout": heldout, "t7_group": t7_group(record["kind"], selected, heldout)}
         if not record["gold_parents"]:
-            meta["excluded"] = "no gold parent in 2025 (top-level descriptor or SCR without a descriptor heading)"
+            meta["excluded"] = f"no gold parent in {before_year} (top-level descriptor or SCR without a descriptor heading)"
         definition = record.get("definition") if record["kind"] == "descriptor" else definitions.get(ui)
-        items.append(ld.placement_item(set_name=SET_NAME, record=ui, name=record["name"], aliases=record["aliases"],
+        items.append(ld.placement_item(set_name=set_name, record=ui, name=record["name"], aliases=record["aliases"],
                                        definition=definition, gold_parents=record["gold_parents"],
                                        gold_relations=[list(r) for r in record["relations"]], candidates=None,
                                        evidence=found, meta=meta))
@@ -349,9 +381,9 @@ def scr_snapshot_rows(scrs: Sequence[dict[str, Any]], known: set[str]) -> tuple[
     return nodes, edges
 
 
-def write_tensor_ontology(path: Path, desc_path: Path) -> dict[str, Any]:
-    """The 2025 descriptors in the trainer's channel-ontology format (`t1_open_corpus.channel_ontology`; T1 alias policy,
-    no holdout, zero training frequencies)."""
+def write_tensor_ontology(path: Path, desc_path: Path, release: str = "MeSH 2025") -> dict[str, Any]:
+    """The before descriptors in the trainer's channel-ontology format (`t1_open_corpus.channel_ontology`; T1 alias
+    policy, no holdout, zero training frequencies)."""
     import numpy as np
     import torch
     from ..experiments.t1_open_corpus import channel_ontology
@@ -359,15 +391,18 @@ def write_tensor_ontology(path: Path, desc_path: Path) -> dict[str, Any]:
     ontology = mesh_mod.build_mesh_track_ontology(Path(desc_path))
     table = AliasTable.from_pairs(ontology.alias_pairs)
     record = channel_ontology(table, ontology, np.zeros(len(table.entry_concepts), dtype=np.int64), "none (before snapshot)")
-    record["metadata"] = {"source": str(desc_path), "release": "MeSH 2025", "train_frequency": "zeros (no corpus)"}
+    record["metadata"] = {"source": str(desc_path), "release": release, "train_frequency": "zeros (no corpus)"}
     torch.save(record, path)
     return {"file": path.name, "sha256": ld.file_sha256(path), "entries": record["entry_count"],
             "atomics": record["atomic_count"], "relations": record["relation_names"], "alias_table_sha256": record["alias_table_sha256"]}
 
 
 def build(out_dir: Path, local_dir: Path, *, workers: int = 6, min_docs: int = MIN_DOCS, pubmed: Sequence[Path] | None = None,
-          before: dict[str, Path] = BEFORE, after: dict[str, Path] = AFTER, tensor: bool = True) -> dict[str, Any]:
+          before: dict[str, Path] = BEFORE, after: dict[str, Path] = AFTER, tensor: bool = True,
+          split: str = "2025-2026") -> dict[str, Any]:
     started = time.time()
+    spec = SPLITS[split]
+    set_name, year = spec["set"], spec["before_year"]
     desc_before = sorted(mesh_mod._parse(before["desc"]), key=lambda r: r["ui"])
     desc_after = sorted(mesh_mod._parse(after["desc"]), key=lambda r: r["ui"])
     supp_after = sorted(mesh_novel.parse_supplementary(after["supp"]), key=lambda r: r["ui"])
@@ -395,74 +430,98 @@ def build(out_dir: Path, local_dir: Path, *, workers: int = 6, min_docs: int = M
     definitions = {r["ui"]: scr_definition(r["note"]) for r in changes["scrs"]}
     t7_selected, t7_heldout = read_t7()
     items = make_items(changes, evidence=evidence, t7_selected=t7_selected, t7_heldout=t7_heldout, definitions=definitions,
-                       min_docs=min_docs)
+                       min_docs=min_docs, set_name=set_name, before_year=year)
     out_dir, local_dir = Path(out_dir), Path(local_dir)
     primary = [i for i in items if i["meta"]["primary"]]
-    files = {f"placement-{split}": ld.write_jsonl(out_dir / f"placement-{split}.jsonl",
-                                                  [i for i in primary if i["meta"]["split"] == split])
-             for split in ("dev", "test")}
+    min1 = [i for i in items if i["meta"]["min1"]]
+    files = {}
+    for part in ("dev", "test"):
+        files[f"placement-{part}"] = ld.write_jsonl(out_dir / f"placement-{part}.jsonl",
+                                                    [i for i in primary if i["meta"]["split"] == part])
+        files[f"placement-min1-{part}"] = ld.write_jsonl(out_dir / f"placement-min1-{part}.jsonl",
+                                                         [i for i in min1 if i["meta"]["split"] == part])
     files["placement-low-evidence"] = ld.write_jsonl(out_dir / "placement-low-evidence.jsonl",
                                                      [i for i in items if not i["meta"]["primary"]])
-    edges = [{"id": f"{SET_NAME}:edge:{e['source']}:{e['relation']}:{e['target']}", "set": SET_NAME, **e,
+    edges = [{"id": f"{set_name}:edge:{e['source']}:{e['relation']}:{e['target']}", "set": set_name, **e,
               "meta": {"split": ld.split_of(e["source"])}} for e in changes["new_edges"]]
     files["new-edges"] = ld.write_jsonl(out_dir / "new-edges.jsonl", edges)
     nodes, snapshot_edges = snapshot_rows(desc_before)
-    snapshot = ld.write_snapshot(local_dir / "snapshot-2025", nodes, snapshot_edges, description={
-        "ontology": "MeSH descriptors", "release": "MeSH 2025 (NLM 2025 archive)", "source": str(before["desc"]),
+    snapshot_dir, scr_dir = local_dir / f"snapshot-{year}", local_dir / f"snapshot-{year}-scr"
+    snapshot = ld.write_snapshot(snapshot_dir, nodes, snapshot_edges, description={
+        "ontology": "MeSH descriptors", "release": f"MeSH {year} (NLM {year} archive)", "source": str(before["desc"]),
         "licence": ld.NLM_TERMS})
     if tensor:
-        snapshot["ontology_pt"] = write_tensor_ontology(local_dir / "snapshot-2025" / "ontology.pt", before["desc"])
+        snapshot["ontology_pt"] = write_tensor_ontology(snapshot_dir / "ontology.pt", before["desc"], f"MeSH {year}")
     scr_nodes, scr_edges = scr_snapshot_rows(supp_before, {d["ui"] for d in desc_before})
-    scr_snapshot = ld.write_snapshot(local_dir / "snapshot-2025-scr", scr_nodes, scr_edges, description={
-        "ontology": "MeSH supplementary concept records", "release": "MeSH 2025", "source": str(before["supp"]),
-        "licence": ld.NLM_TERMS, "note": "descriptor_ref nodes stand for descriptors of snapshot-2025"})
+    scr_snapshot = ld.write_snapshot(scr_dir, scr_nodes, scr_edges, description={
+        "ontology": "MeSH supplementary concept records", "release": f"MeSH {year}", "source": str(before["supp"]),
+        "licence": ld.NLM_TERMS, "note": f"descriptor_ref nodes stand for descriptors of snapshot-{year}"})
 
     def summary(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
         return {"items": len(rows), "by_kind": dict(Counter(i["meta"]["kind"] for i in rows)),
                 "by_split": dict(Counter(i["meta"]["split"] for i in rows)),
                 "scr_classes": dict(Counter(i["meta"].get("record_class") for i in rows if i["meta"]["kind"] == "scr")),
                 "t7_selected": sum(i["meta"]["t7_selected"] for i in rows), "t7_heldout": sum(i["meta"]["t7_heldout"] for i in rows),
+                "t7_group": dict(Counter(i["meta"]["t7_group"] for i in rows)),
                 "with_definition": sum(1 for i in rows if i["definition"]),
                 "with_pharmacological_action": sum(1 for i in rows if any(r[0] == "pharmacological_action" for r in i["gold_relations"])),
                 "parents_or_mapped_new": sum(1 for i in rows if i["meta"].get("parents_new") or i["meta"].get("mapped_new"))}
 
+    def by_group(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+        return {group: {part: sum(1 for i in rows if i["meta"]["t7_group"] == group and i["meta"]["split"] == part)
+                        for part in ("dev", "test")} for group in ("eval", "seen")}
+
     rest = [i for i in items if not i["meta"]["primary"]]
     t7_new = {ui for ui in t7_selected if ui in new_supp or ui in new_desc}
     manifest = {
-        "set": SET_NAME, "version": VERSION, "built": time.strftime("%Y-%m-%d"),
+        "set": set_name, "version": VERSION, "role": spec["role"], "releases": spec["releases"],
+        **({"caveat": spec["caveat"]} if "caveat" in spec else {}), "built": time.strftime("%Y-%m-%d"),
         "before": {k: str(v) for k, v in before.items()}, "after": {k: str(v) for k, v in after.items()},
         "licence": ld.NLM_TERMS + "; items carry MeSH UIs, names, scope notes and SCR notes (modified: bibliographic parts removed)",
         "acknowledgement": "MeSH and PubMed courtesy of the U.S. National Library of Medicine",
         "stats": changes["stats"], "files": files,
-        "primary": {**summary(primary), "rule": f"≥ {min_docs} mentioning abstracts and ≥ 1 gold parent in 2025"},
+        "primary": {**summary(primary), "rule": f"≥ {min_docs} mentioning abstracts and ≥ 1 gold parent in {year}"},
+        "secondary_min1": {**summary(min1), "rule": f"≥ 1 mentioning abstract and ≥ 1 gold parent in {year}",
+                           "files": ["placement-min1-dev.jsonl", "placement-min1-test.jsonl"],
+                           "note": "superset of the primary set (same item ids); secondary"},
         "low_evidence": {**summary(rest), "zero_docs": sum(1 for i in rest if i["evidence"]["pubmed_2025_26_docs"] == 0),
                          "docs_1_to_4": sum(1 for i in rest if 0 < i["evidence"]["pubmed_2025_26_docs"] < min_docs),
                          "no_gold_parent": sum(1 for i in items if not i["gold_parents"])},
         "evidence": {"pubmed_files": [p.name for p in paths], "documents_scanned": documents, "min_pmid": MIN_PMID,
                      "matcher": "mesh_novel.mention_key whole tokens; T7 alias policy (all SCR classes); names shared with "
-                                "another 2026 record dropped", "eval_side": f"pmid_bucket < {EVAL_BUCKETS}",
-                     "pmid_sample": f"first {PMID_SAMPLE} PMIDs (ascending) per record"},
-        "t7_overlap": {"t7_selected_records": len(t7_selected), "t7_selected_that_are_new_in_2026": len(t7_new),
-                       "t7_heldout_that_are_new_in_2026": len(t7_heldout & (new_supp | new_desc)),
+                                f"another {year + 1} record dropped", "eval_side": f"pmid_bucket < {EVAL_BUCKETS}",
+                     "pmid_sample": f"first {PMID_SAMPLE} PMIDs (ascending) per record",
+                     "text": "PubMed 2025-26 (T7's local text) for every split"},
+        "t7_policy": {**T7_POLICY, "field": "meta.t7_group ('eval' | 'seen')",
+                      "primary": by_group(primary), "secondary_min1": by_group(min1)},
+        "t7_overlap": {"t7_selected_records": len(t7_selected), "t7_selected_that_are_new": len(t7_new),
+                       "t7_heldout_that_are_new": len(t7_heldout & (new_supp | new_desc)),
                        "primary_items_t7_selected": sum(i["meta"]["t7_selected"] for i in primary),
                        "primary_items_t7_heldout": sum(i["meta"]["t7_heldout"] for i in primary)},
         "split_rule": f"learn_data.split_of(UI), salt {ld.SPLIT_SALT!r}, dev 20%",
-        "snapshot": {"path": str(local_dir / "snapshot-2025"), "nodes": snapshot["nodes"], "edges": snapshot["edges"],
+        "snapshot": {"path": str(snapshot_dir), "nodes": snapshot["nodes"], "edges": snapshot["edges"],
                      "relations": snapshot["relations"], "ontology_pt": snapshot.get("ontology_pt"),
-                     "scr_path": str(local_dir / "snapshot-2025-scr"), "scr_nodes": scr_snapshot["nodes"],
-                     "scr_edges": scr_snapshot["edges"]},
+                     "scr_path": str(scr_dir), "scr_nodes": scr_snapshot["nodes"], "scr_edges": scr_snapshot["edges"]},
         "seconds": round(time.time() - started, 1),
-        "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data mesh",
+        "command": f"PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data mesh --split {split}",
     }
     ld.write_manifest(out_dir, manifest)
     return manifest
 
 
 def add_cli(sub: Any) -> None:
-    parser = sub.add_parser("mesh", help="MeSH 2025 → 2026 placement items (new descriptors and SCRs)")
-    parser.add_argument("--out", type=Path, default=ld.REPO_ITEMS / f"{SET_NAME}-{VERSION}")
-    parser.add_argument("--local", type=Path, default=ld.LOCAL_ROOT / f"{SET_NAME}-{VERSION}")
+    parser = sub.add_parser("mesh", help="MeSH time-split placement items (new descriptors and SCRs)")
+    parser.add_argument("--split", choices=sorted(SPLITS), default="2025-2026")
+    parser.add_argument("--out", type=Path, default=None, help="default: items/<set>-v1")
+    parser.add_argument("--local", type=Path, default=None, help="default: ~/data/vsa-llm/toolkit-learn/<set>-v1")
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--min-docs", type=int, default=MIN_DOCS)
     parser.add_argument("--no-tensor", action="store_true", help="skip ontology.pt")
-    parser.set_defaults(run=lambda a: build(a.out, a.local, workers=a.workers, min_docs=a.min_docs, tensor=not a.no_tensor))
+
+    def run(a: Any) -> dict[str, Any]:
+        spec = SPLITS[a.split]
+        return build(a.out or ld.REPO_ITEMS / f"{spec['set']}-{VERSION}", a.local or ld.LOCAL_ROOT / f"{spec['set']}-{VERSION}",
+                     workers=a.workers, min_docs=a.min_docs, tensor=not a.no_tensor, before=spec["before"],
+                     after=spec["after"], split=a.split)
+
+    parser.set_defaults(run=run)
