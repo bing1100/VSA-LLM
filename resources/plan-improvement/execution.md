@@ -1308,3 +1308,25 @@ for size in 1.7B 0.6B; do   # secondary: the self-hosted C5 runs, seed 1
     --batch 4 --host-dtype bfloat16 --output experiments/e12-self-query/agent/qwen3-$size-C5-s1 --overwrite --label 3a
 done
 ```
+
+## Author decisions of 2026-10-08 (the read–learn–write toolkit)
+
+| # | Decision | Detail |
+|---|---|---|
+| 63 | **Adopt the read–learn–write toolkit framing; implement and queue it** (author, 2026-10-08, after the status document) | Framing, holdouts, benchmarks and the integrating experiment are those of [`manuscript/toolkit-methodology-2026-10.md`](../../manuscript/toolkit-methodology-2026-10.md). **Tools:** *read* (debind / recall as a tool call), *learn* (make passive learning explicit: decompose, propose, verify), *write* (read-to-learn insertion of never-seen words), plus a meta layer of tool calls. **Approved:** (a) the three stricter real-world holdouts: H1 T7-ROOD (every training document that mentions a held-out record is dropped), H2 T1c-ROOD (ICD-9-era MIMIC-III training, ICD-10-only codes tested in MIMIC-IV, HRRBERT's ROOD protocol), H3 ICD-10-CM FY2027 new codes; (b) the benchmark sets: *read* — reversal curse (fictitious), LRE relations, BEAR; *learn* — MeSH 2025 → 2026 time split (new), SNOMED time-split enrichment, TaxoExpan/TMN; *write* — Entity Inferences, COMPS-WUGS, ALCUNA; *meta* — PopQA; (c) experiments on real data beyond synthetic, including Qwen3-1.7B on the real tracks (T4, T7, T7-ROOD, T8); (d) E13, the learning cycle (passive round 1 → learn → read new words → reason by recall → passive round 2 measured as tokens to criterion; frozen 4-bit host against QLoRA). The methodology updates M1–M6 apply. "Queue all and implement": each block is queued once its harness passes tests and a smoke, in decisive-first order |
+
+## Toolkit implementation (decision 63; WP-TK, 2026-10-08)
+
+Work packages (each: code + tests + a labelled CPU smoke + a pre-registration committed before any run + queue commands; the
+queue order is decisive first):
+
+| WP | Content | Owner | Status |
+|---|---|---|---|
+| TK-Q | Qwen3-1.7B (LoRA) on real tracks: T4 now; T7 after its Qwen3 relink; T1c (licensed, decision 58 rules) after T1c's SmolLM2 seed-1 report | this session | T4 queued 2026-10-08 |
+| TK-H1 | T7-ROOD: document-exclusion holdout + date split of the records into round 1 / round 2 (for E13); T7 Qwen3 relink; E9 configs | this session (agent) | building |
+| TK-H3L | data for *learn* and H3: MeSH 2025 → 2026 time split (placement items), ICD-10-CM FY2027 new codes (frames from the hierarchy; parent and code↔title items), SNOMED time-split enrichment (Zenodo, licence held), TaxoExpan/TMN WordNet sets | this session (agent) | building |
+| TK-B | benchmark adapters and a log-prob ranking harness: COMPS-WUGS, ALCUNA, Entity Inferences, reversal (fictitious), LRE relations, BEAR, PopQA; T8 Wikidata-framed track for the Wikidata-entity sets | this session (agent) | building |
+| TK-E13 | the learning cycle (stages 0–5, endpoints L1–L5), on T5 first, then T7-ROOD; frozen 4-bit host + QLoRA baseline; thin `ConceptStore` facade (M2) | this session (agent) | building |
+| TK-L | *learn* redesign: decompose-then-verify with a null-calibrated acceptance test (M3); evaluation on the TK-H3L sets | this session (agent) | building |
+| TK-H2 | T1c-ROOD (MIMIC; decision 58 rules) | peer session's T1c code, coordinated | after the peer confirms |
+| E11 / E12 additions | E11 adds the *write* benchmarks; E12 adds the *read* and *meta* benchmarks | peer session owns E11/E12; adapters from TK-B | coordinated |
