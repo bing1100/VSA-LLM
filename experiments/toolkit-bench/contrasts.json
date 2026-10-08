@@ -1,0 +1,315 @@
+{
+  "primary": [
+    {
+      "name": "W1",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "W2",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:linker"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    }
+  ],
+  "secondary": [
+    {
+      "name": "S1a ALCUNA-MC oracle store",
+      "set": "alcuna-mc",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S1b ALCUNA-Bool oracle store",
+      "set": "alcuna-bool",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S2 content control (oracle \u2212 random)",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:random"
+      }
+    },
+    {
+      "name": "S3 random frame \u2212 none",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:random"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S4 channel off \u2212 none",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "channel-off"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S5 exact-mapped pairs (oracle \u2212 none)",
+      "set": "comps-wugs",
+      "where": {
+        "exact_both": true
+      },
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S6 parent's own frame \u2212 none",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle:parent"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S7 typeprior \u2212 none",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:typeprior"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S8 linker \u2212 typeprior",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:linker"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:typeprior"
+      }
+    },
+    {
+      "name": "S9 definition in context \u2212 none",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "definition-in-context"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S10 frame in context \u2212 store",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "frame-in-context:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      }
+    },
+    {
+      "name": "S11 store + definition \u2212 definition",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle+definition-in-context"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "definition-in-context"
+      }
+    },
+    {
+      "name": "S12 C5 store \u2212 C2 store (composition vs free table)",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C2",
+        "condition": "store:oracle"
+      }
+    },
+    {
+      "name": "S13 C5 definition \u2212 C0\u2032 definition",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "definition-in-context"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C0p",
+        "condition": "definition-in-context"
+      }
+    },
+    {
+      "name": "S14 135M replication (oracle \u2212 none)",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-135M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-135M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S15 135M replication (linker \u2212 none)",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-135M-C5",
+        "condition": "store:linker"
+      },
+      "b": {
+        "model": "SmolLM2-135M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S17 joint linker \u2212 none (\u00a711.3)",
+      "set": "comps-wugs",
+      "where": {},
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:linker-joint"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S16 taxonomic negatives (oracle \u2212 none)",
+      "set": "comps-wugs",
+      "where": {
+        "negative_sample_type": "taxonomic"
+      },
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S16 overlap negatives (oracle \u2212 none)",
+      "set": "comps-wugs",
+      "where": {
+        "negative_sample_type": "overlap"
+      },
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S16 co-occurrence negatives (oracle \u2212 none)",
+      "set": "comps-wugs",
+      "where": {
+        "negative_sample_type": "co-occurrence"
+      },
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    },
+    {
+      "name": "S16 random negatives (oracle \u2212 none)",
+      "set": "comps-wugs",
+      "where": {
+        "negative_sample_type": "random"
+      },
+      "a": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "store:oracle"
+      },
+      "b": {
+        "model": "SmolLM2-360M-C5",
+        "condition": "none"
+      }
+    }
+  ]
+}

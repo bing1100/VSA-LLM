@@ -1,0 +1,184 @@
+{
+  "set": "icd10cm-fy2027",
+  "version": "v1",
+  "holdout": "H3 (decision 63; manuscript/toolkit-methodology-2026-10.md §2 M1)",
+  "before": "ICD-10-CM FY2026",
+  "after": "ICD-10-CM FY2027 (effective 2026-10-01)",
+  "licence": "public domain (CMS / NCHS ICD-10-CM)",
+  "sources": [
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/2027-code-descriptions-tabular-order.zip",
+      "path": "icd10cm/raw/2027-code-descriptions-tabular-order.zip",
+      "sha256": "91c6c9d1117764ce72375a0f3a5493b1725dafbc1ab283b55799076c9e194965",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    },
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/2027-code-tables-tabular-index.zip",
+      "path": "icd10cm/raw/2027-code-tables-tabular-index.zip",
+      "sha256": "37baa476323714be16f95c9b2c96812bf6f3623d9f15188866e584dc529b0298",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    },
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/2027-icd-10-addendum.zip",
+      "path": "icd10cm/raw/2027-icd-10-addendum.zip",
+      "sha256": "16986a34d1458e549217229686f1a487cf6419ee6acb1043fbc770f8fabdd026",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    },
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/2027-conversion-table.zip",
+      "path": "icd10cm/raw/2027-conversion-table.zip",
+      "sha256": "9478b8f95e137177e18be3df906c35566674b16313b12740d9e8e3778cb0e67a",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    },
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/2027-version-update-summary.zip",
+      "path": "icd10cm/raw/2027-version-update-summary.zip",
+      "sha256": "c26b19c9246f24ecaccf056eb21640bf1cdded07527910e24bb1d006494f2860",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    },
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/2026-code-descriptions-tabular-order.zip",
+      "path": "icd10cm/raw/2026-code-descriptions-tabular-order.zip",
+      "sha256": "55a9124a27ca78a4a5c41e1101eda064ec2e08d105ff9e78d1fbd1a83298ef11",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    },
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/april-1-2026-code-descriptions-tabular-order.zip",
+      "path": "icd10cm/raw/april-1-2026-code-descriptions-tabular-order.zip",
+      "sha256": "4fd9d8b37f02ab42827c7e7be30595c005b0cc3a6bae7a515e3f4c86b6918688",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    },
+    {
+      "name": "icd10cm",
+      "url": "https://www.cms.gov/files/zip/april-1-2026-code-tables-tabular-index.zip",
+      "path": "icd10cm/raw/april-1-2026-code-tables-tabular-index.zip",
+      "sha256": "c623e47143c156d1427fe7cd2bee7ac1ae6994bdd2196b9ec27d4a3219bcfd48",
+      "licence": "public domain (CMS / NCHS ICD-10-CM)"
+    }
+  ],
+  "files": {
+    "placement-dev": {
+      "file": "placement-dev.jsonl",
+      "items": 48,
+      "sha256": "3cbdc0a955442a68901d56024184e8ab627a2da1a2a2ebe5ea81377117aea781"
+    },
+    "choice-dev": {
+      "file": "choice-dev.jsonl",
+      "items": 96,
+      "sha256": "984f219fa8e13684718dda20fc5d9a6a77974ebaf4b3e758b8b923201d18108c"
+    },
+    "placement-test": {
+      "file": "placement-test.jsonl",
+      "items": 190,
+      "sha256": "986248a84c3f0dfc29f44df7ddf49cf8c5ac1dcc6a0360452e8d46847ae5e1e6"
+    },
+    "choice-test": {
+      "file": "choice-test.jsonl",
+      "items": 380,
+      "sha256": "a2de20a80e10fb3d7bbea4c5c11943eb871cce18fef71c1247eef312b4c14664"
+    }
+  },
+  "stats": {
+    "fy2026_codes": 98186,
+    "fy2026_billable": 74719,
+    "fy2027_codes": 98403,
+    "fy2027_billable": 74879,
+    "new_codes": 238,
+    "new_billable": 190,
+    "new_headers": 48,
+    "fy2026_billable_not_billable_in_fy2027": 30,
+    "of_which_became_headers": 15,
+    "deleted_codes": 21,
+    "new_by_chapter": {
+      "chapter:2": 3,
+      "chapter:3": 2,
+      "chapter:4": 3,
+      "chapter:5": 1,
+      "chapter:9": 9,
+      "chapter:10": 7,
+      "chapter:11": 8,
+      "chapter:12": 1,
+      "chapter:13": 33,
+      "chapter:14": 3,
+      "chapter:15": 56,
+      "chapter:17": 9,
+      "chapter:18": 1,
+      "chapter:19": 85,
+      "chapter:21": 17
+    },
+    "immediate_parent_new": 161,
+    "gold_parent_kind": {
+      "code": 224,
+      "block": 14
+    },
+    "gold_parent_was_billable_in_fy2026": 44,
+    "split": {
+      "test": 190,
+      "dev": 48
+    },
+    "with_inclusion_terms": 32
+  },
+  "seed": 20261008,
+  "split_rule": "learn_data.split_of(code), salt 'toolkit-learn-v1', dev 20%",
+  "snapshot": {
+    "path": "experiments/toolkit-learn/items/icd10cm-fy2027-v1/before-fy2026",
+    "committed": true,
+    "nodes": {
+      "file": "nodes.jsonl.gz",
+      "items": 98505,
+      "sha256": "89f3f54fd1dc782eab10ed6da04f3c1f6f03f4fd4f548484d00f4d37ed20126f"
+    },
+    "edges": {
+      "file": "edges.jsonl.gz",
+      "items": 98483,
+      "sha256": "9a056a843a4ef0d09e33ed34517de319093246e390ab13babb1e3a0f181578a4"
+    },
+    "node_kinds": {
+      "block": 297,
+      "category": 1918,
+      "chapter": 22,
+      "code": 74505,
+      "subcategory": 21763
+    }
+  },
+  "choice": {
+    "directions": [
+      "code2title",
+      "title2code"
+    ],
+    "options": 4,
+    "distractors": "≤ 2 siblings (same FY2027 parent) + same-chapter codes; never an ancestor or descendant; per-item seeded (sha256 of seed:code)",
+    "context": "MedConceptsQA wording; meta.mcq_prompt holds the lettered prompt"
+  },
+  "built": "2026-10-08",
+  "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data icd10cm",
+  "umls_map": {
+    "summary": {
+      "parent_codes": 41,
+      "parent_codes_with_cui": 40,
+      "parent_codes_with_mesh": 8,
+      "parent_codes_with_snomed": 13,
+      "codes_with_ancestors": 67,
+      "codes_with_ancestors_with_cui": 66,
+      "new_codes": 238,
+      "new_codes_with_string_cui": 38,
+      "new_codes_with_string_mesh": 12,
+      "new_codes_with_string_snomed": 17,
+      "icd10cm_rows": 206894
+    },
+    "source_versions": {
+      "ICD10CM": "ICD10CM_2023",
+      "MSH": "MSH2023_2022_07_27",
+      "SNOMEDCT_US": "SNOMEDCT_US_2022_09_01"
+    },
+    "local_path": "/home/bhux/data/vsa-llm/toolkit-learn/icd10cm-fy2027-v1/umls-2022ab",
+    "licence": "UMLS 2022AB (licensed): table kept local, counts only here"
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "schema": "rank-items/1",
+  "set": "comps-wugs-wordnet-v1",
+  "description": "COMPS-WUGS minimal pairs over the nonce word's parent; WordNet is-a frames (E9 WordNet track atomics)",
+  "created": "2026-10-08",
+  "builder": "vsa_embed.benchmarks.adapters build --set comps-wugs",
+  "seed": 0,
+  "options": {},
+  "source": {
+    "name": "comps",
+    "title": "COMPS (Conceptual Minimal Pair Sentences): COMPS-WUGS",
+    "citation": "Misra, Rayz & Ettinger (2023). COMPS: Conceptual Minimal Pair Sentences for testing Robust Property Knowledge and its Inheritance in Pre-trained Language Models. EACL 2023.",
+    "licence": "Apache-2.0",
+    "licence_evidence": "repository LICENSE (Apache License 2.0, Copyright 2022 Kanishka Misra); HF card kanishka/comps: apache-2.0",
+    "pinned": "5a9dc6c403b32a276c80a8ccef9956faf50ed074",
+    "files": [
+      {
+        "path": "raw/LICENSE",
+        "sha256": "2f0b8b1915997a1636833c79931d0474e1b2080ad3f3093c61b2188fc1935c9c",
+        "bytes": 555
+      },
+      {
+        "path": "raw/README.md",
+        "sha256": "60d6d6055fae865406ee21acdb1bf1007ae075992e231582a4a926c0d3bf53a9",
+        "bytes": 2233
+      },
+      {
+        "path": "raw/data/README.md",
+        "sha256": "16c7e249da27c42bbcbb2f859e3f603b1ebf10cbc55cbeea199d7154f92d15ab",
+        "bytes": 992
+      },
+      {
+        "path": "raw/data/comps/comps_wugs.jsonl",
+        "sha256": "28ad83a6202a69e973901e8875fff104b38b6a6c324c78d37454294225af1168",
+        "bytes": 6005157
+      },
+      {
+        "path": "raw/data/comps/comps_base.jsonl",
+        "sha256": "0e20c242de7321c8ef3745407baaa98008b3fd54b39f050fc49dc103330c8f8b",
+        "bytes": 14215247
+      },
+      {
+        "path": "raw/data/concept_senses.csv",
+        "sha256": "25b3cb1b36fbd1454bc5861b4cb79ef32f9fda2c72258004f5d18cff88921a58",
+        "bytes": 22007
+      },
+      {
+        "path": "raw/data/pseudowords.txt",
+        "sha256": "ac946838df3cc3bf68bf7a94e3b3397d87bf671efdd6cc6e7f8692b33bfdda77",
+        "bytes": 30
+      }
+    ]
+  },
+  "frames": {
+    "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+    "ontology_sha256": "8be0a15d2d9e3232ea5627b6c469ec0dc70bfd6bacff5636fbc6f2eb84b3be2e",
+    "rule": "hypernym \u2192 nearest WordNet is-a atomic of the track (depth recorded) + lexname + pos"
+  },
+  "counts": {
+    "items": 13896,
+    "by_set": {
+      "comps-wugs": 13896
+    }
+  },
+  "coverage": {
+    "concepts": 521,
+    "mapped": 521,
+    "exact_atomic": 224,
+    "ancestor_depths": {
+      "0": 224,
+      "1": 243,
+      "2": 43,
+      "3": 8,
+      "4": 3
+    },
+    "parent_entry_frames": 513,
+    "pairs": 13896,
+    "pairs_with_equal_frames": 620,
+    "pairs_exact_both": 2940,
+    "skipped": 0
+  },
+  "items_file": {
+    "path": "items.jsonl.gz",
+    "items": 13896,
+    "jsonl_sha256": "64152fb075862a9ca6267f3898fe0ac16ce8864f37015c9dc68fecb43f9ff63a",
+    "file_sha256": "64813ca134f72daeead00b0d8305085a2dcfddd12431bea7d58eefb18e9609e7"
+  },
+  "committed_items": true
+}

@@ -1,0 +1,338 @@
+{
+  "set": "mesh-2025-2026",
+  "version": "v1",
+  "role": "primary",
+  "releases": "MeSH 2025 (NLM 2025 archive, Last-Modified 2026-01-08) -> MeSH 2026 (2026-08-12; T7's files)",
+  "built": "2026-10-08",
+  "before": {
+    "desc": "/home/bhux/data/vsa-llm/mesh/2025/desc2025.gz",
+    "supp": "/home/bhux/data/vsa-llm/mesh/2025/supp2025.gz"
+  },
+  "after": {
+    "desc": "/home/bhux/data/vsa-llm/mesh/desc2026.gz",
+    "supp": "/home/bhux/data/vsa-llm/mesh/supp-2026/supp2026.gz"
+  },
+  "licence": "NLM MeSH terms and conditions (free of charge; acknowledge NLM; mark modified records); items carry MeSH UIs, names, scope notes and SCR notes (modified: bibliographic parts removed)",
+  "acknowledgement": "MeSH and PubMed courtesy of the U.S. National Library of Medicine",
+  "stats": {
+    "descriptors_before": 30956,
+    "descriptors_after": 31110,
+    "scrs_before": 323956,
+    "scrs_after": 324046,
+    "new_descriptors": 160,
+    "new_scrs": 539,
+    "deleted_descriptors": 6,
+    "deleted_scrs": 449,
+    "new_edges_known_records": {
+      "descriptor:parent": 53,
+      "descriptor:see_also": 6,
+      "descriptor:pharmacological_action": 1,
+      "scr:mapped_to": 430,
+      "scr:pharmacological_action": 94
+    }
+  },
+  "files": {
+    "placement-dev": {
+      "file": "placement-dev.jsonl",
+      "items": 26,
+      "sha256": "2fcab54f45bada9694bb2426237fc3ae24f618b470470ad96110d4638db38559"
+    },
+    "placement-min1-dev": {
+      "file": "placement-min1-dev.jsonl",
+      "items": 47,
+      "sha256": "026ffb8e741aeba14cce1f51bad3f524cfa142ef0e7aa52e63ef0bf2125aab1d"
+    },
+    "placement-test": {
+      "file": "placement-test.jsonl",
+      "items": 153,
+      "sha256": "325b048a0e85592777429b776522dd59101ac61706d3b80a311c42affbc029a0"
+    },
+    "placement-min1-test": {
+      "file": "placement-min1-test.jsonl",
+      "items": 206,
+      "sha256": "3bc40cde4efc6fd70e79779076ac5c838ee3a400edfea8320146d83505252307"
+    },
+    "placement-low-evidence": {
+      "file": "placement-low-evidence.jsonl",
+      "items": 520,
+      "sha256": "217a903714a62dbd37a6d95e26d12e5091adbce16311551708df19c15add0b4e"
+    },
+    "new-edges": {
+      "file": "new-edges.jsonl",
+      "items": 584,
+      "sha256": "af5607c88961fdbcf38558a9e909b3c551662823849fc5ebdc129d0efac82cbd"
+    }
+  },
+  "primary": {
+    "items": 179,
+    "by_kind": {
+      "descriptor": 120,
+      "scr": 59
+    },
+    "by_split": {
+      "dev": 26,
+      "test": 153
+    },
+    "scr_classes": {
+      "disease": 2,
+      "chemical": 57
+    },
+    "t7_selected": 53,
+    "t7_heldout": 7,
+    "t7_group": {
+      "eval": 133,
+      "seen": 46
+    },
+    "with_definition": 126,
+    "with_pharmacological_action": 23,
+    "parents_or_mapped_new": 2,
+    "rule": "≥ 5 mentioning abstracts and ≥ 1 gold parent in 2025"
+  },
+  "secondary_min1": {
+    "items": 253,
+    "by_kind": {
+      "descriptor": 147,
+      "scr": 106
+    },
+    "by_split": {
+      "dev": 47,
+      "test": 206
+    },
+    "scr_classes": {
+      "disease": 2,
+      "chemical": 103,
+      "organism": 1
+    },
+    "t7_selected": 72,
+    "t7_heldout": 11,
+    "t7_group": {
+      "eval": 192,
+      "seen": 61
+    },
+    "with_definition": 157,
+    "with_pharmacological_action": 34,
+    "parents_or_mapped_new": 2,
+    "rule": "≥ 1 mentioning abstract and ≥ 1 gold parent in 2025",
+    "files": [
+      "placement-min1-dev.jsonl",
+      "placement-min1-test.jsonl"
+    ],
+    "note": "superset of the primary set (same item ids); secondary"
+  },
+  "low_evidence": {
+    "items": 520,
+    "by_kind": {
+      "descriptor": 40,
+      "scr": 480
+    },
+    "by_split": {
+      "test": 412,
+      "dev": 108
+    },
+    "scr_classes": {
+      "chemical": 477,
+      "disease": 2,
+      "organism": 1
+    },
+    "t7_selected": 19,
+    "t7_heldout": 4,
+    "t7_group": {
+      "eval": 505,
+      "seen": 15
+    },
+    "with_definition": 432,
+    "with_pharmacological_action": 17,
+    "parents_or_mapped_new": 265,
+    "zero_docs": 446,
+    "docs_1_to_4": 74,
+    "no_gold_parent": 1
+  },
+  "evidence": {
+    "pubmed_files": [
+      "pubmed26n1572.parquet",
+      "pubmed26n1573.parquet",
+      "pubmed26n1574.parquet",
+      "pubmed26n1575.parquet",
+      "pubmed26n1576.parquet",
+      "pubmed26n1577.parquet",
+      "pubmed26n1578.parquet",
+      "pubmed26n1579.parquet",
+      "pubmed26n1580.parquet",
+      "pubmed26n1581.parquet",
+      "pubmed26n1582.parquet",
+      "pubmed26n1583.parquet",
+      "pubmed26n1584.parquet",
+      "pubmed26n1585.parquet",
+      "pubmed26n1586.parquet",
+      "pubmed26n1587.parquet",
+      "pubmed26n1588.parquet",
+      "pubmed26n1589.parquet",
+      "pubmed26n1590.parquet",
+      "pubmed26n1591.parquet",
+      "pubmed26n1592.parquet",
+      "pubmed26n1593.parquet",
+      "pubmed26n1594.parquet",
+      "pubmed26n1595.parquet",
+      "pubmed26n1596.parquet",
+      "pubmed26n1597.parquet",
+      "pubmed26n1598.parquet",
+      "pubmed26n1599.parquet",
+      "pubmed26n1600.parquet",
+      "pubmed26n1601.parquet",
+      "pubmed26n1602.parquet",
+      "pubmed26n1603.parquet",
+      "pubmed26n1604.parquet",
+      "pubmed26n1605.parquet",
+      "pubmed26n1606.parquet",
+      "pubmed26n1607.parquet",
+      "pubmed26n1608.parquet",
+      "pubmed26n1609.parquet",
+      "pubmed26n1610.parquet",
+      "pubmed26n1611.parquet",
+      "pubmed26n1612.parquet",
+      "pubmed26n1613.parquet",
+      "pubmed26n1614.parquet",
+      "pubmed26n1615.parquet",
+      "pubmed26n1616.parquet",
+      "pubmed26n1617.parquet",
+      "pubmed26n1618.parquet",
+      "pubmed26n1619.parquet",
+      "pubmed26n1620.parquet",
+      "pubmed26n1621.parquet",
+      "pubmed26n1622.parquet",
+      "pubmed26n1623.parquet",
+      "pubmed26n1624.parquet",
+      "pubmed26n1625.parquet",
+      "pubmed26n1626.parquet",
+      "pubmed26n1627.parquet",
+      "pubmed26n1628.parquet",
+      "pubmed26n1629.parquet",
+      "pubmed26n1630.parquet",
+      "pubmed26n1631.parquet",
+      "pubmed26n1632.parquet",
+      "pubmed26n1633.parquet",
+      "pubmed26n1634.parquet",
+      "pubmed26n1635.parquet",
+      "pubmed26n1636.parquet",
+      "pubmed26n1637.parquet",
+      "pubmed26n1638.parquet",
+      "pubmed26n1639.parquet",
+      "pubmed26n1640.parquet",
+      "pubmed26n1641.parquet",
+      "pubmed26n1642.parquet",
+      "pubmed26n1643.parquet",
+      "pubmed26n1644.parquet",
+      "pubmed26n1645.parquet",
+      "pubmed26n1646.parquet",
+      "pubmed26n1647.parquet",
+      "pubmed26n1648.parquet",
+      "pubmed26n1649.parquet",
+      "pubmed26n1650.parquet",
+      "pubmed26n1651.parquet",
+      "pubmed26n1315.parquet",
+      "pubmed26n1316.parquet",
+      "pubmed26n1317.parquet",
+      "pubmed26n1318.parquet",
+      "pubmed26n1319.parquet",
+      "pubmed26n1320.parquet",
+      "pubmed26n1321.parquet",
+      "pubmed26n1322.parquet",
+      "pubmed26n1323.parquet",
+      "pubmed26n1324.parquet",
+      "pubmed26n1325.parquet",
+      "pubmed26n1326.parquet",
+      "pubmed26n1327.parquet",
+      "pubmed26n1328.parquet",
+      "pubmed26n1329.parquet",
+      "pubmed26n1330.parquet",
+      "pubmed26n1331.parquet",
+      "pubmed26n1332.parquet",
+      "pubmed26n1333.parquet",
+      "pubmed26n1334.parquet"
+    ],
+    "documents_scanned": 1773541,
+    "min_pmid": 41025505,
+    "matcher": "mesh_novel.mention_key whole tokens; T7 alias policy (all SCR classes); names shared with another 2026 record dropped",
+    "eval_side": "pmid_bucket < 2000",
+    "pmid_sample": "first 20 PMIDs (ascending) per record",
+    "text": "PubMed 2025-26 (T7's local text) for every split"
+  },
+  "t7_policy": {
+    "rule": "on T7-trained models the primary MeSH evaluation is the descriptors plus the SCRs that T7 did not train linked to their gold frames (t7_selected false, or t7_heldout true) = meta.t7_group 'eval'; the T7-trained SCRs (meta.t7_group 'seen') are reported separately as 'seen (sanity)'; on hosts not trained on T7 every item counts",
+    "decided": "author, 2026-10-08",
+    "field": "meta.t7_group ('eval' | 'seen')",
+    "primary": {
+      "eval": {
+        "dev": 20,
+        "test": 113
+      },
+      "seen": {
+        "dev": 6,
+        "test": 40
+      }
+    },
+    "secondary_min1": {
+      "eval": {
+        "dev": 38,
+        "test": 154
+      },
+      "seen": {
+        "dev": 9,
+        "test": 52
+      }
+    }
+  },
+  "t7_overlap": {
+    "t7_selected_records": 8184,
+    "t7_selected_that_are_new": 72,
+    "t7_heldout_that_are_new": 11,
+    "primary_items_t7_selected": 53,
+    "primary_items_t7_heldout": 7
+  },
+  "split_rule": "learn_data.split_of(UI), salt 'toolkit-learn-v1', dev 20%",
+  "snapshot": {
+    "path": "/home/bhux/data/vsa-llm/toolkit-learn/mesh-2025-2026-v1/snapshot-2025",
+    "nodes": {
+      "file": "nodes.jsonl.gz",
+      "items": 30956,
+      "sha256": "64f81aab42d27daea6b6afcc5936e04924d29a2285216bff36564008c96cde1e"
+    },
+    "edges": {
+      "file": "edges.jsonl.gz",
+      "items": 56566,
+      "sha256": "c8bc190667b5bc118a9f0f5620599428d0021db2519a4c79ad27c56b7cd218fe"
+    },
+    "relations": {
+      "parent": 42287,
+      "pharmacological_action": 5077,
+      "see_also": 9202
+    },
+    "ontology_pt": {
+      "file": "ontology.pt",
+      "sha256": "806f44c654f367f4007ca7fdfd88dffaa7da293fa4b9b8cfaba9ae1648af3c8a",
+      "entries": 30763,
+      "atomics": 8192,
+      "relations": [
+        "parent",
+        "pharmacological_action",
+        "see_also",
+        "branch_top",
+        "branch_second"
+      ],
+      "alias_table_sha256": "122de37e0e80ff3858ac512f9de44ede98d0d0f88e76864921c20b5798aa671d"
+    },
+    "scr_path": "/home/bhux/data/vsa-llm/toolkit-learn/mesh-2025-2026-v1/snapshot-2025-scr",
+    "scr_nodes": {
+      "file": "nodes.jsonl.gz",
+      "items": 335950,
+      "sha256": "f3a72469c043fb234766d55191b4b704bba045cbd492d0f408d03a98a9803ef2"
+    },
+    "scr_edges": {
+      "file": "edges.jsonl.gz",
+      "items": 446615,
+      "sha256": "33b792ebbede5c6c83cc402c60568fdc2fed28ffd2669eef2a14eaa221ba5157"
+    }
+  },
+  "seconds": 261.9,
+  "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data mesh --split 2025-2026"
+}

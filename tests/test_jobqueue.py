@@ -98,3 +98,8 @@ def test_a_job_whose_runner_is_alive_is_not_recovered_after_its_process_exits(tm
     assert recover(queue) == [] and run_next(queue) is None          # the runner is about to record the outcome
     job.update(runner_pid=999999998); path.write_text(json.dumps(job))
     assert recover(queue) == ["train"]
+
+
+def test_the_cli_takes_fractional_priorities_and_keeps_integral_ones_integers() -> None:
+    from vsa_embed.jobqueue import _priority
+    assert _priority("54.498") == 54.498 and isinstance(_priority("54"), int) and isinstance(_priority("54.0"), int)
