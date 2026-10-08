@@ -614,9 +614,10 @@ def rowsource_jobs(configs: dict[Path, dict[str, Any]], track: str, *, python: s
 def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, track: str = "t5", evals: bool = True,
                root: Path = ROOT, queue_dir: Path | None = None, int4_probes: str | None = None,
                alias_table: Path | None = None, rescore: str = "arms", item_versions: tuple[str, ...] | list[str] = ("v1",),
-               plan: list[tuple[str, int, list[str]]] | None = None) -> list[str]:
+               plan: list[tuple[str, int, list[str]]] | None = None, level_step: float = 1) -> list[str]:
     """Training jobs at `priority` (default: the hosts' family's, 22 SmolLM2 / 26 Qwen3); per-run evaluations
-    at +1, `e4_quant` over the runs at +2, the R9 report at +3. Names are idempotent: a job that exists is left
+    at +1, `e4_quant` over the runs at +2, the R9 report at +3 (`level_step` < 1, e.g. 0.0001, places the four levels in a
+    fractional slot: `priority`, `priority + step`, … — the queue accepts float priorities). Names are idempotent: a job that exists is left
     alone (P0, shared by seed batches). Track runs get the evaluation alias table (written here once if
     `alias_table` is not given). The tokenizer family (corpora, items) is read from the configs, and every job
     runs with the hosts' interpreter (`stage_python`: the Qwen3.5 environment for Qwen3.5 hosts, else the pinned one).
@@ -642,7 +643,8 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     hosts = [h for h in (_config_host(c) for c in configs.values()) if h is not None]
     python = stage_python(hosts) if hosts else pinned_python()
     spec = track_spec(track, family)
-    priority = FAMILIES[family]["priority"] if priority is None else int(priority)
+    priority = FAMILIES[family]["priority"] if priority is None else (int(priority) if level_step == 1 else float(priority))
+    level = lambda k: priority + k if level_step == 1 else round(priority + k * level_step, 6)  # noqa: E731
     int4_probes = FAMILIES[family]["int4_probes"] if int4_probes is None else int4_probes
     queue = queue_dir or DEFAULT_DIR
     env = {"PYTHONPATH": "src"}
@@ -677,14 +679,14 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
             for suffix, command, retry in evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
                                                           int4_probes=int4_probes, batch_size=batch, model=model,
                                                           profile="pq" if model in ARM_LIKE else "full", item_versions=item_versions):
-                submit(f"{stage}-{path.stem}-{suffix}", command, priority + 1, min_free_gb=5, resume_args=retry)
+                submit(f"{stage}-{path.stem}-{suffix}", command, level(1), min_free_gb=5, resume_args=retry)
             if rescore == "all" or (rescore == "arms" and model in ARM_LIKE):
                 submit(f"{stage}-{path.stem}-rescore", rescore_command(run_dir, profile_variants("auto", model), python=python,
                                                                        batch_size=batch),
-                       priority + 1, min_free_gb=5, resume_args=[])
+                       level(1), min_free_gb=5, resume_args=[])
             if model in READOUT_ARMS:                                 # the readout arms' own chain (decision 60 step 2)
                 for suffix, command, retry in readout_jobs(run_dir, spec, python=python, batch_size=batch):
-                    submit(f"{stage}-{path.stem}-{suffix}", command, priority + 1, min_free_gb=5, resume_args=retry)
+                    submit(f"{stage}-{path.stem}-{suffix}", command, level(1), min_free_gb=5, resume_args=retry)
     if evals and run_dirs:
         seeds = sorted({int(p.stem.rsplit("-s", 1)[1]) for p in paths if "-P0-" not in p.stem}) or [1]
         batch = f"s{'-'.join(map(str, seeds))}"
@@ -692,15 +694,15 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
         if tag:                                                     # an arm batch: its own report name and folder
             batch += f"-{tag}-" + "-".join(sorted(set(hosts)))     # (per host set, so a later batch reports again)
         if quant_dirs:
-            submit(f"{stage}-quant-{batch}", quant_command(stage, quant_dirs, python=python, root=root), priority + 2,
+            submit(f"{stage}-quant-{batch}", quant_command(stage, quant_dirs, python=python, root=root), level(2),
                    min_free_gb=5, resume_args=[])
             if spec.general_corpus is not None:
                 submit(f"{stage}-quant-general-{batch}",
                        quant_command(stage, quant_dirs, python=python, root=root, eval_corpus=spec.general_corpus),
-                       priority + 2, min_free_gb=5, resume_args=[])
+                       level(2), min_free_gb=5, resume_args=[])
         submit(f"{stage}-report-{batch}", report_command(stage, python=python, root=root, general=spec.general_corpus is not None,
                                                          tag=tag),
-               priority + 3, min_free_gb=1, resume_args=[])
+               level(3), min_free_gb=1, resume_args=[])
     return queued
 
 
@@ -1104,8 +1106,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--int4-probes", default=None,
                         help="probe subset of the INT4 probe jobs (default: all for SmolLM2; "
                              f"{INT4_PROBES_NO_WSD} for Qwen3 and Qwen3.5 — WSD is the slowest)")
-    parser.add_argument("--queue", action="store_true"); parser.add_argument("--priority", type=int, default=None,
+    parser.add_argument("--queue", action="store_true"); parser.add_argument("--priority", type=float, default=None,
                                                                              help="default 22 (SmolLM2) / 26 (Qwen3) / 52 (Qwen3.5)")
+    parser.add_argument("--level-step", type=float, default=1,
+                        help="spacing of the training / evaluation / quant / report levels (default 1; e.g. 0.0001 with a "
+                             "fractional --priority keeps the stage inside one slot of the queue)")
     parser.add_argument("--dim3-baselines", action="store_true",
                         help="WP-PQ2: queue only the evaluation-only dimension-3 baselines (e9_dim3_baselines) for the stage's "
                              f"existing configs and runs (no training; default priority {DIM3_PRIORITY}; --seeds/--models filter)")
@@ -1169,7 +1174,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.dry_run:
         planned: list[tuple[str, int, list[str]]] = []
         queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
-                   rescore=args.rescore, item_versions=args.items_version, plan=planned)
+                   rescore=args.rescore, item_versions=args.items_version, plan=planned, level_step=args.level_step)
         configs = {str(p): yaml.safe_load(Path(p).read_text()) for p in paths}
         total, training = 0.0, 0.0
         for name, level, command in planned:
@@ -1181,7 +1186,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.queue:
         queued = queue_jobs(paths, stage, args.priority, track=args.track, evals=not args.no_evals, int4_probes=args.int4_probes,
-                            rescore=args.rescore, item_versions=args.items_version)
+                            rescore=args.rescore, item_versions=args.items_version, level_step=args.level_step)
         print(f"queued {len(queued)} job(s)")
 
 
