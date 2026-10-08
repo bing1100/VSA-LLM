@@ -293,6 +293,56 @@ stage (CPU lane; `report/<stage>-binding/`).
 Smoke tests run after the commit of this document and are labelled SMOKE: short subsets on the CPU, and at most 4 GB and
 5 min of GPU. They report timing and pipeline checks only, never a result.
 
+### §11 addendum — step 1 smoke tests (2026-10-08; SMOKE, not a result)
+
+Run after `4a45616` (this document's first commit) on real checkpoints of the main checkout, outputs in a scratch directory
+(never in run folders); no endpoint or contrast was computed or read. The GPU was shared with a training job (100%
+utilization, 15.6 GB in use), so the timings are upper bounds.
+
+- **CPU, T5 SmolLM2-135M C5 s1**, probe with 100 entries per subset (400 entries, 3,074 edges): every condition (static,
+  nocontext, neutral, context: 606 occurrences of 310 entries in the 1,024 evaluation windows) × both methods
+  (correlation, inverse) in 18 s; probe B on five representations; hidden states link 400 of 400 entries (30 layers,
+  middle layer 15); 250 s in all on a loaded CPU (load average 16 on 12 cores).
+- **CPU, twins** (10 pairs, sources own / none / swap): 20 of 20 twins link to their inserted entries, every source × item
+  kind populates, 13 s. **Natural T4** (20 anchors, T4 SmolLM2-135M C5 s1): 20 of 20 link, 10 s.
+- **GPU, T5 SmolLM2-360M C5 s1**, the full probe (4,200 entries, 31,193 edges; 13,320 real-context occurrences; 4,200 of
+  4,200 surfaces link): **65 s, peak 2.17 GB**. The first attempt exceeded 5 min: probe B's float64 ridge SVDs run ≈ 1 s
+  each on the shared consumer GPU (FP64) against 77 ms on the CPU, so the ridge fits now always run on the CPU in float64
+  (`learned_probe(..., cpu)`; the estimator is unchanged).
+- **GPU, T4 SmolLM2-360M C5 s1**, the full probe (9,850 entries — 3,000 per subset, all 850 held out — and 80,054 edges;
+  9,816 surfaces link): **144 s, peak 2.88 GB**.
+- **GPU, twins on T5 360M C5 s1** (300 pairs × own / none / swap; 600 of 600 link): **61 s**. **Natural T4 on T4 360M C5 s1**
+  (715 anchors × own / none; 715 of 715 link): **96 s**.
+- The T1c inputs (alias table, ontology, evaluation corpus) resolve through the track's loaders; T1c runs are not trained
+  yet, so its licensed path is covered by the unit test (aggregates only, relations by index).
+
+**Cost** (GPU-h from these timings, i.e. at shared-GPU speed: upper bounds; Qwen3 scaled by WP-UB's measured throughput
+ratios):
+
+| Block | Jobs | GPU-h |
+|---|---|---:|
+| T5 SmolLM2-360M (31 runs) + 135M (10): probe + twins | 41 + 41 | ≈ 1.05 |
+| T5 Qwen3-0.6B / 1.7B seeds 1–2 | 14 + 14 | ≈ 1.35 |
+| T4 seed 1 (360M, 135M: P0, C0′, C2, C5): probe + natural | 8 + 8 | ≈ 0.45 |
+| T4, every other config once trained | 27 + 27 | ≈ 1.6 |
+| T1, WordNet seed 1 (probe) | 16 | ≈ 0.7 |
+| T7 (probe, once trained) | 14 | ≈ 0.35 |
+| T1c (probe, `--licensed`, once trained) | 20 | ≈ 1.0 |
+| **Total** | | **≈ 6.5** |
+
 ## 12. Amendments
 
-(none yet)
+### 12.1 Origin wording (2026-10-08; no endpoint changed)
+
+Decision 60's text was revised on `main` after this document's first commit (`de0d9cd`): on T5 (SmolLM2-360M, 3 seeds)
+untyped bundling ties learned HRR (C5ut − C5 = +0.2%, n.s.), **translation beats it (+4.8%, significant)** and a fixed random
+operator loses 5.2% (significant) on held-out terms, while in decision 54's 50M screen every operator ties. The origin
+paragraph's "C5tr slightly better" should read so. Nothing in §§1–10 depends on it.
+
+### 12.2 Decision 61 (2026-10-08; step 1 unchanged)
+
+Decision 61 adds two operator families (`spectral_bounded`: learned phases with magnitudes in [0.5, 2]; `block_unitary`:
+block-diagonal orthogonal, non-commutative) and a slotted layout (three load-balanced relation groups in slots of d/3,
+unitary within each) as readout arms of step 2. Step 1's design, endpoints and runs are unchanged. Steps 1 and 3 read these
+arms' checkpoints once they are trained (their probe and item jobs are queued with the step-2 chain, after their
+training); their pre-registration, with decision 61's stated predictions, is §13.

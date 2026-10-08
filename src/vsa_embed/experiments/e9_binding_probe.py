@@ -751,7 +751,8 @@ def probe_run(run_dir: Path, output: Path | None = None, *, hidden: str = "auto"
         features.update(states)
         described.update(hidden_middle=f"host hidden state, layer {record['hidden'].get('middle_layer')}",
                          hidden_final="host hidden state, final layer")
-    l_values, record["learned"] = learned_probe(features, entries, subsets, learned_edges, settings, run.device, log=log)
+    # The ridge fits run on the CPU in float64 (LAPACK): FP64 SVDs on a consumer GPU are ~10× slower (§11 smoke).
+    l_values, record["learned"] = learned_probe(features, entries, subsets, learned_edges, settings, torch.device("cpu"), log=log)
     for name, text in described.items():
         if name in record["learned"]:
             record["learned"][name]["description"] = text
