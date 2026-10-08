@@ -539,3 +539,21 @@ ontology paths are sampled only where the first-hop filler names a concept.
 
 **Queueing.** Every step-3 job writes into its run folder (`RUN/binding-chain`) or `report/<stage>-binding` /
 `report/binding-sweep`, never a stage's base report folder (§12.4).
+
+### §14 addendum — step 3 smoke tests and the synthetic sweep (2026-10-08; SMOKE, not a result)
+
+Run after `4954e79` (§14's commit), on the CPU; chain outputs in a scratch directory, no endpoint computed or read.
+
+- **T5 SmolLM2-360M C5 s1** (`chain`, WP-UB items): 10.5 s wall, 2.3 GB RSS; methods correlation / inverse / exact; 2,000
+  ontology paths, 300 through the global memory of 4,200 concepts; 1,000 reverse queries; memory sizes 1 … 4,096 and 4,200;
+  1,000 path-order tuples per m. Every WP-UB item maps: 3,791 two-hop and 3,657 reverse items. The first attempt failed on
+  two-hop items whose second relation has no template (`sponsored_by`): options of untemplated relations are worded
+  `" " + text` (`e9_understanding._answer`), and the mapping now follows that rule.
+- **T4 SmolLM2-360M C5 s1**: 53 s wall; memory sizes up to 67,545 concepts; 337 of 365 two-hop items map (28 dropped and
+  counted, §14 exclusions), 2,495 of 2,495 reverse items.
+- **Synthetic sweep** (`report/binding-sweep`, random vectors, 8.6 s): descriptive, as pre-registered. At d = 256, k = 8:
+  unitary 0.98, Gaussian HRR with correlation 0.97 and with exact division 0.12, bounded spectral 0.96 (exact 0.57),
+  block unitary 0.99, translation 0.07, untyped 0.12 (≈ 1/k); one global memory of N stores of k = 8 falls from 1.00 (N = 1)
+  to 0.19 (unitary, N = 4) and ≈ 0 from N = 64; path order in one vector: block unitary 1.00 at m = 0, 2 and 6, every
+  commutative family ≈ 0.50. These are properties of the algebra on random vectors, not results about trained models.
+- **Cost:** CPU only (0 GPU-h): ≈ 10 s per T5 run and ≈ 1 min per T4 run; ≈ 1 CPU-h for every block of §14.

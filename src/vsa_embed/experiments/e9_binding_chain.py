@@ -489,12 +489,17 @@ def _item_atoms(ontology: dict[str, Any], track: str | None, family: str) -> tup
         pools[view.relation_names[r]].add(f)
     cache: dict[str, dict[str, int]] = {}
 
+    templated = getattr(lexicon, "templates", {})
+
     def answer_atom(relation: str, text: str) -> int | None:
+        """The atomic whose answer wording is `text` (as `e9_understanding._answer` words options: the relation's answer
+        template, else a space and the filler's text)."""
         if relation not in cache:
             cache[relation] = {}
             for a in sorted(pools.get(relation, ())):
                 if view.text(a):
-                    cache[relation].setdefault(lexicon.answer(relation, view.text(a)), a)
+                    wording = lexicon.answer(relation, view.text(a)) if relation in templated else " " + view.text(a)
+                    cache[relation].setdefault(wording, a)
         return cache[relation].get(text)
 
     names = [str(n) for n in ontology.get("concept_names") or []]

@@ -1095,3 +1095,45 @@ Add `--dry-run` to the `e9_plan` command to list the 211 jobs (2026-10-08: 21 tr
 | BU-6 | Typed soft cleanup (atomics observed under the relation) for every arm, untyped included | as pre-registered |
 | BU-7 | No auxiliary role / filler loss (LM loss only) | as pre-registered |
 | BU-8 | The optional Qwen3-1.7B pair and the 50M from-scratch screen are not queued | author's call |
+
+**Step 3 — chained two-hop, reverse lookup, capacity, path order (algebra; CPU lane).** Pre-registration §14 (`4954e79`):
+C1 = C5's chained two-hop through local stores − through one global memory; C2 = chained two-hop on the WP-UB T5 items,
+C5 − C5ut / C5tr (Holm); C3 = reverse lookup on role-ambiguous fillers, C5 − C5ut / C5tr (Holm). `e9_binding_chain` reads the
+composer from `final.pt` (no host), so the jobs run in the CPU lane: ≈ 10 s per T5 run, ≈ 1 min per T4 run, **0 GPU-h**. The
+synthetic sweep is committed (`report/binding-sweep`).
+
+| Block | Priority | Jobs (CPU lane) |
+|---|---|---|
+| C3a T5 composing runs (360M C5, C5rf, C5ut, C5tr, C5sh × s1–3; 135M C5 × s1–3) | 50 | 18 |
+| C3b T5 Qwen3 C5 seeds 1–2; T4 C5 seed 1 (360M, 135M) | 50 | 4 + 2 |
+| C3c T1, WordNet C5 seed 1 (controls) | 55 | 2 + 2 |
+| C3d the readout arms once trained (after their training at 54 and evaluations at 55) | 56 | 21 |
+| C3e once trained: the other T4 composing configs, T7, T1c (`--licensed`) | 58 | 14, 4, 6 |
+| reports: T5 steps 1–3 (after C3d), T4 steps 1–3 | 57 / 59 | 2 |
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+ITEMS=experiments/e9-retrofit/items
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t5 --models C5 C5rf C5ut C5tr C5sh \
+  --items $ITEMS/understanding-t5-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t5-qwen3 --models C5 --seeds 1 2 \
+  --items $ITEMS/understanding-t5-qwen3-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t4 --models C5 --seeds 1 \
+  --items $ITEMS/understanding-t4-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t1 --priority 55
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage wordnet --priority 55
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t5 --models U5 U5u U5sb U5bu U5sl U5tr U5ut \
+  --items $ITEMS/understanding-t5-smollm2-v1 --priority 56
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t4 --items $ITEMS/understanding-t4-smollm2-v1 --priority 58
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t7 --priority 58
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_chain queue --stage t1c --licensed --priority 58
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-binding-step3 --priority 57 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e9_binding_report --runs experiments/e9-retrofit/runs/t5 --output experiments/e9-retrofit/report/t5-binding \
+  --twins role-twins-t5-smollm2-v1 --understanding understanding-t5-smollm2-v1 --overwrite --title "E9 T5 — binding program, steps 1–3"
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-binding-step3 --priority 59 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e9_binding_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e9-retrofit/report/t4-binding \
+  --natural role-natural-t4-smollm2-v1 --understanding understanding-t4-smollm2-v1 --overwrite --title "E9 T4 — binding program, steps 1–3"
+```
+
+Every `queue` command takes `--dry-run` (2026-10-08: the counts above; T4's seed-1 C5 jobs are skipped by name in C3e). Every
+job writes into its run folder or `report/<stage>-binding` / `report/binding-sweep`, never `report/<stage>` (§12.4).
