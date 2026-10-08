@@ -1281,3 +1281,30 @@ T4 seed 1 10 + 7, T4 at 54 4 + 21 new (8 seed-1 jobs skipped by name), readout a
 | SQ-1–SQ-5 | pre-registration §14 (context format, role-blind reference, null, subsets, τ) | as registered |
 | SQ-6 | the secondary blocks' size: the Qwen3 replication (≈ 6.5 GPU-h) and the new-word set (≈ 2.6) could move below the primary tier or be cut to seed 1 | queue as listed; the author sets the floats |
 | SQ-7 | 3b (LoRA on tool traces) and 3c (calibrated self-critique) need two small harnesses (≈ one day each) before their pre-registered runs | build after the Q1 / F1 endpoint report |
+
+**3a feasibility pilot** (PILOT, Qwen3 T5 seed 1, 50 questions per host; pre-registration §15): untouched **base** hosts reading
+the C5 store emit well-formed recall calls from three demonstrations (Qwen3-0.6B-Base 0.82, 1.7B-Base 0.84) and use them (twin
+contrast 1.00 against 0.50–0.60 without the tool over 10 pairs; two-hop 0.53–0.60 against 0.33–0.40); the **C5 runs** (LoRA
+on the T5 corpus) do not (0.52 and 0.02 well-formed calls; the 1.7B answers "Action:" in the corpus's meeting-note register).
+Amendment 16.2: 3a's primary host is the base model reading the C5 store; the self-hosted C5 runs are a secondary.
+
+**Run later (pre-registered, not queued).** 3a ≈ 9 GPU-h (amendment 16.2; commands below, suggested priority 56); 3b (LoRA
+on tool-using traces, §12) ≈ 3.8 GPU-h and 3c (calibrated self-critique with a null world, §13) ≈ 2.6 GPU-h, each after a small
+harness (`e12_traces`, `e12_critique`; ≈ one day each).
+
+```bash
+# 3a full run (deferred; pre-registration §10.1 and 16.2): base hosts reading the C5 store of seeds 1-2
+for size in 1.7B 0.6B; do for s in 1 2; do
+  PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-qwen3-e12-agent-$size-base-s$s --priority 56 --min-free-gb 5 --no-resume -- \
+    $PY -m vsa_embed.experiments.e12_agent pilot --run experiments/e9-retrofit/runs/t5-qwen3/Qwen3-$size-Base-frozen-P0-s1 \
+    --store experiments/e9-retrofit/runs/t5-qwen3/Qwen3-$size-Base-lora-C5-s$s --twins $I/role-twins-t5-qwen3-v1 \
+    --understanding $I/understanding-t5-qwen3-v1 --twin-pairs 300 --two-hop 150 --reverse 150 --batch 4 --host-dtype bfloat16 \
+    --output experiments/e12-self-query/agent/qwen3-$size-base-C5store-s$s --overwrite --label 3a
+done; done
+for size in 1.7B 0.6B; do   # secondary: the self-hosted C5 runs, seed 1
+  PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-qwen3-e12-agent-$size-C5-s1 --priority 56 --min-free-gb 5 --no-resume -- \
+    $PY -m vsa_embed.experiments.e12_agent pilot --run experiments/e9-retrofit/runs/t5-qwen3/Qwen3-$size-Base-lora-C5-s1 \
+    --twins $I/role-twins-t5-qwen3-v1 --understanding $I/understanding-t5-qwen3-v1 --twin-pairs 300 --two-hop 150 --reverse 150 \
+    --batch 4 --host-dtype bfloat16 --output experiments/e12-self-query/agent/qwen3-$size-C5-s1 --overwrite --label 3a
+done
+```

@@ -50,8 +50,11 @@ from ..span_channel import normalize_alias
 from . import e9_binding_items as role_items
 from . import e9_understanding as und
 from .e5_common import E5Run, finish_output, json_ready, open_run, start_output, write_json
+from .e12_faithfulness import TextCache, head_argmax
 from .e12_self_query import (Condition, ContextBuilder, ItemSet, LoadedStore, frame_ids, host_view, lexicon_for_track, load_item_set,
                              load_store)
+
+HEAD_CHUNK = 16384                       # the float32 output head in vocabulary slices (Qwen3's 151k-row head, ≤ 4 GB)
 
 SCHEMA = "e12-agent/1"
 ACTION = re.compile(r"Action:\s*(recall|lookup)\[([^\]\n]*)\]")
@@ -159,7 +162,15 @@ class Toolbox:
         return self.value_of.get(key, self.value_of.get(key.removeprefix("the ")))
 
     def call(self, kind: str, arguments: str) -> tuple[str, dict[str, Any]]:
-        """(observation text, parse record) of one call."""
+        """(observation text, parse record) of one call. A call that fails but would parse under the other tool's name
+        (`lookup[term, relation]` for `recall[term, relation]`) is marked `swapped` — recorded, never repaired."""
+        text, record = self._call(kind, arguments)
+        if not record.get("parsed"):
+            other = "lookup" if kind == "recall" else "recall"
+            record["swapped"] = bool(self._call(other, arguments)[1].get("parsed"))
+        return text, record
+
+    def _call(self, kind: str, arguments: str) -> tuple[str, dict[str, Any]]:
         parts = [a.strip() for a in arguments.split(",")]
         if kind == "recall":
             name, relation_words = parts[0], ", ".join(parts[1:]) if len(parts) > 1 else None
@@ -315,9 +326,7 @@ def next_tokens(adapter: Any, texts: Sequence[str]) -> list[int]:
     last = mask.sum(1) - 1
     head = model.model.get_output_embeddings()
     with torch.autocast(device.type, enabled=False):
-        logits = F.linear(hidden[torch.arange(ids.shape[0], device=device), last].float(), head.weight.float(),
-                          None if head.bias is None else head.bias.float())
-    return logits.argmax(-1).tolist()
+        return head_argmax(head, hidden[torch.arange(ids.shape[0], device=device), last], chunk=HEAD_CHUNK).tolist()
 
 
 @dataclass
@@ -370,10 +379,11 @@ def run_episodes(adapter: Any, toolbox: Toolbox, prompts: Sequence[tuple[Questio
 
 
 def answer_scores(adapter: Any, prefixes: Sequence[str], questions_: Sequence[Question]) -> list[np.ndarray]:
-    """Per question: Σ log p of each candidate after its prefix (the text ending at `Answer:`)."""
+    """Per question: Σ log p of each candidate after its prefix (the text ending at `Answer:`); the float32 head in
+    vocabulary slices (`e12_faithfulness.TextCache`)."""
     flat_prefixes = [p for p, q in zip(prefixes, questions_) for _ in q.candidates]
     flat_candidates = [c for q in questions_ for c in q.candidates]
-    sums, _ = role_items.continuation_scores(adapter, flat_prefixes, flat_candidates)
+    sums, _ = TextCache(adapter, head_chunk=HEAD_CHUNK).scores(list(zip(flat_prefixes, flat_candidates)))
     out, cursor = [], 0
     for q in questions_:
         out.append(sums[cursor:cursor + len(q.candidates)]); cursor += len(q.candidates)
@@ -411,7 +421,7 @@ def host_dtype(name: str | None) -> Iterator[None]:
 
 
 def pilot(run: E5Run, store: LoadedStore, twins: ItemSet | None, understanding: ItemSet | None, *, twin_pairs: int, two_hop: int,
-          reverse: int, batch: int, seed: int = 0, log: Callable[[str], None] = print) -> dict[str, Any]:
+          reverse: int, batch: int, seed: int = 0, part: tuple[int, int] = (0, 1), log: Callable[[str], None] = print) -> dict[str, Any]:
     family = run.config.get("e9_family") or "smollm2"
     track = run.config.get("e9_track") or "t5"
     lexicon = lexicon_for_track(track, family, run.ontology)
@@ -422,6 +432,9 @@ def pilot(run: E5Run, store: LoadedStore, twins: ItemSet | None, understanding: 
     builder = ContextBuilder(combined, run.ontology, lexicon, {"own": store}, seed=seed)
     toolbox = Toolbox(builder, store, run.table)
     qs = questions(twins, understanding, twin_pairs=twin_pairs, two_hop=two_hop, reverse=reverse, seed=seed)
+    index, parts = part                                # a contiguous slice (twins stay with their partner when the size is even)
+    size = -(-len(qs) // parts)
+    qs = qs[index * size:(index + 1) * size]
     exclude = {int(c["entry"]) for c in concepts if c.get("entry") is not None}
     demos_tool = demonstrations(builder, toolbox, exclude, tool=True)
     demos_plain = demonstrations(builder, toolbox, exclude, tool=False)
@@ -449,6 +462,7 @@ def pilot(run: E5Run, store: LoadedStore, twins: ItemSet | None, understanding: 
         first = e.actions[0] if e.actions else None
         rows.append({"id": q.id, "kind": q.kind, "gold": q.gold, "meta": json_ready(q.meta), "actions": e.actions, "answered": e.answered,
                      "tokens": e.tokens, "format_ok": bool(first and first.get("parsed")), "called": bool(e.actions),
+                     "swapped": bool(first and not first.get("parsed") and first.get("swapped")),
                      "relevant": bool(first and first.get("parsed") and relevant(q, first, surfaces)),
                      "scores": {"agent": a.tolist(), "no_tool": p.tolist(), "fixed": f.tolist()},
                      "correct": {k: float(np.argmax(v) == q.gold) for k, v in (("agent", a), ("no_tool", p), ("fixed", f))},
@@ -462,7 +476,8 @@ def summarize(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
         sub = [r for r in rows if kind == "all" or r["kind"] == kind]
         if not sub:
             continue
-        out[kind] = {"questions": len(sub), **{k: float(np.mean([r[k] for r in sub])) for k in ("called", "format_ok", "relevant", "answered")},
+        out[kind] = {"questions": len(sub), **{k: float(np.mean([r.get(k, False) for r in sub]))
+                                               for k in ("called", "format_ok", "swapped", "relevant", "answered")},
                      "calls_per_episode": float(np.mean([len(r["actions"]) for r in sub])),
                      **{f"accuracy_{c}": float(np.mean([r["correct"][c] for r in sub])) for c in ("agent", "no_tool", "fixed")}}
     twins = defaultdict(dict)
@@ -489,13 +504,16 @@ def render(summary: dict[str, Any], header: dict[str, Any]) -> str:
              + (f" — {header['label']}" if header.get("label") else ""), "",
              f"Host dtype: {header['host_dtype'] or 'as trained'}. Greedy decoding; at most {MAX_ACTIONS} calls, {MAX_SEGMENT} tokens per "
              "segment. Answers read as forced choice after `Answer:`.", "",
-             "| set | questions | called | format ok | relevant | answered | calls / episode | agent | no tool | fixed pipeline |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+             "| set | questions | called | format ok | swapped tool | relevant | answered | calls / episode | agent | no tool | fixed pipeline |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for kind, m in summary.items():
         if kind == "twins_contrast":
             continue
-        lines.append(f"| {kind} | {m['questions']} | {m['called']:.2f} | {m['format_ok']:.2f} | {m['relevant']:.2f} | {m['answered']:.2f} | "
-                     f"{m['calls_per_episode']:.2f} | {m['accuracy_agent']:.2f} | {m['accuracy_no_tool']:.2f} | {m['accuracy_fixed']:.2f} |")
+        lines.append(f"| {kind} | {m['questions']} | {m['called']:.2f} | {m['format_ok']:.2f} | {m.get('swapped', 0.0):.2f} | {m['relevant']:.2f} | "
+                     f"{m['answered']:.2f} | {m['calls_per_episode']:.2f} | {m['accuracy_agent']:.2f} | {m['accuracy_no_tool']:.2f} | "
+                     f"{m['accuracy_fixed']:.2f} |")
+    lines += ["", "`format ok`: the first action parses as a call of its tool; `swapped tool`: it fails but would parse under the other "
+              "tool's name (recorded, not repaired); `relevant`: the first call is about the item."]
     if "twins_contrast" in summary:
         t = summary["twins_contrast"]
         lines += ["", f"Twin contrast accuracy over {t['pairs']} pairs: agent {t['agent']:.2f}, no tool {t['no_tool']:.2f}, fixed {t['fixed']:.2f}."]
@@ -504,25 +522,34 @@ def render(summary: dict[str, Any], header: dict[str, Any]) -> str:
 
 def run_pilot(args: argparse.Namespace) -> dict[str, Any]:
     output = Path(args.output)
-    config = {"experiment": "e12-agent-pilot", "run": str(args.run), "twins": str(args.twins) if args.twins else None,
-              "understanding": str(args.understanding) if args.understanding else None, "twin_pairs": args.twin_pairs,
-              "two_hop": args.two_hop, "reverse": args.reverse, "batch": args.batch, "host_dtype": args.host_dtype, "seed": args.seed,
-              "label": args.label}
+    part = tuple(int(x) for x in args.part.split("/")) if args.part else (0, 1)
+    config = {"experiment": "e12-agent-pilot", "run": str(args.run), "store": str(args.store or args.run),
+              "twins": str(args.twins) if args.twins else None, "understanding": str(args.understanding) if args.understanding else None,
+              "twin_pairs": args.twin_pairs, "two_hop": args.two_hop, "reverse": args.reverse, "part": list(part), "batch": args.batch,
+              "host_dtype": args.host_dtype, "seed": args.seed, "label": args.label}
     if args.overwrite:
         for name in ("summary.json", "episodes.jsonl.gz", "report.md", "resolved_config.yaml", "manifest.json"):
             if (output / name).is_file():
                 (output / name).unlink()
     git_at_start = start_output(output, config)
-    store = load_store(Path(args.run), "own")
+    store = load_store(Path(args.store or args.run), "own")             # P0 hosts read a C5 run's store
+    alias_table = args.alias_table
+    if alias_table is None:
+        import yaml
+
+        from .e9_tracks import ensure_alias_table, track_spec
+        run_config = yaml.safe_load((Path(args.run) / "resolved_config.yaml").read_text())
+        alias_table = ensure_alias_table(track_spec(run_config.get("e9_track"), run_config.get("e9_family") or "smollm2"))
     with host_dtype(args.host_dtype):
-        run = open_run(Path(args.run), device=args.device, batch_size=args.batch, max_length=4096, alias_table=args.alias_table)
+        run = open_run(Path(args.run), device=args.device, batch_size=args.batch, max_length=4096, alias_table=alias_table)
     twins = load_item_set(args.twins, limit=args.twin_pairs) if args.twins else None
     understanding = load_item_set(args.understanding) if args.understanding else None
     result = pilot(run, store, twins, understanding, twin_pairs=args.twin_pairs, two_hop=args.two_hop, reverse=args.reverse,
-                   batch=args.batch, seed=args.seed)
+                   batch=args.batch, seed=args.seed, part=part)
     summary = summarize(result["rows"])
     peak = torch.cuda.max_memory_allocated() / 2**30 if torch.cuda.is_available() and run.device.type == "cuda" else None
-    header = {"source": run.describe(), "host_dtype": args.host_dtype, "label": args.label}
+    header = {"source": run.describe(), "store": str(args.store or args.run), "host_dtype": args.host_dtype, "label": args.label,
+              "part": list(part)}
     und.write_jsonl_gz(output / "episodes.jsonl.gz", result["rows"])
     write_json(output / "summary.json", {**header, "summary": summary, "seconds": result["seconds"], "peak_gb": peak,
                                          "demonstrations": result["demonstrations"]})
@@ -542,11 +569,38 @@ def main(argv: list[str] | None = None) -> None:
     pi.add_argument("--host-dtype", default=None, choices=[None, "bfloat16", "float16"])
     pi.add_argument("--alias-table", type=Path, default=None); pi.add_argument("--device", default=None)
     pi.add_argument("--seed", type=int, default=0); pi.add_argument("--label", default=None)
+    pi.add_argument("--store", type=Path, default=None, help="the run whose store the tools read (default: the run itself)")
+    pi.add_argument("--part", default="", help="K/N: the K-th of N contiguous slices of the questions (jobs under 5 minutes)")
     pi.add_argument("--overwrite", action="store_true")
+    me = sub.add_parser("merge", help="merge pilot parts into one summary and report")
+    me.add_argument("--inputs", type=Path, nargs="+", required=True); me.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
+    if args.command == "merge":
+        merged = merge(args.inputs, args.output)
+        print(json.dumps({"output": str(args.output), "summary": merged["summary"]}, indent=2))
+        return
     result = run_pilot(args)
     print(json.dumps({"output": result["output"], "seconds": round(result["seconds"], 1), "peak_gb": result["peak_gb"],
                       "summary": result["summary"]}, indent=2))
+
+
+def merge(inputs: Sequence[Path], output: Path) -> dict[str, Any]:
+    """One summary and report from pilot parts (episodes concatenated; the header of the first part)."""
+    rows, header, seconds, peaks = [], None, 0.0, []
+    for folder in inputs:
+        document = json.loads((Path(folder) / "summary.json").read_text())
+        header = header or {k: document[k] for k in ("source", "store", "host_dtype", "label") if k in document}
+        seconds += float(document.get("seconds", 0.0))
+        peaks.append(document.get("peak_gb"))
+        rows += und.read_jsonl(Path(folder) / "episodes.jsonl")
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    summary = summarize(rows)
+    und.write_jsonl_gz(output / "episodes.jsonl.gz", rows)
+    write_json(output / "summary.json", {**header, "summary": summary, "seconds": seconds, "peak_gb": max([p for p in peaks if p] or [0.0]),
+                                         "parts": [str(p) for p in inputs]})
+    (output / "report.md").write_text(render(summary, header))
+    return {"summary": summary}
 
 
 if __name__ == "__main__":

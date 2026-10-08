@@ -408,13 +408,119 @@ job; CPU preferred), on T5 SmolLM2-360M seed 1 only (Q1: C5, C5ut, C0′, P0 + t
 feasibility pilot on Qwen3. They report timing, pipeline checks and **PILOT** numbers; nothing in §§1–10 changes because of
 them, and they never enter an endpoint.
 
-## 12. 3b — concrete design and cost (step 5; added before any 3b run)
+## 12. 3b — learning from tool-using traces: concrete design and cost (pre-registered 2026-10-08, before any 3b run)
 
-*(to be added)*
+**Question.** If the model practises answering role questions with its own recalled frame in context, does it learn to read
+roles from the channel — telling role-swap twins apart **without the tool** (internalization)? And does a model trained on
+tool-using traces learn to call the tool well?
 
-## 13. 3c — concrete design and cost (step 5; added before any 3c run)
+**Host and what trains.** The T5 SmolLM2-360M C5 runs, seeds 1–3 (the Q1 hosts). Rank-16 LoRA adapters on the host's
+attention and MLP projections (`integrations.transformers.add_lora`, the default targets); the host's weights and the whole
+channel (composer, projector, gate, P1 context) frozen — the arms may learn to *read* the store, not change it. One
+control arm on the C5ut runs (below).
 
-*(to be added)*
+**Training data** (built by the fixed pipeline; no test term, no test name, no test frame):
+- *training twins*: 2,000 new pairs built as the test twins (`e9_binding_items.build_twins`, the same two relation pairs),
+  with item seed 1 and name seed 29, names disjoint from every E9 item set, frames disjoint from the test twins' frames, and
+  no (X, Y) filler pair of a test twin;
+- *seen terms*: every seen T5 entry (training frequency ≥ 10, not held out, not an anchor of any E9/E12 item set), one
+  question per templated relation of its frame whose options are the gold filler and the term's own filler of another
+  relation of the same answer type when it has one (else a frequency-weighted filler of the relation's pool) — so a
+  role-blind answer fails;
+- questions use the property templates' first two paraphrases (the twins' `choice` wordings); the held-out wording (`cloze`)
+  is never trained.
+
+**Arms** (the same questions; loss on the model's own turns only — never on questions or observations):
+- **T (tool traces):** the 3a format — `Question … Thought … Action: recall[<term>, <relation>] … Observation: <the store's
+  recall> … Thought … Answer: <gold>`;
+- **I (internalize):** `Question … Answer: <gold>` with no tool;
+- **S (stepwise internalization, Deng et al. 2024):** T's traces for the first epoch, then with the observation removed, then
+  with the action removed (I's format in the last epoch);
+- **L (control):** LoRA on the same number of tokens of the T5 training text (any update of the same size);
+- **I-ut:** arm I on the C5ut runs (whose twins have identical stores): any twin gain there is not role reading.
+
+**Training budget.** 3 epochs; AdamW, lr 2·10⁻⁴, 32 sequences per step, warmup 3%; tokens per epoch ≈ 2.4 M (T, S) and
+0.45 M (I, I-ut); L matches T's tokens. SmolLM2-360M LoRA trains at ≈ 12k tokens/s (`e9_plan` throughput model): T and S
+≈ 0.17 GPU-h, L ≈ 0.17, I and I-ut ≈ 0.04 per seed.
+
+**Tests** (every arm, seeds 1–3): the twins **without the tool** (`none`: the channel only), `choice` and `cloze`; the twins
+with the fixed pipeline (`recall:own`); for arm T, the agentic episodes of 3a; new words (property, no tool); WP-UB two-hop
+(no tool and chained recall).
+
+**Endpoints.**
+- **B1 (internalization):** twin contrast accuracy without the tool, **I − L** and **S − L** (pairs × seeds; Holm over
+  the two).
+- **B2 (tool use learned):** arm T's agentic twin contrast and call-format success against 3a's few-shot episodes on the
+  same host size (descriptive; T − I on the agentic twins as the test).
+
+**Predictions.** B1 > 0 but well below the tool (≤ 0.65 against `recall:own` ≈ 0.8): unbinding a learned-HRR role is a
+linear map of the injected vector, so LoRA can learn it, but the T5 LM loss never asked the host to, and 2,000 twins pairs
+are few. S ≥ I. I-ut ≈ 0.5 (its stores cannot separate twins). B2: T calls well-formed tools ≥ 0.9 of the time.
+
+**Refutation readings.** I-ut > 0.5 (CI excludes 0.5): the training leaked the answers through names or templates — read
+B1 only after finding the leak; I > L but the cloze (never trained) wording at 0.5: the arm learned the trained wording, not
+the role; T's gain without the tool equal to I's: the traces add nothing beyond the answers.
+
+**Cost.** Training (the queue's GPU, alone: `e9_plan`'s throughput model, ≈ 12k tokens/s for SmolLM2-360M LoRA) ≈ 3 seeds ×
+(T 0.17 + S 0.17 + I 0.04 + L 0.17) + I-ut 3 × 0.04 ≈ **1.8 GPU-h**. Evaluation (phase A's pilot throughput, an upper bound):
+per arm and seed the twins without and with the tool (`none`, `recall:own`; ≈ 3 min), new words without the tool (≈ 1 min),
+two-hop without the tool (≈ 1 min) — 5 arms × 3 seeds ≈ 1.3 GPU-h — and arm T's agentic episodes on 100 twin pairs (the r1
+question of both twins; ≈ 4 s per question measured on Qwen3-0.6B in the 3a pilot) ≈ 0.7 GPU-h. **Total ≈ 3.8 GPU-h.** Code:
+a trace builder and a LoRA trainer on a finished run (`e12_traces`, ≈ one day with tests on the toy world).
+
+## 13. 3c — calibrated self-critique: concrete design and cost (pre-registered 2026-10-08, before any 3c run)
+
+**Question.** Can the model check its decoded beliefs against its behaviour and against held-out evidence, keep the right
+ones, flag or revise the rest, with calibrated confidence — and **reject false structure** in a world where the store holds
+it (E10 accepted false structure without retracting it)?
+
+**Beliefs and their confidence.** A belief is a decoded edge of phase A's recall (term, relation, filler, cleanup cosine).
+Its confidence is calibrated per relation: P(decode correct | cosine, margin to the second candidate, frame size), isotonic
+regression fitted on the store's seen entries (decode correctness is known there) and applied to test terms. Calibration is
+reported on held-out terms and new words: ECE (15 bins), Brier score, AUROC of correct against wrong decodes.
+
+**Behaviour.** The model's answer to the item without the tool (phase A `none`), with its own confidence (the softmax of the
+candidates' scores).
+
+**Held-out evidence.** For T5 held-out terms (never linked in training, present in the evaluation text): one evaluation-corpus
+sentence about the item's relation, put in context; for new words, none (the honest limitation).
+
+**The loop.**
+- *Rule loop (the information available):* answer with the belief when its calibrated confidence p ≥ θ, else with the
+  behaviour; flag the item when belief, behaviour and evidence disagree; θ is chosen on a seeded dev half of the new words
+  and applied to the other half and to the held-out terms (the T5 WP-C7 zero-shot property items of the held-out terms).
+- *Model loop (Qwen3-1.7B-Base C5, seeds 1–2):* a few-shot critique prompt shows the question, the model's own answer, the
+  recall with p and the evidence sentence, and asks `Keep`, `Revise to <option>` or `Unsure`; scored by forced choice over
+  the three decisions and the options.
+
+**Null world (the control).** The same items with a **corrupted store**: each test term's frame replaced by a same-type
+false frame (fillers of each relation redrawn frequency-weighted, as E9's `random_frame`; roles swapped within the twins'
+pairs), composed and decoded exactly as the real store. The decode stays faithful to the store, so p stays high: calibration
+against the store is not calibration against the world. Measures: the false-belief adoption rate (final answer = the false
+recalled filler), the flag rate, and p's calibration against the *world* in both worlds.
+
+**Endpoints (when run).**
+- **K1:** accuracy at 80% coverage — each method abstaining on its own lowest-confidence 20% (the loop by the calibrated p
+  of its chosen answer, the no-tool answer by its softmax) — of the rule loop − the no-tool answers (the test half of the
+  new words and the held-out terms; T5 360M C5, seeds 1–3; items × seeds).
+- **K2:** false-belief adoption in the null world, rule loop − naive recall (always adopt the belief); Holm over K1 and K2.
+- Secondaries: ECE / Brier / AUROC of calibrated p; the model loop's K1 and K2 (Qwen3-1.7B, seeds 1–2).
+
+**Predictions.** K1 > 0 (beliefs decoded at ≈ 0.96 beat behaviour at ≈ 0.25 on new words). K2 < 0 on seen and held-out
+terms (behaviour and evidence disagree with false beliefs) but ≈ 0 on new words (no behaviour or evidence signal): the loop
+can only reject false structure where it has an outside signal, as Huang et al. (ICLR 2024) found for self-correction without
+external feedback.
+
+**Refutation readings.** K2 ≈ 0 on held-out terms with evidence in context: the loop does not use evidence against its own
+store (the E10 failure mode, now measured); calibrated p's ECE on test terms much worse than on seen terms: calibration does
+not transfer to composed (zero-shot) stores.
+
+**Cost** (phase A's pilot throughput, upper bounds). Calibration and the rule loop reuse phase A's `none` and `recall:own`
+scores (CPU). New GPU work: the null-world recall condition on the twins and the 300 new words (≈ 8.5 min per run; C5 and
+C5ut × 3 ≈ 0.85 GPU-h); the evidence condition on the held-out terms' property items (≈ 15 min per run; C5 × 3 ≈ 0.75
+GPU-h); the model loop (Qwen3-1.7B-Base C5 in bf16, ≈ 600 items × 2 worlds × 2 seeds as forced choice over the decisions,
+≈ 1.5 s each, ≈ 1.0 GPU-h). **Total ≈ 2.6 GPU-h.** Code: the corrupted-store condition, the evidence sentences, the
+calibration fit, the loop and its report (`e12_critique`, ≈ one day with tests).
 
 ## 14. Open decisions for the author
 
@@ -484,6 +590,26 @@ the decoded **roles** — the joint reading with Q1 stated in §5 (the roles act
 words with an undecoded tested edge: +0.07 [−0.23, +0.37] (too few to read). **Cost:** 300 words in 520 s plus the twins'
 three passes in ≈ 30 s (2.3 GB peak; batch 64 with the text cache).
 
+**3a — agentic self-query, feasibility** (Qwen3 T5 seed 1; 50 questions per host: both twins of 10 pairs on their first
+relation, 15 two-hop, 15 reverse; three verified demonstrations; greedy decoding; hosts in bf16 (≤ 3.8 GB); answers read as
+forced choice; outputs `pilot/agent/<host>/merged`). Twin contrast over the 10 pairs; accuracy over all 50 questions.
+
+| host (store) | call well-formed | swapped tool | relevant call | answers itself | accuracy agent / no tool / fixed | twin contrast agent / no tool / fixed |
+|---|---:|---:|---:|---:|---|---|
+| Qwen3-0.6B C5 (own) | 0.52 | 0.24 | 0.44 | 0.52 | 0.60 / 0.52 / 0.62 | 0.40 / 0.50 / 0.80 |
+| Qwen3-1.7B C5 (own) | 0.02 | 0.30 | 0.02 | 0.64 | 0.46 / 0.48 / 0.64 | 0.30 / 0.30 / 0.80 |
+| Qwen3-0.6B-Base P0 (C5's store) | 0.82 | 0.00 | 0.76 | 0.88 | 0.72 / 0.58 / 0.92 | **1.00** / 0.60 / 0.90 |
+| Qwen3-1.7B-Base P0 (C5's store) | **0.84** | 0.00 | 0.84 | 0.92 | 0.76 / 0.58 / 0.88 | **1.00** / 0.50 / 1.00 |
+
+**Reading (PILOT, 10 pairs and 30 understanding items per host — feasibility, not effect sizes).** A *base* LM emits
+well-formed recall calls from three demonstrations (≥ 0.82; twins and two-hop 0.80–1.00, reverse lookups 0.47–0.67) and uses
+the results: twin contrast 1.00 against 0.50–0.60 without the tool, two-hop 0.53–0.60 against 0.33–0.40 (five options). The
+E9 **C5 runs do not**: LoRA fine-tuning on the T5 corpus broke few-shot format following — the 0.6B swaps the two tools' names
+(`lookup[term, relation]`), the 1.7B answers "Action:" with the corpus's meeting-note register ("action item: … to follow up
+on …", "The previous notes are archived.") — so their agentic episodes fall below their own fixed pipeline (0.80). The store
+is host-agnostic text (phase A: C0′ and the C5ut host read the C5 store as well as C5 does), so the self-query does not need
+the host that wrote the store. **Cost:** ≈ 4 s per question on the 0.6B and 8 s on the 1.7B, the two baselines included.
+
 ## 16. Amendments
 
 ### 16.1 Cost profiles, scorer speed-ups and pilot options (2026-10-08, after `6638c39`; no endpoint, unit, rule or threshold changed)
@@ -506,3 +632,18 @@ Decided from the pilot's timings (§15), before any endpoint run:
   lists the answer and not the other option (a first draft showed a lookup that did not list its answer).
 - **Reporting.** A role-blind context (no role stated) reports its filler-level decode only; the report adds a per-model F1
   table (the readout arms, the secondary arms).
+
+### 16.2 3a's hosts after the feasibility pilot (2026-10-08, before any 3a endpoint run; Q1 and F1 unchanged)
+
+The 3a pilot (§15) shows that the E9 C5 runs (Qwen3 LoRA on the T5 corpus) no longer follow a few-shot tool protocol (well-formed
+first calls 0.52 and 0.02), while the untouched base hosts do (0.82 and 0.84). The 3a endpoints (§10.1) therefore read:
+- **Primary agent host:** Qwen3-1.7B-Base (P0, untouched) whose tools read the Qwen3-1.7B C5 store of seeds 1–2 (as phase A's
+  P0 + `recall:C5@s`); **A1** agentic − no-tool twin contrast, **A2** agentic − fixed pipeline, on that host (pairs × seeds;
+  Holm over A1 and A2). Qwen3-0.6B-Base the same, as a secondary.
+- **Secondary (self-hosted):** the C5 runs with their own store, reported as the cost of fine-tuning on the store's domain (the
+  pilot's format collapse), together with 3b's arm T, which trains the protocol back in.
+- Questions as in the pilot, at full size: both twins of all 300 pairs on their first relation, 150 two-hop and 150 reverse
+  items (one per anchor, seeded), 3 demonstrations, greedy decoding, forced-choice answers; hosts in bf16 (the 1.7B fits 4 GB
+  with the output head computed in vocabulary slices). Cost at the pilot's rate (8 s per question on the 1.7B with both
+  baselines): 900 questions × 2 seeds ≈ 4.0 GPU-h for the 1.7B, ≈ 2.0 for the 0.6B, ≈ 3.2 for the two self-hosted C5 runs at
+  seed 1 — ≈ 9 GPU-h in all (an upper bound from the shared GPU).

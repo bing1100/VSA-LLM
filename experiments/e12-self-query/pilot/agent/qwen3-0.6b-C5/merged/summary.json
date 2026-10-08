@@ -1,0 +1,96 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "Qwen/Qwen3-0.6B-Base/lora",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "scale_to_host": true,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-qwen3-Qwen3-0.6B-Base-lora-C5-s1",
+    "run_git_sha": "797ceaf4874d7fba0233bc0d8e3c85bdd4f9f3f0",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/eval",
+    "min_subtokens": 2,
+    "tokenizer": "Qwen/Qwen3-0.6B-Base"
+  },
+  "store": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C5-s1",
+  "host_dtype": "bfloat16",
+  "label": "PILOT",
+  "summary": {
+    "all": {
+      "questions": 50,
+      "called": 1.0,
+      "format_ok": 0.52,
+      "swapped": 0.24,
+      "relevant": 0.44,
+      "answered": 0.52,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.6,
+      "accuracy_no_tool": 0.52,
+      "accuracy_fixed": 0.62
+    },
+    "twins": {
+      "questions": 20,
+      "called": 1.0,
+      "format_ok": 0.4,
+      "swapped": 0.55,
+      "relevant": 0.25,
+      "answered": 0.1,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.55,
+      "accuracy_no_tool": 0.45,
+      "accuracy_fixed": 0.55
+    },
+    "two_hop": {
+      "questions": 15,
+      "called": 1.0,
+      "format_ok": 0.6,
+      "swapped": 0.0,
+      "relevant": 0.5333333333333333,
+      "answered": 0.9333333333333333,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.3333333333333333,
+      "accuracy_no_tool": 0.2,
+      "accuracy_fixed": 0.4
+    },
+    "reverse": {
+      "questions": 15,
+      "called": 1.0,
+      "format_ok": 0.6,
+      "swapped": 0.06666666666666667,
+      "relevant": 0.6,
+      "answered": 0.6666666666666666,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.9333333333333333,
+      "accuracy_no_tool": 0.9333333333333333,
+      "accuracy_fixed": 0.9333333333333333
+    },
+    "twins_contrast": {
+      "agent": 0.4,
+      "no_tool": 0.5,
+      "fixed": 0.8,
+      "pairs": 10
+    }
+  },
+  "seconds": 246.21290860208683,
+  "peak_gb": 1.8059144020080566,
+  "parts": [
+    "experiments/e12-self-query/pilot/agent/qwen3-0.6b-C5/part-0",
+    "experiments/e12-self-query/pilot/agent/qwen3-0.6b-C5/part-1"
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-frozen-P0-s1",
+    "checkpoint": "final.pt",
+    "condition": "P0",
+    "seed": 1,
+    "size": "Qwen/Qwen3-1.7B-Base/frozen",
+    "channel_mode": "none",
+    "channel": {
+      "mode": "none",
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "gate_bias": -2.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-qwen3-Qwen3-1.7B-Base-frozen-P0-s1",
+    "run_git_sha": "f75467cb08b99ff5b6e0d48de881d2f09f1ef42b",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/eval",
+    "min_subtokens": 2,
+    "tokenizer": "Qwen/Qwen3-0.6B-Base"
+  },
+  "store": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1",
+  "host_dtype": "bfloat16",
+  "label": "PILOT",
+  "part": [
+    1,
+    3
+  ],
+  "summary": {
+    "all": {
+      "questions": 17,
+      "called": 1.0,
+      "format_ok": 1.0,
+      "swapped": 0.0,
+      "relevant": 1.0,
+      "answered": 1.0,
+      "calls_per_episode": 1.8235294117647058,
+      "accuracy_agent": 0.5882352941176471,
+      "accuracy_no_tool": 0.4117647058823529,
+      "accuracy_fixed": 0.7647058823529411
+    },
+    "twins": {
+      "questions": 3,
+      "called": 1.0,
+      "format_ok": 1.0,
+      "swapped": 0.0,
+      "relevant": 1.0,
+      "answered": 1.0,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.6666666666666666,
+      "accuracy_no_tool": 0.6666666666666666,
+      "accuracy_fixed": 0.6666666666666666
+    },
+    "two_hop": {
+      "questions": 14,
+      "called": 1.0,
+      "format_ok": 1.0,
+      "swapped": 0.0,
+      "relevant": 1.0,
+      "answered": 1.0,
+      "calls_per_episode": 2.0,
+      "accuracy_agent": 0.5714285714285714,
+      "accuracy_no_tool": 0.35714285714285715,
+      "accuracy_fixed": 0.7857142857142857
+    },
+    "twins_contrast": {
+      "agent": 1.0,
+      "no_tool": 0.0,
+      "fixed": 1.0,
+      "pairs": 1
+    }
+  },
+  "seconds": 185.15391394100152,
+  "peak_gb": 3.5371499061584473,
+  "demonstrations": "Question: Bailkzhun Hub depends on ___? Options: Bairktraim Pipeline | Kailkzound Plourb Catalog\nThought: I need what Bailkzhun Hub depends on.\nAction: recall[Bailkzhun Hub, depends on]\nObservation: recall(Bailkzhun Hub, depends on):\n- Bailkzhun Hub depends on Kailkzound Plourb Catalog. (0.50)\nThought: The recall says Kailkzound Plourb Catalog.\nAnswer: Kailkzound Plourb Catalog\n\nQuestion: Bailkda Veinzheish Review is owned by a team that reports to ___? Options: the Kleindstou Office | the Grashsa Division | the Saindbem Pirbbam Office\nThought: First I need the team that owns Bailkda Veinzheish Review.\nAction: recall[Bailkda Veinzheish Review, owned by]\nObservation: recall(Bailkda Veinzheish Review, owned by):\n- Bailkda Veinzheish Review is owned by the Sulkpurk Pod. (0.25)\nThought: Now I need what Sulkpurk Pod reports to.\nAction: recall[Sulkpurk Pod, reports to]\nObservation: recall(Sulkpurk Pod, reports to):\n- Sulkpurk Pod reports to the Saindbem Pirbbam Office. (0.36)\nThought: The second recall says the Saindbem Pirbbam Office.\nAnswer: the Saindbem Pirbbam Office\n\nQuestion: Of Bailkda Veinzheish Review and Torkgain Extract, the one owned by the Rainploulk Squad is ___? Options: Bailkda Veinzheish Review | Torkgain Extract\nThought: I should look up what the Rainploulk Squad owns.\nAction: lookup[owned by, the Rainploulk Squad]\nObservation: lookup(owned by, the Rainploulk Squad):\n- Dreirkbrax Index is owned by the Rainploulk Squad. (0.48)\n- Flaltgon Rate is owned by the Rainploulk Squad. (0.44)\n- Fleilk Kurbfult Playbook is owned by the Rainploulk Squad. (0.38)\n- Torkgain Extract is owned by the Rainploulk Squad. (0.38)\n- doulkzaixpouxkeirb is owned by the Rainploulk Squad. (0.38)\nThought: Torkgain Extract is in the lookup and Bailkda Veinzheish Review is not.\nAnswer: Torkgain Extract\n"
+}

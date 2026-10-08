@@ -1,0 +1,79 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "Qwen/Qwen3-1.7B-Base/lora",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "scale_to_host": true,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-qwen3-Qwen3-1.7B-Base-lora-C5-s1",
+    "run_git_sha": "797ceaf4874d7fba0233bc0d8e3c85bdd4f9f3f0",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/eval",
+    "min_subtokens": 2,
+    "tokenizer": "Qwen/Qwen3-0.6B-Base"
+  },
+  "store": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1",
+  "host_dtype": "bfloat16",
+  "label": "PILOT",
+  "part": [
+    2,
+    3
+  ],
+  "summary": {
+    "all": {
+      "questions": 16,
+      "called": 0.375,
+      "format_ok": 0.0,
+      "swapped": 0.0,
+      "relevant": 0.0,
+      "answered": 0.375,
+      "calls_per_episode": 0.375,
+      "accuracy_agent": 0.5625,
+      "accuracy_no_tool": 0.6875,
+      "accuracy_fixed": 0.8125
+    },
+    "two_hop": {
+      "questions": 1,
+      "called": 0.0,
+      "format_ok": 0.0,
+      "swapped": 0.0,
+      "relevant": 0.0,
+      "answered": 0.0,
+      "calls_per_episode": 0.0,
+      "accuracy_agent": 0.0,
+      "accuracy_no_tool": 0.0,
+      "accuracy_fixed": 1.0
+    },
+    "reverse": {
+      "questions": 15,
+      "called": 0.4,
+      "format_ok": 0.0,
+      "swapped": 0.0,
+      "relevant": 0.0,
+      "answered": 0.4,
+      "calls_per_episode": 0.4,
+      "accuracy_agent": 0.6,
+      "accuracy_no_tool": 0.7333333333333333,
+      "accuracy_fixed": 0.8
+    }
+  },
+  "seconds": 127.22742236708291,
+  "peak_gb": 3.786651134490967,
+  "demonstrations": "Question: Bailkzhun Hub depends on ___? Options: Bairktraim Pipeline | Kailkzound Plourb Catalog\nThought: I need what Bailkzhun Hub depends on.\nAction: recall[Bailkzhun Hub, depends on]\nObservation: recall(Bailkzhun Hub, depends on):\n- Bailkzhun Hub depends on Kailkzound Plourb Catalog. (0.50)\nThought: The recall says Kailkzound Plourb Catalog.\nAnswer: Kailkzound Plourb Catalog\n\nQuestion: Bailkda Veinzheish Review is owned by a team that reports to ___? Options: the Kleindstou Office | the Grashsa Division | the Saindbem Pirbbam Office\nThought: First I need the team that owns Bailkda Veinzheish Review.\nAction: recall[Bailkda Veinzheish Review, owned by]\nObservation: recall(Bailkda Veinzheish Review, owned by):\n- Bailkda Veinzheish Review is owned by the Sulkpurk Pod. (0.25)\nThought: Now I need what Sulkpurk Pod reports to.\nAction: recall[Sulkpurk Pod, reports to]\nObservation: recall(Sulkpurk Pod, reports to):\n- Sulkpurk Pod reports to the Saindbem Pirbbam Office. (0.36)\nThought: The second recall says the Saindbem Pirbbam Office.\nAnswer: the Saindbem Pirbbam Office\n\nQuestion: Of Bailkda Veinzheish Review and Torkgain Extract, the one owned by the Rainploulk Squad is ___? Options: Bailkda Veinzheish Review | Torkgain Extract\nThought: I should look up what the Rainploulk Squad owns.\nAction: lookup[owned by, the Rainploulk Squad]\nObservation: lookup(owned by, the Rainploulk Squad):\n- Dreirkbrax Index is owned by the Rainploulk Squad. (0.48)\n- Flaltgon Rate is owned by the Rainploulk Squad. (0.44)\n- Fleilk Kurbfult Playbook is owned by the Rainploulk Squad. (0.38)\n- Torkgain Extract is owned by the Rainploulk Squad. (0.38)\n- doulkzaixpouxkeirb is owned by the Rainploulk Squad. (0.38)\nThought: Torkgain Extract is in the lookup and Bailkda Veinzheish Review is not.\nAnswer: Torkgain Extract\n"
+}

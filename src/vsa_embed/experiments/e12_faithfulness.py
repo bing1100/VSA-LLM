@@ -69,14 +69,53 @@ RESULT_FILES = ("summary.json", "edges.jsonl.gz", "report.md", "resolved_config.
 # ---------------------------------------------------------------- scoring
 
 
+def head_logprobs(head: Any, hidden: torch.Tensor, targets: torch.Tensor, *, chunk: int | None = None) -> torch.Tensor:
+    """`log p(target)` of each row under the output head in float32; `chunk` computes the logits in vocabulary slices (the
+    same values without a float32 copy of a large head: Qwen3's 151k × 2,048 is 1.2 GB)."""
+    from torch.nn import functional as F
+    hidden = hidden.float()
+    bias = getattr(head, "bias", None)
+    if not chunk:
+        logits = F.linear(hidden, head.weight.float(), None if bias is None else bias.float())
+        return torch.log_softmax(logits, -1).gather(-1, targets[:, None]).squeeze(-1)
+    vocab = head.weight.shape[0]
+    total = torch.full((hidden.shape[0],), float("-inf"), device=hidden.device)
+    picked = torch.zeros(hidden.shape[0], device=hidden.device)
+    for start in range(0, vocab, chunk):
+        part = F.linear(hidden, head.weight[start:start + chunk].float(), None if bias is None else bias[start:start + chunk].float())
+        total = torch.logaddexp(total, torch.logsumexp(part, -1))
+        inside = (targets >= start) & (targets < start + part.shape[1])
+        if bool(inside.any()):
+            picked[inside] = part[inside, targets[inside] - start]
+    return picked - total
+
+
+def head_argmax(head: Any, hidden: torch.Tensor, *, chunk: int | None = None) -> torch.Tensor:
+    """The float32 output head's argmax token of each row (`chunk`: in vocabulary slices)."""
+    from torch.nn import functional as F
+    hidden = hidden.float()
+    bias = getattr(head, "bias", None)
+    if not chunk:
+        return F.linear(hidden, head.weight.float(), None if bias is None else bias.float()).argmax(-1)
+    best = torch.full((hidden.shape[0],), float("-inf"), device=hidden.device)
+    index = torch.zeros(hidden.shape[0], dtype=torch.long, device=hidden.device)
+    for start in range(0, head.weight.shape[0], chunk):
+        part = F.linear(hidden, head.weight[start:start + chunk].float(), None if bias is None else bias[start:start + chunk].float())
+        value, where = part.max(-1)
+        better = value > best
+        best = torch.where(better, value, best); index = torch.where(better, where + start, index)
+    return index
+
+
 class TextCache:
     """Texts tokenized and linked once, scored many times: an intervention changes the composer, never the texts. Scores
     are `e9_binding_items.continuation_scores`'s (Σ log p of the continuation tokens after the prefix; the same right-padded
     batches, spans, bf16 autocast and float32 output head; `last_hidden_state` is the final hidden state the adapter
-    reads)."""
+    reads). `head_chunk` computes the float32 head in vocabulary slices (memory)."""
 
-    def __init__(self, adapter: Any) -> None:
+    def __init__(self, adapter: Any, *, head_chunk: int | None = None) -> None:
         self.adapter = adapter
+        self.head_chunk = head_chunk
         self.rows: dict[tuple[str, str], dict[str, Any]] = {}
 
     def _prepare(self, pairs: Sequence[tuple[str, str]]) -> None:
@@ -125,8 +164,7 @@ class TextCache:
                 continue
             with torch.autocast(device.type, enabled=False):
                 picked_hidden = hidden[torch.tensor([s[0] for s in select], device=device), torch.tensor([s[1] for s in select], device=device)].float()
-                logits = F.linear(picked_hidden, head.weight.float(), None if head.bias is None else head.bias.float())
-                picked = torch.log_softmax(logits, -1).gather(-1, torch.tensor([s[2] for s in select], device=device)[:, None]).squeeze(-1)
+                picked = head_logprobs(head, picked_hidden, torch.tensor([s[2] for s in select], device=device), chunk=self.head_chunk)
             owners = [s[3] for s in select]
             np.add.at(sums, owners, picked.cpu().double().numpy())
             np.add.at(counts, owners, 1.0)

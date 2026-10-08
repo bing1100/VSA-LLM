@@ -1,0 +1,79 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "Qwen/Qwen3-0.6B-Base/lora",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "scale_to_host": true,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-qwen3-Qwen3-0.6B-Base-lora-C5-s1",
+    "run_git_sha": "797ceaf4874d7fba0233bc0d8e3c85bdd4f9f3f0",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/eval",
+    "min_subtokens": 2,
+    "tokenizer": "Qwen/Qwen3-0.6B-Base"
+  },
+  "store": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C5-s1",
+  "host_dtype": "bfloat16",
+  "label": "PILOT",
+  "part": [
+    1,
+    2
+  ],
+  "summary": {
+    "all": {
+      "questions": 25,
+      "called": 1.0,
+      "format_ok": 0.6,
+      "swapped": 0.04,
+      "relevant": 0.6,
+      "answered": 0.76,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.76,
+      "accuracy_no_tool": 0.64,
+      "accuracy_fixed": 0.8
+    },
+    "two_hop": {
+      "questions": 10,
+      "called": 1.0,
+      "format_ok": 0.6,
+      "swapped": 0.0,
+      "relevant": 0.6,
+      "answered": 0.9,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.5,
+      "accuracy_no_tool": 0.2,
+      "accuracy_fixed": 0.6
+    },
+    "reverse": {
+      "questions": 15,
+      "called": 1.0,
+      "format_ok": 0.6,
+      "swapped": 0.06666666666666667,
+      "relevant": 0.6,
+      "answered": 0.6666666666666666,
+      "calls_per_episode": 1.0,
+      "accuracy_agent": 0.9333333333333333,
+      "accuracy_no_tool": 0.9333333333333333,
+      "accuracy_fixed": 0.9333333333333333
+    }
+  },
+  "seconds": 130.05458947317675,
+  "peak_gb": 1.8059144020080566,
+  "demonstrations": "Question: Bailkzhun Hub depends on ___? Options: Bairktraim Pipeline | Kailkzound Plourb Catalog\nThought: I need what Bailkzhun Hub depends on.\nAction: recall[Bailkzhun Hub, depends on]\nObservation: recall(Bailkzhun Hub, depends on):\n- Bailkzhun Hub depends on Kailkzound Plourb Catalog. (0.48)\nThought: The recall says Kailkzound Plourb Catalog.\nAnswer: Kailkzound Plourb Catalog\n\nQuestion: Bailkda Veinzheish Review is owned by a team that reports to ___? Options: the Kleindstou Office | the Grashsa Division | the Saindbem Pirbbam Office\nThought: First I need the team that owns Bailkda Veinzheish Review.\nAction: recall[Bailkda Veinzheish Review, owned by]\nObservation: recall(Bailkda Veinzheish Review, owned by):\n- Bailkda Veinzheish Review is owned by the Sulkpurk Pod. (0.26)\nThought: Now I need what Sulkpurk Pod reports to.\nAction: recall[Sulkpurk Pod, reports to]\nObservation: recall(Sulkpurk Pod, reports to):\n- Sulkpurk Pod reports to the Saindbem Pirbbam Office. (0.42)\nThought: The second recall says the Saindbem Pirbbam Office.\nAnswer: the Saindbem Pirbbam Office\n\nQuestion: Of Bailkda Veinzheish Review and Felkzoux Klenalk Dataset, the one owned by the Rainploulk Squad is ___? Options: Bailkda Veinzheish Review | Felkzoux Klenalk Dataset\nThought: I should look up what the Rainploulk Squad owns.\nAction: lookup[owned by, the Rainploulk Squad]\nObservation: lookup(owned by, the Rainploulk Squad):\n- Dreirkbrax Index is owned by the Rainploulk Squad. (0.50)\n- Fleilk Kurbfult Playbook is owned by the Rainploulk Squad. (0.48)\n- skashtrirkkirkgraish is owned by the Rainploulk Squad. (0.44)\n- Flaltgon Rate is owned by the Rainploulk Squad. (0.44)\n- Felkzoux Klenalk Dataset is owned by the Rainploulk Squad. (0.43)\nThought: Felkzoux Klenalk Dataset is in the lookup and Bailkda Veinzheish Review is not.\nAnswer: Felkzoux Klenalk Dataset\n"
+}

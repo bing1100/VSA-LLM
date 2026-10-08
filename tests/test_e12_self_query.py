@@ -414,3 +414,32 @@ def test_agent_episodes_insert_observations_and_stop_at_the_answer(world, item_d
     rows[1]["gold"] = 1
     summary = agent.summarize(rows)
     assert summary["all"]["called"] == 0.5 and summary["twins_contrast"] == {"agent": 1.0, "no_tool": 1.0, "fixed": 1.0, "pairs": 1}
+
+
+def test_chunked_head_matches_the_full_head() -> None:
+    torch.manual_seed(0)
+    head = torch.nn.Linear(16, 50, bias=True)
+    hidden, targets = torch.randn(7, 16), torch.randint(0, 50, (7,))
+    full = faith.head_logprobs(head, hidden, targets)
+    assert torch.allclose(faith.head_logprobs(head, hidden, targets, chunk=8), full, atol=1e-5)
+    assert torch.equal(faith.head_argmax(head, hidden, chunk=8), faith.head_argmax(head, hidden))
+
+
+def test_agent_parts_merge(tmp_path) -> None:
+    def part(folder, rows):
+        folder.mkdir()
+        (folder / "summary.json").write_text(json.dumps({"source": {"condition": "P0", "seed": 1, "size": "x"}, "store": "s",
+                                                         "host_dtype": "bfloat16", "label": "PILOT", "seconds": 10.0, "peak_gb": 1.5}))
+        und.write_jsonl_gz(folder / "episodes.jsonl.gz", rows)
+
+    def row(i, twin):
+        return {"id": f"q{i}{twin}", "kind": "twins", "gold": 0 if twin == "A" else 1, "meta": {"pair": i, "twin": twin}, "actions": [],
+                "answered": True, "called": True, "format_ok": True, "swapped": False, "relevant": True,
+                "scores": {k: ([0.0, -1.0] if twin == "A" else [-1.0, 0.0]) for k in ("agent", "no_tool", "fixed")},
+                "correct": {k: 1.0 for k in ("agent", "no_tool", "fixed")}}
+
+    part(tmp_path / "p0", [row(0, "A"), row(0, "B")])
+    part(tmp_path / "p1", [row(1, "A"), row(1, "B")])
+    merged = agent.merge([tmp_path / "p0", tmp_path / "p1"], tmp_path / "merged")
+    assert merged["summary"]["all"]["questions"] == 4 and merged["summary"]["twins_contrast"]["pairs"] == 2
+    assert json.loads((tmp_path / "merged" / "summary.json").read_text())["seconds"] == 20.0 and (tmp_path / "merged" / "report.md").exists()
