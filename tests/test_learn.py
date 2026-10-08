@@ -323,3 +323,29 @@ def test_permute_within_type_is_a_derangement():
     mapping = L.permute_within_type(list(range(12)), types, seed=0)
     assert all(mapping[c] != c and types[mapping[c]] == types[c] for c in range(12))
     assert sorted(mapping.values()) == list(range(12))
+
+
+def test_concept_store_adapters():
+    """The facade contract (TK-E13): a proposer `(store, evidence)` and an acceptance callable `(store, proposals)`."""
+    from types import SimpleNamespace
+
+    # the store lacks each frame's last edge, whose filler another frame types under that relation
+    full = [[(0, 1), (1, 2), (0, 2)], [(1, 0), (0, 2), (1, 1)], [(0, 0), (1, 1), (0, 3)], [(1, 3), (0, 3), (1, 2)]]
+    seen = [f[:-1] for f in full]
+    composer = FrameComposer(FrameSchedule.from_frames(seen), 4, 2, 128, operator="hrr")
+    store = SimpleNamespace(composer=composer, relation_names=["r0", "r1"], entry_count=len(seen),
+                            frame=lambda e: seen[e], atom_entry=np.full(4, -1))
+    d = L.Dictionary.from_composer(composer, full)
+    vectors = {e: d.store(full[e]) for e in range(len(full))}
+    found = L.store_proposer(store, SimpleNamespace(entries=None, extra={"vectors": vectors}),
+                             decompose_settings=L.DecomposeSettings(max_new=1, threshold=0.05))
+    keys = {L.edge_key(L.as_dict(p)) for p in found}
+    assert (0, 0, 2) in keys and all(k[1:] not in set(seen[k[0]]) for k in keys)
+    assert L.as_dict(SimpleNamespace(entry=1, relation=0, atom=3, score=0.5, source="x"))["filler"] == 3
+    g = torch.Generator().manual_seed(0)
+    observations = {e: torch.stack([vectors[e]] * 4) + 0.01 * torch.randn(4, 128, generator=g) for e in vectors}
+    test = L.AcceptanceTest(L.VectorUtilityTest(d, {e: seen[e] for e in range(4)}, observations, control="none"),
+                            correction="none")
+    decisions = L.store_test(test)(store, found)
+    assert len(decisions) == len(found) and all(hasattr(x, "accept") and hasattr(x, "key") for x in decisions)
+    assert any(x.accept for x in decisions if x.key == (0, 0, 2))

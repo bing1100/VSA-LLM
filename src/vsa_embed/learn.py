@@ -14,7 +14,10 @@ concept = the store entry (term) the edge is for, relation = relation id, filler
 own score (higher = more confident; comparable only within one source), source ∈ `decompose`, `closure`, `author` (or a
 baseline's name). Extra keys (e.g. `meta`) are carried through. `accept` returns *copies* of the accepted proposals with
 the test's fields added: `utility` (mean held-out contrast), `n` (held-out observations), `t`, `p` (one-sided),
-`p_adjusted` and `accepted` (True); `test_proposals` returns every proposal with these fields.
+`p_adjusted` and `accepted` (True); `test_proposals` returns every proposal with these fields. The facade's own
+contract — a proposer `(store, Evidence) → [Proposal(entry, relation, atom, …)]` and an acceptance callable
+`(store, proposals) → decisions` — is met by `store_proposer` (`proposer="vsa_embed.learn:store_proposer"`) and
+`store_test(AcceptanceTest)`; `accept` / `test_proposals` also take the facade's proposal objects (`as_dict`).
 
 **Proposal sources** (`propose`, `Evidence.sources`):
 
@@ -100,6 +103,21 @@ def make_proposal(concept: int, relation: int, filler: int, score: float, source
 
 def edge_key(item: Mapping[str, Any]) -> Edge:
     return int(item["concept"]), int(item["relation"]), int(item["filler"])
+
+
+def as_dict(proposal: Any) -> dict[str, Any]:
+    """A proposal dict from a dict (`entry` / `atom` accepted for `concept` / `filler`) or from an object with `entry`,
+    `relation`, `atom` (and optionally `score`, `source`, `meta`): the `ConceptStore`'s `Proposal` (TK-E13)."""
+    if isinstance(proposal, Mapping):
+        out = dict(proposal)
+        if "concept" not in out and "entry" in out:
+            out["concept"] = out["entry"]
+        if "filler" not in out and "atom" in out:
+            out["filler"] = out["atom"]
+        out.setdefault("score", 0.0); out.setdefault("source", "")
+        return out
+    return make_proposal(proposal.entry, proposal.relation, proposal.atom, getattr(proposal, "score", 0.0),
+                         getattr(proposal, "source", ""), meta=dict(getattr(proposal, "meta", None) or {}))
 
 
 def dedupe(proposals: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1009,7 +1027,9 @@ def decoy_threshold(target: Sequence[float], decoy: Sequence[float], q: float, *
 
 
 def statistics(proposals: Sequence[Mapping[str, Any]], test: AcceptanceTest) -> list[dict[str, Any]]:
-    """Every proposal (a copy) with its held-out statistics: `utility`, `n`, `t`, `p`, `testable` (no decision yet)."""
+    """Every proposal (a copy) with its held-out statistics: `utility`, `n`, `t`, `p`, `testable` (no decision yet).
+    Proposals may be dicts or the `ConceptStore`'s proposal objects (`as_dict`)."""
+    proposals = [as_dict(p) for p in proposals]
     contrasts = test.utility.contrasts(proposals)
     out = []
     for proposal_, contrast in zip(proposals, contrasts):
@@ -1058,6 +1078,7 @@ def decide(records: Sequence[dict[str, Any]], correction: str, alpha: float, *,
 def test_proposals(proposals: Sequence[Mapping[str, Any]], test: AcceptanceTest) -> list[dict[str, Any]]:
     """Every proposal (a copy) with its test record: `utility`, `n`, `t`, `p`, `testable`, `p_adjusted`, `accepted`
     (and `threshold` for the decoy and knockoff rules)."""
+    proposals = [as_dict(p) for p in proposals]
     records = statistics(proposals, test)
     knockoff_t = None
     threshold = None
@@ -1075,6 +1096,48 @@ def test_proposals(proposals: Sequence[Mapping[str, Any]], test: AcceptanceTest)
 def accept(proposals: Sequence[Mapping[str, Any]], test: AcceptanceTest) -> list[dict[str, Any]]:
     """The accepted proposals (copies with the test's fields; `test_proposals` keeps the rejected ones too)."""
     return [r for r in test_proposals(proposals, test) if r["accepted"]]
+
+
+# ---------------------------------------------------------------- ConceptStore adapters (TK-E13's facade)
+
+
+def store_proposer(store: Any, evidence: Any, *, sources: Sequence[str] = ("decompose",),
+                   decompose_settings: DecomposeSettings | None = None, rule_settings: RuleSettings | None = None) -> list[Any]:
+    """`propose` as a `ConceptStore` proposer (`store.propose(evidence, proposer="vsa_embed.learn:store_proposer")`):
+    the store's composer is the dictionary and its frames the learner's view. `evidence.extra["vectors"]` holds the
+    passive vectors (entry → vector already in the store's space, e.g. through `crossfit_decoder`) for `decompose`;
+    `closure` mines the store's own frames; `evidence.entries` restricts the concepts. Returns the facade's `Proposal`
+    objects when `vsa_embed.concept_store` is importable, else proposal dicts."""
+    frames = {e: list(store.frame(e)) for e in range(int(store.entry_count))}
+    frames = {e: f for e, f in frames.items() if f}
+    dictionary = Dictionary.from_composer(store.composer, frames.values(), relation_names=store.relation_names)
+    graph = RuleGraph.from_atom_concepts(store.relation_names, list(store.atom_entry)) if "closure" in sources else None
+    vectors = dict((getattr(evidence, "extra", None) or {}).get("vectors") or {})
+    concepts = getattr(evidence, "entries", None)
+    if concepts is None:
+        concepts = sorted(vectors) if "decompose" in sources and vectors else sorted(frames)
+    found = propose(Evidence(dictionary, frames, vectors=vectors, concepts=[int(c) for c in concepts], sources=tuple(sources),
+                             decompose=decompose_settings or DecomposeSettings(), rules=rule_settings or RuleSettings(),
+                             graph=graph))
+    try:
+        from .concept_store import Proposal
+    except ImportError:
+        return found
+    return [Proposal(p["concept"], p["relation"], p["filler"], p["score"], p["source"], meta=dict(p.get("meta") or {}))
+            for p in found]
+
+
+def store_test(test: AcceptanceTest) -> Callable[[Any, Sequence[Any]], list[Any]]:
+    """An `AcceptanceTest` as the facade's acceptance callable `(store, proposals) → decisions`: one
+    `self_test.Decision` per proposal (`key` = the edge, `mean` = the held-out utility, `accept`; the full test record
+    in `extra`)."""
+    from .self_test import Decision
+
+    def run(store: Any, proposals: Sequence[Any]) -> list[Any]:
+        return [Decision("edge", edge_key(r), float(r["utility"] or 0.0), float(r["t"]), int(r["n"]), bool(r["accepted"]), dict(r))
+                for r in test_proposals(proposals, test)]
+
+    return run
 
 
 # ---------------------------------------------------------------- null worlds
