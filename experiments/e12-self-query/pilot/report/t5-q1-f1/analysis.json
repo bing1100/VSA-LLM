@@ -1,0 +1,1727 @@
+{
+  "runs_root": "experiments/e12-self-query/pilot/runs/t5",
+  "sets": {
+    "twins": "role-twins-t5-smollm2-v1",
+    "natural": null,
+    "understanding": null,
+    "new_words": null
+  },
+  "hosts": {
+    "SmolLM2-360M": {
+      "runs": {
+        "P0": [
+          1
+        ],
+        "C0p": [
+          1
+        ],
+        "C5": [
+          1
+        ],
+        "C5ut": [
+          1
+        ]
+      },
+      "q1": {
+        "candidate": "C5 recall:own",
+        "contrasts": {
+          "recall:own \u2212 none": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.2825,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.07189172240802674,
+              "ms_cluster": 0.07189172240802674,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.2681263180070669,
+              "seed_means": [
+                0.2825
+              ],
+              "se": 0.015480280187820324,
+              "df": 299.0,
+              "t": 18.249023698050838,
+              "ci_low": 0.25203589733293885,
+              "ci_high": 0.3129641026670611,
+              "p_value": 1.6012642658358975e-50
+            },
+            "bootstrap": {
+              "mean": 0.2825,
+              "ci_low": 0.25166666666666665,
+              "ci_high": 0.3125,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            },
+            "p_holm": 1.6012642658358975e-50
+          },
+          "recall:own \u2212 recall:C5ut": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.295,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.06611204013377926,
+              "ms_cluster": 0.06611204013377926,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.2571226169238701,
+              "seed_means": [
+                0.295
+              ],
+              "se": 0.014844981209573744,
+              "df": 299.0,
+              "t": 19.87203593156118,
+              "ci_low": 0.26578612104095745,
+              "ci_high": 0.3242138789590425,
+              "p_value": 1.3311399391773172e-56
+            },
+            "bootstrap": {
+              "mean": 0.295,
+              "ci_low": 0.2658333333333333,
+              "ci_high": 0.3233333333333333,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            },
+            "p_holm": 2.6622798783546345e-56
+          }
+        },
+        "available": true,
+        "means": {
+          "recall:own": 0.79,
+          "none": 0.5075,
+          "recall:C5ut": 0.495,
+          "symbolic": 0.8633333333333333
+        },
+        "decode": 0.8566666666666667,
+        "reading": "(a) the self-query reads the stored roles: recall from the bound store beats no recall and the role-blind store"
+      },
+      "twins_table": {
+        "choice": [
+          {
+            "model": "C0p",
+            "condition": "none",
+            "contrast": 0.48833333333333334,
+            "item": 0.5066666666666667,
+            "decode": null,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C0p",
+            "condition": "recall:C5",
+            "contrast": 0.7941666666666667,
+            "item": 0.53625,
+            "decode": 0.9591666666666666,
+            "decode_all": 0.8566666666666667,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C0p",
+            "condition": "symbolic",
+            "contrast": 0.8675,
+            "item": 0.54,
+            "decode": 1.0,
+            "decode_all": 1.0,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C0p",
+            "condition": "roleless:C5",
+            "contrast": 0.49833333333333335,
+            "item": 0.49541666666666667,
+            "decode": 0.9591666666666666,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "none",
+            "contrast": 0.5075,
+            "item": 0.50625,
+            "decode": null,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "recall:own",
+            "contrast": 0.79,
+            "item": 0.53875,
+            "decode": 0.9591666666666666,
+            "decode_all": 0.8566666666666667,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "recall:C5ut",
+            "contrast": 0.495,
+            "item": 0.5008333333333334,
+            "decode": 0.8966666666666666,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "symbolic",
+            "contrast": 0.8633333333333333,
+            "item": 0.5458333333333333,
+            "decode": 1.0,
+            "decode_all": 1.0,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "wrong:own",
+            "contrast": 0.2275,
+            "item": 0.46166666666666667,
+            "decode": 0.0,
+            "decode_all": 0.0,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "roleless:own",
+            "contrast": 0.49666666666666665,
+            "item": 0.49833333333333335,
+            "decode": 0.9591666666666666,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "definition",
+            "contrast": 0.7475,
+            "item": 0.5333333333333333,
+            "decode": null,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5",
+            "condition": "recall:C5tr",
+            "contrast": 0.49666666666666665,
+            "item": 0.5004166666666666,
+            "decode": 0.44333333333333336,
+            "decode_all": 0.0,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5ut",
+            "condition": "none",
+            "contrast": 0.5,
+            "item": 0.5008333333333334,
+            "decode": null,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5ut",
+            "condition": "recall:own",
+            "contrast": 0.485,
+            "item": 0.49916666666666665,
+            "decode": 0.8966666666666666,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5ut",
+            "condition": "recall:C5",
+            "contrast": 0.7983333333333333,
+            "item": 0.5445833333333333,
+            "decode": 0.9591666666666666,
+            "decode_all": 0.8566666666666667,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "C5ut",
+            "condition": "symbolic",
+            "contrast": 0.8641666666666666,
+            "item": 0.5479166666666667,
+            "decode": 1.0,
+            "decode_all": 1.0,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "P0",
+            "condition": "none",
+            "contrast": 0.49166666666666664,
+            "item": 0.49583333333333335,
+            "decode": null,
+            "decode_all": null,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "P0",
+            "condition": "recall:C5@1",
+            "contrast": 0.69,
+            "item": 0.5145833333333333,
+            "decode": 0.9591666666666666,
+            "decode_all": 0.8566666666666667,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "P0",
+            "condition": "symbolic",
+            "contrast": 0.73,
+            "item": 0.5145833333333333,
+            "decode": 1.0,
+            "decode_all": 1.0,
+            "seeds": [
+              1
+            ]
+          },
+          {
+            "model": "P0",
+            "condition": "wrong:C5@1",
+            "contrast": 0.31083333333333335,
+            "item": 0.4845833333333333,
+            "decode": 0.0,
+            "decode_all": 0.0,
+            "seeds": [
+              1
+            ]
+          }
+        ],
+        "cloze": []
+      },
+      "twins_secondaries": {
+        "C5: symbolic \u2212 recall:own": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.07333333333333333,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.030139353400222967,
+            "ms_cluster": 0.030139353400222967,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.17360689329696263,
+            "seed_means": [
+              0.07333333333333333
+            ],
+            "se": 0.010023198657817601,
+            "df": 299.0,
+            "t": 7.316360359288793,
+            "ci_low": 0.05360838331567488,
+            "ci_high": 0.09305828335099178,
+            "p_value": 2.3578416090022095e-12
+          },
+          "bootstrap": {
+            "mean": 0.07333333333333333,
+            "ci_low": 0.0525,
+            "ci_high": 0.0925,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5: definition \u2212 symbolic": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": -0.11583333333333333,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.049455824972129324,
+            "ms_cluster": 0.049455824972129324,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.22238665646150924,
+            "seed_means": [
+              -0.11583333333333333
+            ],
+            "se": 0.012839499597223318,
+            "df": 299.0,
+            "t": -9.021639235720958,
+            "ci_low": -0.1411005655266658,
+            "ci_high": -0.09056610114000084,
+            "p_value": 2.301544741231814e-17
+          },
+          "bootstrap": {
+            "mean": -0.11583333333333333,
+            "ci_low": -0.14166666666666666,
+            "ci_high": -0.09083333333333334,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5: recall:own \u2212 roleless:own": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.29333333333333333,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.06918617614269788,
+            "ms_cluster": 0.06918617614269788,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.26303265223674777,
+            "seed_means": [
+              0.29333333333333333
+            ],
+            "se": 0.015186197257454754,
+            "df": 299.0,
+            "t": 19.315785799459366,
+            "ci_low": 0.26344796519010444,
+            "ci_high": 0.32321870147656223,
+            "p_value": 1.5918890529433262e-54
+          },
+          "bootstrap": {
+            "mean": 0.29333333333333333,
+            "ci_low": 0.26416666666666666,
+            "ci_high": 0.32416666666666666,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5: recall:own \u2212 wrong:own": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.5625,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.10874790969899666,
+            "ms_cluster": 0.10874790969899666,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.32976947963539116,
+            "seed_means": [
+              0.5625
+            ],
+            "se": 0.01903924978380159,
+            "df": 299.00000000000006,
+            "t": 29.544231331980818,
+            "ci_low": 0.5250320954737047,
+            "ci_high": 0.5999679045262953,
+            "p_value": 1.1041955386347249e-90
+          },
+          "bootstrap": {
+            "mean": 0.5625,
+            "ci_low": 0.5258333333333334,
+            "ci_high": 0.5975208333333333,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5: recall:own \u2212 recall:C5tr": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.29333333333333333,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.07127647714604236,
+            "ms_cluster": 0.07127647714604236,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.2669765479326646,
+            "seed_means": [
+              0.29333333333333333
+            ],
+            "se": 0.015413898181624093,
+            "df": 299.0,
+            "t": 19.0304444649203,
+            "ci_low": 0.2629998657857579,
+            "ci_high": 0.32366680088090877,
+            "p_value": 1.8641741155677508e-53
+          },
+          "bootstrap": {
+            "mean": 0.29333333333333333,
+            "ci_low": 0.26416666666666666,
+            "ci_high": 0.3233333333333333,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5ut: recall:own \u2212 none": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": -0.015,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.07460702341137124,
+            "ms_cluster": 0.07460702341137124,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.2731428626403612,
+            "seed_means": [
+              -0.015
+            ],
+            "se": 0.01576991052726375,
+            "df": 299.0,
+            "t": -0.9511785101169283,
+            "ci_low": -0.04603407480511337,
+            "ci_high": 0.016034074805113378,
+            "p_value": 0.3422820002066203
+          },
+          "bootstrap": {
+            "mean": -0.015,
+            "ci_low": -0.045,
+            "ci_high": 0.016666666666666666,
+            "p_value": 0.36881559220389803,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5ut: recall:C5 \u2212 recall:own": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.31333333333333335,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.06620958751393534,
+            "ms_cluster": 0.06620958751393534,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.2573122373963884,
+            "seed_means": [
+              0.31333333333333335
+            ],
+            "se": 0.014855928952658973,
+            "df": 299.0,
+            "t": 21.091466870353585,
+            "ci_low": 0.2840979099858641,
+            "ci_high": 0.3425687566808026,
+            "p_value": 3.982861513738167e-61
+          },
+          "bootstrap": {
+            "mean": 0.31333333333333335,
+            "ci_low": 0.285,
+            "ci_high": 0.3416666666666667,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C0p: recall:C5 \u2212 none": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.30583333333333335,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.06856953734671127,
+            "ms_cluster": 0.06856953734671127,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.26185785714144855,
+            "seed_means": [
+              0.30583333333333335
+            ],
+            "se": 0.015118370431003388,
+            "df": 299.0,
+            "t": 20.229252532809884,
+            "ci_low": 0.27608144361423664,
+            "ci_high": 0.33558522305243005,
+            "p_value": 6.226636266201419e-58
+          },
+          "bootstrap": {
+            "mean": 0.30583333333333335,
+            "ci_low": 0.27666666666666667,
+            "ci_high": 0.335,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "P0: recall:C5 \u2212 none": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.19833333333333333,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.07508082497212933,
+            "ms_cluster": 0.07508082497212933,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.27400880455220655,
+            "seed_means": [
+              0.19833333333333333
+            ],
+            "se": 0.0158199057068544,
+            "df": 299.0,
+            "t": 12.536947881263291,
+            "ci_low": 0.16720087153099325,
+            "ci_high": 0.22946579513567342,
+            "p_value": 2.918029803258866e-29
+          },
+          "bootstrap": {
+            "mean": 0.19833333333333333,
+            "ci_low": 0.16747916666666668,
+            "ci_high": 0.23,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C0p: recall:C5 \u2212 roleless:C5": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.29583333333333334,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.07251602564102563,
+            "ms_cluster": 0.07251602564102563,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.2692879975807047,
+            "seed_means": [
+              0.29583333333333334
+            ],
+            "se": 0.015547349789275517,
+            "df": 299.0,
+            "t": 19.027894615029354,
+            "ci_low": 0.26523724240767615,
+            "ci_high": 0.3264294242589905,
+            "p_value": 1.905649388424718e-53
+          },
+          "bootstrap": {
+            "mean": 0.29583333333333334,
+            "ci_low": 0.26416666666666666,
+            "ci_high": 0.32666666666666666,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5: recall:own \u2212 0.5": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.29,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0368561872909699,
+            "ms_cluster": 0.0368561872909699,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.19197965332547587,
+            "seed_means": [
+              0.29
+            ],
+            "se": 0.011083950452639454,
+            "df": 299.0,
+            "t": 26.163956726362073,
+            "ci_low": 0.26818756505379693,
+            "ci_high": 0.31181243494620303,
+            "p_value": 2.7002844908652716e-79
+          },
+          "bootstrap": {
+            "mean": 0.29,
+            "ci_low": 0.2691458333333333,
+            "ci_high": 0.31166666666666665,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C0p: recall:C5 \u2212 0.5": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.2941666666666667,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.03671335005574136,
+            "ms_cluster": 0.03671335005574136,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.19160728080044703,
+            "seed_means": [
+              0.2941666666666667
+            ],
+            "se": 0.011062451514883031,
+            "df": 299.0,
+            "t": 26.59145364577691,
+            "ci_low": 0.2723965401179279,
+            "ci_high": 0.31593679321540546,
+            "p_value": 9.064731865891304e-81
+          },
+          "bootstrap": {
+            "mean": 0.2941666666666667,
+            "ci_low": 0.2725,
+            "ci_high": 0.31583333333333335,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "P0: recall:C5 \u2212 0.5": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.19,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.03693979933110368,
+            "ms_cluster": 0.03693979933110368,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.1921972927257397,
+            "seed_means": [
+              0.19
+            ],
+            "se": 0.011096515869272313,
+            "df": 299.0,
+            "t": 17.122491621548935,
+            "ci_low": 0.168162837197601,
+            "ci_high": 0.211837162802399,
+            "p_value": 2.7924266868486354e-46
+          },
+          "bootstrap": {
+            "mean": 0.19,
+            "ci_low": 0.1675,
+            "ci_high": 0.21166666666666667,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5 recall:own \u2212 C0p recall:C5 (does the channel add to the tool?)": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": -0.004166666666666667,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.016914018952062432,
+            "ms_cluster": 0.016914018952062432,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.1300539078692464,
+            "seed_means": [
+              -0.004166666666666667
+            ],
+            "se": 0.00750866587174722,
+            "df": 298.99999999999994,
+            "t": -0.554914379975881,
+            "ci_low": -0.01894319301077886,
+            "ci_high": 0.01060985967744553,
+            "p_value": 0.579368099195465
+          },
+          "bootstrap": {
+            "mean": -0.004166666666666667,
+            "ci_low": -0.018333333333333333,
+            "ci_high": 0.01,
+            "p_value": 0.623688155922039,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5 recall:own \u2212 P0 recall:C5 (does the channel add to the tool?)": {
+          "available": true,
+          "units": 300,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.1,
+            "clusters": 300,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.04013377926421405,
+            "ms_cluster": 0.04013377926421405,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.20033416898825335,
+            "seed_means": [
+              0.1
+            ],
+            "se": 0.011566298639324804,
+            "df": 299.0,
+            "t": 8.645808232895291,
+            "ci_low": 0.07723833774639884,
+            "ci_high": 0.12276166225360118,
+            "p_value": 3.3081637825917995e-16
+          },
+          "bootstrap": {
+            "mean": 0.1,
+            "ci_low": 0.07747916666666667,
+            "ci_high": 0.1225,
+            "p_value": 0.0009995002498750624,
+            "clusters": 300,
+            "seeds": 1,
+            "resamples": 2000
+          }
+        },
+        "C5 recall:own on pairs with decode_all = 1": {
+          "mean": 0.8375486381322957,
+          "pairs": 257
+        },
+        "C5 recall:own on pairs with decode_all = 0": {
+          "mean": 0.5058139534883721,
+          "pairs": 43
+        }
+      },
+      "f1": {
+        "contrasts": {
+          "F1a: C5 \u2212 0": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.34192989417989417,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.14044581975436443,
+              "ms_cluster": 0.14044581975436443,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.37476101685522795,
+              "seed_means": [
+                0.34192989417989417
+              ],
+              "se": 0.021636837396314373,
+              "df": 299.0,
+              "t": 15.803136471235794,
+              "ci_low": 0.29935011992293753,
+              "ci_high": 0.3845096684368508,
+              "p_value": 2.573992464852627e-41
+            },
+            "bootstrap": {
+              "mean": 0.34192989417989417,
+              "ci_low": 0.3006511904761904,
+              "ci_high": 0.3847348875661375,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            },
+            "p_holm": 5.147984929705254e-41
+          },
+          "F1b: C5 \u2212 C5ut": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": -0.050342592592592585,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.17814883459091965,
+              "ms_cluster": 0.17814883459091965,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4220768112452041,
+              "seed_means": [
+                -0.050342592592592585
+              ],
+              "se": 0.024368616059111742,
+              "df": 299.0,
+              "t": -2.065878196384847,
+              "ci_low": -0.09829831512938872,
+              "ci_high": -0.00238687005579645,
+              "p_value": 0.039701210761893306
+            },
+            "bootstrap": {
+              "mean": -0.050342592592592585,
+              "ci_low": -0.09896418650793652,
+              "ci_high": -0.0027239417989418312,
+              "p_value": 0.04097951024487756,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            },
+            "p_holm": 0.039701210761893306
+          }
+        },
+        "available": true,
+        "secondaries": {
+          "C5 moved": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.5992910052910052,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.04770229644853523,
+              "ms_cluster": 0.04770229644853523,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.2184085539729047,
+              "seed_means": [
+                0.5992910052910052
+              ],
+              "se": 0.012609823742957344,
+              "df": 299.0,
+              "t": 47.525724189896984,
+              "ci_low": 0.5744757590255507,
+              "ci_high": 0.6241062515564597,
+              "p_value": 2.13802960755656e-141
+            },
+            "bootstrap": {
+              "mean": 0.5992910052910052,
+              "ci_low": 0.5755837301587301,
+              "ci_high": 0.6244134259259255,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut moved": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.6395185185185185,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.06073236834351397,
+              "ms_cluster": 0.06073236834351397,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.24643938066695828,
+              "seed_means": [
+                0.6395185185185185
+              ],
+              "se": 0.014228184276699302,
+              "df": 299.0,
+              "t": 44.947303611032225,
+              "ci_low": 0.6115184525434683,
+              "ci_high": 0.6675185844935687,
+              "p_value": 4.859571711134757e-135
+            },
+            "bootstrap": {
+              "mean": 0.6395185185185185,
+              "ci_low": 0.61191832010582,
+              "ci_high": 0.6669307208994707,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 sufficiency": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.2660145502645503,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.158932773537488,
+              "ms_cluster": 0.158932773537488,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.3986637349163929,
+              "seed_means": [
+                0.2660145502645503
+              ],
+              "se": 0.023016861467012106,
+              "df": 299.0,
+              "t": 11.55737721434366,
+              "ci_low": 0.22071898569484277,
+              "ci_high": 0.3113101148342578,
+              "p_value": 8.663739458160686e-26
+            },
+            "bootstrap": {
+              "mean": 0.2660145502645503,
+              "ci_low": 0.22085548941798946,
+              "ci_high": 0.310445634920635,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut sufficiency": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.2986243386243386,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.15569110052460639,
+              "ms_cluster": 0.15569110052460639,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.3945771160680842,
+              "seed_means": [
+                0.2986243386243386
+              ],
+              "se": 0.022780920417797463,
+              "df": 299.0,
+              "t": 13.108528239756287,
+              "ci_low": 0.2537930894455311,
+              "ci_high": 0.34345558780314617,
+              "p_value": 2.5079378253530902e-31
+            },
+            "bootstrap": {
+              "mean": 0.2986243386243386,
+              "ci_low": 0.25272533068783076,
+              "ci_high": 0.3417185846560847,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 specificity": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.22167989417989417,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.03766125056282061,
+              "ms_cluster": 0.03766125056282061,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.19406506785823308,
+              "seed_means": [
+                0.22167989417989417
+              ],
+              "se": 0.011204351916825386,
+              "df": 299.0,
+              "t": 19.78515989371962,
+              "ci_low": 0.19963051762012068,
+              "ci_high": 0.24372927073966766,
+              "p_value": 2.806772283594374e-56
+            },
+            "bootstrap": {
+              "mean": 0.22167989417989417,
+              "ci_low": 0.2009890211640211,
+              "ci_high": 0.24306372354497358,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut specificity": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.23912037037037037,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.04161999903340915,
+              "ms_cluster": 0.04161999903340915,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.20400980131701799,
+              "seed_means": [
+                0.23912037037037037
+              ],
+              "se": 0.01177851137077024,
+              "df": 299.0,
+              "t": 20.30140845843862,
+              "ci_low": 0.21594108838640427,
+              "ci_high": 0.2622996523543365,
+              "p_value": 3.357781637663184e-58
+            },
+            "bootstrap": {
+              "mean": 0.23912037037037037,
+              "ci_low": 0.21625327380952383,
+              "ci_high": 0.2614141865079366,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 gap": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.3751850941594905,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.25596276832699055,
+              "ms_cluster": 0.25596276832699055,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.5059276315116527,
+              "seed_means": [
+                0.3751850941594905
+              ],
+              "se": 0.029209745424372244,
+              "df": 299.0,
+              "t": 12.844517769964567,
+              "ci_low": 0.3177023695130131,
+              "ci_high": 0.43266781880596783,
+              "p_value": 2.2733754355090768e-30
+            },
+            "bootstrap": {
+              "mean": 0.3751850941594905,
+              "ci_low": 0.3200286874882052,
+              "ci_high": 0.42884707417488,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut gap": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.537883008581588,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.39612966211512896,
+              "ms_cluster": 0.39612966211512896,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.6293883237835994,
+              "seed_means": [
+                0.537883008581588
+              ],
+              "se": 0.03633775181612685,
+              "df": 299.0,
+              "t": 14.802319397835538,
+              "ci_low": 0.46637286867548705,
+              "ci_high": 0.6093931484876889,
+              "p_value": 1.4308699469135292e-37
+            },
+            "bootstrap": {
+              "mean": 0.537883008581588,
+              "ci_low": 0.4683157407778948,
+              "ci_high": 0.6068272786155458,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 comprehensiveness_tau0": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.36358201058201056,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.1702258771083478,
+              "ms_cluster": 0.1702258771083478,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4125843878630744,
+              "seed_means": [
+                0.36358201058201056
+              ],
+              "se": 0.023820570739618296,
+              "df": 299.0,
+              "t": 15.263362685819368,
+              "ci_low": 0.3167048026894381,
+              "ci_high": 0.410459218474583,
+              "p_value": 2.7157380686143313e-39
+            },
+            "bootstrap": {
+              "mean": 0.36358201058201056,
+              "ci_low": 0.3158800264550265,
+              "ci_high": 0.4112505952380952,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut comprehensiveness_tau0": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.40474867724867725,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.1828893256278522,
+              "ms_cluster": 0.1828893256278522,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4276556156860941,
+              "seed_means": [
+                0.40474867724867725
+              ],
+              "se": 0.02469070848368216,
+              "df": 299.0,
+              "t": 16.392752663058314,
+              "ci_low": 0.3561590994733877,
+              "ci_high": 0.4533382550239668,
+              "p_value": 1.5634339709410935e-43
+            },
+            "bootstrap": {
+              "mean": 0.40474867724867725,
+              "ci_low": 0.3535046296296296,
+              "ci_high": 0.4531853835978836,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 comprehensiveness_tau0.02": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.35371825396825396,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.16004609296988953,
+              "ms_cluster": 0.16004609296988953,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4000576120634246,
+              "seed_means": [
+                0.35371825396825396
+              ],
+              "se": 0.023097337001617705,
+              "df": 299.0,
+              "t": 15.314243972951514,
+              "ci_low": 0.30826431920636216,
+              "ci_high": 0.39917218873014576,
+              "p_value": 1.7517692386057244e-39
+            },
+            "bootstrap": {
+              "mean": 0.35371825396825396,
+              "ci_low": 0.3077625992063492,
+              "ci_high": 0.3994020833333334,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut comprehensiveness_tau0.02": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.40201322751322754,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.17759870938878874,
+              "ms_cluster": 0.17759870938878874,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4214246188688895,
+              "seed_means": [
+                0.40201322751322754
+              ],
+              "se": 0.024330961714708877,
+              "df": 299.0,
+              "t": 16.522701906608038,
+              "ci_low": 0.354131606077951,
+              "ci_high": 0.44989484894850407,
+              "p_value": 5.069496151910352e-44
+            },
+            "bootstrap": {
+              "mean": 0.40201322751322754,
+              "ci_low": 0.3522503968253968,
+              "ci_high": 0.4486161044973544,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 comprehensiveness_tau0.1": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.3220462962962963,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.12988132843324787,
+              "ms_cluster": 0.12988132843324787,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.36039052211905886,
+              "seed_means": [
+                0.3220462962962963
+              ],
+              "se": 0.020807156495882842,
+              "df": 299.0,
+              "t": 15.47766973156665,
+              "ci_low": 0.28109927569915594,
+              "ci_high": 0.3629933168934366,
+              "p_value": 4.279812178691973e-40
+            },
+            "bootstrap": {
+              "mean": 0.3220462962962963,
+              "ci_low": 0.2820625661375662,
+              "ci_high": 0.36318455687830703,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut comprehensiveness_tau0.1": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.3825886243386244,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.16799726329970033,
+              "ms_cluster": 0.16799726329970033,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4098746921922605,
+              "seed_means": [
+                0.3825886243386244
+              ],
+              "se": 0.023664126387121665,
+              "df": 299.0,
+              "t": 16.16745186700973,
+              "ci_low": 0.33601928792888786,
+              "ci_high": 0.42915796074836093,
+              "p_value": 1.1006399226274047e-42
+            },
+            "bootstrap": {
+              "mean": 0.3825886243386244,
+              "ci_low": 0.33390023148148146,
+              "ci_high": 0.4281080026455025,
+              "p_value": 0.0009995002498750624,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 comprehensiveness, undecoded edges": {
+            "available": true,
+            "units": 29,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.06896551724137931,
+              "clusters": 29,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.6200738916256158,
+              "ms_cluster": 0.6200738916256158,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.7874477072324332,
+              "seed_means": [
+                0.06896551724137931
+              ],
+              "se": 0.1462253682912708,
+              "df": 28.0,
+              "t": 0.47163852652437693,
+              "ci_low": -0.23056357147809983,
+              "ci_high": 0.3684946059608585,
+              "p_value": 0.6408394203281728
+            },
+            "bootstrap": {
+              "mean": 0.06896551724137931,
+              "ci_low": -0.20689655172413793,
+              "ci_high": 0.3448275862068966,
+              "p_value": 0.656671664167916,
+              "clusters": 29,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5 role specificity (twins)": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": -0.035833333333333335,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.2376330824972129,
+              "ms_cluster": 0.2376330824972129,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4874762378795636,
+              "seed_means": [
+                -0.035833333333333335
+              ],
+              "se": 0.028144453716331213,
+              "df": 299.0,
+              "t": -1.2731934218549263,
+              "ci_low": -0.09121963882134708,
+              "ci_high": 0.01955297215468041,
+              "p_value": 0.20393839328489666
+            },
+            "bootstrap": {
+              "mean": -0.035833333333333335,
+              "ci_low": -0.09083333333333334,
+              "ci_high": 0.020833333333333332,
+              "p_value": 0.19490254872563717,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "C5ut role specificity (twins)": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.008333333333333333,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.23529821627647712,
+              "ms_cluster": 0.23529821627647712,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.4850754748247711,
+              "seed_means": [
+                0.008333333333333333
+              ],
+              "se": 0.028005845596736714,
+              "df": 299.0,
+              "t": 0.29755692626914815,
+              "ci_low": -0.046780201123757,
+              "ci_high": 0.06344686779042366,
+              "p_value": 0.7662479880752303
+            },
+            "bootstrap": {
+              "mean": 0.008333333333333333,
+              "ci_low": -0.0475,
+              "ci_high": 0.06335416666666656,
+              "p_value": 0.7796101949025487,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          },
+          "role specificity C5 \u2212 C5ut": {
+            "available": true,
+            "units": 300,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": -0.04416666666666667,
+              "clusters": 300,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.44975682831661096,
+              "ms_cluster": 0.44975682831661096,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.6706391192859323,
+              "seed_means": [
+                -0.04416666666666667
+              ],
+              "se": 0.038719367604882655,
+              "df": 299.0,
+              "t": -1.140686674363377,
+              "ci_low": -0.1203636589437754,
+              "ci_high": 0.03203032561044208,
+              "p_value": 0.2549131649183308
+            },
+            "bootstrap": {
+              "mean": -0.04416666666666667,
+              "ci_low": -0.12,
+              "ci_high": 0.035833333333333335,
+              "p_value": 0.26486756621689156,
+              "clusters": 300,
+              "seeds": 1,
+              "resamples": 2000
+            }
+          }
+        },
+        "reading": {
+          "F1a": "(a) decoded edges are causally used: removing one moves its filler more than removing another edge",
+          "F1b": "binding changes edge-level faithfulness (C5 lower)"
+        }
+      },
+      "f1_table": [
+        {
+          "model": "C5",
+          "comprehensiveness": 0.34192989417989417,
+          "moved": 0.5992910052910052,
+          "sufficiency": 0.2660145502645503,
+          "specificity": 0.22167989417989417,
+          "gap": 0.3751850941594905,
+          "decoded_edges": 1497.0,
+          "role_specificity": -0.035833333333333335,
+          "rs": -0.021431973949034008,
+          "seeds": [
+            1
+          ]
+        },
+        {
+          "model": "C5ut",
+          "comprehensiveness": 0.3922724867724868,
+          "moved": 0.6395185185185185,
+          "sufficiency": 0.2986243386243386,
+          "specificity": 0.23912037037037037,
+          "gap": 0.537883008581588,
+          "decoded_edges": 1470.0,
+          "role_specificity": 0.008333333333333333,
+          "rs": 0.0012034547558719547,
+          "seeds": [
+            1
+          ]
+        }
+      ]
+    }
+  }
+}

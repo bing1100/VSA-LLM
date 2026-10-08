@@ -1150,3 +1150,134 @@ for spec in "U5 hrr" "U5ut untyped" "U5tr translation" "U5u unitary_hrr"; do
 done
 ```
 | 62 | **Explainability by decomposition and self-query** (author, 2026-10-08, after binding step 1) | Step 1 showed a stored-but-unread gap. With binding, T5 SmolLM2-360M stores roles recoverably (held-out filler recovery 0.96, role-ambiguous edges 0.91; without binding 0.14 and 0.03), but no model tells role-swap twins apart (C5 0.494, C5ut 0.498, C5tr 0.492, P0 0.492; chance 0.5). The author's thesis: VSA decomposition is inspection of the vector the model computes with, not narration, so it can be checked and edited, and gives deeper explainability than reasoning traces, provided decoding is validated by intervention. **Build now:** (1) *recall tool, phase A*: decode a term's stored vector (unbind, clean up) into text and put it in context, run as a fixed pipeline; tests are role-swap twins, chained two-hop, reverse lookup by scanning the store, and new-word properties; conditions are the C5 store, the C5ut / C5tr stores as role-blind controls, a symbolic frame lookup as upper bound, no recall, and definition text in context (E11-style); hosts T5 SmolLM2 (3 seeds), Qwen3 (seeds 1–2) and T4 (role-ambiguous natural items), later the readout arms. (2) *faithfulness of decoding*: for each decoded edge, ablate or swap it in the store and measure whether the matching prediction moves, and only that one (comprehensiveness, sufficiency, specificity), on C5 and the readout arms, reusing the E5.1 faithfulness code where possible. **Pre-register now, run later:** (3a) agentic self-query: Qwen3 decides when to call recall, chained recall or reverse, via few-shot ReAct-style prompts, with a small feasibility pilot now; (3b) learning from tool-using reasoning traces with LoRA, one arm calling the tool and one answering without it (internalization), with the twins rerun without the tool; (3c) a calibrated self-critique loop that compares decoded beliefs with behaviour and with held-out data, with a null-world control (E10 accepted false structure without retracting it). A literature check on introspection, self-query and VSA decoding goes into the pre-registration. Placement: initial runs on existing checkpoints right after binding step 1, the rest with or after binding step 2 |
+
+## E12 — explainability by decomposition and self-query (decision 62; WP-SQ, 2026-10-08)
+
+Pre-registration: `experiments/e12-self-query/preregistration.md`, committed before any evaluation of these measures on a
+checkpoint; the pilots (§15, labelled PILOT, T5 SmolLM2-360M seed 1 only) and amendments (§16) after it. Binding step 1
+showed the roles **stored but not read** (T5 360M: held-out filler recovery 0.96 for C5, 0.14 for C5ut; twin contrast
+accuracy 0.494 / 0.498, chance 0.5). E12 tests the author's thesis that decomposing the store is *inspection* of the vector
+the model computes with (not narration), provided decoding is validated by intervention, and that a self-query tool lets
+the model use its store through reading, without learning unbinding in its weights.
+
+| | What | Endpoint (T5, SmolLM2-360M, seeds 1–3) |
+|---|---|---|
+| **Q1** (recall tool, phase A) | the twin's recalled frame (own store: static bundle, primary unbinding, typed cleanup, statement wording with confidences) in context before the question | twin contrast accuracy (`choice`), C5 host: `recall:own − none` and `recall:own − recall:C5ut`, Holm |
+| **F1** (faithfulness of decoding, channel route) | remove each decoded edge from the store (decision 24's weight-zero semantics) against the mean of every other single-edge removal | per-new-word comprehensiveness net share at τ = 0.05 nats: C5 against 0 and C5 − C5ut, Holm |
+
+Conditions of phase A: `none`, `recall:own` / `recall:<arm>` (C5ut, C5tr; C5 for hosts without a store; P0 reads the C5
+stores of seeds 1–3), `roleless`, `wrong` (the partner twin's recall), `symbolic` (gold frame, the upper bound),
+`definition` (E11 prose). Item sets: role-swap twins (primary), T4 natural role items, WP-UB two-hop (chained recall) and
+reverse (reverse lookup; ≤ 150 anchors per subset), v2 new words (first 300). Every behavioural number comes with the decode
+accuracy of what was put in context. F1 also reads sufficiency, specificity and the twins' role specificity. 3a (agentic
+self-query, Qwen3 few-shot ReAct; feasibility pilot now), 3b (LoRA on tool-using traces; internalization) and 3c
+(calibrated self-critique with a null-world control) are pre-registered designs, run later.
+
+**Code** (tests: `tests/test_self_query.py`, `tests/test_e12_self_query.py`): `vsa_embed.self_query` (the recall tool),
+`vsa_embed.experiments.e12_self_query` (phase A: `evaluate`, `recall`, `queue`), `e12_faithfulness` (F1: `evaluate`, `queue`),
+`e12_report` (Q1, F1, secondaries). **Outputs:** `RUN/self-query-<items>/`, `RUN/self-query-faithfulness/`, stage reports in
+`experiments/e12-self-query/report/<stage>-<tag>/` (never an E9 `report/<stage>`).
+
+**Placement** (author): existing-checkpoint jobs at 50 (→ 50.7), their reports at 51 (→ 50.75, CPU lane); natural tracks
+once trained at 54 (→ 54.448); readout-arm jobs at 54 (→ 54.4927, after the step-2 evaluations). Exact commands and GPU-h
+follow the pilot (below).
+
+**Pilot** (PILOT, T5 SmolLM2-360M seed 1, twins `choice`, 300 pairs; not an endpoint; pre-registration §15, report
+`experiments/e12-self-query/pilot/report/t5-q1-f1`): twin contrast accuracy `none` 0.507 → `recall:own` **0.790** (decode:
+95.9% of the critical slots, all four in 85.7% of pairs), `recall:C5ut` 0.495, `symbolic` 0.863, `wrong:own` 0.228,
+`roleless:own` 0.497, `definition` 0.748; C0′ + C5 store 0.794, C5ut host + C5 store 0.798, P0 + C5 store 0.690. F1: C5
+comprehensiveness net share **+0.342** [+0.299, +0.385], C5ut +0.392 (C5 − C5ut −0.050), sufficiency +0.27, role specificity on
+the twins ≈ 0 (C5 −0.036, C5ut +0.008). Reading on this seed: the store carries the roles and any host reads them through the
+tool; through the channel the model uses the decoded fillers, not the roles.
+
+**Queue** (from the main checkout after merging; nothing queued). GPU-h are **upper bounds** from the pilot on the shared
+GPU (100% busy with training): per twin condition 63–92 s per 4,800 `choice` texts (`cloze` adds half), scaled by texts ×
+tokens per item set and by host size; F1 300 words in 520 s. Jobs are idempotent by name; every `queue` takes `--dry-run`.
+
+| Block | Priority (author's float) | Jobs | GPU-h |
+|---|---|---:|---:|
+| **Q1 primary**: T5 SmolLM2-360M twins, every condition — C5, C5ut, C0′ × s1–3; P0 (C5 stores of s1–3) | 50 (50.7) | 10 | ≈ 2.1 |
+| **F1 primary** + secondaries: T5 360M C5, C5ut (primary), C5rf, C5tr, C5sh × s1–3 | 50 (50.7) | 15 | ≈ 2.4 |
+| SQ4 formats (C5 s1: all-atom cleanup, slot-free, fields, no confidences) | 50 (50.7) | 1 | ≈ 0.15 |
+| SQ1 secondary arms on the twins, core conditions: C5tr, C5rf, C5sh, C2 × s1–3 | 50 (50.7) | 12 | ≈ 1.3 |
+| SQ6 T5 360M WP-UB two-hop / reverse (≤ 150 anchors per subset): C5, C5ut, C0′, P0 | 50 (50.7) | 10 | ≈ 1.3 |
+| SQ6 T5 360M new words (first 300), core: C5, C5ut, C0′, P0 | 50 (50.7) | 10 | ≈ 2.6 |
+| SQ5 SmolLM2-135M: twins core (C5, C2, C0′ × s1–3; P0) + F1 (C5 × s1–3) | 50 (50.7) | 10 + 3 | ≈ 0.55 + 0.2 |
+| SQ5 Qwen3-0.6B / 1.7B s1–2: twins core (C5, C0′; P0) + F1 (C5) | 50 (50.7) | 10 + 4 | ≈ 4.2 + 2.3 |
+| T4 seed 1: natural items (360M C5, C5ut, C5rf, C2, C0′, P0; 135M C5, C2, C0′, P0) + WP-UB core (C5, C5ut, C0′, P0) | 50 (50.7) | 10 + 7 | ≈ 1.6 + 0.5 |
+| Reports: T5, T5-Qwen3, T4 seed 1 (CPU lane) | 51 (50.75) | 3 | 0 |
+| T4's other configs once trained (C5, C5ut every condition; C5rf, C5tr, C5sh, C2, C0′, C6m/d/g core; seed-1 jobs skipped by name) + report | 54 (54.448) / 55 | 4 + 21 + 1 | ≈ 1.0 + 3.2 |
+| Readout arms U5, U5u, U5sb, U5bu, U5sl, U5tr, U5ut × s1–3: twins (core) + F1 + report | 54 (54.4927) / 55 | 21 + 21 + 1 | ≈ 2.3 + 3.4 |
+
+**Total ≈ 29 GPU-h** (upper bounds; the GPU was shared): ≈ 19 at 50, ≈ 4.2 for T4 at 54, ≈ 5.7 for the readout arms at 54.
+The primary tier alone (Q1 twins on C5, C5ut, C0′, P0 and F1 on C5, C5ut) is ≈ 3.1 GPU-h; the Qwen3 replication (≈ 6.5) and the
+new-word set (≈ 2.6) are the largest secondaries.
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+I=experiments/e9-retrofit/items
+# --- existing checkpoints: priority 50 (author: 50.7) ---
+# Q1 primary block (every pre-registered condition; P0 reads the C5 stores of seeds 1-3)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C0p P0 \
+  --items $I/role-twins-t5-smollm2-v1 --priority 50
+# F1 (C5 and C5ut primary; C5rf, C5tr, C5sh secondaries)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C5rf C5tr C5sh --priority 50
+# SQ4 formats on C5 seed 1 (folder self-query-<items>-formats; the report merges it)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 --seeds 1 \
+  --items $I/role-twins-t5-smollm2-v1 --conditions recall-all:own,recall-free:own,fields:own,noconf:own --tag formats --priority 50
+# SQ1 secondary arms (core conditions)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5tr C5rf C5sh C2 --core \
+  --items $I/role-twins-t5-smollm2-v1 --priority 50
+# SQ6 other item sets (360M)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C0p P0 \
+  --items $I/understanding-t5-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C0p P0 --core \
+  --items $I/new-words-t5-smollm2-v2 --priority 50
+# SQ5 replications
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-135M --models C5 C2 C0p P0 --core \
+  --items $I/role-twins-t5-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5 --hosts SmolLM2-135M --models C5 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5-qwen3 --models C5 C0p P0 --seeds 1 2 --core \
+  --items $I/role-twins-t5-qwen3-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5-qwen3 --models C5 --seeds 1 2 --priority 50
+# T4 seed 1: natural role items (every condition) and WP-UB (core)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --seeds 1 --models C5 C5ut C5rf C2 C0p P0 \
+  --items $I/role-natural-t4-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --seeds 1 --models C5 C5ut C0p P0 --core \
+  --items $I/understanding-t4-smollm2-v1 --priority 50
+# --- reports: priority 51 (author: 50.75), CPU lane ---
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-e12 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5 --output experiments/e12-self-query/report/t5-q1-f1 \
+  --twins role-twins-t5-smollm2-v1 --understanding understanding-t5-smollm2-v1 --new-words new-words-t5-smollm2-v2 --overwrite \
+  --title "E12 T5 — self-query (Q1) and faithfulness of decoding (F1)"
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-qwen3-report-e12 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5-qwen3 --output experiments/e12-self-query/report/t5-qwen3 \
+  --twins role-twins-t5-qwen3-v1 --overwrite --title "E12 T5 Qwen3 — self-query and faithfulness"
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-e12-s1 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e12-self-query/report/t4-s1 \
+  --natural role-natural-t4-smollm2-v1 --understanding understanding-t4-smollm2-v1 --overwrite --title "E12 T4 seed 1 — self-query"
+# --- T4's other configs once trained: priority 54 (author: 54.448); report at 55 ---
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --models C5 C5ut --items $I/role-natural-t4-smollm2-v1 --priority 54
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --models C5rf C5tr C5sh C2 C0p C6m C6d C6g --core \
+  --items $I/role-natural-t4-smollm2-v1 --priority 54
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-e12 --priority 55 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e12-self-query/report/t4 \
+  --natural role-natural-t4-smollm2-v1 --understanding understanding-t4-smollm2-v1 --overwrite --title "E12 T4 — self-query"
+# --- readout arms (decision 60 step 2) once trained: priority 54 (author: 54.4927); report at 55 ---
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --models U5 U5u U5sb U5bu U5sl U5tr U5ut --core \
+  --items $I/role-twins-t5-smollm2-v1 --priority 54
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5 --models U5 U5u U5sb U5bu U5sl U5tr U5ut --priority 54
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-e12-readout --priority 55 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5 --hosts SmolLM2-360M \
+  --output experiments/e12-self-query/report/t5-readout --twins role-twins-t5-smollm2-v1 --overwrite \
+  --title "E12 T5 — self-query and faithfulness with the readout arms"
+```
+
+Dry runs (2026-10-08): Q1 primary 10, F1 15, formats 1, secondary arms 12, WP-UB 10, new words 10, 135M 10 + 3, Qwen3 10 + 4,
+T4 seed 1 10 + 7, T4 at 54 4 + 21 new (8 seed-1 jobs skipped by name), readout arms 21 + 21.
+
+| # | Open decision (E12) | Default |
+|---|---|---|
+| SQ-1–SQ-5 | pre-registration §14 (context format, role-blind reference, null, subsets, τ) | as registered |
+| SQ-6 | the secondary blocks' size: the Qwen3 replication (≈ 6.5 GPU-h) and the new-word set (≈ 2.6) could move below the primary tier or be cut to seed 1 | queue as listed; the author sets the floats |
+| SQ-7 | 3b (LoRA on tool traces) and 3c (calibrated self-critique) need two small harnesses (≈ one day each) before their pre-registered runs | build after the Q1 / F1 endpoint report |
