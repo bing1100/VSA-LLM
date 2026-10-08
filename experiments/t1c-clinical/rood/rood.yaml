@@ -16,7 +16,7 @@ version: v1
 seed: 20261007                                      # T1c-F's: identical batch orders per seed (the label set differs)
 paths:
   t1c_config: experiments/t1c-clinical/t1c.yaml
-  base_root: ~/data/vsa-llm/t1c/icd-frequency-v1    # T1c-F v1 (read-only): labels, admissions, tokens, TransE, P0 states
+  base_root: ~/data/vsa-llm/t1c/icd-frequency-v1    # T1c-F v1, read-only: labels, admissions, tokens, TransE; P0 states only through encode --reuse-base (exact manifest match)
   data_root: ~/data/vsa-llm/t1c/rood-v1/coding      # ROOD label space, admissions, heads, analyses, ROOD encoders' states
   ontology_pt: ~/data/vsa-llm/t1c/rood-v1/lm/ontology.pt   # the ROOD LM corpus's channel ontology (the C5-ROOD composer)
   t1c_holdout: ~/data/vsa-llm/t1c/rood-v1/lm/holdout_concepts.txt

@@ -729,12 +729,84 @@ def states_dir(config: dict[str, Any], encoder: str) -> Path:
     return data_root(config) / "states" / encoder
 
 
+REUSE_FILE = "REUSED.json"
+# What must be equal for a base root's states to stand in for an encode under another config (`--reuse-base`): the
+# frozen host, the token store and its truncation, the chunking and pooling, the precision and the admission count.
+REUSE_SPEC_KEYS = ("encoder", "pretrained", "channel", "chunk_tokens", "segment_tokens", "tokens_dir", "admissions", "tokens",
+                   "dtype", "max_tokens", "tokenizer")
+
+
+def file_sha256(path: Path) -> str:
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 def resolve_states_dir(config: dict[str, Any], encoder: str) -> Path:
-    """The encoder's states: under the data root, else (opt-in `paths.base_root`) under the base root."""
+    """The encoder's states: under the data root, or — opt-in, `paths.base_root` — the base root's states that
+    `encode --reuse-base` verified and linked (`REUSED.json`); a linked store whose manifest changed since is refused."""
     own = states_dir(config, encoder)
     if (own / "meta.json").exists() or not config["paths"].get("base_root"):
         return own
-    return base_root(config) / "states" / encoder
+    link = own / REUSE_FILE
+    if link.exists():
+        record = json.loads(link.read_text())
+        base = Path(record["base"])
+        if not (base / "meta.json").exists() or file_sha256(base / "meta.json") != record["meta_sha256"]:
+            raise RuntimeError(f"the reused states of {encoder} changed since they were linked; run encode --reuse-base again")
+        return base
+    return own
+
+
+def encode_spec(config: dict[str, Any], encoder: str, *, pretrained: str, tokens_dir: str, admissions: int,
+                tokens: int) -> dict[str, Any]:
+    """The manifest fields a frozen-host encode under `config` would write (`REUSE_SPEC_KEYS`)."""
+    text, enc = config["text"], config["encode"]
+    return {"encoder": encoder, "pretrained": pretrained, "channel": False, "chunk_tokens": int(text["chunk_tokens"]),
+            "segment_tokens": int(text["segment_tokens"]), "tokens_dir": tokens_dir, "admissions": int(admissions),
+            "tokens": int(tokens), "dtype": enc["dtype"], "max_tokens": int(text["max_tokens"]), "tokenizer": text["tokenizer"]}
+
+
+def reuse_decision(spec: dict[str, Any], meta: dict[str, Any] | None, *, offsets_equal: bool,
+                   admissions_equal: bool) -> tuple[str, list[str]]:
+    """`reuse` (every field present and equal, complete, same segment plan, same admission order), `fail` (a field or
+    the plan differs: another host or preprocessing — never silently re-encoded) or `encode` (the base states are
+    absent, incomplete or older than the recorded fields: an exact match cannot be guaranteed, so encode separately)."""
+    if meta is None or not meta.get("complete") or meta.get("admissions_done") != meta.get("admissions"):
+        return "encode", ["base states absent or incomplete"]
+    differ = [k for k in spec if k in meta and meta[k] != spec[k]]
+    differ += [] if offsets_equal else ["seg_offsets"]
+    differ += [] if admissions_equal else ["admission order"]
+    if differ:
+        return "fail", differ
+    missing = [k for k in spec if k not in meta]
+    if missing:
+        return "encode", [f"base manifest lacks {missing}"]
+    return "reuse", []
+
+
+def reuse_states(config: dict[str, Any], encoder: str, spec: dict[str, Any], seg_offsets: np.ndarray) -> dict[str, Any]:
+    """Link the base root's states of `encoder` when they match `spec` exactly (writes only `REUSED.json` in this data
+    root's states folder; the base states are read, never written). Raises on a definite mismatch."""
+    own = states_dir(config, encoder)
+    base = base_root(config) / "states" / encoder
+    if (own / REUSE_FILE).exists():
+        resolve_states_dir(config, encoder)                       # re-verifies the linked manifest
+        return {"decision": "reused", "reasons": [], "base": str(base)}
+    meta = json.loads((base / "meta.json").read_text()) if (base / "meta.json").exists() else None
+    offsets_equal = (base / "seg_offsets.npy").exists() and np.array_equal(np.load(base / "seg_offsets.npy"), seg_offsets)
+    mine = torch.load(data_root(config) / "admissions.pt", weights_only=False)
+    theirs = torch.load(base_root(config) / "admissions.pt", weights_only=False)
+    admissions_equal = np.array_equal(np.asarray(mine["hadm"]), np.asarray(theirs["hadm"]))
+    decision, reasons = reuse_decision(spec, meta, offsets_equal=offsets_equal, admissions_equal=admissions_equal)
+    if decision == "fail":
+        raise ValueError(f"the base states of {encoder} ({base}) do not match this encode: {reasons}; "
+                         "refusing to reuse or overwrite them")
+    if decision == "reuse":
+        private_dir(own)
+        (own / REUSE_FILE).write_text(json.dumps({"base": str(base), "meta_sha256": file_sha256(base / "meta.json"),
+                                                  "seg_offsets_sha256": file_sha256(base / "seg_offsets.npy"),
+                                                  "spec": spec}, indent=2) + "\n")
+    return {"decision": decision, "reasons": reasons, "base": str(base)}
 
 
 def open_store(config: dict[str, Any], encoder: str) -> ic.SegmentStore:
@@ -749,7 +821,13 @@ def open_store(config: dict[str, Any], encoder: str) -> ic.SegmentStore:
 
 def run_encode(config: dict[str, Any], encoder_name: str, *, pretrained: str | None = None, run: Path | None = None,
                channel: bool = True, device: str = "cuda", limit: int | None = None, resume: bool = False,
-               tokens_dir: str = "tokens") -> dict[str, Any]:
+               tokens_dir: str = "tokens", reuse_base: bool = False) -> dict[str, Any]:
+    """Encode every admission (and the code titles) through a frozen host into this data root's states folder.
+
+    `reuse_base` (opt-in; a frozen pretrained host under a config with `paths.base_root`, e.g. T1c-ROOD's P0): states
+    already complete here are kept if their manifest matches (idempotent); else the base root's states are linked when
+    their manifest matches exactly (`reuse_decision`); a definite mismatch fails; otherwise the encode runs into this
+    data root. The base root's states are never written."""
     from vsa_embed.provenance import git_state
     git_at_start = git_state()
     text_cfg, enc_cfg = config["text"], config["encode"]
@@ -761,6 +839,31 @@ def run_encode(config: dict[str, Any], encoder_name: str, *, pretrained: str | N
         tokens = {**tokens, "offsets": tokens["offsets"][:n + 1]}
     lengths = np.diff(tokens["offsets"])
     _, seg_offsets = chunk_plan(lengths, chunk, segment)
+    if reuse_base:
+        if not pretrained or run is not None or limit is not None or not config["paths"].get("base_root"):
+            raise ValueError("--reuse-base applies to a full encode of a pretrained host under a config with paths.base_root")
+        spec = encode_spec(config, encoder_name, pretrained=pretrained, tokens_dir=tokens_dir, admissions=n,
+                           tokens=int(lengths.sum()))
+        own_meta = states_dir(config, encoder_name) / "meta.json"
+        previous_own = json.loads(own_meta.read_text()) if own_meta.exists() else None
+        outcome = None
+        if previous_own and previous_own.get("complete"):
+            differ = [k for k in spec if previous_own.get(k) != spec[k]]
+            if differ:
+                raise ValueError(f"states of {encoder_name} in this data root differ from this encode: {differ}")
+            outcome = {"decision": "already complete", "reasons": []}
+        elif previous_own is None:
+            linked = reuse_states(config, encoder_name, spec, seg_offsets)
+            outcome = linked if linked["decision"] in ("reuse", "reused") else None
+            if outcome is None:
+                print(json.dumps({"reuse_base": linked["decision"], "reasons": linked["reasons"]}), flush=True)
+        if outcome is not None:
+            summary = {"encoder": encoder_name, "pretrained": pretrained, "admissions": n, "tokens": int(lengths.sum()),
+                       "reuse": outcome}
+            out = run_folder(config, f"encode-{encoder_name}")
+            write_json(out / "summary.json", summary)
+            record_run(out, config, git_at_start=git_at_start, device=device, stage="encode")
+            return summary
     folder = private_dir(states_dir(config, encoder_name))
     meta_path = folder / "meta.json"
     previous = json.loads(meta_path.read_text()) if meta_path.exists() else None
@@ -775,7 +878,8 @@ def run_encode(config: dict[str, Any], encoder_name: str, *, pretrained: str | N
     done = int(previous.get("admissions_done", 0)) if (resume and previous) else 0
     meta = {"encoder": encoder_name, **encoder.info, "admissions": n, "segments": shape[0], "chunk_tokens": chunk,
             "segment_tokens": segment, "tokens": int(lengths.sum()), "admissions_done": done, "complete": False,
-            "tokens_dir": tokens_dir}
+            "tokens_dir": tokens_dir, "dtype": enc_cfg["dtype"], "max_tokens": int(text_cfg["max_tokens"]),
+            "tokenizer": text_cfg["tokenizer"]}
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
@@ -1502,6 +1606,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--tag", default="", help="suffix of the head / analysis folders (smoke runs)")
     parser.add_argument("--label", default="", help="analyze: suffix of the analysis folders only (e.g. -pass2)")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--reuse-base", action="store_true",
+                        help="encode (frozen pretrained host): link the base root's states on an exact manifest match")
     args = parser.parse_args(argv)
     if args.stage == "plan":
         print(plan_commands(), end="")
@@ -1517,7 +1623,8 @@ def main(argv: list[str] | None = None) -> None:
         if not args.encoder or not (args.pretrained or args.run):
             parser.error("encode needs --encoder and --pretrained or --run")
         result = run_encode(config, args.encoder, pretrained=args.pretrained, run=args.run, channel=args.channel == "on",
-                            device=args.device, limit=args.limit, resume=args.resume, tokens_dir=args.tokens_dir)
+                            device=args.device, limit=args.limit, resume=args.resume, tokens_dir=args.tokens_dir,
+                            reuse_base=args.reuse_base)
     elif args.stage == "train":
         if not args.encoder:
             parser.error("train needs --encoder")
