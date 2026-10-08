@@ -10,11 +10,19 @@ and computes:
 - **P2** — algebraic filler recovery on held-out concepts (probe A, `static` bundle, `typed` cleanup, the operator's
   primary unbinding, MRR per concept): C5 − the frequency baseline, and C5 − C5rf; concepts × seeds crossed model;
 - secondaries: every arm against C5 on the twins, the natural role items, probe A by condition, frame size (the
-  capacity curve) and role ambiguity, role recovery, probe B (LRE) against probe A, the hidden-state probes.
+  capacity curve) and role ambiguity, role recovery, probe B (LRE) against probe A, the hidden-state probes;
+- step 2 (§13; the readout arms, `RUN/readout`): **R1** U5 − U5ut and U5 − U5tr on the twins (Holm), **R2** U5 − C5 relative
+  loss on `after_heldout` (paired window bootstrap), the gate-off losses and the readout diagnostics;
+- step 3 (§14; `RUN/binding-chain`): **C1** C5's chained two-hop through local stores − through one global memory, **C2**
+  chained two-hop on the WP-UB items C5 − C5ut / C5tr (Holm), **C3** reverse lookup on ambiguous fillers C5 − C5ut / C5tr
+  (Holm), item-level agreement of the algebra with the models' behaviour on the same items (`--understanding`), and the
+  fidelity, capacity and path-order tables.
+
+The stage analyses write `report/<stage>-binding`, never the stage's base report folder `report/<stage>`.
 
     python -m vsa_embed.experiments.e9_binding_report --runs experiments/e9-retrofit/runs/t5 \\
-        --output experiments/e9-retrofit/report/t5-binding [--twins role-twins-t5-smollm2-v1] [--natural role-natural-t5-smollm2-v1]
-        [--hosts SmolLM2-360M] [--licensed] [--overwrite]
+        --output experiments/e9-retrofit/report/t5-binding [--twins role-twins-t5-smollm2-v1] [--natural role-natural-t4-smollm2-v1]
+        [--understanding understanding-t5-smollm2-v1] [--hosts SmolLM2-360M] [--licensed] [--overwrite]
 """
 
 from __future__ import annotations
@@ -42,17 +50,22 @@ ARMS_ORDER = ("C5", "C5rf", "C5ut", "C5tr", "C5sh", "C6m", "C6d", "C6g", "C2", "
 NAME = re.compile(r"^(?P<host>.+)-(?P<mode>full|lora|frozen)-(?P<model>[^-]+)-s(?P<seed>\d+)$")
 
 
-def discover(runs_root: Path, *, hosts: Sequence[str] | None = None, twins: str | None = None, natural: str | None = None
-             ) -> dict[str, dict[str, dict[int, dict[str, Any]]]]:
-    """host → model → seed → {"path", "probe": load_probe(...), "readout": readout evaluation, "twins": evaluation,
-    "natural": evaluation}."""
+def discover(runs_root: Path, *, hosts: Sequence[str] | None = None, twins: str | None = None, natural: str | None = None,
+             understanding: str | None = None) -> dict[str, dict[str, dict[int, dict[str, Any]]]]:
+    """host → model → seed → {"path", "probe": load_probe(...), "readout": readout evaluation, "chain": step 3's chain,
+    "twins" / "natural": role-item evaluations, "understanding": the WP-UB evaluation (behaviour on two-hop / reverse)}."""
+    from . import e9_understanding as und
+    from .e9_binding_chain import OUTPUT as CHAIN_OUTPUT, load_chain
     from .e9_binding_readout import OUTPUT as READOUT_OUTPUT, load_evaluation as load_readout
     found: dict[str, dict[str, dict[int, dict[str, Any]]]] = defaultdict(lambda: defaultdict(dict))
     for run in sorted(Path(runs_root).iterdir()) if Path(runs_root).exists() else []:
         match = NAME.match(run.name)
         if not match or (hosts and match["host"] not in hosts):
             continue
-        entry = {"path": run, "probe": probe_mod.load_probe(run / probe_mod.OUTPUT), "readout": load_readout(run / READOUT_OUTPUT)}
+        entry = {"path": run, "probe": probe_mod.load_probe(run / probe_mod.OUTPUT), "readout": load_readout(run / READOUT_OUTPUT),
+                 "chain": load_chain(run / CHAIN_OUTPUT)}
+        if understanding:
+            entry["understanding"] = und.load_evaluation(und.output_folder(run, understanding))
         if twins:
             entry["twins"] = items_mod.load_evaluation(items_mod.output_folder(run, twins))
         if natural:
@@ -441,12 +454,106 @@ def r_reading(result: dict[str, Any]) -> dict[str, str]:
     return readings
 
 
+# ---------------------------------------------------------------- step 3: chains, reverse lookup, capacity (pre-registration §14)
+
+CHAIN_REFERENCES = ("C5ut", "C5tr")
+
+
+def _chain_units(models: dict[str, dict[int, dict[str, Any]]], model: str, kind: str) -> dict[int, dict[str, float]]:
+    """seed → unit → value: `local` / `global` (chained two-hop top-1 on the ontology paths read through the global memory),
+    `items` (chained two-hop top-1 among the WP-UB items' options), `reverse` (reciprocal rank of ambiguous-filler reverse
+    queries)."""
+    out = {}
+    for seed, found in _by_seed(models, model, "chain").items():
+        arrays = found.get("paths") or {}
+        values: dict[str, float] = {}
+        if kind in {"local", "global"} and "global_chain_hit" in arrays:
+            n = arrays["global_chain_hit"].size
+            source = arrays["path_chain_hit"][:n] if kind == "local" else arrays["global_chain_hit"]
+            values = {str(i): float(v) for i, v in enumerate(source.tolist())}
+        elif kind == "items":
+            values = {o["id"]: float(o["chain_hit"]) for o in found.get("items", []) if o["family"] == "two_hop"}
+        elif kind == "reverse" and "query_rr" in arrays:
+            keep = arrays["query_ambiguous"].astype(bool)
+            keys = zip(arrays["query_entry"][keep].tolist(), arrays["query_relation"][keep].tolist(), arrays["query_filler"][keep].tolist())
+            values = {f"{e}:{r}:{f}": float(v) for (e, r, f), v in zip(keys, arrays["query_rr"][keep].tolist())}
+        if values:
+            out[seed] = values
+    return out
+
+
+def behaviour_agreement(models: dict[str, dict[int, dict[str, Any]]], model: str) -> dict[str, Any] | None:
+    """Item-level agreement between the algebraic chain (two-hop chain top-1, reverse pair) and the model's behaviour on the
+    same WP-UB items (source `own`, the item's mean correctness over templates): P(behaviour | algebra right / wrong), φ."""
+    pairs: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for seed, entry in models.get(model, {}).items():
+        chain, understanding = entry.get("chain"), entry.get("understanding")
+        if not chain or not understanding:
+            continue
+        behaviour = {r["id"]: float(r["correct"]) for r in understanding["rows"].get("own", [])}
+        for o in chain.get("items", []):
+            if o["id"] in behaviour:
+                algebra = o["chain_hit"] if o["family"] == "two_hop" else o["pair_correct"]
+                pairs[o["family"]].append((float(algebra), behaviour[o["id"]]))
+    if not pairs:
+        return None
+    out = {}
+    for family, values in pairs.items():
+        a = np.asarray([v[0] >= 0.5 for v in values]); b = np.asarray([v[1] >= 0.5 for v in values])
+        phi = float(np.corrcoef(a, b)[0, 1]) if a.std() > 0 and b.std() > 0 else None
+        out[family] = {"items": len(values), "algebra": float(a.mean()), "behaviour": float(b.mean()), "phi": phi,
+                       "behaviour_if_algebra_right": float(b[a].mean()) if a.any() else None,
+                       "behaviour_if_algebra_wrong": float(b[~a].mean()) if (~a).any() else None}
+    return out
+
+
+def step3(models: dict[str, dict[int, dict[str, Any]]], *, resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
+    """C1 (local − global chained two-hop, C5), C2 (chained two-hop on the WP-UB items, C5 − C5ut / C5tr, Holm), C3 (reverse
+    lookup on ambiguous fillers, C5 − C5ut / C5tr, Holm), behaviour agreement and the descriptive tables."""
+    if not any(_by_seed(models, m, "chain") for m in models):
+        return {"available": False}
+    out: dict[str, Any] = {"available": True}
+    local, glob = _chain_units(models, CANDIDATE, "local"), _chain_units(models, CANDIDATE, "global")
+    out["C1"] = contrast(local, glob, resamples=resamples, seed=seed) if local and glob else {"available": False}
+    for name, kind in (("C2", "items"), ("C3", "reverse")):
+        candidate = _chain_units(models, CANDIDATE, kind)
+        block = {}
+        for reference in CHAIN_REFERENCES:
+            other = _chain_units(models, reference, kind)
+            if candidate and other:
+                block[f"{CANDIDATE} − {reference}"] = contrast(candidate, other, resamples=resamples, seed=seed)
+        _holm(block)
+        out[name] = block
+    out["agreement"] = {m: found for m in models if (found := behaviour_agreement(models, m))}
+    descriptive: dict[str, Any] = {}
+    for model in models:
+        summaries = [f["summary"] for f in _by_seed(models, model, "chain").values()]
+        if not summaries:
+            continue
+        block: dict[str, Any] = {"seeds": len(summaries)}
+        methods = summaries[0].get("fidelity", {}).get("methods", [])
+        block["fidelity_mrr"] = {m: float(np.mean([s["fidelity"]["results"][m]["subsets"].get("all", {}).get("mrr", np.nan)
+                                                   for s in summaries if m in s["fidelity"]["results"]])) for m in methods}
+        block["two_hop"] = {k: float(np.mean([s["two_hop"]["all"].get(k, np.nan) for s in summaries if s["two_hop"].get("all")]))
+                            for k in ("hop1_hit", "chain_hit", "oracle_hit", "soft_hit")}
+        block["global_chain_hit"] = float(np.mean([s.get("two_hop_global", {}).get("chain_hit", np.nan) for s in summaries]))
+        block["reverse_mrr"] = float(np.mean([s["reverse"]["all"].get("rr", np.nan) for s in summaries]))
+        sizes = summaries[0].get("capacity", {}).get("sizes", {})
+        block["capacity_mrr"] = {n: float(np.mean([s["capacity"]["sizes"].get(n, {}).get("mrr", np.nan) for s in summaries])) for n in sizes}
+        order = summaries[0].get("path_order", {}).get("by_distractors", {})
+        block["path_order"] = {m: (float(np.mean([s["path_order"]["by_distractors"][m]["accuracy"] for s in summaries
+                                                  if s["path_order"]["by_distractors"].get(m)])) if order.get(m) else None) for m in order}
+        descriptive[model] = block
+    out["descriptive"] = descriptive
+    return out
+
+
 # ---------------------------------------------------------------- report
 
 
 def analyse(runs_root: Path, *, hosts: Sequence[str] | None = None, twins: str | None = None, natural: str | None = None,
-            resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
-    found = discover(runs_root, hosts=hosts, twins=twins, natural=natural)
+            understanding: str | None = None, resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
+    found = discover(runs_root, hosts=hosts, twins=twins, natural=natural, understanding=understanding)
     out: dict[str, Any] = {"runs": str(runs_root), "hosts": {}}
     for host, models in sorted(found.items()):
         block = {"runs": {m: sorted(v) for m, v in models.items()},
@@ -457,6 +564,7 @@ def analyse(runs_root: Path, *, hosts: Sequence[str] | None = None, twins: str |
         if natural:
             block["natural"] = item_secondaries(models, "natural", resamples=resamples, seed=seed)
         block["step2"] = step2(models, resamples=resamples, seed=seed)
+        block["step3"] = step3(models, resamples=resamples, seed=seed)
         out["hosts"][host] = block
     return out
 
@@ -540,6 +648,32 @@ def render(analysis: dict[str, Any], *, title: str) -> str:
                                  f"{a.get('none_mass', float('nan')):.3f} | {a.get('read_mrr', float('nan')):.3f} | "
                                  f"{a.get('oracle_mrr', float('nan')):.3f} / {h.get('oracle_mrr', float('nan')):.3f} |")
                 lines.append("")
+        chain = block.get("step3") or {}
+        if chain.get("available"):
+            lines += ["### Step 3 — chains, reverse lookup, capacity (pre-registration §14)", "", "| endpoint | contrast | estimate |",
+                      "|---|---|---|", f"| C1 | C5: local − global chained two-hop | {_cell(chain.get('C1'))} |"]
+            lines += [f"| C2 | {k} (chained two-hop, WP-UB items) | {_cell(v)} |" for k, v in chain.get("C2", {}).items()]
+            lines += [f"| C3 | {k} (reverse lookup, ambiguous fillers) | {_cell(v)} |" for k, v in chain.get("C3", {}).items()]
+            lines.append("")
+            if chain.get("descriptive"):
+                lines += ["| arm | fidelity MRR by method | hop 1 | chained | oracle | global | reverse MRR | path order (m = 0) |",
+                          "|---|---|---:|---:|---:|---:|---:|---:|"]
+                for model, v in sorted(chain["descriptive"].items(), key=lambda kv: ARMS_ORDER.index(kv[0]) if kv[0] in ARMS_ORDER else 99):
+                    fid = ", ".join(f"{m} {x:.3f}" for m, x in v["fidelity_mrr"].items())
+                    order = (v.get("path_order") or {}).get("0")
+                    lines.append(f"| {model} | {fid} | {v['two_hop'].get('hop1_hit', float('nan')):.3f} | {v['two_hop'].get('chain_hit', float('nan')):.3f} | "
+                                 f"{v['two_hop'].get('oracle_hit', float('nan')):.3f} | {v['global_chain_hit']:.3f} | {v['reverse_mrr']:.3f} | "
+                                 f"{'–' if order is None else f'{order:.3f}'} |")
+                lines.append("")
+            if chain.get("agreement"):
+                lines += ["| model | family | items | algebra | behaviour | P(behaviour \\| algebra right) | P(behaviour \\| algebra wrong) | φ |",
+                          "|---|---|---:|---:|---:|---:|---:|---:|"]
+                for model, families in sorted(chain["agreement"].items()):
+                    for family, v in families.items():
+                        cells = [v.get("behaviour_if_algebra_right"), v.get("behaviour_if_algebra_wrong"), v.get("phi")]
+                        lines.append(f"| {model} | {family} | {v['items']} | {v['algebra']:.3f} | {v['behaviour']:.3f} | "
+                                     + " | ".join("–" if c is None else f"{c:.3f}" for c in cells) + " |")
+                lines.append("")
         for field in ("twins", "natural"):
             section = block.get(field)
             if not section:
@@ -559,11 +693,15 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--runs", type=Path, required=True); parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--twins", default=None, help="role-twins item directory name (its RUN/<name> folders)")
     parser.add_argument("--natural", default=None, help="role-natural item directory name")
+    parser.add_argument("--understanding", default=None,
+                        help="WP-UB understanding item directory name (step 3: behaviour on the same two-hop / reverse items)")
     parser.add_argument("--hosts", nargs="*", default=None); parser.add_argument("--licensed", action="store_true")
     parser.add_argument("--resamples", type=int, default=2000); parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--title", default=None); parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)
     config = {"experiment": "e9-binding-report", **{k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}}
+    if Path(args.output).name == Path(args.runs).name and Path(args.output).parent.name == "report":
+        parser.error(f"{args.output} is the stage's base report folder (R9); write report/<stage>-binding")
     if args.overwrite:
         clear_output(args.output)
         for name in ("analysis.json",):
@@ -573,7 +711,9 @@ def main(argv: list[str] | None = None) -> None:
     started = time.monotonic()
     twins = Path(args.twins).name if args.twins else None
     natural = Path(args.natural).name if args.natural else None
-    analysis = analyse(args.runs, hosts=args.hosts, twins=twins, natural=natural, resamples=args.resamples, seed=args.seed)
+    understanding = Path(args.understanding).name if args.understanding else None
+    analysis = analyse(args.runs, hosts=args.hosts, twins=twins, natural=natural, understanding=understanding,
+                       resamples=args.resamples, seed=args.seed)
     analysis["seconds"] = round(time.monotonic() - started, 1)
     analysis["licensed"] = bool(args.licensed)
     write_json(args.output / "analysis.json", json_ready(analysis))

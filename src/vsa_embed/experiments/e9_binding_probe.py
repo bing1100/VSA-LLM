@@ -281,9 +281,10 @@ def evaluation_contexts(run: E5Run, wanted: Sequence[int], *, per_entry: int, ba
 
 @torch.no_grad()
 def decode_fillers(composer: Any, summed: Tensor, segments: Tensor, relations: Tensor, fillers: Tensor, candidates: Tensor,
-                   exclusions: tuple[Tensor, Tensor], *, method: str, chunk: int) -> dict[str, Tensor]:
+                   exclusions: tuple[Tensor, Tensor], *, method: str, chunk: int, unbinder: Any = None) -> dict[str, Tensor]:
     """Per edge the filtered (rank, hit) of its filler after unbinding its relation from its occurrence's bundle and
-    cleaning up over every atomic (`all`) or the relation's candidates (`typed`)."""
+    cleaning up over every atomic (`all`) or the relation's candidates (`typed`). `unbinder(relations, vectors)` replaces
+    the operator's own unbinding (step 3: exact division of learned HRR)."""
     atomics = F.normalize(composer.atomic_vectors().detach().float(), dim=-1)
     n = relations.numel()
     out = {f"{c}_{k}": torch.empty(n, device=summed.device) for c in CLEANUPS for k in ("rank", "hit")}
@@ -292,7 +293,8 @@ def decode_fillers(composer: Any, summed: Tensor, segments: Tensor, relations: T
         slot_keys = F.normalize(composer.atomic_vectors().detach().float()[None] * masks[:, None, :].to(summed.device), dim=-1)
         slot_of = composer.slot_of().to(summed.device)
     for part in _chunks(n, chunk):
-        unbound = composer.unbind(relations[part], summed[segments[part]], method=method)
+        unbound = (unbinder(relations[part], summed[segments[part]]) if unbinder is not None
+                   else composer.unbind(relations[part], summed[segments[part]], method=method))
         queries = F.normalize(unbound.float(), dim=-1)
         if masks is None:
             scores = queries @ atomics.T

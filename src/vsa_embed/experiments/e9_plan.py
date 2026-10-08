@@ -83,8 +83,12 @@ with one operator each — `U5` learned HRR, `U5u` learned unitary, `U5sb` bound
 unitary, `U5sl` slotted unitary (3 load-balanced slots), `U5tr` translation and `U5ut` untyped (controls). Besides the `pq`
 chain and the rescoring they get `readout_jobs`: the v2 dimension-3 items, the WP-UB understanding items, the role-swap
 twins, the strict / filler strata (`e9_freqbias score`), the readout evaluation (losses with the readout gate on and off,
-role prediction, filler recovery; `e9_binding_readout`) and the binding probe; their batch reports under
-`report-<seeds>-readout-<hosts>`.
+role prediction, filler recovery; `e9_binding_readout`) and the binding probe; their batch report is the job
+`<stage>-report-<seeds>-readout-<hosts>`.
+
+**Batch report folders** (`batch_tag`): a batch with arms carries a tag in its quant / report job names (`-pq-` for the
+WP-PQ1 arms, `-readout-` for the readout arms) and writes its R9 report to `report/<stage>-<tag>`; only a base batch
+(P0 / C0′ / C2 / C5) writes `report/<stage>`, the folder R9, the claims ledger and the draft cite.
 
 Job chaining (the queue runs the lowest priority number first, so everything queued after training at
 priority P runs once the stage's training is done): per run (P0 included) at P + 1 — channel probes at bf16
@@ -94,7 +98,7 @@ and INT4 (`RUN/probes.json`, `RUN/probes-int4.json`), the track's zero-shot item
 (`RUN/edit`, `RUN/edit-int4`: `experiments/e9-retrofit/items/{new-words,edits}-<track>-<family>-v1`); at P + 2 —
 `e4_quant` over the batch's runs on the track's evaluation corpus (`experiments/e9-retrofit/quant/<stage>/`)
 and, for tracks with a general-text corpus, on `eval-general` (`quant-general/<stage>/`); at P + 3 — the R9
-report (`experiments/e9-retrofit/report/<stage>/`). Track runs read the evaluation alias table written by
+report (`experiments/e9-retrofit/report/<stage>/`; an arm batch: `report/<stage>-<tag>`). Track runs read the evaluation alias table written by
 `e9_tracks.ensure_alias_table` at queue time. Retries of evaluation jobs replace their partial outputs.
 
 **Dry run** (`--dry-run` without `--dim3-baselines`): writes the configs and prints every job `--queue` would add
@@ -127,7 +131,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import torch
 import yaml
@@ -571,10 +575,13 @@ def quant_command(stage: str, run_dirs: list[Path], *, python: str = sys.executa
             "--title", f"E9 post-training quantization ({stage}{', general text' if eval_corpus else ''})"]
 
 
-def report_command(stage: str, *, python: str = sys.executable, root: Path = ROOT, general: bool = False) -> list[str]:
+def report_command(stage: str, *, python: str = sys.executable, root: Path = ROOT, general: bool = False,
+                   tag: str | None = None) -> list[str]:
+    """The R9 report of a stage: `report/<stage>` for a base batch, `report/<stage>-<tag>` for an arm batch (`batch_tag`)."""
+    folder = f"{stage}-{tag}" if tag else stage
     return [python, "-m", "vsa_embed.experiments.e9_report", "--runs", str(root / "runs" / stage), "--quant",
             str(root / "quant" / stage), *(["--quant-general", str(root / "quant-general" / stage)] if general else []),
-            "--output", str(root / "report" / stage), "--overwrite"]
+            "--output", str(root / "report" / folder), "--overwrite"]
 
 
 def _config_host(config: dict[str, Any]) -> str | None:
@@ -681,10 +688,9 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
     if evals and run_dirs:
         seeds = sorted({int(p.stem.rsplit("-s", 1)[1]) for p in paths if "-P0-" not in p.stem}) or [1]
         batch = f"s{'-'.join(map(str, seeds))}"
-        if any(stem_model(p.stem) in READOUT_ARMS for p in paths):  # a batch with readout arms: its own report name
-            batch += "-readout-" + "-".join(sorted(set(hosts)))
-        elif any(stem_model(p.stem) in ARMS for p in paths):        # a batch with WP-PQ1 arms: its own quant/report names
-            batch += "-pq-" + "-".join(sorted(set(hosts)))           # (per host set, so a later batch reports again)
+        tag = batch_tag([stem_model(p.stem) for p in paths])
+        if tag:                                                     # an arm batch: its own report name and folder
+            batch += f"-{tag}-" + "-".join(sorted(set(hosts)))     # (per host set, so a later batch reports again)
         if quant_dirs:
             submit(f"{stage}-quant-{batch}", quant_command(stage, quant_dirs, python=python, root=root), priority + 2,
                    min_free_gb=5, resume_args=[])
@@ -692,9 +698,21 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
                 submit(f"{stage}-quant-general-{batch}",
                        quant_command(stage, quant_dirs, python=python, root=root, eval_corpus=spec.general_corpus),
                        priority + 2, min_free_gb=5, resume_args=[])
-        submit(f"{stage}-report-{batch}", report_command(stage, python=python, root=root, general=spec.general_corpus is not None),
+        submit(f"{stage}-report-{batch}", report_command(stage, python=python, root=root, general=spec.general_corpus is not None,
+                                                         tag=tag),
                priority + 3, min_free_gb=1, resume_args=[])
     return queued
+
+
+def batch_tag(models: Sequence[str]) -> str | None:
+    """The tag of a batch with arms (`readout` for the readout arms, `pq` for the WP-PQ1 arms; None for a base batch): it
+    names the batch's quant / report jobs and its report folder `report/<stage>-<tag>`, so an arm batch never rewrites
+    the stage's base report `report/<stage>` (the folder R9, the claims ledger and the draft cite)."""
+    if any(m in READOUT_ARMS for m in models):
+        return "readout"
+    if any(m in ARMS for m in models):
+        return "pq"
+    return None
 
 
 # ---------------------------------------------------------------- dimension-3 baselines (WP-PQ2; opt-in `--dim3-baselines`)
