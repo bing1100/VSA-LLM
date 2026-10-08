@@ -1,0 +1,367 @@
+{
+  "schema": "rank-eval/1",
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-frozen-P0-s1",
+    "checkpoint": "final.pt",
+    "condition": "P0",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/frozen",
+    "channel_mode": "none",
+    "channel": {
+      "mode": "none",
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "gate_bias": -2.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-wordnet-SmolLM2-135M-frozen-P0-s1",
+    "run_git_sha": "7e9771973de22bb491a7ea6211169f98deb1b544",
+    "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "items": "experiments/toolkit-bench/items/alcuna-wordnet-v1/items.jsonl.gz",
+  "items_name": "items.jsonl.gz",
+  "conditions": [
+    "none",
+    "frame-in-context:oracle",
+    "definition-in-context"
+  ],
+  "skipped_conditions": [],
+  "smoke": true,
+  "new_surfaces": 0,
+  "shadowed": 0,
+  "shadowed_surfaces": [],
+  "unresolved_frames": 0,
+  "terms": 40,
+  "readers": {
+    "oracle": {
+      "terms": 40,
+      "frames": 40,
+      "precision": null,
+      "recall": null,
+      "mean_edges": null,
+      "cost_per_term": {}
+    }
+  },
+  "scorer": {
+    "tokenize_seconds": 0.05705092800781131,
+    "link_seconds": 0.00037434976547956467,
+    "model_seconds": 171.34858456882648,
+    "batches": 14,
+    "forward_tokens": 73572,
+    "padded_tokens": 83336,
+    "requests": 384,
+    "unique_requests": 384,
+    "truncated": 4,
+    "seconds": 171.4143526139669
+  },
+  "timing": {
+    "none": 8.279160720063373,
+    "frame-in-context:oracle": 14.924440243048593,
+    "definition-in-context": 148.26161438087001
+  },
+  "seconds": 171.47219190490432,
+  "summary": {
+    "items": 40,
+    "sets": {
+      "all": {
+        "accuracy": {
+          "none": {
+            "sum": {
+              "mean": 0.325,
+              "ci_low": 0.175,
+              "ci_high": 0.47562500000000013,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.25,
+              "ci_low": 0.125,
+              "ci_high": 0.4006250000000002,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.325,
+              "ci_low": 0.174375,
+              "ci_high": 0.475,
+              "n": 40
+            }
+          },
+          "frame-in-context:oracle": {
+            "sum": {
+              "mean": 0.325,
+              "ci_low": 0.175,
+              "ci_high": 0.475,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.3,
+              "ci_low": 0.175,
+              "ci_high": 0.475,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.325,
+              "ci_low": 0.175,
+              "ci_high": 0.475,
+              "n": 40
+            }
+          },
+          "definition-in-context": {
+            "sum": {
+              "mean": 0.55,
+              "ci_low": 0.39937500000000004,
+              "ci_high": 0.7,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.375,
+              "ci_low": 0.225,
+              "ci_high": 0.55,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.475,
+              "ci_low": 0.325,
+              "ci_high": 0.625,
+              "n": 40
+            }
+          }
+        },
+        "contrasts": [
+          {
+            "a": "frame-in-context:oracle",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.0,
+            "ci_low": -0.15,
+            "ci_high": 0.10062500000000014,
+            "n": 40,
+            "p_value": 1.0
+          },
+          {
+            "a": "definition-in-context",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.225,
+            "ci_low": 0.049375000000000016,
+            "ci_high": 0.375,
+            "n": 40,
+            "p_value": 0.029850746268656716
+          }
+        ],
+        "context_tokens": {
+          "none": 0.0,
+          "frame-in-context:oracle": 24.975,
+          "definition-in-context": 463.45
+        },
+        "linked": {
+          "none": 1.0,
+          "frame-in-context:oracle": 1.0,
+          "definition-in-context": 1.0
+        }
+      },
+      "alcuna-bool": {
+        "accuracy": {
+          "none": {
+            "sum": {
+              "mean": 0.5,
+              "ci_low": 0.25,
+              "ci_high": 0.75,
+              "n": 16
+            },
+            "per_byte": {
+              "mean": 0.3125,
+              "ci_low": 0.125,
+              "ci_high": 0.5,
+              "n": 16
+            },
+            "per_token": {
+              "mean": 0.5,
+              "ci_low": 0.25,
+              "ci_high": 0.75,
+              "n": 16
+            }
+          },
+          "frame-in-context:oracle": {
+            "sum": {
+              "mean": 0.4375,
+              "ci_low": 0.25,
+              "ci_high": 0.625,
+              "n": 16
+            },
+            "per_byte": {
+              "mean": 0.375,
+              "ci_low": 0.1875,
+              "ci_high": 0.5625,
+              "n": 16
+            },
+            "per_token": {
+              "mean": 0.4375,
+              "ci_low": 0.25,
+              "ci_high": 0.625,
+              "n": 16
+            }
+          },
+          "definition-in-context": {
+            "sum": {
+              "mean": 0.4375,
+              "ci_low": 0.1875,
+              "ci_high": 0.6875,
+              "n": 16
+            },
+            "per_byte": {
+              "mean": 0.375,
+              "ci_low": 0.1875,
+              "ci_high": 0.5625,
+              "n": 16
+            },
+            "per_token": {
+              "mean": 0.4375,
+              "ci_low": 0.1875,
+              "ci_high": 0.6875,
+              "n": 16
+            }
+          }
+        },
+        "contrasts": [
+          {
+            "a": "frame-in-context:oracle",
+            "b": "none",
+            "norm": "sum",
+            "mean": -0.0625,
+            "ci_low": -0.25156249999999997,
+            "ci_high": 0.125,
+            "n": 16,
+            "p_value": 0.8656716417910447
+          },
+          {
+            "a": "definition-in-context",
+            "b": "none",
+            "norm": "sum",
+            "mean": -0.0625,
+            "ci_low": -0.3125,
+            "ci_high": 0.25156250000000036,
+            "n": 16,
+            "p_value": 0.9154228855721394
+          }
+        ],
+        "context_tokens": {
+          "none": 0.0,
+          "frame-in-context:oracle": 25.6875,
+          "definition-in-context": 403.625
+        },
+        "linked": {
+          "none": 1.0,
+          "frame-in-context:oracle": 1.0,
+          "definition-in-context": 1.0
+        }
+      },
+      "alcuna-mc": {
+        "accuracy": {
+          "none": {
+            "sum": {
+              "mean": 0.20833333333333334,
+              "ci_low": 0.08333333333333333,
+              "ci_high": 0.375,
+              "n": 24
+            },
+            "per_byte": {
+              "mean": 0.20833333333333334,
+              "ci_low": 0.041666666666666664,
+              "ci_high": 0.375,
+              "n": 24
+            },
+            "per_token": {
+              "mean": 0.20833333333333334,
+              "ci_low": 0.08229166666666668,
+              "ci_high": 0.3760416666666669,
+              "n": 24
+            }
+          },
+          "frame-in-context:oracle": {
+            "sum": {
+              "mean": 0.25,
+              "ci_low": 0.12395833333333335,
+              "ci_high": 0.4166666666666667,
+              "n": 24
+            },
+            "per_byte": {
+              "mean": 0.25,
+              "ci_low": 0.08333333333333333,
+              "ci_high": 0.4166666666666667,
+              "n": 24
+            },
+            "per_token": {
+              "mean": 0.25,
+              "ci_low": 0.08333333333333333,
+              "ci_high": 0.4583333333333333,
+              "n": 24
+            }
+          },
+          "definition-in-context": {
+            "sum": {
+              "mean": 0.625,
+              "ci_low": 0.375,
+              "ci_high": 0.8333333333333334,
+              "n": 24
+            },
+            "per_byte": {
+              "mean": 0.375,
+              "ci_low": 0.2072916666666667,
+              "ci_high": 0.5416666666666666,
+              "n": 24
+            },
+            "per_token": {
+              "mean": 0.5,
+              "ci_low": 0.3333333333333333,
+              "ci_high": 0.6677083333333336,
+              "n": 24
+            }
+          }
+        },
+        "contrasts": [
+          {
+            "a": "frame-in-context:oracle",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.041666666666666664,
+            "ci_low": -0.08333333333333333,
+            "ci_high": 0.16666666666666666,
+            "n": 24,
+            "p_value": 0.8059701492537313
+          },
+          {
+            "a": "definition-in-context",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.4166666666666667,
+            "ci_low": 0.20833333333333334,
+            "ci_high": 0.5833333333333334,
+            "n": 24,
+            "p_value": 0.009950248756218905
+          }
+        ],
+        "context_tokens": {
+          "none": 0.0,
+          "frame-in-context:oracle": 24.5,
+          "definition-in-context": 503.3333333333333
+        },
+        "linked": {
+          "none": 1.0,
+          "frame-in-context:oracle": 1.0,
+          "definition-in-context": 1.0
+        }
+      }
+    },
+    "chance": 0.35
+  }
+}

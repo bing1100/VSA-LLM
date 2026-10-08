@@ -1,0 +1,94 @@
+{
+  "schema": "rank-items/1",
+  "set": "alcuna-wordnet-v1",
+  "description": "ALCUNA ranking forms (multiple choice, Yes/No) on artificial taxa whose parent maps to WordNet; is-a frames",
+  "created": "2026-10-08",
+  "builder": "vsa_embed.benchmarks.adapters build --set alcuna",
+  "seed": 0,
+  "options": {
+    "per_type": 1000
+  },
+  "source": {
+    "name": "alcuna",
+    "title": "ALCUNA: artificial entities from the EOL taxonomy (KnowGen)",
+    "citation": "Yin, Huang & Wan (2023). ALCUNA: Large Language Models Meet New Knowledge. EMNLP 2023.",
+    "licence": "MIT",
+    "licence_evidence": "repository LICENSE (MIT, Copyright 2023 ArvidYin); the data are linked from the repository README",
+    "pinned": "963d6f9d8a7e877cdc714d55b0d2522332a2e6c3",
+    "files": [
+      {
+        "path": "raw/LICENSE",
+        "sha256": "e9deb5834aa06745813dc0057e1b77a396e7bb69a7d6c6127db39e3b61824dcb",
+        "bytes": 1065
+      },
+      {
+        "path": "raw/README.md",
+        "sha256": "06d56d44e832e37b48b6c58fc30df11790f03ed35db217a0adc6ca3d056e9b92",
+        "bytes": 2993
+      },
+      {
+        "path": "raw/dataset/meta_data.jsonl",
+        "sha256": "2069600725401fef4ee3af57d14e5d8322f120662e94c54cf12ef8c3d846b850",
+        "bytes": 20368089
+      },
+      {
+        "path": "raw/dataset/id2question.json",
+        "sha256": "c1f78d8316bc2af139bf27e2d2209b06a7659e1e8bcbb9cd370d443d20ea716a",
+        "bytes": 76347807
+      }
+    ]
+  },
+  "frames": {
+    "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+    "ontology_sha256": "8be0a15d2d9e3232ea5627b6c469ec0dc70bfd6bacff5636fbc6f2eb84b3be2e",
+    "rule": "hypernym \u2192 nearest WordNet is-a atomic of the track (depth recorded) + lexname + pos"
+  },
+  "counts": {
+    "items": 5000,
+    "by_set": {
+      "alcuna-bool": 2000,
+      "alcuna-mc": 3000
+    }
+  },
+  "coverage": {
+    "entities": 3554,
+    "mapping": {
+      "genus": 808,
+      "unmapped": 2125,
+      "full": 621
+    },
+    "mapped": 1429,
+    "ancestor_depths": {
+      "0": 158,
+      "1": 1115,
+      "2": 142,
+      "3": 11,
+      "4": 3,
+      "None": 2125
+    },
+    "questions_by_form_type": {
+      "boolean|Knowledge Differentiation": 11137,
+      "boolean|Knowledge Understanding": 2570,
+      "multi-choice|Knowledge Association": 8626,
+      "multi-choice|Knowledge Differentiation": 2192,
+      "multi-choice|Knowledge Understanding": 1450
+    },
+    "skipped": {
+      "parent_unmapped": 25091,
+      "boolean_not_yes_no": 8962
+    },
+    "per_type_cap": 1000,
+    "items": 5000,
+    "items_by_set": {
+      "alcuna-bool": 2000,
+      "alcuna-mc": 3000
+    }
+  },
+  "items_file": {
+    "path": "items.jsonl.gz",
+    "items": 5000,
+    "jsonl_sha256": "23fefb5340fb0b30369a2c6e2ef73aaac6ba722d821342eadd329bcf0238f427",
+    "file_sha256": "d5f0eab6644fe9605bedd232039b55edb6025fd00d7d2f74fcf25c8612e8b90e"
+  },
+  "committed_items": true
+}
