@@ -138,24 +138,52 @@ def test_load_features_splits_by_document(tmp_path):
 
 
 def test_placement_items_and_evaluation(tmp_path):
-    items = [{"id": "n1", "name": "new one", "parents": ["P3"], "relation": "parent", "split": "test"},
-             {"id": "n2", "term": "new two", "gold": "P7", "candidates": ["P1", "P7", "P9"]},
-             {"id": "n3", "term": "new three", "gold_parents": ["Pnone"]}]
-    (tmp_path / "items.jsonl").write_text("\n".join(json.dumps(i) for i in items) + "\n")
+    """The TK-H3L placement format (`experiments/toolkit-learn/README.md`): relation from `gold_relations`, groups from
+    `meta`, candidates null = the store's typed candidates; uncovered gold and missing vectors count as not placed."""
+    def item(i, gold, relation, *, split="test", t7_group="eval", kind="descriptor", candidates=None):
+        return {"id": f"s:{i}", "set": "s", "record": i, "name": f"new {i}", "aliases": [f"alias {i}"], "definition": None,
+                "gold_parents": gold, "gold_relations": [[relation, g] for g in gold] + [["pharmacological_action", "P0"]],
+                "candidates": candidates, "evidence": {}, "meta": {"split": split, "t7_group": t7_group, "kind": kind}}
+
+    rows = [item("n1", ["P3"], "parent"), item("n2", ["P7"], "mapped_to", t7_group="seen", kind="scr"),
+            item("n3", ["Pnone"], "parent", split="dev"), item("n4", ["P2"], "parent", candidates=["P1", "P2", "P9"])]
+    (tmp_path / "placement-dev.jsonl").write_text(json.dumps(rows[2]) + "\n")
+    (tmp_path / "placement-test.jsonl").write_text("\n".join(json.dumps(r) for r in (rows[0], rows[1], rows[3])) + "\n")
     loaded = E.load_placement_items(tmp_path)
-    assert [i["gold"] for i in loaded] == [["P3"], ["P7"], ["Pnone"]] and loaded[1]["candidates"] == ["P1", "P7", "P9"]
+    assert [i["id"] for i in loaded] == ["s:n3", "s:n1", "s:n2", "s:n4"]
+    assert [i["relation"] for i in loaded] == ["parent", "parent", "mapped_to", "parent"]
+    assert loaded[2]["t7_group"] == "seen" and loaded[2]["kind"] == "scr" and loaded[1]["aliases"] == ["alias n1"]
+    assert E.load_placement_items(tmp_path, ["placement-dev.jsonl"])[0]["split"] == "dev"
+    assert [t for t, _, _ in E.mention_texts(loaded[1])] == ["We discussed new n1", "We discussed alias n1"]
     g = torch.Generator().manual_seed(0)
     atomics = F.normalize(torch.randn(10, 64, generator=g), dim=-1)
-    roles = F.normalize(torch.randn(1, 64, generator=g), dim=-1)
-    candidates = torch.ones(1, 10, dtype=torch.bool)
+    roles = F.normalize(torch.randn(2, 64, generator=g), dim=-1)
+    candidates = torch.zeros(2, 10, dtype=torch.bool)
+    candidates[:, :9] = True                                    # atomic 9 is no relation's candidate
     dictionary = L.Dictionary.from_roles(atomics, roles, candidates)
     node_atom = {f"P{i}": i for i in range(10)}
-    vectors = {"n1": dictionary.bound([0], [3])[0], "n2": dictionary.bound([0], [7])[0], "n3": dictionary.bound([0], [1])[0]}
-    flat = {"text": lambda item, atoms: np.zeros(len(atoms))}
-    result = E.placement_eval(loaded, vectors, dictionary, {"parent": 0}, node_atom, baselines=flat)
+    vectors = {"s:n1": dictionary.bound([0], [3])[0], "s:n2": dictionary.bound([1], [7])[0], "s:n4": dictionary.bound([0], [2])[0]}
+    flat = {"text": lambda it, atoms: np.zeros(len(atoms))}
+    result = E.placement_eval(loaded, vectors, dictionary, {"parent": 0, "mapped_to": 1}, node_atom, baselines=flat)
     store = result["methods"]["store"]
-    assert store["n"] == 3 and store["hits@1"] == pytest.approx(2 / 3) and result["skipped"] == {"gold": 1}
-    assert result["methods"]["text"]["mrr"] < store["mrr"]
+    assert store["n"] == 4 and store["hits@1"] == pytest.approx(3 / 4) and result["skipped"] == {"gold": 1}
+    assert result["coverage"] == pytest.approx(3 / 4) and result["methods"]["text"]["mrr"] < store["mrr"]
+    assert [r["candidates"] for r in result["rows"]] == [9, 9, 9, 3]
+    groups = E.placement_groups(result["rows"], ["store", "text"],
+                                {"primary": {"split": "test", "t7_group": "eval"}, "seen": {"t7_group": "seen"}})
+    assert groups["primary"]["n"] == 2 and groups["seen"]["n"] == 1 and groups["primary"]["methods"]["store"]["mrr"] == 1.0
+
+
+def test_committed_mesh_items_load():
+    """The committed MeSH 2025 → 2026 sets read in the evaluator's form (TK-H3L README: 179 primary items, 26 dev)."""
+    root = Path(__file__).resolve().parents[1] / "experiments/toolkit-learn/items/mesh-2025-2026-v1"
+    if not root.exists():
+        pytest.skip("TK-H3L items not present")
+    items = E.load_placement_items(root)
+    assert len(items) == 179 and sum(i["split"] == "dev" for i in items) == 26
+    assert {i["relation"] for i in items} == {"parent", "mapped_to"}
+    assert all(i["relation"] == ("mapped_to" if i["kind"] == "scr" else "parent") for i in items)
+    assert sum(i["t7_group"] == "eval" for i in items) == 133
 
 
 def test_content_relations_and_probes():

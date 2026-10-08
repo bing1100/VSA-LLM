@@ -91,8 +91,9 @@ DEFAULTS: dict[str, Any] = {
     "kge": {"dimension": 64, "epochs": 100, "negatives": 32, "batch_size": 4096, "lr": 0.01},
     "amie": {"min_pca": 0.1, "min_support": 2, "min_head_coverage": 0.01},
     "precision_target": 0.8,
-    "placement": {"items": None, "store": None, "fit_features": None, "features": None, "relation_map": {}, "layer": "middle",
-                  "methods": ["unbind", "correlate"], "kge": ["transe", "rotate", "complex"]},
+    "placement": {"items": None, "files": None, "store": None, "fit_features": None, "features": None, "relation_map": {},
+                  "layer": "middle", "methods": ["unbind", "correlate"], "kge": ["transe", "rotate", "complex"],
+                  "groups": {"primary": {"split": "test"}, "dev": {"split": "dev"}}},
     "synthetic": {"seeds": [101, 202, 303], "dimension": 64, "observation_noise": 0.6, "dictionary": "prior",
                   "proposal_observations": [0, 1, 2, 3], "test_observations": [4, 5, 6, 7, 8, 9, 10, 11], "planted_null": True},
 }
@@ -987,32 +988,47 @@ def extract_features(run_dir: Path, entries: Collection, *, window: int = 512, m
 
 # ---------------------------------------------------------------- placement (TK-H3L sets)
 
+PLACEMENT_FILES = ("placement-dev.jsonl", "placement-test.jsonl")
 
-def load_placement_items(path: Path) -> list[dict[str, Any]]:
-    """Placement items (JSONL, one per line, or a directory holding `items.jsonl`): the format of
-    `experiments/toolkit-learn/README.md` as specified to TK-H3L, read tolerantly. Required: `id`, the new term (`term`
-    or `name`), the gold parents (`gold`, `parents` or `gold_parents`: identifiers of existing nodes). Optional:
-    `relation` (default `parent`), `candidates` (the item's candidate parents; default: every node of the relation),
-    `split` (dev / test), `text` / `definition` / `contexts`."""
+
+def _placement_item(raw: Mapping[str, Any]) -> dict[str, Any]:
+    """One TK-H3L placement item (`experiments/toolkit-learn/README.md`, `learn_data.validate_placement`) in the
+    evaluator's form; the placement relation is the relation of the gold parents in `gold_relations` (MeSH descriptors,
+    ICD, OET and taxonomies: `parent`; MeSH SCRs: `mapped_to`)."""
+    meta = dict(raw.get("meta") or {})
+    gold = raw.get("gold_parents", raw.get("gold", raw.get("parents")))
+    if gold is None:
+        raise ValueError(f"placement item {raw.get('id')!r} has no gold parents")
+    gold = [str(g) for g in (gold if isinstance(gold, list) else [gold])]
+    relation = raw.get("relation")
+    if relation is None:
+        relation = next((str(r) for r, target in raw.get("gold_relations") or () if str(target) in gold), "parent")
+    contexts = raw.get("contexts") or meta.get("contexts")
+    return {"id": str(raw["id"]), "set": str(raw.get("set", "")), "record": str(raw.get("record", raw["id"])),
+            "term": str(raw.get("name", raw.get("term", raw["id"]))), "aliases": [str(a) for a in raw.get("aliases") or ()],
+            "definition": raw.get("definition") or raw.get("text"), "gold": gold, "relation": str(relation),
+            "candidates": [str(c) for c in raw["candidates"]] if raw.get("candidates") else None,
+            "split": str(meta.get("split", raw.get("split", "test"))), "t7_group": meta.get("t7_group"),
+            "kind": meta.get("kind"), "role": meta.get("role"), "primary": meta.get("primary"),
+            "contexts": [str(c) if not isinstance(c, Mapping) else str(c.get("text", "")) for c in contexts] if contexts else None}
+
+
+def load_placement_items(path: Path, files: Sequence[str] | None = None) -> list[dict[str, Any]]:
+    """Placement items of a TK-H3L set: a JSONL file (optionally gzipped) or an item folder, whose `files` (default
+    `placement-dev.jsonl` and `placement-test.jsonl`, the ones present) are read in order (`_placement_item`)."""
     path = Path(path)
     if path.is_dir():
-        path = next(p for p in (path / "items.jsonl", path / "items.jsonl.gz") if p.exists())
-    opener = gzip.open if path.suffix == ".gz" else open
+        names = list(files) if files else [f for f in PLACEMENT_FILES if (path / f).exists()]
+        if not names and (path / "items.jsonl").exists():
+            names = ["items.jsonl"]
+        paths = [path / f for f in names]
+    else:
+        paths = [path]
     items = []
-    with opener(path, "rt") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            raw = json.loads(line)
-            gold = raw.get("gold", raw.get("parents", raw.get("gold_parents")))
-            if gold is None:
-                raise ValueError(f"placement item {raw.get('id')!r} has no gold parents")
-            items.append({"id": str(raw["id"]), "term": str(raw.get("term", raw.get("name", raw["id"]))),
-                          "gold": [str(g) for g in (gold if isinstance(gold, list) else [gold])],
-                          "relation": str(raw.get("relation", "parent")),
-                          "candidates": [str(c) for c in raw["candidates"]] if raw.get("candidates") else None,
-                          "split": str(raw.get("split", "test")), "text": raw.get("text") or raw.get("definition"),
-                          "contexts": raw.get("contexts")})
+    for p in paths:
+        opener = gzip.open if p.suffix == ".gz" else open
+        with opener(p, "rt") as handle:
+            items += [_placement_item(json.loads(line)) for line in handle if line.strip()]
     return items
 
 
@@ -1020,41 +1036,67 @@ def placement_eval(items: Sequence[Mapping[str, Any]], term_vectors: Mapping[str
                    relation_id: Mapping[str, int], node_atom: Mapping[str, int], *, method: str = "unbind",
                    baselines: Mapping[str, Callable[[Mapping[str, Any], list[int]], np.ndarray]] | None = None,
                    ks: Sequence[int] = (1, 5, 10)) -> dict[str, Any]:
-    """MRR / Hits@k of the gold parents among each item's candidates: the store method (`learn.placement_scores` on the
-    item's decoded passive vector) and any `baselines` (name → f(item, candidate atoms) → scores). Items whose relation,
-    vector or gold parent is unknown to the store are counted as not placed (rank NaN → reciprocal rank 0)."""
-    methods = {"store": None, **(baselines or {})}
-    ranks: dict[str, list[float]] = {m: [] for m in methods}
+    """Rank of the best gold parent among each item's candidates — the item's list, or with `candidates: null` the store's
+    typed candidates of the mapped relation (the store can only name atomics in its dictionary) — for the store
+    (`learn.placement_scores` of the item's decoded passive vector, a one-edge decomposition) and every baseline
+    (name → f(item, candidate atomics) → scores). An item whose relation is unmapped, whose gold parent is not among the
+    candidates (`coverage`) or that has no vector is not placed (reciprocal rank 0). Returns overall metrics and per-item
+    rows (with `split`, `t7_group`, `kind` for grouping)."""
+    methods = ["store", *(baselines or {})]
+    rows: list[dict[str, Any]] = []
     skipped = Counter()
     for item in items:
+        row = {k: item.get(k) for k in ("id", "split", "t7_group", "kind", "relation")}
         r = relation_id.get(item["relation"])
-        cand_ids = item["candidates"] if item["candidates"] is not None else None
+        atoms: list[int] = []
+        gold_cols: list[int] = []
         if r is None:
             skipped["relation"] += 1
-            for m in methods:
-                ranks[m].append(float("nan"))
-            continue
-        if cand_ids is None:
-            atoms = dictionary.candidates[r].nonzero().flatten().tolist()
         else:
-            atoms = [node_atom[c] for c in cand_ids if c in node_atom]
-        gold_cols = [atoms.index(node_atom[g]) for g in item["gold"] if g in node_atom and node_atom[g] in atoms]
-        if not atoms or not gold_cols:
-            skipped["gold"] += 1
-            for m in methods:
-                ranks[m].append(float("nan"))
-            continue
-        for m, fn in methods.items():
-            if m == "store":
-                vector = term_vectors.get(item["id"])
-                if vector is None:
-                    ranks[m].append(float("nan")); continue
-                s = L.placement_scores(torch.as_tensor(vector)[None], r, atoms, dictionary, method=method)
-            else:
-                s = torch.as_tensor(np.asarray(fn(item, atoms), dtype=np.float32))[None]
-            ranks[m].append(float(L.gold_ranks(s, [gold_cols])[0]))
+            atoms = dictionary.candidates[r].nonzero().flatten().tolist() if item["candidates"] is None else \
+                [node_atom[c] for c in item["candidates"] if c in node_atom]
+            index = {a: i for i, a in enumerate(atoms)}
+            gold_cols = sorted({index[node_atom[g]] for g in item["gold"] if g in node_atom and node_atom[g] in index})
+            if not gold_cols:
+                skipped["gold"] += 1
+        row["covered"] = bool(gold_cols)
+        row["candidates"] = len(atoms)
+        for m in methods:
+            rank = float("nan")
+            if gold_cols:
+                if m == "store":
+                    vector = term_vectors.get(item["id"])
+                    s = None if vector is None else L.placement_scores(torch.as_tensor(vector)[None], r, atoms, dictionary,
+                                                                       method=method)
+                else:
+                    s = torch.as_tensor(np.asarray(baselines[m](item, atoms), dtype=np.float32))[None]
+                if s is not None:
+                    rank = float(L.gold_ranks(s, [gold_cols])[0])
+            row[f"rank_{m}"] = rank
+        rows.append(row)
     return {"items": len(items), "skipped": dict(skipped),
-            "methods": {m: L.ranking_metrics(v, ks) for m, v in ranks.items()}, "ranks": ranks}
+            "coverage": sum(r["covered"] for r in rows) / len(rows) if rows else float("nan"),
+            "methods": {m: L.ranking_metrics([r[f"rank_{m}"] for r in rows], ks) for m in methods}, "rows": rows}
+
+
+def placement_groups(rows: Sequence[Mapping[str, Any]], methods: Sequence[str], groups: Mapping[str, Mapping[str, Any]],
+                     ks: Sequence[int] = (1, 5, 10)) -> dict[str, Any]:
+    """Metrics per named group of rows (`{"name": {field: value or [values]}}`; e.g. the primary T7 group
+    `{"split": "test", "t7_group": "eval"}`); a field the rows do not carry (None) does not filter."""
+    out = {}
+    for name, spec in groups.items():
+        def keep(row: Mapping[str, Any]) -> bool:
+            for field_, wanted in spec.items():
+                value = row.get(field_)
+                if value is None:
+                    continue
+                if value not in (wanted if isinstance(wanted, (list, tuple)) else [wanted]):
+                    return False
+            return True
+        chosen = [r for r in rows if keep(r)]
+        out[name] = {"n": len(chosen), "coverage": sum(r["covered"] for r in chosen) / len(chosen) if chosen else float("nan"),
+                     "methods": {m: L.ranking_metrics([r[f"rank_{m}"] for r in chosen], ks) for m in methods}}
+    return out
 
 
 # ---------------------------------------------------------------- reports
@@ -1242,6 +1284,140 @@ def run_report(runs: Sequence[Path], output: Path, *, precision: float = 0.8, mi
     return report
 
 
+# ---------------------------------------------------------------- queue plan
+
+
+FEATURES = Path.home() / "data/vsa-llm/e10/learn-features"
+LOCAL_OUT = Path.home() / "data/vsa-llm/e10/learn-placement"
+HOST = "SmolLM2-360M"
+# Evaluation-only jobs on existing checkpoints, decisive first, inside the 54.4995 slot (author: --priority 54.4995,
+# sub-levels 54.4995x); T7 trains at 51–54, so its jobs sit behind its checkpoints in priority order.
+PRIORITY = {"t7-features": 54.4995, "t7-erased": 54.49951, "t7-placement": 54.49952, "t1-placement": 54.49953,
+            "t4t5-features": 54.49954, "t4t5-erased": 54.49955, "wordnet-placement": 54.49956, "report": 54.49959}
+ERASED_ARMS = {"c2": {}, "features": {"passive.kind": "features", "baselines": "[prior,correlate,lre]"},
+               "c5full": {"passive.kind": "c5full", "baselines": "[prior,correlate]"}}
+# idle-GPU / CPU hour estimates from the CPU smoke (preregistration §9): 360M forward ≈ 500 tokens/s on 4 CPU threads,
+# taken as ≈ 30k tokens/s on the RTX 3090 (bf16, no gradients) plus one minute to load; erased runs scale the smoke's
+# stage timings to the probe count and 100 KGE epochs.
+SPLIT_WINDOWS = {"t7": 19550, "t4": 3850, "t5": 5799}
+ERASED_CPU_H = {"c2": {"t7": 0.15, "t4": 0.3, "t5": 0.2}, "features": {"t7": 0.06, "t4": 0.1, "t5": 0.08},
+                "c5full": {"t7": 0.05, "t4": 0.08, "t5": 0.06}}
+PLACEMENT_SETS = {
+    "mesh-2025-2026": {"items": "experiments/toolkit-learn/items/mesh-2025-2026-v1", "files": ["placement-dev.jsonl", "placement-test.jsonl"],
+                       "extract_files": ["placement-min1-dev.jsonl", "placement-min1-test.jsonl"], "role": "primary"},
+    "mesh-2025-2026-min1": {"items": "experiments/toolkit-learn/items/mesh-2025-2026-v1", "files": ["placement-min1-dev.jsonl", "placement-min1-test.jsonl"],
+                            "features_of": "mesh-2025-2026", "role": "secondary"},
+    "mesh-2024-2025": {"items": "experiments/toolkit-learn/items/mesh-2024-2025-v1", "files": ["placement-dev.jsonl", "placement-test.jsonl"],
+                       "extract_files": ["placement-min1-dev.jsonl", "placement-min1-test.jsonl"], "role": "secondary"},
+}
+WORDNET_SETS = {name: {"items": str(Path.home() / "data/vsa-llm/toolkit-learn/taxonomy-expansion-v1" / name), "role": role}
+                for name, role in (("taxoexpan-semeval-noun", "primary"), ("taxoexpan-semeval-verb", "primary"),
+                                   ("tmn-wordnet-noun", "secondary"), ("tmn-wordnet-verb", "secondary"))}
+
+
+def run_folder(track: str, model: str, seed: int) -> Path:
+    mode = "frozen" if model == "P0" else "full"
+    return E9_RUNS / track / f"{HOST}-{mode}-{model}-s{seed}"
+
+
+def queue_plan(python: str = "python", *, seeds: Sequence[int] = (1, 2, 3)) -> list[dict[str, Any]]:
+    """Every E10.L job (preregistration §9): name, priority, lane, command, estimated hours and what it reads. Nothing
+    here touches the queue; `queue_jobs` adds them."""
+    root = ROOT
+    m = ["-m", "vsa_embed.experiments.e10_learn"]
+    jobs: list[dict[str, Any]] = []
+
+    def job(name: str, stage: str, lane: str, hours: float, args: list[str], reads: Sequence[Path]) -> None:
+        jobs.append({"name": name, "priority": PRIORITY[stage], "lane": lane, "hours": round(hours, 2),
+                     "command": [python, *m, *args], "reads": [str(p) for p in reads]})
+
+    def features(track: str, seed: int) -> Path:
+        return FEATURES / track / f"{HOST}-full-C0p-s{seed}"
+
+    for track in ("t7", "t4", "t5"):
+        stage = "t7" if track == "t7" else "t4t5"
+        for seed in seeds:
+            c0p, c5 = run_folder(track, "C0p", seed), run_folder(track, "C5", seed)
+            tokens = (SPLIT_WINDOWS[track] + 20000) * 512
+            job(f"e10l-{track}-extract-s{seed}", f"{stage}-features", "gpu", tokens / 30000 / 3600 + 1 / 60,
+                ["extract", "--run", str(c0p), "--ontology-run", str(c5), "--output", str(features(track, seed)),
+                 "--splits", "eval,train:20000", "--batch", "16", "--label", "E10L"], [c0p / "final.pt"])
+        for seed in seeds:
+            for arm, sets in ERASED_ARMS.items():
+                args = ["erased", "--config", str(root / "configs" / f"erased-{track}.yaml"),
+                        "--output", str(root / "runs" / f"{track}-{arm}-s{seed}"),
+                        "--set", f"store={run_folder(track, 'C5', seed)}", "--set", f"passive.run={run_folder(track, 'C2', seed)}",
+                        "--set", f"evidence.features={features(track, seed) / 'occurrences.npz'}",
+                        "--set", f"passive.features={features(track, seed) / 'occurrences.npz'}"]
+                for k, v in sets.items():
+                    args += ["--set", f"{k}={v}"]
+                job(f"e10l-{track}-erased-{arm}-s{seed}", f"{stage}-erased", "cpu", ERASED_CPU_H[arm][track], args,
+                    [run_folder(track, "C5", seed) / "final.pt", run_folder(track, "C2", seed) / "final.pt",
+                     features(track, seed) / "occurrences.npz"])
+        for arm in ERASED_ARMS:
+            job(f"e10l-{track}-erased-{arm}-report", "report", "cpu", 0.05,
+                ["report", "--runs", *[str(root / "runs" / f"{track}-{arm}-s{s}") for s in seeds],
+                 "--output", str(root / "runs" / f"{track}-{arm}-report")], [])
+    # placement: MeSH on T7 (SCRs via mapped_to; t7_group eval primary) and on T1 (descriptors via parent; seed 1)
+    for track, track_seeds in (("t7", seeds), ("t1", (1,))):
+        stage = f"{track}-placement"
+        for seed in track_seeds:
+            c0p, c5 = run_folder(track, "C0p", seed), run_folder(track, "C5", seed)
+            out = FEATURES / track / f"{HOST}-full-C0p-s{seed}"
+            job(f"e10l-{track}-entries-s{seed}", "t7-features" if track == "t7" else stage, "gpu", 0.03,
+                ["extract-items", "--run", str(c0p), "--store-entries", "--output", str(out / "entries"), "--label", "E10L"],
+                [c0p / "final.pt"])
+            for name, spec in PLACEMENT_SETS.items():
+                if "extract_files" in spec:
+                    job(f"e10l-{track}-items-{name}-s{seed}", "t7-features" if track == "t7" else stage, "gpu", 0.02,
+                        ["extract-items", "--run", str(c0p), "--items", spec["items"], "--files", ",".join(spec["extract_files"]),
+                         "--output", str(out / f"items-{name}"), "--label", "E10L"], [c0p / "final.pt"])
+            for name, spec in PLACEMENT_SETS.items():
+                terms = out / f"items-{spec.get('features_of', name)}" / "terms.npz"
+                job(f"e10l-{track}-place-{name}-s{seed}", stage, "cpu", 0.15,
+                    ["placement", "--config", str(root / "configs" / f"placement-mesh-{track}.yaml"),
+                     "--output", str(root / "runs" / f"place-{name}-{track}-s{seed}"),
+                     "--set", f"placement.items={spec['items']}", "--set", f"placement.files=[{','.join(spec['files'])}]",
+                     "--set", f"placement.store={c5}", "--set", f"placement.fit_features={out / 'entries' / 'terms.npz'}",
+                     "--set", f"placement.features={terms}", "--set", f"label=E10L-{spec['role']}"],
+                    [c5 / "final.pt", out / "entries" / "terms.npz", terms])
+        if len(track_seeds) > 1:
+            for name in PLACEMENT_SETS:
+                job(f"e10l-{track}-place-{name}-report", "report", "cpu", 0.02,
+                    ["placement-report", "--runs", *[str(root / "runs" / f"place-{name}-{track}-s{s}") for s in track_seeds],
+                     "--output", str(root / "runs" / f"place-{name}-{track}-report")], [])
+    # placement: TaxoExpan (primary) and TMN (secondary) on the WordNet track, seed 1; items and outputs local
+    c0p, c5 = run_folder("wordnet", "C0p", 1), run_folder("wordnet", "C5", 1)
+    out = FEATURES / "wordnet" / f"{HOST}-full-C0p-s1"
+    job("e10l-wordnet-entries-s1", "wordnet-placement", "gpu", 0.08,
+        ["extract-items", "--run", str(c0p), "--store-entries", "--output", str(out / "entries"), "--label", "E10L"], [c0p / "final.pt"])
+    for name, spec in WORDNET_SETS.items():
+        job(f"e10l-wordnet-items-{name}-s1", "wordnet-placement", "gpu", 0.02,
+            ["extract-items", "--run", str(c0p), "--items", spec["items"], "--output", str(out / f"items-{name}"), "--label", "E10L"],
+            [c0p / "final.pt"])
+        job(f"e10l-wordnet-place-{name}-s1", "wordnet-placement", "cpu", 0.5,
+            ["placement", "--config", str(root / "configs" / "placement-taxonomy-wordnet.yaml"),
+             "--output", str(LOCAL_OUT / f"place-{name}-wordnet-s1"), "--set", f"placement.items={spec['items']}",
+             "--set", f"placement.store={c5}", "--set", f"placement.fit_features={out / 'entries' / 'terms.npz'}",
+             "--set", f"placement.features={out / f'items-{name}' / 'terms.npz'}", "--set", f"label=E10L-{spec['role']}"],
+            [c5 / "final.pt"])
+    return jobs
+
+
+def queue_jobs(jobs: Sequence[Mapping[str, Any]], queue_dir: Path | None = None) -> list[str]:
+    """Add the jobs to the GPU queue (idempotent: an existing job name is skipped). Run from the repository root."""
+    from vsa_embed.jobqueue import DEFAULT_DIR, add
+    added = []
+    for j in jobs:
+        try:
+            add(queue_dir or DEFAULT_DIR, list(j["command"]), name=j["name"], priority=j["priority"], min_free_gb=5,
+                env={"PYTHONPATH": "src", "OMP_NUM_THREADS": "4"}, resume_args=[], lane=j["lane"])
+            added.append(j["name"])
+        except FileExistsError:
+            pass
+    return added
+
+
 # ---------------------------------------------------------------- command line
 
 
@@ -1264,10 +1440,19 @@ def main(argv: list[str] | None = None) -> None:
     ex.add_argument("--min-frequency", type=int, default=10); ex.add_argument("--label", default=None)
     ex.add_argument("--alias-table", type=Path, default=None, help="default: the track's E9 alias table")
     xi = sub.add_parser("extract-items", help="host hidden states of placement items' new terms (GPU job)")
-    xi.add_argument("--run", type=Path, required=True); xi.add_argument("--items", type=Path, required=True)
+    xi.add_argument("--run", type=Path, required=True); xi.add_argument("--items", type=Path, default=None)
     xi.add_argument("--output", type=Path, required=True); xi.add_argument("--device", default=None)
     xi.add_argument("--batch", type=int, default=16); xi.add_argument("--max-contexts", type=int, default=8)
     xi.add_argument("--alias-table", type=Path, default=None); xi.add_argument("--label", default=None)
+    xi.add_argument("--files", default="", help="item files of the folder (comma-separated; default dev + test)")
+    xi.add_argument("--store-entries", action="store_true",
+                    help="the run's own entries by their canonical surfaces (the decoder's fit features) instead of items")
+    xi.add_argument("--max-entries", type=int, default=None, help="store entries: a seeded sample of at most N")
+    pr = sub.add_parser("placement-report", help="pool placement runs of one set over checkpoint seeds")
+    pr.add_argument("--runs", type=Path, nargs="+", required=True); pr.add_argument("--output", type=Path, required=True)
+    pr.add_argument("--group", default="primary"); pr.add_argument("--resamples", type=int, default=2000)
+    qu = sub.add_parser("queue", help="add every E10.L job to the GPU queue (preregistration §9); --dry-run prints them")
+    qu.add_argument("--dry-run", action="store_true"); qu.add_argument("--python", default=sys.executable)
     rp = sub.add_parser("report", help="pool erased runs over seeds into the pre-registered endpoints")
     rp.add_argument("--runs", type=Path, nargs="+", required=True); rp.add_argument("--output", type=Path, required=True)
     rp.add_argument("--resamples", type=int, default=2000)
@@ -1306,12 +1491,26 @@ def main(argv: list[str] | None = None) -> None:
         target = args.output / "terms.npz"
         if target.exists():
             raise FileExistsError(f"{target} exists")
-        data = extract_items(args.run, load_placement_items(args.items), batch=args.batch, max_contexts=args.max_contexts,
-                             device=args.device, alias_table=args.alias_table)
+        items = [] if args.store_entries else load_placement_items(args.items, [f for f in args.files.split(",") if f] or None)
+        data = extract_items(args.run, items, batch=args.batch, max_contexts=args.max_contexts, device=args.device,
+                             alias_table=args.alias_table, store_entries=args.store_entries, max_entries=args.max_entries)
         meta = json.loads(data["meta"]); meta.update(label=args.label, seconds=round(time.monotonic() - started, 1))
         data["meta"] = json.dumps(meta)
-        np.savez(target, vector=data["middle"], **data)
+        np.savez(target, **data)
         print(json.dumps(meta, indent=2))
+    elif args.command == "queue":
+        jobs = queue_plan(args.python)
+        if args.dry_run:
+            for j in jobs:
+                print(f"{j['name']}  priority {j['priority']}  lane {j['lane']}  ≈ {j['hours']} {j['lane'].upper()}-h")
+                print("    " + " ".join(j["command"]))
+            print(f"{len(jobs)} jobs; ≈ {sum(j['hours'] for j in jobs if j['lane'] == 'gpu'):.2f} GPU-h, "
+                  f"≈ {sum(j['hours'] for j in jobs if j['lane'] == 'cpu'):.2f} CPU-h")
+        else:
+            print(json.dumps(queue_jobs(jobs), indent=2))
+    elif args.command == "placement-report":
+        run_placement_report(args.runs, args.output, group=args.group, resamples=args.resamples)
+        print((args.output / "report.md").read_text())
     else:
         run_report(args.runs, args.output, resamples=args.resamples)
         print((args.output / "report.md").read_text())
@@ -1320,31 +1519,53 @@ def main(argv: list[str] | None = None) -> None:
 # ---------------------------------------------------------------- placement runner
 
 
+PLACEMENT_TEMPLATE = "We discussed {x}"
+
+
+def mention_texts(item: Mapping[str, Any], *, template: str = PLACEMENT_TEMPLATE, max_contexts: int = 8
+                  ) -> list[tuple[str, int, int]]:
+    """(text, span start, span end) of an item's mentions: its own `contexts` that contain the term (case-insensitive),
+    else the neutral mention of its name and aliases (the binding program's P1 template), at most `max_contexts`."""
+    term = str(item["term"])
+    found = []
+    for context in (item.get("contexts") or [])[:max_contexts]:
+        at = str(context).lower().find(term.lower())
+        if at >= 0:
+            found.append((str(context), at, at + len(term)))
+    if not found:
+        for surface in list(dict.fromkeys([term, *item.get("aliases", [])]))[:max_contexts]:
+            prefix = template.split("{x}")[0]
+            text = template.format(x=surface)
+            found.append((text, len(prefix), len(prefix) + len(surface)))
+    return found
+
+
 @torch.no_grad()
-def extract_items(run_dir: Path, items: Sequence[Mapping[str, Any]], *, template: str = "We discussed {x}", batch: int = 16,
-                  max_contexts: int = 8, device: str | None = None, alias_table: Path | None = None) -> dict[str, Any]:
-    """Host hidden states (no channel injection) of placement items' new terms: at the term's last subtoken in each of
-    the item's `contexts` that contains the term (case-insensitive; at most `max_contexts`), else in the neutral mention
-    `template`, averaged over contexts; layers ⌊L/2⌋ (`middle`) and L (`final`)."""
-    from .e5_common import open_run
+def extract_items(run_dir: Path, items: Sequence[Mapping[str, Any]], *, template: str = PLACEMENT_TEMPLATE, batch: int = 16,
+                  max_contexts: int = 8, device: str | None = None, alias_table: Path | None = None,
+                  store_entries: bool = False, min_frequency: int = 1, max_entries: int | None = None) -> dict[str, Any]:
+    """Host hidden states (no channel injection) at the term's last subtoken in each of its mentions (`mention_texts`),
+    averaged; layers ⌊L/2⌋ (`middle`) and L (`final`). `store_entries`: instead of `items`, the run's own entries with
+    training frequency ≥ `min_frequency` and a frame, each mentioned by its canonical surface (`e5_common.canonical_surfaces`)
+    — the decoder's fit features, read the same way as the new terms."""
+    from .e5_common import canonical_surfaces, open_run
     run = open_run(Path(run_dir), device=device, alias_table=alias_table or default_alias_table(Path(run_dir)))
     model, tokenizer = run.model.eval(), run.tokenizer
+    if store_entries:
+        frames = entry_frames(run.ontology)
+        frequency = np.asarray(run.ontology.get("train_frequency") or np.zeros(int(run.ontology["entry_count"])))
+        held = {int(e) for e in run.ontology.get("heldout_entries", ())}
+        wanted = [e for e in range(frequency.size) if frequency[e] >= min_frequency and e not in held and frames.get(e)]
+        if max_entries and len(wanted) > max_entries:                     # a seeded sample (smoke tests, cost caps)
+            wanted = sorted(np.random.default_rng(0).choice(wanted, int(max_entries), replace=False).tolist())
+        surfaces = canonical_surfaces(run.table, tokenizer, run.min_subtokens, wanted)
+        items = [{"id": str(e), "term": surfaces[e]["surface"], "aliases": []} for e in wanted if e in surfaces]
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
     texts, spans, owner = [], [], []
     for i, item in enumerate(items):
-        term = str(item["term"])
-        found = []
-        for context in (item.get("contexts") or [])[:max_contexts]:
-            at = str(context).lower().find(term.lower())
-            if at >= 0:
-                found.append((str(context), at, at + len(term)))
-        if not found:
-            text = template.format(x=term)
-            at = text.find(term)
-            found = [(text, at, at + len(term))]
-        for text, start, end in found:
+        for text, start, end in mention_texts(item, template=template, max_contexts=max_contexts):
             texts.append(text); spans.append((start, end)); owner.append(i)
     width = model.model.get_input_embeddings().weight.shape[1]
     sums = {k: np.zeros((len(items), width), np.float64) for k in ("middle", "final")}
@@ -1361,22 +1582,20 @@ def extract_items(run_dir: Path, items: Sequence[Mapping[str, Any]], *, template
         layers = len(out.hidden_states) - 1
         for r in range(len(part)):
             start, end = spans[b + r]
-            offsets = encoded["offset_mapping"][r].tolist()
-            inside = [k for k, (s, e) in enumerate(offsets) if e > s and s < end and e > start]
+            inside = [k for k, (s, e) in enumerate(encoded["offset_mapping"][r].tolist()) if e > s and s < end and e > start]
             if not inside:
                 continue
-            k = inside[-1]
             i = owner[b + r]
-            sums["middle"][i] += out.hidden_states[layers // 2][r, k].float().cpu().numpy()
-            sums["final"][i] += out.hidden_states[-1][r, k].float().cpu().numpy()
+            sums["middle"][i] += out.hidden_states[layers // 2][r, inside[-1]].float().cpu().numpy()
+            sums["final"][i] += out.hidden_states[-1][r, inside[-1]].float().cpu().numpy()
             counts[i] += 1
     keep = counts > 0
     return {"id": np.asarray([str(items[i]["id"]) for i in np.flatnonzero(keep)]),
             "middle": (sums["middle"][keep] / counts[keep, None]).astype(np.float32),
             "final": (sums["final"][keep] / counts[keep, None]).astype(np.float32),
-            "contexts": counts[keep].astype(np.int64),
+            "mentions": counts[keep].astype(np.int64),
             "meta": json.dumps({"run": str(run_dir), "items": len(items), "placed": int(keep.sum()), "layers": layers,
-                                "template": template, "max_contexts": max_contexts})}
+                                "template": template, "max_contexts": max_contexts, "store_entries": store_entries})}
 
 
 def kge_vector_scores(model: Any, heads: Tensor, relation: int, tails: Sequence[int]) -> Tensor:
@@ -1397,19 +1616,24 @@ def kge_vector_scores(model: Any, heads: Tensor, relation: int, tails: Sequence[
 
 
 def entry_means(path: Path, layer: str) -> dict[int, Tensor]:
-    """Per entry the mean of its occurrence vectors in an `extract` file."""
+    """Per store entry its vector: the mean of its occurrences in an `extract` file (`entry` column), or its row in an
+    `extract-items --store-entries` file (`id` = entry)."""
     with np.load(path) as data:
-        entries = data["entry"].astype(np.int64)
         vectors = data[layer].astype(np.float32)
-    return {int(e): torch.from_numpy(vectors[entries == e].mean(0)) for e in np.unique(entries).tolist()}
+        if "entry" in data.files:
+            entries = data["entry"].astype(np.int64)
+            return {int(e): torch.from_numpy(vectors[entries == e].mean(0)) for e in np.unique(entries).tolist()}
+        return {int(i): torch.from_numpy(v) for i, v in zip(data["id"].tolist(), vectors)}
 
 
 def run_placement(config: dict[str, Any], output: Path) -> dict[str, Any]:
-    """Placement on a TK-H3L set. Config `placement`: `items` (JSONL or a folder with `items.jsonl`), `store` (C5 run),
-    `fit_features` (an `extract` file of the store's host: per-entry occurrence means fit the decoder and the baselines),
-    `features` (an `extract-items` file: the new terms' vectors), `relation_map` (item relation → store relation name),
-    `layer`, `methods` (store decoding: `unbind`, `correlate`), `kge` (models; trained on the store's frames).
-    Node identifiers of the items are matched to the store's atomics by name (the part after `kind:`)."""
+    """Placement on a TK-H3L set. Config `placement`: `items` (item folder or file; `files` to choose), `store` (C5 run),
+    `fit_features` (store entries' vectors: `extract-items --store-entries`, or an `extract` file), `features` (the new
+    terms: `extract-items`), `relation_map` (item relation → store relation name), `layer`, `methods` (store decoding:
+    `unbind`, `correlate`; the first is primary), `kge` (graph baselines trained on the store's frames and reached through a
+    ridge map from the host vectors), `groups` (named row filters; `primary` is the pre-registered one). The text-only
+    baseline scores a candidate parent by the cosine of the new term's host vector with the centroid of the parent's known
+    children (store entries with that edge) in the host's space. Atomic names are matched after `kind:`."""
     from ..kg_baselines import train_kge
     from .e9_binding_chain import load_composer
     git = start(output, config)
@@ -1420,40 +1644,36 @@ def run_placement(config: dict[str, Any], output: Path) -> dict[str, Any]:
     composer, _, ontology = load_composer(Path(settings["store"]))
     frames = entry_frames({"offsets": composer.schedule.offsets.cpu().numpy(), "relations": composer.schedule.relations.cpu().numpy(),
                            "fillers": composer.schedule.fillers.cpu().numpy()})
-    dictionary = L.Dictionary.from_composer(composer, relation_names=ontology["relation_names"])
-    items = load_placement_items(Path(settings["items"]))
+    names = list(ontology["relation_names"])
+    dictionary = L.Dictionary.from_composer(composer, relation_names=names)
+    items = load_placement_items(Path(settings["items"]), settings.get("files"))
     fit = entry_means(Path(settings["fit_features"]), layer)
     fit_rows = sorted(c for c in fit if frames.get(c))
-    x_fit = torch.stack([fit[c] for c in fit_rows])
     stores = dictionary.stores([frames[c] for c in fit_rows])
-    _, predict, info = L.crossfit_decoder(x_fit, F.normalize(stores, dim=-1), folds=int(config["decoder"]["folds"]),
-                                          seed=int(config["seed"]))
+    _, predict, info = L.crossfit_decoder(torch.stack([fit[c] for c in fit_rows]), F.normalize(stores, dim=-1),
+                                          folds=int(config["decoder"]["folds"]), seed=int(config["seed"]))
     with np.load(settings["features"]) as data:
         terms = {str(i): torch.from_numpy(v.astype(np.float32)) for i, v in zip(data["id"].tolist(), data[layer])}
     decoded = {k: predict(v[None])[0] for k, v in terms.items()}
-    names = list(ontology["relation_names"])
-    relation_id = {item_rel: names.index(store_rel) for item_rel, store_rel in settings["relation_map"].items()
-                   if store_rel in names}
+    relation_id = {item_rel: names.index(store_rel) for item_rel, store_rel in settings["relation_map"].items() if store_rel in names}
     node_atom = {name.split(":", 1)[-1]: a for a, name in enumerate(ontology["atomic_names"])}
-    # text-only baseline: the new term's host vector against the centroid of each candidate parent's known children
     children: dict[tuple[int, int], list[int]] = defaultdict(list)
     for c in fit_rows:
         for r, a in frames[c]:
             children[(int(r), int(a))].append(c)
-    centroid_cache: dict[tuple[int, int], Tensor | None] = {}
+    centroids: dict[tuple[int, int], Tensor | None] = {}
 
     def centroid(r: int, a: int) -> Tensor | None:
-        if (r, a) not in centroid_cache:
+        if (r, a) not in centroids:
             members = children.get((r, a))
-            centroid_cache[(r, a)] = F.normalize(torch.stack([fit[c] for c in members]).mean(0), dim=0) if members else None
-        return centroid_cache[(r, a)]
+            centroids[(r, a)] = F.normalize(torch.stack([fit[c] for c in members]).mean(0), dim=0) if members else None
+        return centroids[(r, a)]
 
     def text_only(item: Mapping[str, Any], atoms: list[int]) -> np.ndarray:
         vector = terms.get(item["id"])
-        r = relation_id[item["relation"]]
         if vector is None:
-            return np.zeros(len(atoms))
-        v = F.normalize(vector, dim=0)
+            return np.full(len(atoms), -1.0)
+        v, r = F.normalize(vector, dim=0), relation_id[item["relation"]]
         return np.asarray([float(v @ c) if (c := centroid(r, a)) is not None else -1.0 for a in atoms])
 
     baselines: dict[str, Callable[[Mapping[str, Any], list[int]], np.ndarray]] = {"text": text_only}
@@ -1462,8 +1682,8 @@ def run_placement(config: dict[str, Any], output: Path) -> dict[str, Any]:
     kge_info = {}
     for kind in settings.get("kge", list(KGE_METHODS)):
         model = train_kge(triples, len(nodes), len(names), kind=kind, dimension=int(config["kge"]["dimension"]),
-                          epochs=int(config["kge"]["epochs"]), negatives=int(config["kge"]["negatives"]), lr=float(config["kge"]["lr"]),
-                          seed=int(config["seed"]), batch_size=config["kge"].get("batch_size"))
+                          epochs=int(config["kge"]["epochs"]), negatives=int(config["kge"]["negatives"]),
+                          lr=float(config["kge"]["lr"]), seed=int(config["seed"]), batch_size=config["kge"].get("batch_size"))
         rows = [c for c in fit_rows if graph.concept_node(c) in nodes]
         to_kge, _ = L.ridge_fit(torch.stack([fit[c] for c in rows]),
                                 model.entity.detach()[torch.tensor([nodes[graph.concept_node(c)] for c in rows])])
@@ -1471,37 +1691,84 @@ def run_placement(config: dict[str, Any], output: Path) -> dict[str, Any]:
 
         def kge_baseline(item: Mapping[str, Any], atoms: list[int], model=model, to_kge=to_kge) -> np.ndarray:
             vector = terms.get(item["id"])
-            tails = [nodes.get(graph.atom_node(a)) for a in atoms]
-            if vector is None:
-                return np.zeros(len(atoms))
-            known = [i for i, t in enumerate(tails) if t is not None]
             out = np.full(len(atoms), -1e9)
-            if known:
-                s = kge_vector_scores(model, to_kge(vector[None]), relation_id[item["relation"]], [tails[i] for i in known])[0]
-                out[known] = s.numpy()
+            tails = [nodes.get(graph.atom_node(a)) for a in atoms]
+            known = [i for i, t in enumerate(tails) if t is not None]
+            if vector is not None and known:
+                out[known] = kge_vector_scores(model, to_kge(vector[None]), relation_id[item["relation"]],
+                                               [tails[i] for i in known])[0].numpy()
             return out
 
         baselines[kind] = kge_baseline
+    methods = settings.get("methods", ["unbind"])
+    groups = settings.get("groups") or {"all": {}}
     results = {}
-    for method in settings.get("methods", ["unbind"]):
-        results[method] = placement_eval(items, decoded, dictionary, relation_id, node_atom, method=method,
-                                         baselines=baselines if method == settings.get("methods", ["unbind"])[0] else None)
-    summary = {"schema": SCHEMA, "mode": "placement", "label": config.get("label"), "decoder": info, "kge": kge_info,
-               "items": len(items), "terms_with_vectors": len(terms),
-               "results": {m: {k: v for k, v in r.items() if k != "ranks"} for m, r in results.items()},
+    for i, method in enumerate(methods):
+        r = placement_eval(items, decoded, dictionary, relation_id, node_atom, method=method, baselines=baselines if i == 0 else None)
+        r["groups"] = placement_groups(r["rows"], list(r["methods"]), groups)
+        results[method] = r
+    summary = {"schema": SCHEMA, "mode": "placement", "label": config.get("label"), "items_path": str(settings["items"]),
+               "decoder": info, "kge": kge_info, "items": len(items), "terms_with_vectors": len(terms),
+               "relation_map": settings["relation_map"],
+               "results": {m: {k: v for k, v in r.items() if k != "rows"} for m, r in results.items()},
                "seconds": round(time.monotonic() - started, 1)}
     write_json(Path(output) / "summary.json", summary)
-    write_json(Path(output) / "ranks.json", {m: r["ranks"] for m, r in results.items()})
-    lines = ["# E10.L placement", "", f"Items {len(items)}; terms with vectors {len(terms)}; decoder out-of-fold cosine "
-             f"{_fmt(info.get('oof_cosine'))}.", "", "| store decoding | method | n | MRR | Hits@1 | Hits@5 | Hits@10 |",
-             "|---|---|---|---|---|---|---|"]
+    write_records(Path(output) / "rows.jsonl.gz", [dict(row, decoding=m) for m, r in results.items() for row in r["rows"]])
+    lines = ["# E10.L placement", "", f"Items {len(items)} ({settings['items']}); terms with vectors {len(terms)}; decoder "
+             f"out-of-fold cosine {_fmt(info.get('oof_cosine'))}; relation map {settings['relation_map']}.", "",
+             "| store decoding | group | n | coverage | method | MRR | Hits@1 | Hits@5 | Hits@10 |", "|---|---|---|---|---|---|---|---|---|"]
     for decoding, r in results.items():
-        for m, v in r["methods"].items():
-            lines.append(f"| {decoding} | {m} | {v['n']} | {_fmt(v['mrr'])} | {_fmt(v.get('hits@1'))} | {_fmt(v.get('hits@5'))} | "
-                         f"{_fmt(v.get('hits@10'))} |")
+        for group, g in r["groups"].items():
+            for m, v in g["methods"].items():
+                lines.append(f"| {decoding} | {group} | {g['n']} | {_fmt(g['coverage'])} | {m} | {_fmt(v['mrr'])} | "
+                             f"{_fmt(v.get('hits@1'))} | {_fmt(v.get('hits@5'))} | {_fmt(v.get('hits@10'))} |")
     (Path(output) / "report.md").write_text("\n".join(lines) + "\n")
     finish(output, config, git, schema=SCHEMA, seconds=summary["seconds"])
     return summary
+
+
+def run_placement_report(runs: Sequence[Path], output: Path, *, group: str = "primary", decoding: str | None = None,
+                         resamples: int = 2000) -> dict[str, Any]:
+    """Pool placement runs of one set over checkpoint seeds (same items): per method MRR / Hits@10 of the `group`, and the
+    store − baseline difference in reciprocal rank with the pigeonhole bootstrap over items × seeds
+    (`statistics.two_way_cluster_bootstrap`), Holm over the baselines."""
+    from ..statistics import holm_adjust, two_way_cluster_bootstrap
+    summaries = [json.loads((Path(r) / "summary.json").read_text()) for r in runs]
+    decoding = decoding or next(iter(summaries[0]["results"]))           # the primary (first) store decoding
+    spec = (yaml.safe_load((Path(runs[0]) / "resolved_config.yaml").read_text())["placement"].get("groups") or {}).get(group, {})
+
+    def keep(row: Mapping[str, Any]) -> bool:
+        return row["decoding"] == decoding and all(row.get(k) is None or row.get(k) in (v if isinstance(v, list) else [v])
+                                                   for k, v in spec.items())
+
+    by_id = []
+    for r in runs:
+        with gzip.open(Path(r) / "rows.jsonl.gz", "rt") as handle:
+            by_id.append({row["id"]: row for row in map(json.loads, handle) if keep(row)})
+    ids = sorted(set.intersection(*[set(t) for t in by_id])) if by_id else []
+    methods = [k[5:] for k in by_id[0][ids[0]] if k.startswith("rank_")] if ids else []
+
+    def reciprocal(value: Any) -> float:
+        value = float("nan") if value is None else float(value)
+        return 1.0 / value if math.isfinite(value) and value > 0 else 0.0
+
+    rr = {m: np.asarray([[reciprocal(t[i][f"rank_{m}"]) for t in by_id] for i in ids]) for m in methods}
+    out: dict[str, Any] = {"runs": [str(r) for r in runs], "group": group, "decoding": decoding, "items": len(ids),
+                           "methods": {m: {"mrr": float(v.mean()) if v.size else None} for m, v in rr.items()}, "comparisons": {}}
+    baselines = [m for m in methods if m != "store"]
+    for m in baselines:
+        out["comparisons"][m] = two_way_cluster_bootstrap(rr["store"] - rr[m], resamples=resamples) if ids else None
+    valid = [m for m in baselines if out["comparisons"][m]]
+    for m, adj in zip(valid, holm_adjust([out["comparisons"][m]["p_value"] for m in valid])):
+        out["comparisons"][m]["p_holm"] = adj
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "summary.json", out)
+    lines = [f"# E10.L placement, pooled ({group}, {len(runs)} runs, {len(ids)} items)", ""]
+    lines += [f"- {m}: MRR {_fmt(v['mrr'])}" for m, v in out["methods"].items()]
+    lines += [f"- store − {m}: {_fmt(c['mean'])} [{_fmt(c['ci_low'])}, {_fmt(c['ci_high'])}], Holm p {_fmt(c.get('p_holm'), 4)}"
+              for m, c in out["comparisons"].items() if c]
+    (output / "report.md").write_text("\n".join(lines) + "\n")
+    return out
 
 
 if __name__ == "__main__":

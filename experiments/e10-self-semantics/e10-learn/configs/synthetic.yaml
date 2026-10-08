@@ -1,0 +1,15 @@
+# E10.L synthetic calibration (preregistration §6): E10.0's planted world, erased-edge recovery with the planted null.
+# Evaluation seeds 101/202/303; dev seed 7 chose the proposer and the rule (preregistration §8). Two dictionaries:
+# `prior` (noisy priors, cos 0.8 to the teacher: a misfit between store and evidence, the default) and `truth` (oracle).
+experiment: e10-learn-synthetic
+label: CALIBRATION
+seed: 0                       # overridden per world seed by the runner
+num_threads: 4
+sources: [decompose, closure]
+nulls: [relabel, swap, permute]
+baselines: [prior, correlate, lre, amie, transe, rotate, complex]
+kge: {dimension: 64, epochs: 400, negatives: 32, batch_size: null, lr: 0.01}   # E10's WP-PQ2 settings (full batch)
+synthetic:
+  seeds: [101, 202, 303]
+  dictionary: prior
+  planted_null: true

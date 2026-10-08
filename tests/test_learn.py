@@ -11,7 +11,6 @@ import torch
 from torch.nn import functional as F
 
 from vsa_embed import learn as L
-from vsa_embed.algebra import HRRAlgebra
 from vsa_embed.compose import FrameComposer, FrameSchedule
 
 torch.set_num_threads(1)

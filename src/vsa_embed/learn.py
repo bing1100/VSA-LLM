@@ -39,9 +39,15 @@ the test's fields added: `utility` (mean held-out contrast), `n` (held-out obser
   on held-out windows (`LossUtilityTest`);
 - *control*: the same edge added to same-type control concepts whose frames lack it (`head`, default — removes type-
   level effects of a shared decoder), or random typed fillers of the same relation on the same concept (`filler`);
-- *decision*: one-sided t (Welch for `head`) per proposal, Holm over all proposals of a run (`correction="holm"`, the
-  default: valid under any dependence between proposals, and FWER ≤ α bounds the FDR); `bh` (Benjamini–Hochberg) and
-  `knockoff` (knockoff+ filter with one matched decoy per proposal) are the pre-registered variants.
+- *decision*: one-sided t (Welch for `head`) per proposal and a rule over all proposals of a run. `holm` (the
+  `AcceptanceTest` default: valid under any dependence between proposals when the p-values are valid; FWER ≤ α bounds
+  the FDR) and `holm+decoy` (E10.L's pre-registered rule: Holm *and* a target–decoy FDR threshold on the held-out
+  utility, `null_statistics` = the utilities of the proposals the same pipeline makes in a null world where nothing is
+  missing). The decoys catch what Holm cannot: a concept-specific misfit between the decoded evidence and the dictionary
+  is shared by every held-out observation, so its atoms pass any per-observation t test (synthetic dev seed: planted-null
+  false acceptance 18% under Holm, ≤ 1% under `holm+decoy`). `bh`, `knockoff` (knockoff+ with one matched decoy per
+  proposal) and `decoy` are variants. A caller without null-world decoys (e.g. the `ConceptStore` facade) gets Holm and
+  should report the null rates of `null_proposals` next to its acceptances.
 
 **Null worlds** (calibration; built from the same data, every proposal false by construction, `null_proposals`):
 `relabel` — each proposal's relation replaced by another relation of the same filler type (relation labels permuted

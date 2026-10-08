@@ -1,0 +1,21 @@
+# E10.L erased-edge recovery on T5 (synthetic enterprise glossary on real LM text; SmolLM2-360M). Secondary replication
+# of L4a / L4b (preregistration §5 S2); identical settings to erased-t7.yaml. Per-seed paths come from the queue plan.
+experiment: e10-learn-t5
+label: E10L
+seed: 0
+num_threads: 4
+erase: {fraction: 0.2, min_distinct_fillers: 10, keep: 1, probe_cap: 2000, min_frequency: 10, min_degree: 2,
+        probe_requires_evidence: true}
+passive: {kind: c2}
+evidence: {kind: occurrences, max_observations: 16, layer: middle}
+decoder: {folds: 5}
+sources: [decompose, closure]
+decompose: {method: omp, max_new: 2, threshold: 0.1, min_relative: 0.0}
+test: {alpha: 0.05, correction: holm+decoy, control: head, controls: 8, min_observations: 4, decoy_statistic: utility,
+       variants: [holm, bh, knockoff, decoy]}
+nulls: [relabel, swap, permute]
+pool: {distractors: 2}
+baselines: [prior, correlate, lre, amie, transe, rotate, complex]
+kge: {dimension: 64, epochs: 100, negatives: 32, batch_size: 4096, lr: 0.01}
+amie: {min_pca: 0.1, min_support: 2, min_head_coverage: 0.01}
+precision_target: 0.8

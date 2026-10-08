@@ -1,0 +1,22 @@
+# E10.L placement of new MeSH records on the T7 store (SmolLM2-360M C5, seeds 1-3; preregistration §5 S1).
+# T7's frames hold mapped headings (`mapped_to`) and pharmacological actions, not descriptor parents: SCR items are placed
+# through `mapped_to`; descriptor items (gold relation `parent`) through `mapped_to` as a proxy (reported per kind).
+# T7 policy (TK-H3L README): primary = test split, meta.t7_group "eval"; "seen" = sanity only; dev reported apart.
+# The queue plan supplies items / files / store / fit_features / features per set and seed.
+experiment: e10-learn-placement-mesh-t7
+label: E10L
+seed: 0
+num_threads: 4
+decoder: {folds: 5}
+kge: {dimension: 64, epochs: 100, negatives: 32, batch_size: 4096, lr: 0.01}
+placement:
+  relation_map: {mapped_to: mapped_to, parent: mapped_to}
+  layer: middle
+  methods: [unbind, correlate]
+  kge: [transe, rotate, complex]
+  groups:
+    primary: {split: test, t7_group: eval}
+    primary-scr: {split: test, t7_group: eval, kind: scr}
+    primary-descriptor: {split: test, t7_group: eval, kind: descriptor}
+    seen-sanity: {split: test, t7_group: seen}
+    dev: {split: dev}
