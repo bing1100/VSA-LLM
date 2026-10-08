@@ -1,0 +1,449 @@
+{
+  "schema": "rank-eval/1",
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-full-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-wordnet-SmolLM2-135M-full-C5-s1",
+    "run_git_sha": "7e9771973de22bb491a7ea6211169f98deb1b544",
+    "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "items": "experiments/toolkit-bench/items/comps-wugs-wordnet-v1/items.jsonl.gz",
+  "items_name": "items.jsonl.gz",
+  "conditions": [
+    "none",
+    "channel-off",
+    "store:oracle",
+    "store:linker",
+    "store:typeprior",
+    "store:random",
+    "store:oracle:parent",
+    "frame-in-context:oracle",
+    "definition-in-context",
+    "store:oracle+definition-in-context"
+  ],
+  "skipped_conditions": [],
+  "smoke": true,
+  "new_surfaces": 4,
+  "shadowed": 0,
+  "shadowed_surfaces": [],
+  "unresolved_frames": 0,
+  "terms": 77,
+  "readers": {
+    "oracle": {
+      "terms": 77,
+      "frames": 77,
+      "precision": null,
+      "recall": null,
+      "mean_edges": null,
+      "cost_per_term": {}
+    },
+    "linker": {
+      "terms": 77,
+      "frames": 41,
+      "precision": 0.04878048780487805,
+      "recall": 0.008658008658008658,
+      "mean_edges": 0.5324675324675324,
+      "cost_per_term": {
+        "forward_passes": 9.909090909090908,
+        "forward_tokens": 72.9090909090909,
+        "seconds": 0.08076405193499439
+      }
+    },
+    "typeprior": {
+      "terms": 77,
+      "frames": 41,
+      "precision": 0.8536585365853658,
+      "recall": 0.15151515151515152,
+      "mean_edges": 0.5324675324675324,
+      "cost_per_term": {}
+    },
+    "random": {
+      "terms": 77,
+      "frames": 77,
+      "precision": null,
+      "recall": null,
+      "mean_edges": null,
+      "cost_per_term": {}
+    },
+    "oracle:parent": {
+      "terms": 77,
+      "frames": 77,
+      "precision": null,
+      "recall": null,
+      "mean_edges": null,
+      "cost_per_term": {}
+    }
+  },
+  "scorer": {
+    "tokenize_seconds": 0.026524578453972936,
+    "link_seconds": 0.030871019698679447,
+    "model_seconds": 16.034749052487314,
+    "batches": 52,
+    "forward_tokens": 14903,
+    "padded_tokens": 15792,
+    "requests": 1563,
+    "unique_requests": 1465,
+    "truncated": 0,
+    "seconds": 16.10737692588009
+  },
+  "timing": {
+    "none": 0.4862555870786309,
+    "channel-off": 0.462170316837728,
+    "store:oracle": 0.8921663430519402,
+    "store:linker": 7.391861982177943,
+    "store:typeprior": 0.8974148810375482,
+    "store:random": 1.1360526971984655,
+    "store:oracle:parent": 0.9218218680471182,
+    "frame-in-context:oracle": 1.7550479201599956,
+    "definition-in-context": 1.3183941838797182,
+    "store:oracle+definition-in-context": 1.4995289489161223
+  },
+  "seconds": 17.454439488006756,
+  "summary": {
+    "items": 40,
+    "sets": {
+      "all": {
+        "accuracy": {
+          "none": {
+            "sum": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            }
+          },
+          "channel-off": {
+            "sum": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            }
+          },
+          "store:oracle": {
+            "sum": {
+              "mean": 0.525,
+              "ci_low": 0.39937500000000004,
+              "ci_high": 0.675,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.525,
+              "ci_low": 0.39937500000000004,
+              "ci_high": 0.675,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.525,
+              "ci_low": 0.39937500000000004,
+              "ci_high": 0.675,
+              "n": 40
+            }
+          },
+          "store:linker": {
+            "sum": {
+              "mean": 0.4125,
+              "ci_low": 0.275,
+              "ci_high": 0.5378125,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.4125,
+              "ci_low": 0.275,
+              "ci_high": 0.5378125,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.4125,
+              "ci_low": 0.275,
+              "ci_high": 0.5378125,
+              "n": 40
+            }
+          },
+          "store:typeprior": {
+            "sum": {
+              "mean": 0.5375,
+              "ci_low": 0.425,
+              "ci_high": 0.6878125,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.5375,
+              "ci_low": 0.425,
+              "ci_high": 0.6878125,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.5375,
+              "ci_low": 0.425,
+              "ci_high": 0.6878125,
+              "n": 40
+            }
+          },
+          "store:random": {
+            "sum": {
+              "mean": 0.55,
+              "ci_low": 0.4,
+              "ci_high": 0.675,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.55,
+              "ci_low": 0.4,
+              "ci_high": 0.675,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.55,
+              "ci_low": 0.4,
+              "ci_high": 0.675,
+              "n": 40
+            }
+          },
+          "store:oracle:parent": {
+            "sum": {
+              "mean": 0.5,
+              "ci_low": 0.35,
+              "ci_high": 0.65,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.5,
+              "ci_low": 0.35,
+              "ci_high": 0.65,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.5,
+              "ci_low": 0.35,
+              "ci_high": 0.65,
+              "n": 40
+            }
+          },
+          "frame-in-context:oracle": {
+            "sum": {
+              "mean": 0.7,
+              "ci_low": 0.55,
+              "ci_high": 0.825625,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.7,
+              "ci_low": 0.55,
+              "ci_high": 0.825625,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.7,
+              "ci_low": 0.55,
+              "ci_high": 0.825625,
+              "n": 40
+            }
+          },
+          "definition-in-context": {
+            "sum": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            }
+          },
+          "store:oracle+definition-in-context": {
+            "sum": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            }
+          }
+        },
+        "contrasts": [
+          {
+            "a": "channel-off",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "n": 40,
+            "p_value": 1.0
+          },
+          {
+            "a": "store:oracle",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.025,
+            "ci_low": -0.125625,
+            "ci_high": 0.17562500000000014,
+            "n": 40,
+            "p_value": 0.8258706467661692
+          },
+          {
+            "a": "store:linker",
+            "b": "none",
+            "norm": "sum",
+            "mean": -0.0875,
+            "ci_low": -0.2128125,
+            "ci_high": 0.03781250000000007,
+            "n": 40,
+            "p_value": 0.24875621890547264
+          },
+          {
+            "a": "store:typeprior",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.0375,
+            "ci_low": -0.0875,
+            "ci_high": 0.1625,
+            "n": 40,
+            "p_value": 0.736318407960199
+          },
+          {
+            "a": "store:random",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.05,
+            "ci_low": -0.1,
+            "ci_high": 0.15,
+            "n": 40,
+            "p_value": 0.5671641791044776
+          },
+          {
+            "a": "store:oracle:parent",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.0,
+            "ci_low": -0.125625,
+            "ci_high": 0.15,
+            "n": 40,
+            "p_value": 1.0
+          },
+          {
+            "a": "frame-in-context:oracle",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.2,
+            "ci_low": 0.025,
+            "ci_high": 0.325,
+            "n": 40,
+            "p_value": 0.01990049751243781
+          },
+          {
+            "a": "definition-in-context",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.175,
+            "ci_low": 0.05,
+            "ci_high": 0.325,
+            "n": 40,
+            "p_value": 0.01990049751243781
+          },
+          {
+            "a": "store:oracle+definition-in-context",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.175,
+            "ci_low": 0.05,
+            "ci_high": 0.325,
+            "n": 40,
+            "p_value": 0.01990049751243781
+          }
+        ],
+        "context_tokens": {
+          "none": 0.0,
+          "channel-off": 0.0,
+          "store:oracle": 0.0,
+          "store:linker": 0.0,
+          "store:typeprior": 0.0,
+          "store:random": 0.0,
+          "store:oracle:parent": 0.0,
+          "frame-in-context:oracle": 17.9125,
+          "definition-in-context": 8.6125,
+          "store:oracle+definition-in-context": 8.6125
+        },
+        "linked": {
+          "none": 1.0,
+          "channel-off": 0.0,
+          "store:oracle": 1.0,
+          "store:linker": 1.0,
+          "store:typeprior": 1.0,
+          "store:random": 1.0,
+          "store:oracle:parent": 1.0,
+          "frame-in-context:oracle": 1.0,
+          "definition-in-context": 1.0,
+          "store:oracle+definition-in-context": 1.0
+        }
+      }
+    },
+    "chance": 0.5
+  }
+}

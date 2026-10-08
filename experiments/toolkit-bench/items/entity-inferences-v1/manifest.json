@@ -1,0 +1,80 @@
+{
+  "schema": "rank-items/1",
+  "set": "entity-inferences-v1",
+  "description": "Entity Inferences: definition as reading material, probe labels ranked; frames from TK-B2",
+  "created": "2026-10-08",
+  "builder": "vsa_embed.benchmarks.adapters build --set entity-inferences",
+  "seed": 0,
+  "options": {},
+  "source": {
+    "name": "entity-inferences",
+    "title": "Entity Inferences (and ECBD) \u2014 learning new entities from descriptions",
+    "citation": "Onoe, Zhang, Padmanabhan, Durrett & Choi (2023). Can LMs Learn New Entities from Descriptions? Challenges in Propagating Injected Knowledge. ACL 2023.",
+    "licence": "none stated",
+    "licence_evidence": "no LICENSE file in the repository and no licence in its README (checked 2026-10-08): research use, not redistributed",
+    "pinned": "938295c1ead0622350f2e6c9d6122964af123e05",
+    "files": [
+      {
+        "path": "raw/README.md",
+        "sha256": "a7ef27cf9e245caac73dbe4be49d3e2215d6ac15cf34bfdc39a07f5c6dae6bd4",
+        "bytes": 2628
+      },
+      {
+        "path": "raw/data/entity_inferences/disaster_explicit_attribute_independent.json",
+        "sha256": "cbcd90df6c5f3cf48cc8ae0c3d3e6ca3feda431a51aceb45844f6c739ae9fcb2",
+        "bytes": 46733
+      },
+      {
+        "path": "raw/data/entity_inferences/disaster_implicit_attribute_independent.json",
+        "sha256": "7d945384467747fba284df04c839d539a14677ccca78ef7308977b6e36da0aae",
+        "bytes": 46399
+      },
+      {
+        "path": "raw/data/entity_inferences/fake_person_explicit_attribute_dependent.json",
+        "sha256": "ce34a7ae96a37b154ffb7150975adc52cd9061a9b8fcc5f0f598ce9daa117501",
+        "bytes": 33753
+      },
+      {
+        "path": "raw/data/entity_inferences/fake_person_implicit_attribute_dependent_adjective.json",
+        "sha256": "2210b14a3dabb2b32bccfb35006b0b3fe51b2b589529702441f06c87db563cff",
+        "bytes": 34141
+      },
+      {
+        "path": "raw/data/entity_inferences/tv_show_explicit_attribute_dependent.json",
+        "sha256": "6b79bc9db8535e4d7bdfa193f23c6811f8b8de1cd08c5aa1579de02cf5eeaa6b",
+        "bytes": 58500
+      },
+      {
+        "path": "raw/data/entity_inferences/tv_show_implicit_attribute_dependent_adjective.json",
+        "sha256": "eefca1e235ab2cdffd4a33bceae504f609f3527317a3c169e86b85f8f8a3387b",
+        "bytes": 58463
+      }
+    ]
+  },
+  "frames": "none (Wikidata frames from the T8 track, TK-B2)",
+  "counts": {
+    "items": 170,
+    "by_set": {
+      "entity-inferences": 170
+    }
+  },
+  "coverage": {
+    "items": 170,
+    "skipped": {},
+    "by_subset": {
+      "disaster_explicit_attribute_independent": 27,
+      "disaster_implicit_attribute_independent": 27,
+      "fake_person_explicit_attribute_dependent": 12,
+      "fake_person_implicit_attribute_dependent_adjective": 12,
+      "tv_show_explicit_attribute_dependent": 46,
+      "tv_show_implicit_attribute_dependent_adjective": 46
+    }
+  },
+  "items_file": {
+    "path": "items.jsonl.gz",
+    "items": 170,
+    "jsonl_sha256": "a621998dc7211d004bb73cd8860226d6dd7c5b125338f1f23d0d653ed54344a2",
+    "file_sha256": "5950c1879cee19fd5e8b70613a0d35df5b8ad427d2c25ae02339805178dbd763"
+  },
+  "committed_items": false
+}

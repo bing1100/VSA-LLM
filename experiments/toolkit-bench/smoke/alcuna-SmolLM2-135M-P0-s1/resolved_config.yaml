@@ -1,0 +1,17 @@
+experiment: rank-benchmark
+run: /home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-frozen-P0-s1
+items: experiments/toolkit-bench/items/alcuna-wordnet-v1/items.jsonl.gz
+limit: 40
+spread: true
+conditions:
+- none
+- frame-in-context:oracle
+- definition-in-context
+batch_size: 32
+token_budget: 16384
+max_length: 1024
+seed: 0
+resamples: 200
+smoke: true
+device: cpu
+threads: 4

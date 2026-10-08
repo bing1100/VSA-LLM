@@ -52,3 +52,11 @@ experiments/t1c-clinical/icd-frequency/**/*.npy
 experiments/t1c-clinical/icd-frequency/**/*.npz
 experiments/t1c-clinical/icd-frequency/**/*.pt
 experiments/t1c-clinical/icd-frequency/**/*.png
+
+# TK-H3L learn data (decision 63): SNOMED-, UMLS- and WordNet/Wiktionary-derived items and the before snapshots live under
+# ~/data/vsa-llm/toolkit-learn/ (decision 58 for the licensed ones); the repository keeps manifests (counts, sha256) only.
+# Exception: the public-domain ICD-10-CM FY2026 snapshot is committed as items/icd10cm-fy2027-v1/before-fy2026/ (not matched).
+experiments/toolkit-learn/items/oet-*/*.jsonl*
+experiments/toolkit-learn/items/taxonomy-expansion-*/*.jsonl*
+experiments/toolkit-learn/**/umls*/
+experiments/toolkit-learn/**/snapshot-*/

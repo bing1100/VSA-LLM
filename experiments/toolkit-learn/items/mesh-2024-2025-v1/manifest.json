@@ -1,0 +1,341 @@
+{
+  "set": "mesh-2024-2025",
+  "version": "v1",
+  "role": "secondary",
+  "releases": "MeSH 2024 (NLM 2024 archive, Last-Modified 2024-08-12) -> MeSH 2025 (2026-01-08)",
+  "caveat": "2024-25 records may be in the hosts' pretraining text (older than the 2026 records); SCRs created August-December 2024 count as new (the 2024 archive is the 2024-08-12 state)",
+  "built": "2026-10-08",
+  "before": {
+    "desc": "/home/bhux/data/vsa-llm/mesh/2024/desc2024.gz",
+    "supp": "/home/bhux/data/vsa-llm/mesh/2024/supp2024.gz"
+  },
+  "after": {
+    "desc": "/home/bhux/data/vsa-llm/mesh/2025/desc2025.gz",
+    "supp": "/home/bhux/data/vsa-llm/mesh/2025/supp2025.gz"
+  },
+  "licence": "NLM MeSH terms and conditions (free of charge; acknowledge NLM; mark modified records); items carry MeSH UIs, names, scope notes and SCR notes (modified: bibliographic parts removed)",
+  "acknowledgement": "MeSH and PubMed courtesy of the U.S. National Library of Medicine",
+  "stats": {
+    "descriptors_before": 30764,
+    "descriptors_after": 30956,
+    "scrs_before": 323794,
+    "scrs_after": 323956,
+    "new_descriptors": 192,
+    "new_scrs": 643,
+    "deleted_descriptors": 0,
+    "deleted_scrs": 481,
+    "new_edges_known_records": {
+      "descriptor:parent": 21,
+      "descriptor:pharmacological_action": 3,
+      "descriptor:see_also": 2,
+      "scr:mapped_to": 47,
+      "scr:pharmacological_action": 2
+    }
+  },
+  "files": {
+    "placement-dev": {
+      "file": "placement-dev.jsonl",
+      "items": 36,
+      "sha256": "717ed76e09480e3505a09bf5c2c7d12b71fbd96814213ca3e077701c5ed8b4eb"
+    },
+    "placement-min1-dev": {
+      "file": "placement-min1-dev.jsonl",
+      "items": 49,
+      "sha256": "a09cfc83cfe6a5f83dcdc8d5aaa355ac88bd784b6edd2110b4546b8c5d38c204"
+    },
+    "placement-test": {
+      "file": "placement-test.jsonl",
+      "items": 176,
+      "sha256": "494d7f0083c1d544393ff42b0a3800433f1232a766024986e8310c515217360e"
+    },
+    "placement-min1-test": {
+      "file": "placement-min1-test.jsonl",
+      "items": 226,
+      "sha256": "7250545fb5d497c9d0215e1b603f9ce3e08aac13844f9781fe1f2535dac328db"
+    },
+    "placement-low-evidence": {
+      "file": "placement-low-evidence.jsonl",
+      "items": 623,
+      "sha256": "4af4faf2d068daa08fcc1a2d23a8a5196452e9cb5375e332494659f631d8ab95"
+    },
+    "new-edges": {
+      "file": "new-edges.jsonl",
+      "items": 75,
+      "sha256": "aca2ae4ac9b12698a04fbc8372b55a0525c03ce245180d032d1dc32d1fd41ffa"
+    }
+  },
+  "primary": {
+    "items": 212,
+    "by_kind": {
+      "descriptor": 155,
+      "scr": 57
+    },
+    "by_split": {
+      "test": 176,
+      "dev": 36
+    },
+    "scr_classes": {
+      "disease": 2,
+      "chemical": 52,
+      "population group": 1,
+      "organism": 2
+    },
+    "t7_selected": 42,
+    "t7_heldout": 7,
+    "t7_group": {
+      "eval": 177,
+      "seen": 35
+    },
+    "with_definition": 166,
+    "with_pharmacological_action": 6,
+    "parents_or_mapped_new": 12,
+    "rule": "≥ 5 mentioning abstracts and ≥ 1 gold parent in 2024"
+  },
+  "secondary_min1": {
+    "items": 275,
+    "by_kind": {
+      "descriptor": 176,
+      "scr": 99
+    },
+    "by_split": {
+      "test": 226,
+      "dev": 49
+    },
+    "scr_classes": {
+      "organism": 8,
+      "disease": 2,
+      "chemical": 88,
+      "population group": 1
+    },
+    "t7_selected": 54,
+    "t7_heldout": 7,
+    "t7_group": {
+      "eval": 228,
+      "seen": 47
+    },
+    "with_definition": 193,
+    "with_pharmacological_action": 8,
+    "parents_or_mapped_new": 17,
+    "rule": "≥ 1 mentioning abstract and ≥ 1 gold parent in 2024",
+    "files": [
+      "placement-min1-dev.jsonl",
+      "placement-min1-test.jsonl"
+    ],
+    "note": "superset of the primary set (same item ids); secondary"
+  },
+  "low_evidence": {
+    "items": 623,
+    "by_kind": {
+      "descriptor": 37,
+      "scr": 586
+    },
+    "by_split": {
+      "dev": 113,
+      "test": 510
+    },
+    "scr_classes": {
+      "organism": 9,
+      "chemical": 577
+    },
+    "t7_selected": 12,
+    "t7_heldout": 0,
+    "t7_group": {
+      "eval": 611,
+      "seen": 12
+    },
+    "with_definition": 338,
+    "with_pharmacological_action": 2,
+    "parents_or_mapped_new": 115,
+    "zero_docs": 560,
+    "docs_1_to_4": 63,
+    "no_gold_parent": 0
+  },
+  "evidence": {
+    "pubmed_files": [
+      "pubmed26n1572.parquet",
+      "pubmed26n1573.parquet",
+      "pubmed26n1574.parquet",
+      "pubmed26n1575.parquet",
+      "pubmed26n1576.parquet",
+      "pubmed26n1577.parquet",
+      "pubmed26n1578.parquet",
+      "pubmed26n1579.parquet",
+      "pubmed26n1580.parquet",
+      "pubmed26n1581.parquet",
+      "pubmed26n1582.parquet",
+      "pubmed26n1583.parquet",
+      "pubmed26n1584.parquet",
+      "pubmed26n1585.parquet",
+      "pubmed26n1586.parquet",
+      "pubmed26n1587.parquet",
+      "pubmed26n1588.parquet",
+      "pubmed26n1589.parquet",
+      "pubmed26n1590.parquet",
+      "pubmed26n1591.parquet",
+      "pubmed26n1592.parquet",
+      "pubmed26n1593.parquet",
+      "pubmed26n1594.parquet",
+      "pubmed26n1595.parquet",
+      "pubmed26n1596.parquet",
+      "pubmed26n1597.parquet",
+      "pubmed26n1598.parquet",
+      "pubmed26n1599.parquet",
+      "pubmed26n1600.parquet",
+      "pubmed26n1601.parquet",
+      "pubmed26n1602.parquet",
+      "pubmed26n1603.parquet",
+      "pubmed26n1604.parquet",
+      "pubmed26n1605.parquet",
+      "pubmed26n1606.parquet",
+      "pubmed26n1607.parquet",
+      "pubmed26n1608.parquet",
+      "pubmed26n1609.parquet",
+      "pubmed26n1610.parquet",
+      "pubmed26n1611.parquet",
+      "pubmed26n1612.parquet",
+      "pubmed26n1613.parquet",
+      "pubmed26n1614.parquet",
+      "pubmed26n1615.parquet",
+      "pubmed26n1616.parquet",
+      "pubmed26n1617.parquet",
+      "pubmed26n1618.parquet",
+      "pubmed26n1619.parquet",
+      "pubmed26n1620.parquet",
+      "pubmed26n1621.parquet",
+      "pubmed26n1622.parquet",
+      "pubmed26n1623.parquet",
+      "pubmed26n1624.parquet",
+      "pubmed26n1625.parquet",
+      "pubmed26n1626.parquet",
+      "pubmed26n1627.parquet",
+      "pubmed26n1628.parquet",
+      "pubmed26n1629.parquet",
+      "pubmed26n1630.parquet",
+      "pubmed26n1631.parquet",
+      "pubmed26n1632.parquet",
+      "pubmed26n1633.parquet",
+      "pubmed26n1634.parquet",
+      "pubmed26n1635.parquet",
+      "pubmed26n1636.parquet",
+      "pubmed26n1637.parquet",
+      "pubmed26n1638.parquet",
+      "pubmed26n1639.parquet",
+      "pubmed26n1640.parquet",
+      "pubmed26n1641.parquet",
+      "pubmed26n1642.parquet",
+      "pubmed26n1643.parquet",
+      "pubmed26n1644.parquet",
+      "pubmed26n1645.parquet",
+      "pubmed26n1646.parquet",
+      "pubmed26n1647.parquet",
+      "pubmed26n1648.parquet",
+      "pubmed26n1649.parquet",
+      "pubmed26n1650.parquet",
+      "pubmed26n1651.parquet",
+      "pubmed26n1315.parquet",
+      "pubmed26n1316.parquet",
+      "pubmed26n1317.parquet",
+      "pubmed26n1318.parquet",
+      "pubmed26n1319.parquet",
+      "pubmed26n1320.parquet",
+      "pubmed26n1321.parquet",
+      "pubmed26n1322.parquet",
+      "pubmed26n1323.parquet",
+      "pubmed26n1324.parquet",
+      "pubmed26n1325.parquet",
+      "pubmed26n1326.parquet",
+      "pubmed26n1327.parquet",
+      "pubmed26n1328.parquet",
+      "pubmed26n1329.parquet",
+      "pubmed26n1330.parquet",
+      "pubmed26n1331.parquet",
+      "pubmed26n1332.parquet",
+      "pubmed26n1333.parquet",
+      "pubmed26n1334.parquet"
+    ],
+    "documents_scanned": 1773541,
+    "min_pmid": 41025505,
+    "matcher": "mesh_novel.mention_key whole tokens; T7 alias policy (all SCR classes); names shared with another 2025 record dropped",
+    "eval_side": "pmid_bucket < 2000",
+    "pmid_sample": "first 20 PMIDs (ascending) per record",
+    "text": "PubMed 2025-26 (T7's local text) for every split"
+  },
+  "t7_policy": {
+    "rule": "on T7-trained models the primary MeSH evaluation is the descriptors plus the SCRs that T7 did not train linked to their gold frames (t7_selected false, or t7_heldout true) = meta.t7_group 'eval'; the T7-trained SCRs (meta.t7_group 'seen') are reported separately as 'seen (sanity)'; on hosts not trained on T7 every item counts",
+    "decided": "author, 2026-10-08",
+    "field": "meta.t7_group ('eval' | 'seen')",
+    "primary": {
+      "eval": {
+        "dev": 34,
+        "test": 143
+      },
+      "seen": {
+        "dev": 2,
+        "test": 33
+      }
+    },
+    "secondary_min1": {
+      "eval": {
+        "dev": 43,
+        "test": 185
+      },
+      "seen": {
+        "dev": 6,
+        "test": 41
+      }
+    }
+  },
+  "t7_overlap": {
+    "t7_selected_records": 8184,
+    "t7_selected_that_are_new": 54,
+    "t7_heldout_that_are_new": 7,
+    "primary_items_t7_selected": 42,
+    "primary_items_t7_heldout": 7
+  },
+  "split_rule": "learn_data.split_of(UI), salt 'toolkit-learn-v1', dev 20%",
+  "snapshot": {
+    "path": "/home/bhux/data/vsa-llm/toolkit-learn/mesh-2024-2025-v1/snapshot-2024",
+    "nodes": {
+      "file": "nodes.jsonl.gz",
+      "items": 30764,
+      "sha256": "dbf2491381637eb8fc5401af34757fde276ddea12731547e6bd86f2f830161d3"
+    },
+    "edges": {
+      "file": "edges.jsonl.gz",
+      "items": 56271,
+      "sha256": "19ae3b4c737607b0ac70ca36ff3d1cbffd99a825164e4f24af38df09f84f2fea"
+    },
+    "relations": {
+      "parent": 42021,
+      "pharmacological_action": 5073,
+      "see_also": 9177
+    },
+    "ontology_pt": {
+      "file": "ontology.pt",
+      "sha256": "cc8a5dc211d3da269addff51051c7ec0d37fd825183c8d1d22f2b3d9ac4d7872",
+      "entries": 30574,
+      "atomics": 8192,
+      "relations": [
+        "parent",
+        "pharmacological_action",
+        "see_also",
+        "branch_top",
+        "branch_second"
+      ],
+      "alias_table_sha256": "8d6357a3dc2bc67bdffe06dec2bbf49b38c7154c4cd976a48ad372e43371c190"
+    },
+    "scr_path": "/home/bhux/data/vsa-llm/toolkit-learn/mesh-2024-2025-v1/snapshot-2024-scr",
+    "scr_nodes": {
+      "file": "nodes.jsonl.gz",
+      "items": 335730,
+      "sha256": "203ba1e0cba6d51c80b2ae17f1d7231107e9a220bcd8b248f8ce346735638984"
+    },
+    "scr_edges": {
+      "file": "edges.jsonl.gz",
+      "items": 446232,
+      "sha256": "89cd1a94f5db95d52abfaed9a862f52f9657dc842308e1925c8933e2d7d0d880"
+    }
+  },
+  "seconds": 406.7,
+  "command": "PYTHONPATH=src python -m vsa_embed.benchmarks.learn_data mesh --split 2024-2025"
+}
