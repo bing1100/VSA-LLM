@@ -1,0 +1,216 @@
+{
+  "schema": "e10-learn/1",
+  "mode": "placement",
+  "label": "SMOKE",
+  "items_path": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/items-t5",
+  "decoder": {
+    "folds": 5,
+    "fold_alphas": [
+      0.01,
+      0.01,
+      0.01,
+      0.01,
+      0.01
+    ],
+    "alpha": 0.01,
+    "oof_r2": -2.562045834166022,
+    "oof_cosine": 0.23874157667160034,
+    "rows": 667,
+    "input_dim": 960,
+    "output_dim": 256
+  },
+  "kge": {
+    "transe": {
+      "triples": 4370,
+      "nodes": 1486,
+      "fit_rows": 667
+    },
+    "rotate": {
+      "triples": 4370,
+      "nodes": 1486,
+      "fit_rows": 667
+    },
+    "complex": {
+      "triples": 4370,
+      "nodes": 1486,
+      "fit_rows": 667
+    }
+  },
+  "items": 40,
+  "terms_with_vectors": 40,
+  "relation_map": {
+    "is_a": "is_a",
+    "owned_by": "owned_by"
+  },
+  "results": {
+    "unbind": {
+      "items": 40,
+      "skipped": {},
+      "coverage": 1.0,
+      "methods": {
+        "store": {
+          "n": 40,
+          "mrr": 0.39150922777252456,
+          "hits@1": 0.325,
+          "hits@5": 0.5,
+          "hits@10": 0.525
+        },
+        "text": {
+          "n": 40,
+          "mrr": 0.490100103575994,
+          "hits@1": 0.475,
+          "hits@5": 0.5,
+          "hits@10": 0.525
+        },
+        "transe": {
+          "n": 40,
+          "mrr": 0.21576319512266254,
+          "hits@1": 0.125,
+          "hits@5": 0.275,
+          "hits@10": 0.45
+        },
+        "rotate": {
+          "n": 40,
+          "mrr": 0.167804949437761,
+          "hits@1": 0.075,
+          "hits@5": 0.225,
+          "hits@10": 0.5
+        },
+        "complex": {
+          "n": 40,
+          "mrr": 0.19604040333539333,
+          "hits@1": 0.1,
+          "hits@5": 0.275,
+          "hits@10": 0.5
+        }
+      },
+      "groups": {
+        "primary": {
+          "n": 40,
+          "coverage": 1.0,
+          "methods": {
+            "store": {
+              "n": 40,
+              "mrr": 0.39150922777252456,
+              "hits@1": 0.325,
+              "hits@5": 0.5,
+              "hits@10": 0.525
+            },
+            "text": {
+              "n": 40,
+              "mrr": 0.490100103575994,
+              "hits@1": 0.475,
+              "hits@5": 0.5,
+              "hits@10": 0.525
+            },
+            "transe": {
+              "n": 40,
+              "mrr": 0.21576319512266254,
+              "hits@1": 0.125,
+              "hits@5": 0.275,
+              "hits@10": 0.45
+            },
+            "rotate": {
+              "n": 40,
+              "mrr": 0.167804949437761,
+              "hits@1": 0.075,
+              "hits@5": 0.225,
+              "hits@10": 0.5
+            },
+            "complex": {
+              "n": 40,
+              "mrr": 0.19604040333539333,
+              "hits@1": 0.1,
+              "hits@5": 0.275,
+              "hits@10": 0.5
+            }
+          }
+        },
+        "dev": {
+          "n": 0,
+          "coverage": null,
+          "methods": {
+            "store": {
+              "n": 0,
+              "mrr": null,
+              "hits@1": null,
+              "hits@5": null,
+              "hits@10": null
+            },
+            "text": {
+              "n": 0,
+              "mrr": null,
+              "hits@1": null,
+              "hits@5": null,
+              "hits@10": null
+            },
+            "transe": {
+              "n": 0,
+              "mrr": null,
+              "hits@1": null,
+              "hits@5": null,
+              "hits@10": null
+            },
+            "rotate": {
+              "n": 0,
+              "mrr": null,
+              "hits@1": null,
+              "hits@5": null,
+              "hits@10": null
+            },
+            "complex": {
+              "n": 0,
+              "mrr": null,
+              "hits@1": null,
+              "hits@5": null,
+              "hits@10": null
+            }
+          }
+        }
+      }
+    },
+    "correlate": {
+      "items": 40,
+      "skipped": {},
+      "coverage": 1.0,
+      "methods": {
+        "store": {
+          "n": 40,
+          "mrr": 0.39916682071012666,
+          "hits@1": 0.325,
+          "hits@5": 0.5,
+          "hits@10": 0.55
+        }
+      },
+      "groups": {
+        "primary": {
+          "n": 40,
+          "coverage": 1.0,
+          "methods": {
+            "store": {
+              "n": 40,
+              "mrr": 0.39916682071012666,
+              "hits@1": 0.325,
+              "hits@5": 0.5,
+              "hits@10": 0.55
+            }
+          }
+        },
+        "dev": {
+          "n": 0,
+          "coverage": null,
+          "methods": {
+            "store": {
+              "n": 0,
+              "mrr": null,
+              "hits@1": null,
+              "hits@5": null,
+              "hits@10": null
+            }
+          }
+        }
+      }
+    }
+  },
+  "seconds": 5.8
+}
