@@ -967,3 +967,91 @@ Each `queue` command takes `--dry-run`, which prints the jobs without queueing t
 |---|---|---|
 | 60 | **Binding and unbinding program** | For next-token loss, composition matters but multiplicative binding does not: on T5 (SmolLM2-360M, 3 seeds) untyped bundling ties learned HRR (C5ut − C5 = +0.2%, n.s.), translation beats it (+4.8%*), and a fixed random operator loses 5.2%* on held-out terms (learning the operator helps in the pretrained regime); in decision 54's 50M screen every operator ties, fixed random included. The likely reason is low role ambiguity: a term's filler set almost identifies it (terms whose filler multiset collides once roles are dropped: T5 0%, T4 0.5%, T1c 0.1%, WordNet 2%, T7 0%; same filler under two roles within one frame: T4 12%, T1c 3.7%, T5 0%). Binding should matter where a role has to be read out. Three steps, each pre-registered before its runs: **(1)** a decodability probe on trained checkpoints (evaluation only): algebraic unbinding plus cleanup against the atomic dictionary for every composer arm, against learned linear decoders (LRE-style) for every model, by seen / held-out, frame size and role ambiguity, plus behavioural role-swap twins (new words with the same fillers in swapped roles); **(2)** an unbinding readout arm: a head predicts a role from the hidden state, unbinds it from a preceding linked concept's composed vector, cleans up and injects the filler (gated), with operator variants (learned HRR, learned unitary, translation, untyped as controls), T5 SmolLM2-360M × 3 seeds, a 50M from-scratch screen optional; **(3)** chained two-hop and reverse lookup by unbinding, and a capacity test of local (per-concept) against global holographic superposition, on T5, T4 and T1c (aggregates only), Qwen3 optional. Related work checked 2026-10-08: Hernandez et al. ICLR 2024 (relation decoding is often a linear map: implicit unbinding); Dhayalkar, AAAI-26 LSRLM workshop (attention as soft unbinding; binding/unbinding heads proposed, not tested); Dhanraj & Eliasmith EMNLP 2025 (HRR over a frozen host's hidden states for rule-based reasoning); Kumar, arXiv 2606.24948 (HRR + Hopfield KG memory: one hop works, zero-shot two-hop fails from global superposition capacity); Wang & Sun ICLR 2026 (the reversal curse as a binding problem; JEPA fix). Placement "decisive first": step 1 as soon as it is built, steps 2–3 before the Qwen blocks |
 | 61 | **More binding families and a slotted layout** (author, 2026-10-08, after the circulant discussion) | Added to decision 60's step 2, with each arm's unbinding read in steps 1 and 3. **(a) Bounded-magnitude spectral circulant:** learned phases plus magnitudes held in [0.5, 2] (condition number ≤ 4), between learned unitary (|λ| = 1) and free learned HRR. **(b) Block-diagonal unitary (non-commutative, generalized-HRR style):** b×b orthogonal blocks; unbinding is the transpose. It is the family that can keep relation order when a path is stored in one vector (circulants commute). **(c) Slotted layout:** relations split into 3 load-balanced groups, each with its own slot of d/3 at matched total dimension, unitary binding within each slot, concatenated before the projector. This tests delineation (no interference across slots) against shared superposition. Simulation with random vectors and unitary binding: at matched total dimension, slots equal one vector when the load is even and lose when it is uneven (756 dimensions, 20 pairs: 0.99 single, 0.98 even slots, 0.83 uneven slots), and three appended 756-dim slots perform as one 2,268-dim vector. Sparse shift mixes were dropped: with the adjoint they match unitary. Each new family is a readout arm on T5 SmolLM2-360M × 3 seeds, about 10.5 GPU-h in total; its loss without the readout is read by switching the readout gate off at evaluation |
+
+## E9 binding and unbinding program (decisions 60–61; WP-BU)
+
+Pre-registration: `experiments/e9-retrofit/preregistration-binding.md`, committed before any evaluation of these measures on
+a checkpoint (`4a45616`); smoke addendum (§11) and amendments (§12) after it. Steps 2 and 3 are pre-registered in its §13
+and §14, each before its own runs.
+
+**Step 1 — decodability probe and role items (evaluation only).**
+
+| | What | Endpoint (T5, SmolLM2-360M, seeds 1–3) |
+|---|---|---|
+| P1 (decisive for "binding") | role-swap twins: new words with the same filler multiset and two roles swapped (300 pairs: `depends_on` / `part_of` on systems, `owned_by` / `approved_by` on policies); twin contrast accuracy, chance 0.5 | C5 − C5ut and C5 − C5tr, Holm over the two |
+| P2 | probe A: unbind each role from the static frame bundle with the arm's own unbinding, clean up against the trained atomics (typed); held-out MRR | C5 − the frequency baseline; C5 − C5rf |
+
+Secondaries: probe A in neutral and real contexts, role recovery, frame size (capacity curve) and role ambiguity;
+probe B (LRE-style ridge per relation) on composed vectors, C2 free rows, C6 source rows and the host's hidden state (P0,
+C0′, C2, C5; middle and final layer); natural role-ambiguous items on T4 (715 anchors).
+
+**Code** (tests: `tests/test_unbinding.py`, `tests/test_e9_binding.py`): `relations.py` (`unbind` on every family),
+`cleanup.py`, `e9_binding_probe` (`probe`, `queue`), `e9_binding_items` (`items`, `evaluate`, `queue`), `e9_binding_report`.
+**Items:** `experiments/e9-retrofit/items/role-twins-t5-{smollm2,qwen3}-v1`, `role-natural-t4-smollm2-v1`.
+**Outputs:** `RUN/binding-probe/` (summary, per-edge reciprocal ranks in float16; T1c: aggregates only),
+`RUN/role-<items>/`, `report/<stage>-binding/`.
+
+**Queue** (from the main checkout after merging; GPU-h from the smoke on the shared GPU, upper bounds; nothing queued):
+
+| Block | Priority (suggested float) | Jobs | GPU-h |
+|---|---|---|---:|
+| B1 T5 SmolLM2-360M (11 models × s1–3) + 135M (P0, C0′, C2, C5): probe + twins | 50 (50.0) | 41 + 41 | ≈ 1.05 |
+| B2 T5 Qwen3-0.6B / 1.7B seeds 1–2: probe + twins | 50 (50.05) | 14 + 14 | ≈ 1.35 |
+| B3 T4 seed 1 (P0, C0′, C2, C5; 360M + 135M): probe + natural | 50 (50.05) | 8 + 8 | ≈ 0.45 |
+| B4 T1, WordNet seed 1 (controls): probe | 55 | 16 | ≈ 0.7 |
+| B5 once trained: every other T4 config (probe + natural), T7 (probe), T1c (probe, `--licensed`) | 58 | 27 + 27, 14, 20 | ≈ 2.95 |
+| Reports (CPU lane): T5 after B1–B3, the rest at 59 | 51 (50.2) / 59 | 5 | 0 |
+
+**Total ≈ 6.5 GPU-h.** Per-job measurements: T5 360M C5 probe 65 s (peak 2.2 GB), twins 61 s; T4 360M C5 probe 144 s
+(peak 2.9 GB), natural items 96 s.
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+T5_MODELS="P0 C0p C2 C5 C5rf C5ut C5tr C5sh C6m C6d C6g"      # explicit: step 2's readout arms must not be probed before training
+# B1 — T5 SmolLM2 (primary)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage t5 --models $T5_MODELS --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_items queue --stage t5 --models $T5_MODELS --priority 50 \
+  --items experiments/e9-retrofit/items/role-twins-t5-smollm2-v1
+# B2 — T5 Qwen3 seeds 1–2 (seed 3 later: the same two commands with --seeds 3)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage t5-qwen3 --models P0 C0p C2 C5 --seeds 1 2 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_items queue --stage t5-qwen3 --models P0 C0p C2 C5 --seeds 1 2 --priority 50 \
+  --items experiments/e9-retrofit/items/role-twins-t5-qwen3-v1
+# B3 — T4 seed 1 (natural role items)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage t4 --models P0 C0p C2 C5 --seeds 1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_items queue --stage t4 --models P0 C0p C2 C5 --seeds 1 --priority 50 \
+  --items experiments/e9-retrofit/items/role-natural-t4-smollm2-v1
+# B4 — controls
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage t1 --priority 55
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage wordnet --priority 55
+# B5 — once trained (their training is queued at 51–54; job names are unique, so B3's jobs are skipped by name)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage t4 --priority 58
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_items queue --stage t4 --priority 58 \
+  --items experiments/e9-retrofit/items/role-natural-t4-smollm2-v1
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage t7 --priority 58
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_binding_probe queue --stage t1c --priority 58 --licensed
+# Reports (CPU lane: a CPU job starts once every job of a lower priority is done)
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-binding --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e9_binding_report --runs experiments/e9-retrofit/runs/t5 --output experiments/e9-retrofit/report/t5-binding \
+  --twins role-twins-t5-smollm2-v1 --overwrite --title "E9 T5 — binding program, step 1"
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-qwen3-report-binding --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e9_binding_report --runs experiments/e9-retrofit/runs/t5-qwen3 --output experiments/e9-retrofit/report/t5-qwen3-binding \
+  --twins role-twins-t5-qwen3-v1 --overwrite --title "E9 T5 Qwen3 — binding program, step 1"
+for stage in t4 t1 wordnet t7 t1c; do
+  extra=""; [ $stage = t4 ] && extra="--natural role-natural-t4-smollm2-v1"; [ $stage = t1c ] && extra="--licensed"
+  PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name $stage-report-binding --priority 59 --lane cpu --min-free-gb 0 --no-resume -- \
+    $PY -m vsa_embed.experiments.e9_binding_report --runs experiments/e9-retrofit/runs/$stage \
+    --output experiments/e9-retrofit/report/$stage-binding $extra --overwrite --title "E9 $stage — binding program, step 1"
+done
+```
+
+Each `queue` command takes `--dry-run`. On 2026-10-08 the dry runs gave: B1 41 + 41, B2 14 + 14, B3 8 + 8, B4 8 + 8,
+B5 T4 35 + 35 (8 + 8 already queued in B3), T7 14, T1c 20.
+
+**Open decisions for the author (step 1).**
+
+| # | Decision | Default |
+|---|---|---|
+| BU-1 | P1 reads the `choice` items (two property prompts per relation); `cloze` (the held-out wording) is a secondary | as pre-registered |
+| BU-2 | T5 twins use the two relation pairs that share fillers *and* co-occur in real frames (`depends_on`/`part_of`, `owned_by`/`approved_by`); `depends_on`/`uses` (the most shared) never co-occur, so it is not used | as built |
+| BU-3 | P2's store is the static bundle (every edge weight 1); the context-weighted conditions are secondaries | as pre-registered |
+| BU-4 | Probe B trains each relation's map on the seen concepts that carry the relation (multi-hot targets) | as built |

@@ -1,4 +1,23 @@
-"""Globally shared relation transformations for structured embeddings."""
+"""Globally shared relation transformations for structured embeddings.
+
+**Unbinding** (decision 60, the binding and unbinding program): every family has `unbind(relation_ids, vectors,
+method=None)`, an estimate of the filler `x` from `T_r(x)` or from a bundle of bound pairs that contains it. The first
+entry of `unbind_methods` is the family's primary method:
+
+| family | primary | other methods |
+|---|---|---|
+| `hrr`, `hrr_identity` | `correlation` (circular correlation, the involution / adjoint; approximate for non-unitary roles) | `inverse` (regularized FFT division) |
+| `unitary_hrr` | `conjugate` (multiplication by the conjugate spectrum: exact) | — |
+| `orthogonal` | `transpose` (exact) | — |
+| `diagonal` | `inverse` (regularized division) | — |
+| `map` | `auto` (self-inverse where the role is bipolar, else regularized division) | `self`, `inverse` |
+| `low_rank`, `low_rank_identity`, `low_rank_tied` | `woodbury` (the exact inverse of `I + L R`) | — |
+| `translation` | `subtract` (`x = v − t_r`, exact for one pair) | — |
+| `additive` (the composer's `untyped`) | none: `unbind()` raises `UnbindingError` | `bundle` (the bundle readout: returns the vector, ignoring the role) |
+
+Regularized divisions use `λ = ridge · mean power` of the relation's spectrum or diagonal (`UNBIND_RIDGE`), so a role
+whose spectrum has a near-zero bin does not blow up the noise of a bundle.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +29,21 @@ from torch import Tensor, nn
 
 from .algebra import HRRAlgebra
 
+# Ridge of the regularized divisions (`inverse` of hrr / diagonal / map), relative to the mean power of the relation's
+# spectrum or diagonal: λ = UNBIND_RIDGE · mean |R_k|² (≈ 1 % of a typical bin's power).
+UNBIND_RIDGE = 1e-2
+
+
+class UnbindingError(ValueError):
+    """A relation family that does not bind (the additive / untyped bundle) has no unbinding."""
+
 
 class RelationTransform(nn.Module, ABC):
     """Map vectors through a relation selected by integer IDs."""
 
     family: str
+    # Unbinding methods (module docstring); the first is the primary. Empty: no unbinding.
+    unbind_methods: tuple[str, ...] = ()
 
     def __init__(self, relation_count: int, dimension: int) -> None:
         super().__init__()
@@ -29,6 +58,21 @@ class RelationTransform(nn.Module, ABC):
 
     @abstractmethod
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor: ...
+
+    def _unbind_method(self, method: str | None) -> str:
+        if not self.unbind_methods:
+            raise UnbindingError(f"the {self.family!r} family has no unbinding")
+        method = self.unbind_methods[0] if method is None else method
+        if method not in self.unbind_methods:
+            raise ValueError(f"unbinding method {method!r} is not one of {self.family!r}'s {list(self.unbind_methods)}")
+        return method
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        """Estimate the filler `x` of `T_r(x)` (or of a bundle holding it); `method` defaults to the family's primary
+        (module docstring)."""
+        self._unbind_method(method)
+        raise NotImplementedError(f"{type(self).__name__} does not implement unbind")
 
     def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         """Apply `T_rᵀ`, so `⟨T_r x, y⟩ = ⟨x, T_rᵀ y⟩`.
@@ -51,6 +95,7 @@ class AdditiveRelation(RelationTransform):
     """Relation-agnostic identity control."""
 
     family = "additive"
+    unbind_methods = ("bundle",)
 
     def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         self._validate(relation_ids, vectors)
@@ -58,6 +103,17 @@ class AdditiveRelation(RelationTransform):
 
     def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         return self.forward(relation_ids, vectors)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        """No binding, so no unbinding: a bundle of fillers keeps no role. Only the explicitly requested `bundle`
+        readout is defined — the vector itself, whatever the role (what an untyped store can give back)."""
+        if method is None:
+            raise UnbindingError("the additive (untyped) family does not bind, so it has no unbinding; pass "
+                                 "method='bundle' for the bundle readout, which ignores the role")
+        self._unbind_method(method)
+        self._validate(relation_ids, vectors)
+        return vectors
 
 
 class HRRRelation(RelationTransform):
@@ -70,6 +126,10 @@ class HRRRelation(RelationTransform):
     """
 
     family = "hrr"
+    # Learned HRR roles are not unitary, so correlation (the classic HRR decoder) is approximate; `inverse` divides by
+    # the role spectrum (regularized), which undoes the role's spectral colouring at the price of amplifying noise in
+    # weak bins.
+    unbind_methods = ("correlation", "inverse")
 
     def __init__(self, relation_count: int, dimension: int, *, identity_init: bool = False,
                  init_noise: float = 0.01) -> None:
@@ -92,11 +152,42 @@ class HRRRelation(RelationTransform):
         self._validate(relation_ids, vectors)
         return self.algebra.unbind(vectors, self.roles[relation_ids])
 
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        method = self._unbind_method(method)
+        self._validate(relation_ids, vectors)
+        roles = self.roles[relation_ids]
+        if method == "correlation":
+            return self.algebra.unbind(vectors, roles)
+        return spectral_inverse(vectors, roles, ridge)
+
+
+def spectral_inverse(vectors: Tensor, roles: Tensor, ridge: float = UNBIND_RIDGE) -> Tensor:
+    """Regularized FFT division `F⁻¹[V · conj(R) / (|R|² + λ)]`, `λ = ridge · mean_k |R_k|²` per role: the least-squares
+    inverse of circular convolution by `roles` (equal to correlation when the roles are unitary and `ridge` = 0)."""
+    dimension = vectors.shape[-1]
+    spectrum = torch.fft.rfft(roles.float())
+    power = spectrum.real.square() + spectrum.imag.square()
+    damping = float(ridge) * power.mean(-1, keepdim=True)
+    out = torch.fft.irfft(torch.fft.rfft(vectors.float()) * spectrum.conj() / (power + damping).clamp_min(1e-12), n=dimension)
+    return out.to(vectors.dtype)
+
+
+def regularized_division(vectors: Tensor, diagonal: Tensor, ridge: float = UNBIND_RIDGE) -> Tensor:
+    """`v · d / (d² + λ)`, `λ = ridge · mean d²` per relation: the regularized inverse of an elementwise operator."""
+    power = diagonal.square()
+    damping = float(ridge) * power.mean(-1, keepdim=True)
+    return vectors * diagonal / (power + damping).clamp_min(1e-12)
+
 
 class MAPRelation(RelationTransform):
     """Relation vectors interpreted as diagonal elementwise operators."""
 
     family = "map"
+    # MAP binding is self-inverse when the role is bipolar (±1); learned roles drift away from ±1, where only division
+    # inverts them (`auto` decides per relation).
+    unbind_methods = ("auto", "self", "inverse")
+    BIPOLAR_TOLERANCE = 1e-6
 
     def __init__(self, relation_count: int, dimension: int) -> None:
         super().__init__(relation_count, dimension)
@@ -109,11 +200,28 @@ class MAPRelation(RelationTransform):
     def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         return self.forward(relation_ids, vectors)
 
+    def bipolar(self) -> Tensor:
+        """Per relation: whether every coordinate of its role is ±1 (within `BIPOLAR_TOLERANCE`)."""
+        return ((self.roles.detach().abs() - 1).abs() <= self.BIPOLAR_TOLERANCE).all(-1)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        method = self._unbind_method(method)
+        self._validate(relation_ids, vectors)
+        roles = self.roles[relation_ids]
+        if method == "self":
+            return roles * vectors
+        divided = regularized_division(vectors, roles, ridge)
+        if method == "inverse":
+            return divided
+        return torch.where(self.bipolar()[relation_ids].unsqueeze(-1), roles * vectors, divided)
+
 
 class DiagonalRelation(RelationTransform):
     """Unconstrained learned diagonal operators."""
 
     family = "diagonal"
+    unbind_methods = ("inverse",)
 
     def __init__(self, relation_count: int, dimension: int) -> None:
         super().__init__(relation_count, dimension)
@@ -125,6 +233,12 @@ class DiagonalRelation(RelationTransform):
 
     def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         return self.forward(relation_ids, vectors)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        self._unbind_method(method)
+        self._validate(relation_ids, vectors)
+        return regularized_division(vectors, self.diagonal[relation_ids], ridge)
 
 
 class LowRankRelation(RelationTransform):
@@ -164,6 +278,18 @@ class LowRankRelation(RelationTransform):
         hidden = torch.einsum("...dr,...d->...r", self.left[relation_ids], vectors)
         return vectors + torch.einsum("...rd,...r->...d", self.right[relation_ids], hidden)
 
+    unbind_methods = ("woodbury",)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        """`(I + L R)⁻¹ v = v − L (I_r + R L)⁻¹ R v` (Woodbury; exact whenever `I + L R` is invertible)."""
+        self._unbind_method(method)
+        self._validate(relation_ids, vectors)
+        left, right = self.left[relation_ids].float(), self.right[relation_ids].float()
+        small = torch.eye(self.rank, device=vectors.device) + right @ left
+        solved = torch.linalg.solve(small, torch.einsum("...rd,...d->...r", right, vectors.float()).unsqueeze(-1)).squeeze(-1)
+        return (vectors.float() - torch.einsum("...dr,...r->...d", left, solved)).to(vectors.dtype)
+
 
 class TiedLowRankRelation(RelationTransform):
     """Identity plus a scaled symmetric update `x + U diag(σ) Uᵀ x` per relation.
@@ -191,6 +317,20 @@ class TiedLowRankRelation(RelationTransform):
 
     def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
         return self.forward(relation_ids, vectors)  # symmetric by construction
+
+    unbind_methods = ("woodbury",)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        """`(I + U S Uᵀ)⁻¹ v = v − U S (I + Uᵀ U S)⁻¹ Uᵀ v` (Woodbury in the form that stays defined at `S = 0`)."""
+        self._unbind_method(method)
+        self._validate(relation_ids, vectors)
+        basis, scales = self.basis[relation_ids].float(), self.scales[relation_ids].float()
+        gram = basis.transpose(-1, -2) @ basis
+        small = torch.eye(self.rank, device=vectors.device) + gram * scales.unsqueeze(-2)
+        projected = torch.einsum("...dr,...d->...r", basis, vectors.float())
+        solved = torch.linalg.solve(small, projected.unsqueeze(-1)).squeeze(-1)
+        return (vectors.float() - torch.einsum("...dr,...r->...d", basis, scales * solved)).to(vectors.dtype)
 
 
 def matched_tied_rank(target_parameters: int, relation_count: int, dimension: int) -> int:
@@ -222,6 +362,14 @@ class OrthogonalRelation(RelationTransform):
         self._validate(relation_ids, vectors)
         return torch.einsum("...ed,...e->...d", self.matrices()[relation_ids], vectors)
 
+    unbind_methods = ("transpose",)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        """The transpose of an orthogonal operator is its inverse (exact)."""
+        self._unbind_method(method)
+        return self.adjoint(relation_ids, vectors)
+
 
 class TranslationRelation(RelationTransform):
     """TransE-style translation `T_r(x) = x + t_r` (WP-PQ1 operator ablation, C5tr).
@@ -246,6 +394,16 @@ class TranslationRelation(RelationTransform):
         # The linear part of an affine map is the identity (its vector-Jacobian product).
         self._validate(relation_ids, vectors)
         return vectors
+
+    unbind_methods = ("subtract",)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        """`v − t_r`: exact for one translated filler. In a bundle every offset adds to the same bag of fillers, so
+        the role read out is the bag minus one offset — which filler went with the relation is not recoverable."""
+        self._unbind_method(method)
+        self._validate(relation_ids, vectors)
+        return vectors - self.offsets[relation_ids]
 
 
 class UnitaryHRRRelation(RelationTransform):
@@ -281,6 +439,15 @@ class UnitaryHRRRelation(RelationTransform):
         self._validate(relation_ids, vectors)
         return self.algebra.unbind(vectors, self.role_vectors()[relation_ids])
 
+    # The learned unitary family of decision 60 is this class: trainable phases, unit magnitude, hence exactly
+    # invertible by the conjugate spectrum whatever the phases learn (`random_fixed:unitary_hrr` freezes them).
+    unbind_methods = ("conjugate",)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        self._unbind_method(method)
+        return self.adjoint(relation_ids, vectors)
+
 
 def create_relation_transform(
     family: str, relation_count: int, dimension: int, *, rank: int = 8
@@ -314,3 +481,13 @@ def create_composition_operator(family: str, relation_count: int, dimension: int
     if family in AFFINE_FAMILIES:
         return AFFINE_FAMILIES[family](relation_count, dimension)
     return create_relation_transform(family, relation_count, dimension, rank=rank)
+
+
+def readout_method(transform: RelationTransform) -> str:
+    """The unbinding method a probe or a readout uses for `transform`: its primary method, or the `bundle` readout
+    for the additive (untyped) family, which has no unbinding."""
+    if isinstance(transform, AdditiveRelation):
+        return "bundle"
+    if not transform.unbind_methods:
+        raise UnbindingError(f"the {transform.family!r} family has no unbinding")
+    return transform.unbind_methods[0]

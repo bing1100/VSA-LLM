@@ -257,6 +257,31 @@ class FrameComposer(nn.Module):
         rows = self.compose(concept_ids, context)
         return self.projector(rows) if self.projector is not None else rows
 
+    # -- unbinding (decision 60) ----------------------------------------------------------------------
+
+    def raw_bundle(self, concept_ids: Tensor, context: Tensor | None = None, *, uniform: bool = False
+                   ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        """`(summed, weights, edge_index, segments)`: the un-normalized bundle `Σ_e w_e T_{r_e}(a_e)` of each occurrence
+        (`compose` returns it normalized) with its edge weights, schedule edge ids and the occurrence of each edge.
+        `uniform=True` gives the static frame bundle (`w = 1` for every edge, whatever the composition mode). For a
+        linear operator the normalization does not change a cosine readout; for the affine `translation` it does, so
+        unbinding probes read this sum."""
+        if concept_ids.ndim != 1:
+            raise ValueError("concept_ids must be a vector")
+        edge_index, segments = _occurrence_edges(self.schedule, concept_ids)
+        needed, position = torch.unique(edge_index, return_inverse=True)
+        bound = self.bound_edges(needed)[position]
+        weights = (bound.new_ones(edge_index.numel()) if uniform
+                   else self.edge_weights(edge_index, segments, concept_ids, bound, context))
+        summed = bound.new_zeros(concept_ids.numel(), bound.shape[-1]).index_add(0, segments, weights.unsqueeze(-1) * bound)
+        return summed, weights, edge_index, segments
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None) -> Tensor:
+        """Unbind `relation_ids` from `vectors` with the operator's method (default: its primary one; the untyped
+        composer's `bundle` readout, which ignores the role; `relations.readout_method`)."""
+        from .relations import readout_method
+        return self.transform.unbind(relation_ids, vectors, method=method or readout_method(self.transform))
+
     # -- growth (used by the developmental dictionary, M3) --------------------------------------
 
     def add_atomics(self, vectors: Tensor) -> Tensor:

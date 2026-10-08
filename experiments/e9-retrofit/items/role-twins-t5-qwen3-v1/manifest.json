@@ -1,0 +1,57 @@
+{
+  "schema": "e9-role-items/1",
+  "kind": "twins",
+  "track": "t5",
+  "family": "qwen3",
+  "tokenizer": "Qwen/Qwen3-0.6B-Base",
+  "seed": 0,
+  "name_seed": 23,
+  "pairs": 300,
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+  "ontology_alias_sha256": "5cae33ad36957b0d7728f18012ade3f372cf9d425392f39e8c0de6a07dd25415",
+  "alias_table": "/home/bhux/data/vsa-llm/e9/alias-tables/t5.json",
+  "name_checks": {
+    "names": 1567,
+    "rejected_candidates": 0,
+    "checked_against": [
+      "wordnet lemmas",
+      "alias table words",
+      "tokenizer vocabulary",
+      "contamination texts"
+    ],
+    "contamination_chars": 84553075,
+    "reserved_names": 903,
+    "reserved_clashes": 0
+  },
+  "relation_pairs": [
+    {
+      "r1": "depends_on",
+      "r2": "part_of",
+      "shared_fillers": 128,
+      "donors": 116,
+      "pairs": 150
+    },
+    {
+      "r1": "owned_by",
+      "r2": "approved_by",
+      "shared_fillers": 43,
+      "donors": 127,
+      "pairs": 150
+    }
+  ],
+  "rules": {
+    "twins": "A = rest + (r1, X) + (r2, Y), B = rest + (r1, Y) + (r2, X); X \u2260 Y drawn uniformly from the fillers observed under both r1 and r2 (distinct texts); rest = a donor frame with exactly one r1 and one r2 filler (not held out, not synthetic), category edges kept, other fillers resampled frequency-weighted (never X or Y); every frame new",
+    "candidates": "[X, Y] in this order for both twins and both relations",
+    "scoring": "choice: PMI against the null prompt; cloze: per-token log-probability minus the null prompt's; twin contrast z = \u00b1[(s_A(X) \u2212 s_A(Y)) \u2212 (s_B(X) \u2212 s_B(Y))]"
+  },
+  "counts": {
+    "concepts": 600,
+    "items": 2400,
+    "choice": 1200,
+    "cloze": 1200
+  },
+  "sha256": {
+    "concepts.jsonl": "4a34899cfe634f9e3da6161cb1e64f3fbcef071b3affcf1686fdf6f3d02848e7",
+    "items.jsonl.gz": "52cea5801fc4fa734dc8cce100baeb8eb4e0a012e3bbd00a862a9c8c61fb33da"
+  }
+}
