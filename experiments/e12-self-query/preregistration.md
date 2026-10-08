@@ -1,0 +1,435 @@
+# E12 — Explainability by decomposition and self-query (decision 62)
+
+**Status:** design and pre-registration, written on 2026-10-08 and committed **before any evaluation of these measures on a
+trained checkpoint** (GPU or CPU). The pilots of §15 run after this commit, are labelled PILOT, use T5 SmolLM2-360M seed 1
+only (Qwen3-0.6B / 1.7B for the agentic feasibility pilot), and **do not count toward the endpoints**, which use seeds 1–3 in
+the queued runs. Any later change is listed in §16 with its date and reason.
+
+**Origin:** author decision 62 (`resources/plan-improvement/execution.md`, 2026-10-08), after binding step 1
+(`experiments/e9-retrofit/preregistration-binding.md`; formal report `experiments/e9-retrofit/report/t5-binding`). On T5
+(SmolLM2-360M, seeds 1–3):
+
+- **The roles are stored.** Algebraic filler recovery from the static bundle, held-out concepts, all-atom cleanup:
+  C5 0.96 (0.91 on role-ambiguous edges), C5rf 0.98, C5tr 0.14, C5ut 0.14 (0.03 on role-ambiguous edges); exact division
+  for C5 0.51.
+- **The roles are not read.** Role-swap twin contrast accuracy (`choice` items; chance 0.5): C5 0.494, C5ut 0.498, C5tr
+  0.492, C5rf 0.494, C2 0.487, C0′ 0.484, P0 0.492. C5 `own − swap` +0.001 [−0.015, +0.017].
+
+The channel adds the composed vector at the term's last subtoken, *before* the question words; to answer a role question
+the host would have to learn unbinding internally, and the LM loss almost never requires it (decision 60: a T5 term's
+filler set identifies it).
+
+**Thesis (the author's).** Decomposing the VSA store is **inspection** of the vector the model computes with, not
+**narration** (a reasoning trace, which can be unfaithful). It can therefore give deeper explainability than reasoning
+traces — *provided the decoding is validated by intervention*. And a **self-query tool** that decodes the model's own store
+into text lets the model use its stored roles through reading, without learning unbinding in its weights.
+
+This document tests the two halves separately: **Q1** — does the recall tool make the stored roles usable (phase A, a fixed
+pipeline)? **F1** — are the decoded edges what the model's channel route actually uses (faithfulness by store
+intervention)? It also pre-registers designs for **3a** (agentic self-query), **3b** (learning from tool-using traces) and
+**3c** (a calibrated self-critique loop).
+
+**Code** (tests: `tests/test_self_query.py`, `tests/test_e12_self_query.py`, CPU):
+- `src/vsa_embed/self_query.py` — the recall tool, model-independent: `RecallStore` (static stores; unbinding with the
+  operator's primary method; typed or all-atom cleanup; slot-aware and slot-free read-back; chained recall; reverse lookup;
+  the role-blind bundle readout), `RecallWriter` (text with confidences), `symbolic_lines`, `roleless`, `slot_accuracy`.
+- `src/vsa_embed/experiments/e12_self_query.py` — phase A (`evaluate`, `recall`, `queue`).
+- `src/vsa_embed/experiments/e12_faithfulness.py` — F1 (`evaluate`, `queue`).
+- `src/vsa_embed/experiments/e12_report.py` — Q1, F1 and the secondaries across a stage's runs.
+- 3a's harness (`e12_agent`) is built with its feasibility pilot (§11).
+
+**Items:** the E9 item sets, unchanged: `experiments/e9-retrofit/items/role-twins-t5-smollm2-v1` (sha256 of
+`items.jsonl.gz` `52cea580…33da`), `role-twins-t5-qwen3-v1`, `role-natural-t4-smollm2-v1` (`4462062a…9398`),
+`understanding-t5-smollm2-v1`, `understanding-t4-smollm2-v1`, `new-words-t5-smollm2-v2`, `new-words-t5-qwen3-v2`.
+
+## 0. Related work and the gap (checked 2026-10-08; every page below was opened)
+
+**Tool use and self-query.** Toolformer (Schick et al., NeurIPS 2023) teaches an LM to decide which external APIs to call
+from a handful of demonstrations; ReAct (Yao et al., ICLR 2023) interleaves reasoning traces with actions; Self-Ask (Press
+et al., Findings of EMNLP 2023) decomposes multi-hop questions into follow-ups, optionally answered by search, and shows the
+compositionality gap does not shrink with scale; Self-RAG (Asai et al., ICLR 2024) retrieves passages on demand and
+critiques them with reflection tokens. Their tools are external — none reads the model's own state.
+
+**Knowledge-augmented LMs with an editable store.** KnowBert (Peters et al., EMNLP 2019) and Entities as Experts (Févry et
+al., EMNLP 2020) inject entity memories at mention spans (opaque learned embeddings); Facts as Experts (Verga et al., NAACL
+2021) gives an LM a symbolic fact memory that can be edited without retraining; KBLaM (Wang et al., ICLR 2025) injects
+knowledge-base triples as key–value vectors through rectangular attention and reads interpretability off the attention;
+Larimar (Das et al., ICML 2024) and MemLLM (Modarressi et al., TMLR 2025) give LMs explicit memories with one-shot updates
+or read/write calls; limited-memory LMs (Zhao et al., ICLR 2026) learn targeted lookups instead of memorizing. Their
+entries are key–value pairs selected by attention, or external tables — not a superposed role–filler code at the mention
+that can be decoded algebraically.
+
+**Introspection.** Language models are partly calibrated about their answers (Kadavath et al. 2022, arXiv) and can learn
+some privileged self-prediction (Binder et al., ICLR 2025, "Looking Inward"), which fails on harder and out-of-distribution
+tasks; injected concepts are noticed and named only about 20% of the time at the best layer and strength (Lindsey,
+Transformer Circuits 2025 / arXiv 2601.01828), and binary injection detection in Llama-3.1-8B is explained by global logit
+shifts (Hahami et al. 2025, arXiv). Self-reports are narration; our recall is a decode.
+
+**Faithfulness of explanations.** Chain-of-thought explanations can omit the features that drive the answer (Turpin et al.,
+NeurIPS 2023: up to 36% accuracy drop from unmentioned biases), become less faithful with scale under CoT interventions
+(Lanham et al. 2023, arXiv), and reveal hint use rarely (Chen et al. 2025, arXiv: often below 20%). Comprehensiveness and
+sufficiency are ERASER's (DeYoung et al., ACL 2020); faithfulness is graded, distinct from plausibility (Jacovi & Goldberg,
+ACL 2020); decodable information need not be used (Ravichander et al., EACL 2021; Elazar et al., TACL 2021, amnesic
+probing). Step 1's twins are an instance: decodable, not used.
+
+**Post-hoc dictionaries.** Sparse autoencoders recover interpretable features (Bricken et al., Transformer Circuits 2023;
+Cunningham / Huben et al., ICLR 2024; Templeton et al. 2024; Gao et al., ICLR 2025), but their dictionaries are learned and
+incomplete (splicing a 16M-latent SAE into GPT-4 costs the loss of 10% of its pretraining compute; "an incomplete
+description"), and strong probe baselines often match them (Kantamneni et al., ICML 2025). Our atom dictionary and relation
+operators are the store's own, by construction.
+
+**Decoding a model's own representations.** Patchscopes (Ghandeharioun et al., ICML 2024) uses the model to verbalize its
+hidden states and repairs some multi-hop errors; SelfIE (Chen et al., ICML 2024), LatentQA (Pan et al., ICLR 2026),
+Activation Oracles (Karvonen et al. 2025, arXiv) and Natural Language Autoencoders (Fraser-Taliente et al., Transformer
+Circuits 2026) learn verbalizers, with documented blind spots (Bersia & Gaintseva 2026, arXiv). The logit and tuned lens
+(nostalgebraist 2020; Belrose et al. 2023) decode next-token beliefs. Relation decoding is often a linear map of the subject
+(Hernandez et al., ICLR 2024); in-context binding uses binding-ID vectors (Feng & Steinhardt, ICLR 2024). Concept bottleneck
+models (Koh et al., ICML 2020) are intervenable but the bottleneck is the only path to the output; our store is an
+additive side channel the model may ignore.
+
+**VSA / HRR / TPR stores.** Tensor-product structure can be fitted to RNN and Transformer states and validated by
+intervention (McCoy et al., ICLR 2019; Soulos et al., BlackboxNLP 2020; McCoy et al. 2026, arXiv 2608.29530; theory in
+Zhang & McCoy 2026, arXiv); TP-Attention binds roles inside a Transformer (Schlag et al. 2019, arXiv); HRRs serve as output
+layers (Ganesan et al., NeurIPS 2021) or attention (Alam et al., ICML 2023); Dhanraj & Eliasmith (EMNLP 2025) encode hidden
+states into VSA vectors as an arithmetic co-processor; Kumar (2026, arXiv 2606.24948) finds that an HRR knowledge-graph
+memory recovers one hop but composes two hops at chance; Bronzini et al. (2025, arXiv 2509.25045) decode LLM residual
+states by unbinding and codebook cleanup after a learned mapping into a VSA space, and name the lack of causal validation as
+their main limitation. Multi-hop and reversal: latent two-hop composition fails on synthetic facts (Balesni et al. 2024–25,
+arXiv); models use the first hop more than the second (Yang et al., ACL 2024); the reversal curse holds for parametric facts
+but not for facts in context (Berglund et al., ICLR 2024), and may be a binding problem (Wang & Sun, ICLR 2026).
+Internalizing explicit steps: stepwise CoT removal (Deng et al. 2024, arXiv), distilling step-by-step (Hsieh et al.,
+Findings of ACL 2023). Self-correction without external feedback fails (Huang et al., ICLR 2024); tool-interactive critique
+helps (Gou et al., ICLR 2024, CRITIC).
+
+**The gap, honestly.** None of the components is new: LMs call tools and learn when to; they read explicit, editable stores
+injected at mentions; they verbalize their own activations; interventional faithfulness metrics are standard; and VSA/TPR
+decoders of neural states exist, as post-hoc probes or fitted structure checked by intervention. What may be new is the
+conjunction: **(i)** a closed-form decoder (unbind with the store's own relation operator, clean up against its own atom
+dictionary) applied to the very vector the LM computes with, so the decode can be checked against a store known by
+construction rather than learned; **(ii)** the decode validated by edge-level store interventions scored for
+comprehensiveness, sufficiency and specificity; **(iii)** the decoded frame returned to the same model as a self-query tool
+and tested on role-swap items the model fails without it. The literature check found no work doing all three (very recent
+preprints may have been missed). Two cautions in wording: learned-HRR decoding is *approximate* (crosstalk grows with the
+bundle; Kumar 2026 shows interference breaking chained retrieval), so "algebraic, closed-form" is right and "exact" is not;
+and a decode shows what the store makes available, not what the model uses — hence F1.
+
+## 1. Questions and primary endpoints
+
+| | Question | Unit | Primary endpoint |
+|---|---|---|---|
+| **Q1** (recall tool) | Does putting the recalled frame of a twin's own store in context let the model tell role-swap twins apart? | twin pair × seed | twin **contrast accuracy** (`choice`), C5 host: **Q1a** `recall:own − none`, **Q1b** `recall:own − recall:C5ut`; Holm over the two |
+| **F1** (faithfulness of decoding) | Through the channel alone (no recall in context), does removing a decoded edge from the store move the model's preference for that edge's filler more than removing another edge? | new word × seed | per-word **comprehensiveness net share** (τ = 0.05 nats): **F1a** C5 against 0, **F1b** C5 − C5ut; Holm over the two |
+
+**Primary setting:** T5 synthetic glossary, SmolLM2-360M, full fine-tuning, seeds 1–3: the runs of R9 / WP-PQ1 and binding
+step 1, evaluated in bf16 autocast as trained. Q1 and F1 answer different questions, so no correction is made between them
+(stated in advance); each is tested at two-sided α = 0.05 after its own Holm step.
+
+## 2. The recall tool
+
+**Store.** A term's **static frame bundle** `c = Σ_e T_{r_e}(a_e)` (every edge weight 1: binding step 1's `static` condition,
+BU-3 / BU-5), read from the run's trained composer (`final.pt`; the host is not loaded). For an existing entry, the composer's
+own schedule (for C5sh, the shuffled frame the model was trained with); for a new word or a twin, its frame composed from the
+trained atomics and relations, exactly as the channel composes it at insertion.
+
+**Unbinding** (`relations.readout_method`, the operator's primary method): learned HRR (C5) → circular correlation; fixed
+unitary (C5rf) → conjugate; translation (C5tr) → subtraction; untyped (C5ut) has no unbinding → the bundle readout, which
+ignores the role; the readout arms' operators (learned unitary, bounded spectral, block-diagonal unitary, slotted) → their
+primary methods (slotted: within the relation's slot).
+
+**Cleanup.** *Typed* (primary): cosine nearest neighbours among the atomics observed under the relation in the ontology frames;
+*all-atom* (secondary): every atomic. A slot with m fillers returns its top m.
+
+**Read-back (slot-aware, primary).** The tool reads the term's slots — the relation multiset of the term's frame, the keys of
+the store — and decodes every slot's fillers from the vector. Knowing the slots does not reveal the answer on any test here
+(twins share their relation multiset; only the fillers differ). *Slot-free* (secondary, `recall-free`): every relation is
+unbound and kept when its best typed cosine reaches a per-relation presence threshold that maximizes presence F1 on ≤ 3,000
+seen entries of the store's ontology.
+
+**Chained recall** (two-hop items): unbind r1 from the anchor's store, clean up, follow the recovered filler to the entry it
+names (`e9_binding_chain.atom_entries`), unbind r2 from *that entry's* store, clean up. **Reverse lookup** (reverse items):
+score every store of the track — and the item set's new words — by `cos(c, T_r(a_F))` (role-blind store: `cos(c, a_F)`);
+return the top 5.
+
+**Role-blind stores.** C5ut's whole-frame recall is one line "associated with" its top-K atomics by cosine, K = the number of
+slots (no role is stored, so none is claimed). A role query on it (chain hop) is the type-restricted bundle readout.
+
+**Text** (`RecallWriter`; one line per decoded filler, at most 32 per call; the confidence is the cleanup cosine, two
+decimals; the filler worded as the item candidates word it):
+
+    recall(dalkkloushfoltquark):
+    - dalkkloushfoltquark is a system. (0.91)
+    - dalkkloushfoltquark belongs to the finance area. (0.83)
+    - dalkkloushfoltquark depends on Tindbreish Migration. (0.58)
+    - dalkkloushfoltquark is part of Drun Rebuild. (0.49)
+
+Each line fills the track's own statement template of the relation (`RelationTemplates.statement`, the training wording);
+an untemplated relation reads "X <relation words> Y." (a one-word relation: "X has <relation> Y."). A role-blind line reads
+`- X is associated with: system (0.40), finance area (0.38), …`. Chained recall writes two calls (`recall(X, owned by):` and
+`recall(<bridge>, reports to):`), reverse lookup one (`lookup(owned by, the Zash Team):` and up to five holder statements).
+
+**Prompt.** The context, a newline, then the item's prompt; the candidate continuation is scored after it. PMI uses the
+item's **context-free** null prompt (cached once per item set); the twin contrast does not use the null (it cancels). Texts
+longer than the scorer's maximum length are an error, never truncated (truncation would cut the candidate).
+
+## 3. Phase A: conditions, item sets and hosts
+
+**Conditions** (the context differs, the question does not):
+
+| condition | context | role |
+|---|---|---|
+| `none` | nothing (binding step 1's `own` source) | baseline |
+| `recall:own` | the recall of the term from the host run's own store | the self-query |
+| `recall:<arm>` | from another run of the same stage, host and seed: `C5ut` (untyped), `C5tr` (translation); `C5` for hosts without a store; `C5@s` for P0 (seed s's store) | role-blind controls; the tool without the host's channel |
+| `roleless:<store>` | the same decoded fillers in one "associated with" line, roles removed, atom order, **no confidences** (a filler's confidence comes from unbinding its role) | format-matched role-blind control |
+| `wrong:<store>` | twins: the partner twin's recall written with this twin's name | does the host follow the recalled text? (predicted to flip) |
+| `symbolic` | the gold frame in the recall format, confidence 1.00 | upper bound of a perfect store |
+| `definition` | E11's prose definition from the gold frame (`read_to_learn.t5_definition` / `t4_definition`, style `prose`: held-out wordings) | in-context reading (E11) |
+| `recall-all`, `recall-free`, `fields`, `noconf` | all-atom cleanup; slot-free decoding; "relation: filler" lines; no confidences | secondaries (format, cleanup) |
+
+**Item sets and the call each condition makes:**
+- **role-swap twins** (T5; 300 pairs, 600 terms; `choice` primary, `cloze` secondary): whole-frame recall of each twin's store.
+- **natural role-ambiguous items** (T4; 715 anchors): whole-frame recall of the entry's store (frames up to 24 edges).
+- **WP-UB understanding** (T5, T4): `two_hop` items with chained recall along the item's path; `reverse` items with reverse
+  lookup; at most **150 anchors per subset** (seen, rare, heldout, new; the first ones in item order) to bound cost.
+- **new words** (T5 v2): `property` items; the **first 300** words (`e9n-0000`–`e9n-0299`, the v1 base set).
+
+**Decode accuracy is reported with every behavioural number:** per slot, the share of its gold fillers the context states
+(role-blind lines: among all the line's fillers); twins: the four critical slots of a pair and whether all four are right;
+two-hop: hop 1, bridge, hop 2; reverse: anchor above partner and anchor in the top 5.
+
+**Hosts and stores (queued):**
+
+| track / host | runs | store read |
+|---|---|---|
+| T5 SmolLM2-360M (primary) | C5, C5ut, C5tr, C5rf, C5sh, C2, C0′ × s1–3; P0 | own (composing arms); C5 (C2, C0′); C5 seeds 1–3 (P0); C5 also reads C5ut and C5tr, C5ut also reads C5 |
+| T5 SmolLM2-135M | C5, C2, C0′ × s1–3; P0 | as above (no C5ut: the role-blind reference is `roleless`) |
+| T5 Qwen3-0.6B / 1.7B-Base | C5, C2, C0′ × s1–2; P0 (seed 3 when trained) | as above (`roleless` reference) |
+| T4 SmolLM2-360M, 135M | seed 1 now (C5, C5ut, C5rf, C2, C0′, P0; 135M: C5, C2, C0′, P0); the other T4 configs once trained | natural items, understanding |
+| readout arms U5, U5u, U5sb, U5bu, U5sl, U5tr, U5ut (T5 360M, once trained) | s1–3 | own: twins and F1 |
+
+## 4. Q1 — statistics, predictions, decision rule, refutation readings
+
+**Statistics.** The pairs × seeds table of C5 `recall:own` − reference contrast accuracy over the pairs both of whose twins
+link in every run of the contrast; the crossed random-effects model (`statistics.crossed_components`, Satterthwaite t,
+two-sided; one seed: a one-sample t); Holm over Q1a and Q1b; the two-way cluster bootstrap (2,000 resamples) as the check.
+Power: the step-1 P1 design (300 pairs, 3 seeds, per-pair SD ≈ 0.35) detects 0.04 at 80% power; the predicted effects are
+≥ 0.2.
+
+**Predictions** (written before any run):
+- `recall:own` far above 0.5 (≈ 0.75–0.9): bounded by the decode (twins are role-ambiguous by construction; step 1's held-out
+  all-atom recovery on role-ambiguous edges 0.91) and by the host's reading of a frame in context (`symbolic`).
+- `none` ≈ 0.5 (step 1). `recall:C5ut` ≈ 0.5 **by construction**: a twin and its partner have the *same* untyped store, so
+  their texts differ only in the name. `recall:C5tr` ≈ 0.5 likewise (the same bag of fillers plus offsets).
+- `symbolic` ≈ the host's in-context reading accuracy (≈ 0.85–1.0); `symbolic − recall:own` ≈ the decode's cost.
+- `definition` < `symbolic` (prose in held-out wording).
+- `roleless:own` ≈ 0.5; `wrong:own` ≈ 1 − `recall:own` (the host follows the text).
+- Hosts without a store: C0′ / C2 / P0 + `recall:C5` ≈ C5 + `recall:own` (the tool is host-agnostic text).
+
+**Decision rule Q1** (checked in this order):
+
+| Reading | Conditions |
+|---|---|
+| **(e) Uninformative** | `symbolic` ≤ 0.6 on the C5 host: the host cannot read roles from a gold frame in context, so neither contrast says anything about the store |
+| **(a) "The self-query reads the stored roles"** | Q1a > 0 **and** Q1b > 0 (Holm p < 0.05); labelled "text-driven" when also `wrong:own` < 0.5 (CI excludes 0.5) |
+| **(b) Partial** | exactly one of the two significant and positive |
+| **(c) No gain from recall** | neither significant (with `symbolic` > 0.6: the decoded text is not usable although a gold one is — compare decode accuracy) |
+| **(d) Recall hurts** | a significant negative contrast |
+
+**Refutation readings.**
+
+| # | Observation | Reading |
+|---|---|---|
+| Q-R1 | `recall:C5ut` or `recall:C5tr` contrast ≠ 0.5 (CI excludes 0.5) | impossible from the stores (the twins' stores are identical): the names carry signal (step 1's B4) or a bug |
+| Q-R2 | Q1 (a) but `wrong:own` ≥ 0.5 | the host does not follow the recalled text; the gain is not the stored roles |
+| Q-R3 | `recall:own` > `symbolic` (CI excludes 0) | decoded text beats gold text: inspect the confidences and the gold wording before reading Q1 |
+| Q-R4 | `roleless:own` > 0.5 (CI excludes 0.5) | role information leaks through the role-stripped line (order, decode errors) |
+| Q-R5 | Q1 (a) with the contrast on pairs with a decode error as high as on fully decoded pairs | the gain does not track the decoded content |
+| Q-R6 | C0′ / P0 + `recall:C5` ≈ C5 + `recall:own` | not a refutation: the tool works without the channel; the channel adds nothing to the self-query |
+
+**Secondaries (family SQ; Holm within each numbered item):**
+- **SQ1** `symbolic − recall:own`, `definition − symbolic`, `recall:own − roleless:own`, `recall:own − wrong:own`,
+  `recall:own − recall:C5tr`; the template split (the statement-overlapping first template against the paraphrase).
+- **SQ2** the tool on hosts without a store: C0′, C2, P0 + `recall:C5` against their `none`; C5 `recall:own` − C0′
+  `recall:C5` (does the channel add to the tool?); the C5ut host with `recall:own` and `recall:C5`.
+- **SQ3** `cloze` items; by relation pair; on fully decoded pairs only.
+- **SQ4** formats: `recall-all`, `recall-free`, `fields`, `noconf` (C5 host, seed 1 in the primary block; seeds 2–3 only if
+  they differ from `recall:own` by more than 0.05).
+- **SQ5** replications: SmolLM2-135M, Qwen3-0.6B / 1.7B (seeds 1–2; reference `roleless:own`), every arm against 0.5.
+- **SQ6** the other item sets: natural T4 (role contrast), WP-UB two-hop (chained recall against `none` and `symbolic`) and
+  reverse (lookup against `none`), new words (property accuracy against `none`, `symbolic`, `definition`; E9 dimension 3 and
+  E11 numbers as context), each with its decode accuracy. Predictions: chained recall ≫ `none` on two-hop (the latent two-hop
+  failure of Balesni et al.), bounded by hop 1 × hop 2; reverse lookup > `none`; new words `recall:own` ≈ `symbolic` ≫ `none`
+  (E9's channel-only new-word property accuracy is 0.25 against chance 0.2).
+
+## 5. F1 — faithfulness of decoding (channel route)
+
+**Terms and items.** The first 300 T5 v2 new words (`e9n-0000`–`e9n-0299`), inserted with their gold frames (the host knows
+them only through the channel), and their `property` items (one per templated relation; the gold is the relation's first
+filler; 2 templates × 5 candidates). Role specificity uses the 300 twin pairs (`choice` items).
+
+**Tested and decoded edges.** An edge e = (r, f) of a term is *tested* when the term has a property item of r whose gold
+candidate words f. It is *decoded* when the run's own recall (static store of the inserted frame, typed cleanup, primary
+unbinding) puts f among the top-m fillers of slot r (m = r's multiplicity); for the role-blind C5ut, when f is among the
+bundle readout's top K (K = the frame's degree). Each arm is scored on its own decoded edges; all tested edges are a
+secondary.
+
+**Interventions** (all terms at once per frame position: a term's row depends on its own frame only):
+- **remove e**: e's weight in the composer's weighted sum is set to 0, the other weights kept (decision 24: the bundle is
+  normalized, so this renormalizes the rest; attention is not recomputed);
+- **keep only e**: every other edge's weight set to 0.
+
+**Measures.** The margin of filler f on its item, `m(f) = mean over templates of [s(f) − mean_{c ≠ f} s(c)]` (summed
+log-probabilities; the null prompt is constant across interventions and cancels).
+- **Comprehensiveness gap** `g_e = mean_{j ≠ e} m(f | remove j) − m(f | remove e)`: the matched random-edge control is the
+  mean over every other single-edge removal of the same term (the expectation of removing a uniformly drawn other edge).
+  `g_e > 0`: removing the decoded edge lowers its filler's preference more than removing another edge.
+- **"Moves"**: `g_e > τ`, **τ = 0.05 nats** (bf16 replays of identical rows differ by ≤ 0.01 nats per score in E9 dimension 3,
+  so a difference of two scores by ≤ 0.02; τ is 2.5 times that). Sensitivity: τ ∈ {0, 0.02, 0.1}.
+- **Per-term comprehensiveness net share** `CF = mean over the term's decoded edges of [1(g_e > τ) − 1(g_e < −τ)]` ∈ [−1, 1]:
+  0 when removing a decoded edge is exchangeable with removing another edge. The share `mean 1(g_e > τ)` ("the share of
+  decoded edges whose ablation moves the model's preference for that filler, in the predicted direction, beyond the matched
+  random-edge ablation") is reported with its mirror `mean 1(g_e < −τ)`.
+- **Sufficiency** `m(f | keep e) − mean_{j ≠ e} m(f | keep j)`; per-term net share at τ.
+- **Specificity**: e is specific when `Δ_e = m(f | remove e) − m(f | full) < −τ` and every other relation's item of the term
+  moves less: `max_{r' ≠ r} |Δ_{r'}| < |Δ_e|` (Δ_{r'}: the change of the item's gold margin under the removal of e); the
+  share of decoded edges that are specific.
+- **Role specificity** (twins): remove twin A's (r1, X); X is A's gold under r1 and the distractor under r2. `RS =
+  Δ_{r2}(X) − Δ_{r1}(X)` > 0 when X drops more under its own role. Per pair: the net share over its four removals (A r1,
+  A r2, B r1, B r2) at τ, and the mean RS. A role-blind reader scores 0 in expectation: the twin design balances the two
+  prompts' sensitivities across A and B. The swap of the twins' frames (step 1's `swap`) is recomputed with the same scorer.
+
+**Statistics.** Per-term CF, terms × seeds crossed model (terms with ≥ 1 decoded tested edge in every run of the contrast);
+Holm over F1a and F1b; the two-way bootstrap as the check. Planning: per-term SD of CF ≈ 0.5 gives a standard error ≈ 0.03 with
+300 terms and 3 seeds (MDE ≈ 0.08 before the seed component).
+
+**Predictions:**
+- **F1a:** CF > 0, modest (≈ 0.1–0.4): the channel moves new-word property items (E9 dimension 3: C5 property 0.249 against
+  `none` 0.195; edits of seen terms move `log p(new) − log p(old)` by +0.37 nats), so filler content is used.
+- **F1b:** ≈ 0: the channel route reads filler content role-blindly (step 1), so binding should not change filler-level
+  faithfulness.
+- Sufficiency > 0; specificity moderate; **role specificity ≈ 0 for C5** (no role readout through the channel; step 1's
+  `own − swap` ≈ 0) and for C5ut.
+
+**Decision rule F1.**
+- **F1a (a) "decoded edges are causally used"**: C5 CF > 0 (Holm p < 0.05); **(b) "not shown"**: CI includes 0; **(c)
+  "anti-faithful"**: significant and negative.
+- **F1b**: "binding changes edge-level faithfulness" by the sign of a significant C5 − C5ut; else "no difference at the
+  filler level".
+- **Joint reading with Q1** (stated in advance): F1a (a) with C5 role specificity ≈ 0 and Q1 (a) means *the decoded fillers
+  explain the channel route, the decoded roles do not; the roles become behaviourally effective only through the recall
+  route*. Then the explanation offered by decoding must be scoped: its role labels are inspection of the store, validated
+  as causes only when read back through the tool.
+
+**Refutation readings.**
+
+| # | Observation | Reading |
+|---|---|---|
+| F-R1 | F1a (b) or (c) although the channel helps new-word property items (E9 dimension 3) | the store's effect is not carried by its edges as decoded (distributed or nonlinear use): decoded edges are not faithful explanations |
+| F-R2 | undecoded tested edges as comprehensive as decoded ones | decoding and causal use dissociate: the probe does not track use |
+| F-R3 | specificity near 0 with F1a (a) | the use is not edge-specific (a holistic salience effect) |
+| F-R4 | C5ut role specificity ≠ 0 (CI excludes 0) | impossible by the twin design for a role-blind store: a bug |
+| F-R5 | C5 role specificity > 0 (CI excludes 0) while step 1's twin contrast ≈ 0.5 | the channel reads roles weakly at the margin level but not enough to flip choices; report the effect size |
+
+**Secondaries (family SF):** sufficiency, specificity, τ sensitivity, mean gap in nats, by decode confidence (tercile of the
+cleanup cosine), by relation, undecoded edges, all tested edges; role specificity C5, C5ut, C5 − C5ut; `own − swap`; the
+same on C5rf, C5tr, C5sh; SmolLM2-135M and Qwen3 C5 (seeds 1–2); the readout arms once trained (the readout reads the role
+explicitly — its role specificity is predicted > 0).
+
+## 6. Statistics common to every family
+
+Contrasts are paired by unit (twin pair, term, item) over the units present in every run of the contrast; P0 has one run, which
+stands for every seed of its comparison (its `recall:C5@s` is the seed-s value). Two-sided tests; Holm within each primary
+family and within each numbered secondary; all intervals 95%. Secondary families are reported as such and never promoted.
+
+## 7. Runs and order
+
+Evaluation only, on finished `final.pt` checkpoints of the main checkout (`experiments/e9-retrofit/runs/…`). Per run: one
+phase-A job per item set (GPU lane; `RUN/self-query-<items>/`) and, for composing runs, one F1 job (GPU lane;
+`RUN/self-query-faithfulness/`); one report per stage and block (CPU lane; `experiments/e12-self-query/report/<stage>-<tag>/`,
+never an E9 `report/<stage>`, amendment 12.4). Exact commands and GPU-h are in `execution.md` (E12) after the pilot.
+
+## 8. Exclusions
+
+- A twin pair counts only if both twins link to their new entries in every run of the contrast; natural anchors, WP-UB
+  anchors and new words whose surface does not link are excluded (counts reported).
+- F1 counts a term only if it has ≥ 1 decoded tested edge.
+- A condition that cannot be built for an item (no definition writer for the track; a reverse item has no definition; a
+  two-hop item whose gold path cannot be resolved) is not scored for that item (counts reported).
+
+## 9. What this does not test
+
+Generation (every phase-A item is forced choice or likelihood); whether the model would *choose* to call the tool (3a);
+training on tool traces (3b); self-critique (3c); T1c (licensed: no item files; recall texts would hold licensed names);
+WordNet and T1 (no role items).
+
+## 10. Designs pre-registered now, run later
+
+### 10.1 — 3a: agentic self-query
+
+**Question.** Can a base LM decide when to call the recall tool, which call to make (whole frame, one role, a chain, a
+reverse lookup), and use the result, with only few-shot ReAct-style prompting?
+
+**Design.** Hosts: the Qwen3-0.6B-Base and Qwen3-1.7B-Base C5 runs (T5, LoRA, seeds 1–2), the tools reading the run's own
+store. Prompt: an instruction line and three fixed worked demonstrations on *training* terms (one role query, one two-hop
+chain of two calls, one reverse lookup), in the format `Question: … / Thought: … / Action: recall[<term>] |
+recall[<term>, <relation words>] | lookup[<relation words>, <filler>] / Observation: <the phase-A recall text> / … /
+Answer: …`, then the test question. Greedy decoding; the harness stops at `Observation:` and inserts the tool's result; at
+most 3 calls and 48 new tokens per step. The answer is read as **forced choice** — the item's candidates scored after the
+agent's trace and `Answer:` — and also by exact match of the generated answer.
+
+**Items.** Twins (questions per relation, both twins), WP-UB two-hop and reverse (T5), new words (property).
+
+**Measures.** Call-format success (the first action parses as a tool call naming a known term or filler), call relevance
+(the term, and the relation of a role call, are the item's), share of episodes that answer, answer accuracy (twins:
+contrast accuracy), against the same questions with no tool (few-shot direct answers) and against the fixed pipeline
+(phase A's recall in the same question format).
+
+**Endpoint (when run).** A1: twin contrast accuracy, agentic − no tool (Qwen3-1.7B, seeds 1–2, pairs × seeds); A2: agentic −
+fixed pipeline (the cost of choosing the calls); Holm over A1 and A2. Predictions: A1 > 0 only if call-format success ≥ 0.8;
+A2 < 0. **Feasibility pilot now** (§15): about 50 questions on Qwen3-0.6B (1.7B if it fits ≤ 4 GB in bf16).
+
+### 10.2 — 3b: learning from tool-using traces (outline; concrete design and cost in §12)
+
+LoRA arms trained on traces generated by the fixed pipeline on *training* terms: one arm learns to call the tool and use it,
+one learns the answers without the tool (internalization), with a matched-token control; the twins are rerun **without the
+tool**: does practice with recalled roles teach the model to read roles from the channel?
+
+### 10.3 — 3c: calibrated self-critique (outline; concrete design and cost in §13)
+
+The model compares its decoded beliefs (recall with calibrated confidences) with its behaviour (its answer without the tool)
+and with held-out data, flags or revises disagreements, and is scored for calibration and selective accuracy, with a
+**null-world control**: a store of false structure (shuffled or corrupted frames) that the loop should flag rather than
+accept (E10 accepted false structure without retracting it).
+
+## 11. Smoke tests and pilots
+
+The labelled pilots of §15 run after this document's commit, under the GPU limits of the shared machine (≤ 4 GB, ≤ 5 min per
+job; CPU preferred), on T5 SmolLM2-360M seed 1 only (Q1: C5, C5ut, C0′, P0 + the C5 store; F1: C5, C5ut), and the 3a
+feasibility pilot on Qwen3. They report timing, pipeline checks and **PILOT** numbers; nothing in §§1–10 changes because of
+them, and they never enter an endpoint.
+
+## 12. 3b — concrete design and cost (step 5; added before any 3b run)
+
+*(to be added)*
+
+## 13. 3c — concrete design and cost (step 5; added before any 3c run)
+
+*(to be added)*
+
+## 14. Open decisions for the author
+
+| # | Decision | Default |
+|---|---|---|
+| SQ-1 | Q1's primary context is the whole-frame, slot-aware recall in statement wording with confidences | as registered |
+| SQ-2 | The role-blind primary reference is the C5ut store's bundle readout (decision 62's spec); `roleless:own` (format-matched) is a secondary, and the reference on hosts without a C5ut run | as registered |
+| SQ-3 | PMI uses the context-free null; the twin contrast needs none | as registered |
+| SQ-4 | WP-UB items capped at 150 anchors per subset and new words at the first 300 (cost) | as registered |
+| SQ-5 | F1's τ = 0.05 nats; the matched control is the mean over every other single-edge removal | as registered |
+
+## 15. Pilots (PILOT; not endpoints)
+
+*(added after this commit)*
+
+## 16. Amendments
+
+*(none yet)*

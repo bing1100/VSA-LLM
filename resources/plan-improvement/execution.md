@@ -1150,3 +1150,34 @@ for spec in "U5 hrr" "U5ut untyped" "U5tr translation" "U5u unitary_hrr"; do
 done
 ```
 | 62 | **Explainability by decomposition and self-query** (author, 2026-10-08, after binding step 1) | Step 1 showed a stored-but-unread gap. With binding, T5 SmolLM2-360M stores roles recoverably (held-out filler recovery 0.96, role-ambiguous edges 0.91; without binding 0.14 and 0.03), but no model tells role-swap twins apart (C5 0.494, C5ut 0.498, C5tr 0.492, P0 0.492; chance 0.5). The author's thesis: VSA decomposition is inspection of the vector the model computes with, not narration, so it can be checked and edited, and gives deeper explainability than reasoning traces, provided decoding is validated by intervention. **Build now:** (1) *recall tool, phase A*: decode a term's stored vector (unbind, clean up) into text and put it in context, run as a fixed pipeline; tests are role-swap twins, chained two-hop, reverse lookup by scanning the store, and new-word properties; conditions are the C5 store, the C5ut / C5tr stores as role-blind controls, a symbolic frame lookup as upper bound, no recall, and definition text in context (E11-style); hosts T5 SmolLM2 (3 seeds), Qwen3 (seeds 1–2) and T4 (role-ambiguous natural items), later the readout arms. (2) *faithfulness of decoding*: for each decoded edge, ablate or swap it in the store and measure whether the matching prediction moves, and only that one (comprehensiveness, sufficiency, specificity), on C5 and the readout arms, reusing the E5.1 faithfulness code where possible. **Pre-register now, run later:** (3a) agentic self-query: Qwen3 decides when to call recall, chained recall or reverse, via few-shot ReAct-style prompts, with a small feasibility pilot now; (3b) learning from tool-using reasoning traces with LoRA, one arm calling the tool and one answering without it (internalization), with the twins rerun without the tool; (3c) a calibrated self-critique loop that compares decoded beliefs with behaviour and with held-out data, with a null-world control (E10 accepted false structure without retracting it). A literature check on introspection, self-query and VSA decoding goes into the pre-registration. Placement: initial runs on existing checkpoints right after binding step 1, the rest with or after binding step 2 |
+
+## E12 — explainability by decomposition and self-query (decision 62; WP-SQ, 2026-10-08)
+
+Pre-registration: `experiments/e12-self-query/preregistration.md`, committed before any evaluation of these measures on a
+checkpoint; the pilots (§15, labelled PILOT, T5 SmolLM2-360M seed 1 only) and amendments (§16) after it. Binding step 1
+showed the roles **stored but not read** (T5 360M: held-out filler recovery 0.96 for C5, 0.14 for C5ut; twin contrast
+accuracy 0.494 / 0.498, chance 0.5). E12 tests the author's thesis that decomposing the store is *inspection* of the vector
+the model computes with (not narration), provided decoding is validated by intervention, and that a self-query tool lets
+the model use its store through reading, without learning unbinding in its weights.
+
+| | What | Endpoint (T5, SmolLM2-360M, seeds 1–3) |
+|---|---|---|
+| **Q1** (recall tool, phase A) | the twin's recalled frame (own store: static bundle, primary unbinding, typed cleanup, statement wording with confidences) in context before the question | twin contrast accuracy (`choice`), C5 host: `recall:own − none` and `recall:own − recall:C5ut`, Holm |
+| **F1** (faithfulness of decoding, channel route) | remove each decoded edge from the store (decision 24's weight-zero semantics) against the mean of every other single-edge removal | per-new-word comprehensiveness net share at τ = 0.05 nats: C5 against 0 and C5 − C5ut, Holm |
+
+Conditions of phase A: `none`, `recall:own` / `recall:<arm>` (C5ut, C5tr; C5 for hosts without a store; P0 reads the C5
+stores of seeds 1–3), `roleless`, `wrong` (the partner twin's recall), `symbolic` (gold frame, the upper bound),
+`definition` (E11 prose). Item sets: role-swap twins (primary), T4 natural role items, WP-UB two-hop (chained recall) and
+reverse (reverse lookup; ≤ 150 anchors per subset), v2 new words (first 300). Every behavioural number comes with the decode
+accuracy of what was put in context. F1 also reads sufficiency, specificity and the twins' role specificity. 3a (agentic
+self-query, Qwen3 few-shot ReAct; feasibility pilot now), 3b (LoRA on tool-using traces; internalization) and 3c
+(calibrated self-critique with a null-world control) are pre-registered designs, run later.
+
+**Code** (tests: `tests/test_self_query.py`, `tests/test_e12_self_query.py`): `vsa_embed.self_query` (the recall tool),
+`vsa_embed.experiments.e12_self_query` (phase A: `evaluate`, `recall`, `queue`), `e12_faithfulness` (F1: `evaluate`, `queue`),
+`e12_report` (Q1, F1, secondaries). **Outputs:** `RUN/self-query-<items>/`, `RUN/self-query-faithfulness/`, stage reports in
+`experiments/e12-self-query/report/<stage>-<tag>/` (never an E9 `report/<stage>`).
+
+**Placement** (author): existing-checkpoint jobs at 50 (→ 50.7), their reports at 51 (→ 50.75, CPU lane); natural tracks
+once trained at 54 (→ 54.448); readout-arm jobs at 54 (→ 54.4927, after the step-2 evaluations). Exact commands and GPU-h
+follow the pilot (below).
