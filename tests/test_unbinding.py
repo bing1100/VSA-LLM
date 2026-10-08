@@ -224,3 +224,89 @@ def test_raw_bundle_is_the_unnormalized_composition() -> None:
 
 def test_default_ridge_is_documented() -> None:
     assert UNBIND_RIDGE == pytest.approx(1e-2)
+
+
+# -- decision 61: bounded spectral circulant, block-diagonal unitary, slotted layout ----------------------------------------
+
+def test_spectral_bounded_starts_unitary_and_keeps_its_condition_number_below_four() -> None:
+    from vsa_embed.relations import SpectralBoundedRelation
+    transform = SpectralBoundedRelation(3, 64)
+    torch.testing.assert_close(transform.magnitudes(), torch.ones_like(transform.magnitudes()))
+    with torch.no_grad():
+        transform.magnitude_logits.copy_(20 * torch.randn_like(transform.magnitude_logits))     # push to the bounds
+    magnitudes = transform.magnitudes().detach()
+    assert magnitudes.min() >= 0.5 and magnitudes.max() <= 2.0
+    assert float((magnitudes.max(-1).values / magnitudes.min(-1).values).max()) <= 4.0 + 1e-5
+    role = transform.role_vectors()
+    torch.testing.assert_close(torch.fft.rfft(role).abs(), magnitudes, atol=1e-4, rtol=1e-4)      # real roles (conjugate symmetry)
+    ids, x = torch.tensor([0, 1, 2]), torch.randn(3, 64)
+    bound = transform(ids, x)
+    torch.testing.assert_close(transform.unbind(ids, bound, method="exact"), x, atol=1e-4, rtol=1e-4)
+    adjoint = transform.unbind(ids, bound)                                              # primary: the adjoint
+    torch.testing.assert_close(adjoint, transform.adjoint(ids, bound))
+    assert F.cosine_similarity(adjoint, x, dim=-1).min() > 0.5
+    (transform(ids, x).square().sum()).backward()
+    assert transform.phases.grad is not None and transform.magnitude_logits.grad is not None
+    assert readout_method(transform) == "adjoint"
+
+
+def test_block_unitary_is_orthogonal_invertible_and_non_commutative() -> None:
+    from vsa_embed.relations import BlockUnitaryRelation
+    transform = BlockUnitaryRelation(3, 64, block=16)
+    blocks = transform.matrices()
+    eye = torch.eye(16).expand_as(blocks)
+    torch.testing.assert_close(blocks @ blocks.transpose(-1, -2), eye, atol=1e-5, rtol=1e-5)
+    ids, x = torch.tensor([0, 2, 1]), torch.randn(3, 64)
+    torch.testing.assert_close(transform(ids, x).norm(dim=-1), x.norm(dim=-1), atol=1e-4, rtol=1e-4)
+    torch.testing.assert_close(transform.unbind(ids, transform(ids, x)), x, atol=1e-4, rtol=1e-4)
+    one, two = torch.tensor([0]), torch.tensor([1])
+    path = transform(two, transform(one, x[:1]))                                     # r2 · r1 · f
+    reversed_path = transform(one, transform(two, x[:1]))                            # r1 · r2 · f
+    assert not torch.allclose(path, reversed_path, atol=1e-3)                        # order is kept
+    circulant = create_composition_operator("unitary_hrr", 3, 64)
+    torch.testing.assert_close(circulant(two, circulant(one, x[:1])), circulant(one, circulant(two, x[:1])), atol=1e-5, rtol=1e-5)
+    assert (BlockUnitaryRelation(2, 256).block, BlockUnitaryRelation(2, 256).blocks) == (16, 16)
+    assert BlockUnitaryRelation(2, 60, block=16).block == 15 and BlockUnitaryRelation(2, 31).block == 31   # prime: one block
+    with pytest.raises(ValueError):
+        BlockUnitaryRelation(2, 60, block=1)
+
+
+def test_balanced_slots_are_greedy_and_recorded() -> None:
+    from vsa_embed.relations import balanced_slots, slot_bounds
+    assert balanced_slots([10, 1, 7, 7, 2], 3) == [0, 2, 1, 2, 1]                    # 10 → s0, 7 → s1, 7 → s2, 2 → s1, 1 → s2
+    assert slot_bounds(256, 3) == [(0, 86), (86, 171), (171, 256)]
+    schedule = FrameSchedule.from_frames([[(0, 1), (0, 2), (1, 3)], [(0, 4), (2, 5)], [(3, 6), (2, 1)]])
+    composer = FrameComposer(schedule, 8, 4, 30, operator="slotted_unitary", slots=3)
+    assert composer.transform.slot_of.tolist() == [0, 2, 1, 2] and composer.transform.slot_load.tolist() == [3, 2, 2]
+    masks = composer.slot_masks()
+    assert masks.shape == (3, 30) and masks.sum(-1).tolist() == [10, 10, 10] and composer.slot_of().tolist() == [0, 2, 1, 2]
+    assert FrameComposer(schedule, 8, 4, 30, operator="hrr").slot_masks() is None
+
+
+def test_slotted_bundle_concatenates_slots_and_unbinds_within_them() -> None:
+    schedule = FrameSchedule.from_frames([[(0, 1), (1, 2), (2, 3), (3, 4)]])
+    composer = FrameComposer(schedule, 6, 4, 33, operator="slotted_unitary", slots=3)
+    bound = composer.bound_edges(torch.arange(4))
+    slots = composer.slot_of()[schedule.relations]
+    masks = composer.slot_masks()
+    for edge in range(4):
+        assert torch.all(bound[edge][~masks[slots[edge]]] == 0)                     # nothing written outside the slot
+    summed, *_ = composer.raw_bundle(torch.tensor([0]), uniform=True)
+    for g in range(3):
+        alone = bound[slots == g].sum(0)
+        torch.testing.assert_close(summed[0][masks[g]], alone[masks[g]])           # each slot holds only its group
+    single = composer.unbind(torch.tensor([0]), bound[[0]])
+    expected = composer.atomic_vectors()[1] * masks[slots[0]]
+    torch.testing.assert_close(single[0], expected, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.parametrize("family", ["additive", "hrr", "hrr_identity", "map", "diagonal", "low_rank", "low_rank_identity",
+                                    "low_rank_tied", "orthogonal", "unitary_hrr", "translation", "spectral_bounded", "block_unitary"])
+def test_every_family_moves_and_casts_like_a_module(family: str) -> None:
+    transform = create_composition_operator(family, 3, 32, rank=4)
+    transform.to("cpu").float()                                     # `nn.Module._apply` must not be shadowed
+    ids, x = torch.tensor([0, 2]), torch.randn(2, 32)
+    assert transform(ids, x).shape == (2, 32)
+    composer = FrameComposer(FrameSchedule.from_frames([[(0, 1), (1, 2)], [(2, 3)]]), 4, 3, 33, operator="slotted_unitary")
+    composer.to("cpu").float()
+    assert composer.compose(torch.tensor([0, 1])).shape == (2, 33)

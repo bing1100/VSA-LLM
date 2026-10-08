@@ -14,6 +14,9 @@ entry of `unbind_methods` is the family's primary method:
 | `low_rank`, `low_rank_identity`, `low_rank_tied` | `woodbury` (the exact inverse of `I + L R`) | — |
 | `translation` | `subtract` (`x = v − t_r`, exact for one pair) | — |
 | `additive` (the composer's `untyped`) | none: `unbind()` raises `UnbindingError` | `bundle` (the bundle readout: returns the vector, ignoring the role) |
+| `spectral_bounded` (decision 61a: learned phases, magnitudes in [0.5, 2]) | `adjoint` | `exact` (division; condition number ≤ 4) |
+| `block_unitary` (decision 61b: block-diagonal rotations, non-commutative) | `transpose` (exact) | — |
+| `slotted_unitary` (decision 61c: unitary roles within load-balanced slots; built by `FrameComposer(slots=…)`) | `conjugate` within the relation's slot | — |
 
 Regularized divisions use `λ = ridge · mean power` of the relation's spectrum or diagonal (`UNBIND_RIDGE`), so a role
 whose spectrum has a near-zero bin does not blow up the noise of a bundle.
@@ -23,6 +26,7 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from typing import Sequence
 
 import torch
 from torch import Tensor, nn
@@ -449,6 +453,191 @@ class UnitaryHRRRelation(RelationTransform):
         return self.adjoint(relation_ids, vectors)
 
 
+class SpectralBoundedRelation(RelationTransform):
+    """Circulant binding with learned phases **and** learned magnitudes held in [0.5, 2] (decision 61a): between the
+    learned unitary family (|λ| = 1) and free learned HRR (unbounded spectrum). Each rfft bin has magnitude
+    `0.5 · 4^σ(s)` (1 at s = 0, so the family starts unitary) and a learned phase; the DC and (even dimension) Nyquist bins
+    are real with fixed random signs, so the role is a real vector (conjugate symmetry). The spectrum's condition number
+    is at most 4, so exact division is safe: unbinding is the adjoint (correlation; primary) or `exact` division."""
+
+    family = "spectral_bounded"
+    unbind_methods = ("adjoint", "exact")
+    MIN_MAGNITUDE, MAX_MAGNITUDE = 0.5, 2.0
+
+    def __init__(self, relation_count: int, dimension: int) -> None:
+        super().__init__(relation_count, dimension)
+        bins = dimension // 2 + 1
+        real_bins = 2 if dimension % 2 == 0 else 1
+        self.phases = nn.Parameter((torch.rand(relation_count, bins - real_bins) * 2 - 1) * math.pi)
+        self.magnitude_logits = nn.Parameter(torch.zeros(relation_count, bins))
+        self.register_buffer("edge_signs", torch.where(torch.rand(relation_count, real_bins) < 0.5, -1.0, 1.0))
+
+    def magnitudes(self) -> Tensor:
+        ratio = self.MAX_MAGNITUDE / self.MIN_MAGNITUDE
+        return self.MIN_MAGNITUDE * ratio ** torch.sigmoid(self.magnitude_logits)
+
+    def spectra(self) -> Tensor:
+        """`(relations, d // 2 + 1)` complex spectra."""
+        interior = torch.polar(torch.ones_like(self.phases), self.phases)
+        parts = [self.edge_signs[:, :1].to(interior.dtype), interior]
+        if self.edge_signs.shape[1] > 1:
+            parts.append(self.edge_signs[:, 1:].to(interior.dtype))
+        return self.magnitudes().to(interior.dtype) * torch.cat(parts, -1)
+
+    def role_vectors(self) -> Tensor:
+        return torch.fft.irfft(self.spectra(), n=self.dimension)
+
+    def _operate(self, relation_ids: Tensor, vectors: Tensor, transform: str) -> Tensor:
+        self._validate(relation_ids, vectors)
+        spectrum = self.spectra()[relation_ids]
+        if transform == "conjugate":
+            spectrum = spectrum.conj()
+        elif transform == "inverse":
+            spectrum = spectrum.conj() / (spectrum.real.square() + spectrum.imag.square())
+        x = vectors if vectors.dtype == torch.float64 else vectors.float()      # FFTs in float32 (bf16 has none) or float64
+        transformed = torch.fft.rfft(x)
+        out = torch.fft.irfft(transformed * spectrum.to(transformed.dtype), n=self.dimension)
+        return out.to(vectors.dtype)
+
+    def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self._operate(relation_ids, vectors, "bind")
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self._operate(relation_ids, vectors, "conjugate")
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        method = self._unbind_method(method)
+        return self._operate(relation_ids, vectors, "conjugate" if method == "adjoint" else "inverse")
+
+
+class BlockUnitaryRelation(RelationTransform):
+    """Block-diagonal orthogonal binding (decision 61b; generalized-HRR style): `d / b` blocks of `b × b` rotations per
+    relation, each the matrix exponential of a learned skew-symmetric matrix (so every block stays exactly orthogonal).
+    Unlike circulants it does not commute — `T_{r2} T_{r1} x ≠ T_{r1} T_{r2} x` — so a path stored in one vector keeps its
+    order. Unbinding is the transpose (exact). Skew entries start `N(0, init_scale²)` (a random rotation per block)."""
+
+    family = "block_unitary"
+    unbind_methods = ("transpose",)
+
+    def __init__(self, relation_count: int, dimension: int, *, block: int = 16, init_scale: float = 1.0) -> None:
+        super().__init__(relation_count, dimension)
+        if block < 2:
+            raise ValueError("block_unitary needs a block size ≥ 2")
+        # The largest divisor of the dimension not above `block` (d = 256: 16 blocks of 16); one full block when no
+        # divisor in [2, block] exists (a prime dimension).
+        block = next((b for b in range(min(block, dimension), 1, -1) if dimension % b == 0), dimension)
+        self.block, self.blocks = int(block), dimension // block
+        rows, cols = torch.triu_indices(block, block, 1)
+        self.register_buffer("upper_rows", rows, persistent=False)
+        self.register_buffer("upper_cols", cols, persistent=False)
+        self.skew = nn.Parameter(init_scale * torch.randn(relation_count, self.blocks, rows.numel()))
+
+    def matrices(self, relation_ids: Tensor | None = None) -> Tensor:
+        """`(relations, blocks, b, b)` orthogonal blocks (of `relation_ids` only, if given)."""
+        skew = self.skew if relation_ids is None else self.skew[relation_ids]
+        generator = skew.new_zeros(*skew.shape[:-1], self.block, self.block)
+        generator[..., self.upper_rows, self.upper_cols] = skew
+        return torch.linalg.matrix_exp(generator - generator.transpose(-1, -2))
+
+    def _operate(self, relation_ids: Tensor, vectors: Tensor, transpose: bool) -> Tensor:
+        self._validate(relation_ids, vectors)
+        unique, inverse = torch.unique(relation_ids.reshape(-1), return_inverse=True)
+        blocks = self.matrices(unique)[inverse].reshape(*relation_ids.shape, self.blocks, self.block, self.block)
+        dtype = torch.float64 if vectors.dtype == torch.float64 else torch.float32
+        x = vectors.to(dtype).reshape(*vectors.shape[:-1], self.blocks, self.block)
+        pattern = "...kji,...kj->...ki" if transpose else "...kij,...kj->...ki"
+        return torch.einsum(pattern, blocks.to(dtype), x).reshape(vectors.shape).to(vectors.dtype)
+
+    def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self._operate(relation_ids, vectors, False)
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self._operate(relation_ids, vectors, True)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        self._unbind_method(method)
+        return self._operate(relation_ids, vectors, True)
+
+
+def balanced_slots(edge_counts: Sequence[int], groups: int) -> list[int]:
+    """Greedy load balancing (decision 61c): relations in decreasing edge count (ties: lower id first), each assigned to
+    the slot with the fewest edges so far (ties: the lower slot). Returns the slot of every relation."""
+    if groups < 1:
+        raise ValueError("groups must be positive")
+    load = [0] * groups
+    slot_of = [0] * len(edge_counts)
+    for relation in sorted(range(len(edge_counts)), key=lambda r: (-int(edge_counts[r]), r)):
+        slot = min(range(groups), key=lambda g: (load[g], g))
+        slot_of[relation] = slot
+        load[slot] += int(edge_counts[relation])
+    return slot_of
+
+
+def slot_bounds(dimension: int, groups: int) -> list[tuple[int, int]]:
+    """Contiguous coordinate ranges of `groups` near-equal slots covering `dimension` (larger slots first)."""
+    sizes = [dimension // groups + (1 if g < dimension % groups else 0) for g in range(groups)]
+    if min(sizes) < 2:
+        raise ValueError("slots need at least 2 dimensions each")
+    starts = [sum(sizes[:g]) for g in range(groups)]
+    return [(s, s + n) for s, n in zip(starts, sizes)]
+
+
+class SlottedUnitaryRelation(RelationTransform):
+    """The slotted layout (decision 61c): the relations are split into `groups` slots; relation r binds its filler's
+    coordinates of slot g(r) with a learned unitary role of that slot's size (`UnitaryHRRRelation`) and writes nothing
+    elsewhere, so a frame bundle is the concatenation of per-slot bundles (no interference across slots) at the total
+    dimension. Unbinding (the conjugate, exact) reads the relation's slot only; cleanup happens within that slot
+    (`slot_masks`). `slot_of` and the per-slot edge load are recorded (`slot_load`)."""
+
+    family = "slotted_unitary"
+    unbind_methods = ("conjugate",)
+
+    def __init__(self, relation_count: int, dimension: int, *, slot_of: Sequence[int], groups: int = 3,
+                 load: Sequence[int] | None = None) -> None:
+        super().__init__(relation_count, dimension)
+        if len(slot_of) != relation_count or min(slot_of) < 0 or max(slot_of) >= groups:
+            raise ValueError("slot_of needs one slot in [0, groups) per relation")
+        self.groups = int(groups)
+        self.bounds = slot_bounds(dimension, groups)
+        self.register_buffer("slot_of", torch.as_tensor(list(slot_of), dtype=torch.long))
+        self.register_buffer("slot_load", torch.as_tensor(list(load) if load is not None else [0] * groups, dtype=torch.long))
+        self.slots = nn.ModuleList([UnitaryHRRRelation(relation_count, hi - lo) for lo, hi in self.bounds])
+
+    def slot_masks(self) -> Tensor:
+        """`(groups, dimension)` bool: the coordinates of each slot."""
+        mask = torch.zeros(self.groups, self.dimension, dtype=torch.bool, device=self.slot_of.device)
+        for g, (lo, hi) in enumerate(self.bounds):
+            mask[g, lo:hi] = True
+        return mask
+
+    def _operate(self, relation_ids: Tensor, vectors: Tensor, inverse: bool) -> Tensor:
+        self._validate(relation_ids, vectors)
+        ids = relation_ids.reshape(-1)
+        flat = vectors.reshape(-1, self.dimension)
+        out = torch.zeros_like(flat)
+        slots = self.slot_of[ids]
+        for g, (lo, hi) in enumerate(self.bounds):
+            rows = (slots == g).nonzero(as_tuple=True)[0]
+            if rows.numel():
+                part = flat[rows, lo:hi]
+                transform = self.slots[g]
+                out[rows, lo:hi] = (transform.unbind(ids[rows], part) if inverse else transform(ids[rows], part)).to(out.dtype)
+        return out.reshape(vectors.shape)
+
+    def forward(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self._operate(relation_ids, vectors, False)
+
+    def adjoint(self, relation_ids: Tensor, vectors: Tensor) -> Tensor:
+        return self._operate(relation_ids, vectors, True)
+
+    def unbind(self, relation_ids: Tensor, vectors: Tensor, *, method: str | None = None,
+               ridge: float = UNBIND_RIDGE) -> Tensor:
+        self._unbind_method(method)
+        return self._operate(relation_ids, vectors, True)
+
+
 def create_relation_transform(
     family: str, relation_count: int, dimension: int, *, rank: int = 8
 ) -> RelationTransform:
@@ -463,6 +652,8 @@ def create_relation_transform(
         "low_rank_tied": lambda: TiedLowRankRelation(relation_count, dimension, rank),
         "orthogonal": lambda: OrthogonalRelation(relation_count, dimension),
         "unitary_hrr": lambda: UnitaryHRRRelation(relation_count, dimension),
+        "spectral_bounded": lambda: SpectralBoundedRelation(relation_count, dimension),
+        "block_unitary": lambda: BlockUnitaryRelation(relation_count, dimension),
     }
     try:
         return factories[family]()

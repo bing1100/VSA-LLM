@@ -346,3 +346,95 @@ block-diagonal orthogonal, non-commutative) and a slotted layout (three load-bal
 unitary within each) as readout arms of step 2. Step 1's design, endpoints and runs are unchanged. Steps 1 and 3 read these
 arms' checkpoints once they are trained (their probe and item jobs are queued with the step-2 chain, after their
 training); their pre-registration, with decision 61's stated predictions, is §13.
+
+### 12.3 Steps 2 and 3 (2026-10-08)
+
+§13 (step 2) is committed with the step-2 code before any step-2 run or GPU smoke; §14 (step 3) likewise before step 3's
+runs. Neither changes §§1–10.
+
+## 13. Step 2 — the unbinding readout arm (pre-registered 2026-10-08, before any step-2 run)
+
+This section is committed with the step-2 code, before any step-2 training run and before its GPU smoke. It folds in
+decision 61 (two operator families and a slotted layout) and states decision 61's predictions.
+
+**Architecture** (`src/vsa_embed/readout.py`, `channel.readout`; alternatives recorded, not run):
+
+| Piece | Choice | Recorded alternative |
+|---|---|---|
+| concept | the most recent linked span injected at p with p ≤ t < p + 32 (prefix-causal) | attention over the preceding linked concepts in the window |
+| query | a linear map of the host's hidden state at the input of decoder layer L = round(depth / 3) (SmolLM2-360M: 11 of 32; 135M: 10 of 30) → softmax over the R relations plus "no query" | the final layer (needs a second forward) |
+| store | the concept's static frame bundle `Σ_e T_{r_e}(a_e)` (every edge weight 1) | the composer's attention weights (`source: attentive`); the occurrence's context-weighted vector would let attention hide the queried edge |
+| unbinding | the operator's primary method (§2; spectral_bounded: adjoint; block_unitary: transpose; slotted: conjugate within the slot) | exact division where defined |
+| cleanup | one soft modern-Hopfield step over the shared atomic dictionary, inverse temperature learned (initial 16), restricted to the atomics observed under the relation (slotted: within its slot) | several steps; no type constraint |
+| injection | `Σ_r p_r f_r` ("no query" adds 0) → projector (256 → width) → gate `σ(w·[h; P f] + b)`, w = 0 and b = 0 at initialization (C5's gate bias) → added to the residual stream at layer L | — |
+| training | the LM loss only, with C5's recipe (full fine-tuning; host lr 3e-5; channel and readout lr 1e-3; 50M tokens; seeds 1–3). The readout's initialization draws from its own generator, so every other initialization equals C5's of the same seed | an auxiliary supervised role / filler loss: at most a secondary variant, not run (it risks training a copying device) |
+
+**Arms** (T5, SmolLM2-360M × seeds 1–3; `e9_plan.READOUT_ARMS`):
+
+| Arm | Operator of the channel and the readout | Unbinding |
+|---|---|---|
+| U5 | learned HRR (C5's) | correlation |
+| U5u | learned unitary HRR (trainable phases) | conjugate (exact) |
+| U5sb | bounded spectral circulant: learned phases, magnitudes `0.5 · 4^σ(s)` ∈ [0.5, 2] (condition number ≤ 4; decision 61a) | adjoint; `exact` read by the probes |
+| U5bu | block-diagonal unitary: 16 blocks of 16 × 16 rotations, `exp` of learned skew-symmetric matrices; non-commutative (decision 61b) | transpose (exact) |
+| U5sl | slotted unitary: the relations split into 3 groups, greedily load-balanced by their T5 edge counts (loads 10,293 / 10,438 / 10,462 edges = 33.0 / 33.5 / 33.5%), slots of 86 / 85 / 85 dimensions (total 256), learned unitary roles within each slot; each filler's coordinates of the slot are its slot vector (decision 61c; `RUN/slots.json`) | conjugate within the slot |
+| U5tr | translation (control) | subtraction |
+| U5ut | untyped (control) | the bundle readout |
+
+On T5 both twin relation pairs straddle slots (`depends_on` in slot 2 and `part_of` in slot 1; `owned_by` in slot 0 and
+`approved_by` in slot 1), so on the twins the slotted layout delineates the swapped roles by construction.
+
+Each readout arm is also **evaluated with the readout gate switched off** (`e9_binding_readout`; decision 61): the
+operator's loss without the readout, in place of separate non-readout arms of the new families. **Baselines:** C5 (the same
+channel without a readout), C0′ plus an LRE decoder (step 1's probe B on C0′'s hidden states), C2.
+
+**Evaluation chain** (per arm; `e9_plan.readout_jobs`): the WP-PQ1 `pq` chain (track zero-shot, dimension-3 v1) and
+rescoring (filler strata); the v2 dimension-3 items; the WP-UB understanding items (`own`: two-hop, reverse, …); the twins
+(`own`, `none`, `swap`; a row override also switches the readout off for that entry); the strict non-copy and filler strata
+(`e9_freqbias score`); the readout evaluation (losses with the gate on and off on the run's own evaluation windows; role
+prediction where the next tokens verbalize a filler of the readout's concept; filler recovery by the readout's vector and by
+the store read at the correct role, `oracle`); step 1's binding probe.
+
+**Primary endpoints (step 2):**
+- **R1** (decisive: "with a trained readout, binding matters") — twin contrast accuracy (`choice`, `own`), **U5 − U5ut**
+  and **U5 − U5tr**, Holm over the two; the units × seeds crossed model as P1.
+- **R2** ("the readout helps the model") — **U5 − C5** relative loss on `after_heldout` at the final evaluation (the
+  trainer's windows; seeds pooled per window; paired window bootstrap, 10,000 resamples, two-sided).
+
+R1 and R2 answer different questions; no correction between them.
+
+**Decision rules.** R1: (a) both contrasts > 0 (Holm p < 0.05) — "binding matters once a role is read out"; (b) one; (c)
+neither — "even an explicit readout trained by the LM loss does not use binding"; (d) a significant negative contrast. R2:
+(a) < 0 with the CI excluding 0 — "the readout lowers held-out loss"; (b) CI including 0; (c) > 0 — "the readout hurts".
+
+**Predictions** (written before running). Decision 61's, as the author stated them:
+- unbinding fidelity: unitary ≈ bounded ≥ learned HRR (adjoint) ≫ HRR with exact division (probe A on the trained stores;
+  exact division of learned HRR is read in step 3's fidelity analysis);
+- role-specific readout for untyped and translation ≈ 1/k (the readout evaluation's `oracle` filler recovery at frame degree
+  k, against the frame's other same-type fillers);
+- block-unitary ≈ circulant at one hop, better at path-in-one-vector order (step 3);
+- slotted ≈ single vector when the load is even and worse when uneven, any benefit coming from delineation (T5's load is
+  even; the twins straddle slots).
+
+And this document's: R1 (a), with U5 − U5ut ≈ +0.05 to +0.15 contrast accuracy; R2 (a), modest (−1% to −3%); the
+readout's role prediction above chance (1/23) at filler positions for every binding arm, at chance-level oracle recovery on
+role-ambiguous edges for U5ut and U5tr.
+
+**Refutation readings.**
+
+| # | Observation | Reading |
+|---|---|---|
+| RB1 | R1 (a) while the readout's role accuracy is at chance | the twin effect comes from the channel, not from the readout's query |
+| RB2 | U5ut / U5tr oracle filler recovery well above 1/k on role-ambiguous edges | the typed cleanup supplies the role (type information), not binding |
+| RB3 | gate-off loss = gate-on loss for an arm | the readout is unused (check the gate's mean) |
+| RB4 | U5bu ≠ U5u at one hop by a wide margin | non-commutativity is not the only difference (parametrization, block size) |
+
+**Secondaries** (Holm within each):
+- S2.1 twins: U5u, U5sb, U5bu, U5sl − U5ut; U5 − C5; every arm against 0.5.
+- S2.2 readout diagnostics per arm (role accuracy and mass, read and oracle filler recovery; by subset, degree, relation).
+- S2.3 each arm's gate-off loss and its on − off difference; the new families' gate-off losses against C5.
+- S2.4 loss strata against C5: `after`, `after_rare`, `after_unseen`, `after_heldout_strict`, the filler strata.
+- S2.5 WP-UB items (composite, two-hop, reverse) and the v2 dimension-3 items against C5.
+- S2.6 step 1's probe on every arm (fidelity: U5u, U5sb, U5bu, U5sl against U5).
+- S2.7 C0′ + LRE decoder (probe B, hidden states, held-out) against U5's oracle filler recovery.
+- Optional, not queued by default: a 50M from-scratch screen and a Qwen3-1.7B T5 readout pair (U5 against U5ut, seed 1).

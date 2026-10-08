@@ -44,13 +44,15 @@ NAME = re.compile(r"^(?P<host>.+)-(?P<mode>full|lora|frozen)-(?P<model>[^-]+)-s(
 
 def discover(runs_root: Path, *, hosts: Sequence[str] | None = None, twins: str | None = None, natural: str | None = None
              ) -> dict[str, dict[str, dict[int, dict[str, Any]]]]:
-    """host → model → seed → {"probe": load_probe(...), "twins": evaluation, "natural": evaluation}."""
+    """host → model → seed → {"path", "probe": load_probe(...), "readout": readout evaluation, "twins": evaluation,
+    "natural": evaluation}."""
+    from .e9_binding_readout import OUTPUT as READOUT_OUTPUT, load_evaluation as load_readout
     found: dict[str, dict[str, dict[int, dict[str, Any]]]] = defaultdict(lambda: defaultdict(dict))
     for run in sorted(Path(runs_root).iterdir()) if Path(runs_root).exists() else []:
         match = NAME.match(run.name)
         if not match or (hosts and match["host"] not in hosts):
             continue
-        entry = {"probe": probe_mod.load_probe(run / probe_mod.OUTPUT)}
+        entry = {"path": run, "probe": probe_mod.load_probe(run / probe_mod.OUTPUT), "readout": load_readout(run / READOUT_OUTPUT)}
         if twins:
             entry["twins"] = items_mod.load_evaluation(items_mod.output_folder(run, twins))
         if natural:
@@ -308,6 +310,137 @@ def _average_blocks(blocks: dict[int, dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+# ---------------------------------------------------------------- step 2: the readout arms (pre-registration §13)
+
+READOUT_CANDIDATE = "U5"
+R1_REFERENCES = ("U5ut", "U5tr")
+READOUT_FAMILIES = ("U5u", "U5sb", "U5bu", "U5sl")
+R2_STRATUM = "after_heldout"
+
+
+def window_losses(run: Path, *, readout: dict[str, Any] | None = None, variant: str | None = None) -> tuple[list[str], np.ndarray, np.ndarray] | None:
+    """(strata, sums, counts) per evaluation window at the run's final evaluation (`eval_windows.npz`), or of a readout
+    evaluation's `on` / `off` variant (`RUN/readout/windows.npz`)."""
+    from ..training.lm import load_window_losses
+    if variant is not None:
+        arrays = (readout or {}).get("windows")
+        if not arrays or f"sum_{variant}" not in arrays:
+            return None
+        return list(arrays["strata"].tolist()), arrays[f"sum_{variant}"], arrays[f"count_{variant}"]
+    path = Path(run) / "eval_windows.npz"
+    if not path.exists():
+        return None
+    saved = load_window_losses(path)
+    if not saved["evals"]:
+        return None
+    sums, counts = saved["evals"][max(saved["evals"])]
+    return saved["strata"], sums, counts
+
+
+def loss_contrast(a: dict[int, tuple[list[str], np.ndarray, np.ndarray]], b: dict[int, tuple[list[str], np.ndarray, np.ndarray]],
+                  stratum: str, *, resamples: int = 10_000, seed: int = 0) -> dict[str, Any]:
+    """Relative loss difference a − b on `stratum`: per evaluation window the paired difference summed over the common
+    seeds, a window bootstrap (`statistics.paired_ratio_bootstrap`; the relative difference from the same resamples)."""
+    from ..statistics import paired_ratio_bootstrap
+    seeds = sorted(set(a) & set(b))
+    if len(b) == 1 and len(a) > 1:                                  # a single reference run stands for every seed
+        only = next(iter(b.values()))
+        b = {s: only for s in a}
+        seeds = sorted(a)
+    if not seeds:
+        return {"available": False}
+    d = n = base = None
+    for s in seeds:
+        (strata_a, sums_a, counts_a), (strata_b, sums_b, counts_b) = a[s], b[s]
+        if stratum not in strata_a or stratum not in strata_b:
+            return {"available": False}
+        ia, ib = strata_a.index(stratum), strata_b.index(stratum)
+        if sums_a.shape[1] != sums_b.shape[1] or not np.array_equal(counts_a[ia], counts_b[ib]):
+            return {"available": False, "detail": "different evaluation windows or masks"}
+        d = (sums_a[ia] - sums_b[ib]) if d is None else d + (sums_a[ia] - sums_b[ib])
+        n = counts_a[ia].astype(np.float64) if n is None else n + counts_a[ia]
+        base = sums_b[ib].astype(np.float64) if base is None else base + sums_b[ib]
+    result = paired_ratio_bootstrap(d, n, base, resamples=resamples, seed=seed)
+    return {"available": True, "seeds": seeds, "stratum": stratum, **result}
+
+
+def _losses(models: dict[str, dict[int, dict[str, Any]]], model: str, variant: str | None = None) -> dict[int, Any]:
+    out = {}
+    for seed, entry in models.get(model, {}).items():
+        found = window_losses(entry["path"], readout=entry.get("readout"), variant=variant)
+        if found is not None:
+            out[seed] = found
+    return out
+
+
+def step2(models: dict[str, dict[int, dict[str, Any]]], *, resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
+    """R1 (twins: U5 − U5ut, U5 − U5tr; Holm), R2 (U5 − C5 relative loss on `after_heldout`) and the step-2 secondaries."""
+    out: dict[str, Any] = {"available": READOUT_CANDIDATE in models}
+    if not out["available"]:
+        return out
+    twins = {m: item_units(_by_seed(models, m, "twins")) for m in models}
+    rows, contrasts = [], {}
+    for reference in R1_REFERENCES:
+        if twins.get(READOUT_CANDIDATE) and twins.get(reference):
+            result = contrast(twins[READOUT_CANDIDATE], twins[reference], resamples=resamples, seed=seed)
+            contrasts[f"{READOUT_CANDIDATE} − {reference}"] = result
+            if result.get("available"):
+                rows.append((f"{READOUT_CANDIDATE} − {reference}", result["model"]["p_value"]))
+    for (name, _), adjusted in zip(rows, holm_adjust([p for _, p in rows]) if rows else []):
+        contrasts[name]["p_holm"] = adjusted
+    out["R1"] = {"contrasts": contrasts, "means": {m: _seed_mean(v) for m, v in twins.items() if v}}
+    out["R2"] = loss_contrast(_losses(models, READOUT_CANDIDATE), _losses(models, CANDIDATE), R2_STRATUM, seed=seed)
+    families = {}
+    for model in (*READOUT_FAMILIES, CANDIDATE):
+        reference = "U5ut" if model != CANDIDATE else None
+        if model == CANDIDATE and twins.get(READOUT_CANDIDATE) and twins.get(CANDIDATE):
+            families[f"{READOUT_CANDIDATE} − {CANDIDATE}"] = contrast(twins[READOUT_CANDIDATE], twins[CANDIDATE], resamples=resamples, seed=seed)
+        elif reference and twins.get(model) and twins.get(reference):
+            families[f"{model} − {reference}"] = contrast(twins[model], twins[reference], resamples=resamples, seed=seed)
+    _holm(families)
+    out["twins_secondary"] = families
+    on_off, against_c5 = {}, {}
+    for model in models:
+        on, off = _losses(models, model, "on"), _losses(models, model, "off")
+        if on and off:
+            on_off[model] = {s: loss_contrast(off, on, s, seed=seed) for s in ("all", "after", R2_STRATUM)}
+            against_c5[model] = {"on": loss_contrast(on, _losses(models, CANDIDATE), R2_STRATUM, seed=seed),
+                                 "off": loss_contrast(off, _losses(models, CANDIDATE), R2_STRATUM, seed=seed)}
+    out["off_minus_on"] = on_off
+    out["against_C5"] = against_c5
+    diagnostics = {}
+    for model in models:
+        blocks = [e["readout"]["summary"].get("diagnostics", {}).get("subsets", {}) for e in models[model].values()
+                  if e.get("readout") and e["readout"].get("summary")]
+        blocks = [b for b in blocks if b]
+        if blocks:
+            diagnostics[model] = {subset: {key: float(np.mean([b[subset][key] for b in blocks if subset in b]))
+                                           for key in ("role_accuracy", "role_mass", "none_mass", "read_mrr", "oracle_mrr", "oracle_top1")}
+                                  for subset in ("all", "heldout", "seen") if any(subset in b for b in blocks)}
+    out["diagnostics"] = diagnostics
+    out["reading"] = r_reading(out)
+    return out
+
+
+def r_reading(result: dict[str, Any]) -> dict[str, str]:
+    readings = {}
+    rows = [v for v in result["R1"]["contrasts"].values() if v.get("available")]
+    if len(rows) == len(R1_REFERENCES):
+        significant = [v["model"]["mean"] > 0 and v.get("p_holm", 1.0) < 0.05 for v in rows]
+        negative = [v["model"]["mean"] < 0 and v.get("p_holm", 1.0) < 0.05 for v in rows]
+        readings["R1"] = ("(a) binding matters once a role is read out" if all(significant) else "(b) partial" if any(significant)
+                          else "(d) a role-blind readout beats binding" if any(negative)
+                          else "(c) even an explicit readout trained by the LM loss does not use binding")
+    else:
+        readings["R1"] = "incomplete"
+    r2 = result.get("R2", {})
+    if r2.get("available"):
+        lo, hi = r2.get("relative_ci_low"), r2.get("relative_ci_high")
+        readings["R2"] = ("(a) the readout lowers held-out loss" if hi is not None and hi < 0 else
+                          "(c) the readout hurts held-out loss" if lo is not None and lo > 0 else "(b) no evidence either way")
+    return readings
+
+
 # ---------------------------------------------------------------- report
 
 
@@ -323,6 +456,7 @@ def analyse(runs_root: Path, *, hosts: Sequence[str] | None = None, twins: str |
             block["twins"] = item_secondaries(models, "twins", resamples=resamples, seed=seed)
         if natural:
             block["natural"] = item_secondaries(models, "natural", resamples=resamples, seed=seed)
+        block["step2"] = step2(models, resamples=resamples, seed=seed)
         out["hosts"][host] = block
     return out
 
@@ -380,6 +514,31 @@ def render(analysis: dict[str, Any], *, title: str) -> str:
             if rows:
                 lines += [f"### {name.replace('_', ' ')}", "", "| contrast | estimate |", "|---|---|"]
                 lines += [f"| {k} | {_cell(v)} |" for k, v in rows.items()]
+                lines.append("")
+        step = block.get("step2") or {}
+        if step.get("available"):
+            lines += ["### Step 2 — readout arms (pre-registration §13)", "", "| endpoint | contrast | estimate |", "|---|---|---|"]
+            lines += [f"| R1 | {k} | {_cell(v)} |" for k, v in step["R1"]["contrasts"].items()]
+            r2 = step.get("R2", {})
+            if r2.get("available"):
+                lines.append(f"| R2 | U5 − C5, {r2['stratum']} (relative) | {r2['relative']:+.4f} [{r2['relative_ci_low']:+.4f}, "
+                             f"{r2['relative_ci_high']:+.4f}] (p {r2['p_value']:.3g}; seeds {r2['seeds']}) |")
+            lines += [f"| S2.1 | {k} | {_cell(v)} |" for k, v in step.get("twins_secondary", {}).items()]
+            lines += ["", f"Reading: {step.get('reading')}", ""]
+            if step.get("off_minus_on"):
+                lines += ["| arm | gate off − on, after_heldout (relative) | on − C5 | off − C5 |", "|---|---:|---:|---:|"]
+                for model, v in sorted(step["off_minus_on"].items()):
+                    cell = lambda r: "n/a" if not r.get("available") else f"{r['relative']:+.4f} [{r['relative_ci_low']:+.4f}, {r['relative_ci_high']:+.4f}]"
+                    vs = step["against_C5"].get(model, {})
+                    lines.append(f"| {model} | {cell(v.get(R2_STRATUM, {}))} | {cell(vs.get('on', {}))} | {cell(vs.get('off', {}))} |")
+                lines.append("")
+            if step.get("diagnostics"):
+                lines += ["| arm | role accuracy | role mass | no-query mass | read MRR | oracle MRR (all / held-out) |", "|---|---:|---:|---:|---:|---:|"]
+                for model, v in sorted(step["diagnostics"].items()):
+                    a, h = v.get("all", {}), v.get("heldout", {})
+                    lines.append(f"| {model} | {a.get('role_accuracy', float('nan')):.3f} | {a.get('role_mass', float('nan')):.3f} | "
+                                 f"{a.get('none_mass', float('nan')):.3f} | {a.get('read_mrr', float('nan')):.3f} | "
+                                 f"{a.get('oracle_mrr', float('nan')):.3f} / {h.get('oracle_mrr', float('nan')):.3f} |")
                 lines.append("")
         for field in ("twins", "natural"):
             section = block.get(field)

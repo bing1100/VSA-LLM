@@ -53,6 +53,15 @@ Opt-in keys of the E9 paper-quality controls (WP-PQ1; absent keys change nothing
   `channel.source_hidden` (hidden width of the MLP projector; 0 = linear): the same-site row-source baselines
   C6m / C6d / C6g. The table is frozen (a non-persistent buffer, re-read from its file on every rebuild).
 
+Opt-in keys of the binding and unbinding program (decisions 60–61; absent keys change nothing):
+
+- `channel.operator: spectral_bounded | block_unitary | slotted_unitary` (`relations`): a circulant with learned phases
+  and magnitudes in [0.5, 2]; block-diagonal rotations (non-commutative); unitary roles within `channel.slots` (3)
+  load-balanced relation slots (the slot of each relation and the per-slot edge load go to `slots.json`).
+- `channel.readout` (`readout.UnbindingReadout`): `{layer: "third" | int, window: 32, gate_bias: 0.0, beta: 16.0,
+  steps: 1, typed: true, source: "static"}` — a head that predicts a role from the hidden state at layer L, unbinds it
+  from the most recent linked concept's frame store, cleans up and adds the filler, gated, to the residual stream.
+
 Opt-in keys for larger pretrained hosts (E9 on Qwen3; absent keys change nothing):
 
 - `channel.scale_to_host` (false) and `channel.host_scale_fraction` (`span_channel.HOST_SCALE_FRACTION`,
@@ -245,11 +254,17 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
             operator=settings["operator"], mode=settings["composition"], concept_factor=settings["concept_factor"],
             key_dimension=int(settings["key_dimension"]),
             context_dimension=int(settings["key_dimension"]) if context_window else 0,
+            **({"slots": int(settings["slots"])} if settings.get("slots") else {}),
         )
         channel = SpanChannel(composer, width, entry_count=entries, gate_bias=float(settings["gate_bias"]),
                               semantic_dimension=width if config["train"]["semantic_weight"] else 0)
         channel.skip_empty_frames = bool(settings.get("skip_empty_frames", False))   # opt-in; default keeps the error
         context = CausalLocalContext(width, int(settings["key_dimension"]), window=context_window) if context_window else None
+        if settings.get("readout"):
+            # Opt-in (decision 60 step 2): the unbinding readout, a submodule of the channel; it draws its initialization
+            # from its own generator, so every other initialization of the run equals the run without it.
+            from ..readout import readout_from_config
+            channel.readout = readout_from_config(settings["readout"], composer, width, host, seed=int(config["seed"]))
     if settings.get("scale_to_host"):                  # opt-in (open decision 1); no random draw, so the RNG stream is unchanged
         if host is None:
             raise ValueError("channel.scale_to_host needs the host model (build_channel(..., host=model))")
@@ -548,6 +563,10 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         channel.set_unseen(ontology["heldout_entries"])
     if getattr(channel, "host_scale_record", None) and not (output_dir / "channel_scale.json").exists():
         (output_dir / "channel_scale.json").write_text(json.dumps(channel.host_scale_record, indent=2) + "\n")
+    slots = slot_record(channel, ontology)
+    if slots and not (output_dir / "slots.json").exists():        # slotted layout only (decision 61c)
+        (output_dir / "slots.json").write_text(json.dumps(slots, indent=2) + "\n")
+        print(json.dumps({"slots": {k: slots[k] for k in ("load", "load_share")}}), flush=True)
     model = wrap_host(config, base, channel, context).to(device)
     if records := host_records(config, model):      # linear-attention hosts / opt-in LoRA targets only
         print(json.dumps({"host_records": records}, default=str), flush=True)
@@ -680,6 +699,21 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                            steps=total_steps, tokens_per_step=tokens_per_step,
                            **({"channel_host_scale": scale} if scale else {}), **host_records(config, model))
     return {"steps": step, "tokens": step * tokens_per_step}
+
+
+def slot_record(channel: SpanChannel | None, ontology: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The slotted layout's relation → slot map and per-slot edge load (None for every other channel)."""
+    composer = getattr(channel, "composer", None) if channel is not None else None
+    slot_of = composer.slot_of() if composer is not None and hasattr(composer, "slot_of") else None
+    if slot_of is None:
+        return None
+    transform = composer.transform
+    load = [int(x) for x in transform.slot_load.tolist()]
+    names = list((ontology or {}).get("relation_names") or [])
+    return {"groups": transform.groups, "bounds": [list(b) for b in transform.bounds], "slot_of": slot_of.tolist(),
+            "load": load, "load_share": [round(x / max(1, sum(load)), 4) for x in load],
+            **({"relations": {g: [names[r] for r, s in enumerate(slot_of.tolist()) if s == g] for g in range(transform.groups)}}
+               if names else {})}
 
 
 def channel_scale_record(channel: SpanChannel | None) -> dict[str, float] | None:
