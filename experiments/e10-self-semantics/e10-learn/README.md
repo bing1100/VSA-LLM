@@ -29,7 +29,7 @@ The learn tool turns passive learning into explicit structure: **decompose, prop
   | `extract` | host hidden states at linked occurrences (GPU) |
   | `extract-items` | new-term or store-entry mentions (GPU) |
   | `placement` | the TK-H3L sets |
-  | `report` | L4a / L4b pooled over seeds |
+  | `report` | L4a / L4b pooled over seeds; the co-primary arms `c2` and `features` form one Holm family (amendment 1) |
   | `placement-report` | placement pooled over seeds |
   | `queue` | the job plan; `--dry-run` prints it |
 

@@ -91,22 +91,34 @@ def test_run_synthetic_writes_outputs_and_report_pools_runs(tmp_path):
     with gzip.open(tmp_path / "syn" / "proposals.jsonl.gz", "rt") as handle:
         worlds = {json.loads(line)["world"] for line in handle}
     assert {"real", "null:planted", "null:complete"} <= worlds
-    # two "seeds" of one track, written as `erased` runs write them, pooled into the endpoints
+    # one track, written as `erased` runs write them: arms c2 / features / c5full x two "seeds", pooled into the endpoints
+    # (amendment 1: c2 and features are one Holm family; c5full is descriptive)
     runs = []
+    outs = {}
     for seed in (5, 6):
         cfg = small_config(seed=seed, baselines=["prior", "correlate", "amie", "transe", "rotate", "complex"])
-        out = E.run_erasure(E.synthetic_inputs(seed, cfg["synthetic"]), cfg)
-        folder = tmp_path / f"run-s{seed}"
-        folder.mkdir()
-        E.write_json(folder / "summary.json", {"schema": E.SCHEMA, "mode": "erased", "label": "TEST", "runs": [out["summary"]]})
-        np.savez_compressed(folder / "pool.npz", **out["pool"])
-        E.write_json(folder / "per_concept.json", {rule: {str(k): v for k, v in t.items()} for rule, t in out["per_concept"].items()})
-        runs.append(folder)
+        outs[seed] = E.run_erasure(E.synthetic_inputs(seed, cfg["synthetic"]), cfg)
+    for arm in ("c2", "features", "c5full"):
+        for seed, out in outs.items():
+            folder = tmp_path / f"{arm}-s{seed}"
+            folder.mkdir()
+            summary = dict(out["summary"], meta={"passive": {"kind": arm}})
+            E.write_json(folder / "summary.json", {"schema": E.SCHEMA, "mode": "erased", "label": "TEST", "runs": [summary]})
+            np.savez_compressed(folder / "pool.npz", **out["pool"])
+            E.write_json(folder / "per_concept.json", {rule: {str(k): v for k, v in t.items()} for rule, t in out["per_concept"].items()})
+            runs.append(folder)
     report = E.run_report(runs, tmp_path / "report", resamples=200)
-    assert report["L4a"]["rule"] == "holm+decoy" and set(report["L4a"]["null_rates"]) >= {"complete", "planted"}
-    assert set(report["L4b"]["comparisons"]) == {"amie", "transe", "rotate", "complex"}
-    for c in report["L4b"]["comparisons"].values():
-        assert c["ci_low"] <= c["mean"] <= c["ci_high"] and 0 <= c["p_holm"] <= 1
+    assert report["rule"] == "holm+decoy" and report["family"] == ["c2", "features"]
+    c2, features, c5 = (report["arms"][a] for a in ("c2", "features", "c5full"))
+    assert c2["family"] and features["family"] and not c5["family"] and c5["L4a"]["met"] is None
+    assert set(c2["L4a"]["null_rates"]) >= {"complete", "planted"} and 0 < c2["L4a"]["p_precision"] <= 1
+    # identical data in both family arms: Holm over 2 doubles the smaller p (capped at 1)
+    assert c2["L4a"]["p_holm"] == pytest.approx(min(1.0, 2 * c2["L4a"]["p_precision"]))
+    assert set(c2["L4b"]["comparisons"]) == {"amie", "transe", "rotate", "complex"}
+    for c in c2["L4b"]["comparisons"].values():
+        assert c["ci_low"] <= c["mean"] <= c["ci_high"] and c["p_value"] <= c["p_holm"] <= min(1.0, 8 * c["p_value"]) + 1e-12
+    assert "p_holm" not in next(iter(c5["L4b"]["comparisons"].values()))
+    assert report["L4a_met"] in (True, False) and report["L4b_met"] in (True, False)
     assert (tmp_path / "report" / "report.md").read_text().startswith("# E10.L pooled endpoints")
 
 

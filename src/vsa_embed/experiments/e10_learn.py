@@ -1205,10 +1205,11 @@ def pool_bootstrap(pools: Sequence[Mapping[str, np.ndarray]], method: str, basel
             "ci_high": float(np.quantile(draws, 0.975)) if draws.size else None, "p_value": p, "resamples": int(draws.size)}
 
 
-def precision_bootstrap(per_concept: Sequence[Mapping[str, Sequence[int]]], *, resamples: int = 2000, seed: int = 0
-                        ) -> dict[str, Any]:
+def precision_bootstrap(per_concept: Sequence[Mapping[str, Sequence[int]]], *, threshold: float = 0.8, resamples: int = 2000,
+                        seed: int = 0) -> dict[str, Any]:
     """Pooled precision and recall of accepted edges over seeds (per-concept TP / FP / FN tables), with the pigeonhole
-    bootstrap over concepts × seeds."""
+    bootstrap over concepts × seeds, and the one-sided bootstrap p-value of H0 "precision ≤ `threshold`":
+    `(1 + #{draws ≤ threshold}) / (1 + #draws)` (1 when nothing is accepted)."""
     concepts = sorted({int(c) for table in per_concept for c in table})
     arr = np.zeros((len(concepts), len(per_concept), 3))
     for j, table in enumerate(per_concept):
@@ -1224,62 +1225,99 @@ def precision_bootstrap(per_concept: Sequence[Mapping[str, Sequence[int]]], *, r
     precision, recall = stat(np.ones(len(concepts)), np.ones(len(per_concept)))
     draws = [stat(rng.multinomial(len(concepts), np.full(len(concepts), 1 / len(concepts))).astype(float),
                   rng.multinomial(len(per_concept), np.full(len(per_concept), 1 / len(per_concept))).astype(float))
-             for _ in range(resamples)]
+             for _ in range(resamples)] if concepts else []
     pr = np.asarray([d[0] for d in draws if math.isfinite(d[0])])
     rc = np.asarray([d[1] for d in draws if math.isfinite(d[1])])
-    totals = arr.sum((0, 1))
+    totals = arr.sum((0, 1)) if concepts else np.zeros(3)
+    p_value = float((1 + int((pr <= threshold).sum())) / (1 + pr.size)) if pr.size and math.isfinite(precision) else 1.0
     return {"precision": precision, "precision_ci": [float(np.quantile(pr, 0.025)), float(np.quantile(pr, 0.975))] if pr.size else None,
             "recall": recall, "recall_ci": [float(np.quantile(rc, 0.025)), float(np.quantile(rc, 0.975))] if rc.size else None,
-            "tp": int(totals[0]), "fp": int(totals[1]), "fn": int(totals[2]), "accepted": int(totals[0] + totals[1])}
+            "tp": int(totals[0]), "fp": int(totals[1]), "fn": int(totals[2]), "accepted": int(totals[0] + totals[1]),
+            "threshold": threshold, "p_precision": p_value}
+
+
+PRIMARY_ARMS = ("c2", "features")          # co-primary decompose arms (amendment 1): one Holm family inside L4a and L4b
+
+
+def run_arm(summary: Mapping[str, Any]) -> str:
+    """The passive arm of an `erased` run (`c2`, `features`, `c5full`; `default` for runs without one, e.g. synthetic)."""
+    return str(((summary["runs"][0].get("meta") or {}).get("passive") or {}).get("kind", "default"))
 
 
 def run_report(runs: Sequence[Path], output: Path, *, precision: float = 0.8, min_accepted: int = 30,
-               far_ceiling: float = 0.05, resamples: int = 2000) -> dict[str, Any]:
-    """Pool the `erased` runs of one track and passive source over checkpoint seeds into the pre-registered endpoints:
-    L4a (precision of accepted decompose edges ≥ 0.8 with ≥ `min_accepted` accepted and every null false-acceptance rate
-    ≤ 5%) and L4b (decompose − each of AMIE / TransE / RotatE / ComplEx in recall at matched precision on the shared
-    pool > 0; Holm over the four)."""
+               far_ceiling: float = 0.05, resamples: int = 2000, alpha: float = 0.05) -> dict[str, Any]:
+    """Pool the `erased` runs of one track over checkpoint seeds into the pre-registered endpoints (preregistration §4 and
+    amendment 1). Runs are grouped by passive arm; the co-primary arms `c2` and `features` form one Holm family (any
+    other arm, e.g. the `c5full` positive control, is reported descriptively, unadjusted; with no co-primary arm present
+    every arm forms the family).
+
+    - **L4a** per arm: ≥ `min_accepted` accepted decompose edges, every null's pooled false-acceptance rate ≤ 5%
+      (inclusive), and H0 "precision ≤ 0.80" rejected by the one-sided pigeonhole bootstrap with Holm across the family's
+      arms. Met iff met for at least one family arm.
+    - **L4b** per arm: decompose − each of AMIE / TransE / RotatE / ComplEx in recall at precision 0.8 on the shared pool
+      > 0 with the 95% bootstrap CI excluding 0, Holm over every comparison of the family (arms × 4). Met for an arm iff all
+      four of its comparisons are supported; overall iff met for at least one family arm."""
     from ..statistics import holm_adjust
     summaries = [json.loads((Path(r) / "summary.json").read_text()) for r in runs]
     rules = {s["runs"][0]["rule"] for s in summaries}
     if len(rules) != 1:
         raise ValueError(f"runs disagree on the primary rule: {sorted(rules)}")
     rule = rules.pop()
-    pools = [dict(np.load(Path(r) / "pool.npz")) for r in runs]
-    per_concept = [json.loads((Path(r) / "per_concept.json").read_text())[rule] for r in runs]
-    nulls: dict[str, dict[str, int]] = defaultdict(lambda: {"accepted": 0, "tested": 0})
-    for s in summaries:
-        for kind, by_rule in s["runs"][0]["nulls"].items():
-            n = by_rule[rule]
-            nulls[kind]["accepted"] += int(n["accepted"]); nulls[kind]["tested"] += int(n["tested"])
-    null_rates = {k: (v["accepted"] / v["tested"] if v["tested"] else float("nan"), v) for k, v in nulls.items()}
-    l4a = precision_bootstrap(per_concept, resamples=resamples)
-    l4a["rule"] = rule
-    l4a["null_rates"] = {k: r for k, (r, _) in null_rates.items()}
-    l4a["null_counts"] = {k: v for k, (_, v) in null_rates.items()}
-    l4a["met"] = bool(l4a["accepted"] >= min_accepted and math.isfinite(l4a["precision"]) and l4a["precision"] >= precision
-                      and all(math.isfinite(r) and r <= far_ceiling for r, _ in null_rates.values()))
-    comparisons = {}
-    for baseline in ("amie", *KGE_METHODS):
-        if all(f"score_{baseline}" in p for p in pools):
-            comparisons[baseline] = pool_bootstrap(pools, "decompose", baseline, precision=precision, resamples=resamples)
-    adjusted = holm_adjust([c["p_value"] for c in comparisons.values()]) if comparisons else []
-    for (name, c), adj in zip(comparisons.items(), adjusted):
+    by_arm: dict[str, list[int]] = defaultdict(list)
+    for i, s in enumerate(summaries):
+        by_arm[run_arm(s)].append(i)
+    family = [a for a in PRIMARY_ARMS if a in by_arm] or sorted(by_arm)
+    arms: dict[str, dict[str, Any]] = {}
+    for arm, index in sorted(by_arm.items()):
+        pools = [dict(np.load(Path(runs[i]) / "pool.npz")) for i in index]
+        per_concept = [json.loads((Path(runs[i]) / "per_concept.json").read_text())[rule] for i in index]
+        counts: dict[str, dict[str, int]] = defaultdict(lambda: {"accepted": 0, "tested": 0})
+        for i in index:
+            for kind, by_rule in summaries[i]["runs"][0]["nulls"].items():
+                counts[kind]["accepted"] += int(by_rule[rule]["accepted"]); counts[kind]["tested"] += int(by_rule[rule]["tested"])
+        rates = {k: (v["accepted"] / v["tested"] if v["tested"] else float("nan")) for k, v in counts.items()}
+        l4a = precision_bootstrap(per_concept, threshold=precision, resamples=resamples)
+        l4a.update(rule=rule, null_rates=rates, null_counts=dict(counts),
+                   calibrated=bool(rates) and all(math.isfinite(r) and r <= far_ceiling for r in rates.values()),
+                   enough=l4a["accepted"] >= min_accepted, point_met=math.isfinite(l4a["precision"]) and l4a["precision"] >= precision)
+        comparisons = {b: pool_bootstrap(pools, "decompose", b, precision=precision, resamples=resamples)
+                       for b in ("amie", *KGE_METHODS) if all(f"score_{b}" in p for p in pools)}
+        arms[arm] = {"runs": [str(runs[i]) for i in index], "family": arm in family, "L4a": l4a, "L4b": {"comparisons": comparisons}}
+    for arm, adj in zip(family, holm_adjust([arms[a]["L4a"]["p_precision"] for a in family])):
+        a = arms[arm]["L4a"]
+        a["p_holm"] = adj
+        a["met"] = bool(a["enough"] and a["calibrated"] and adj <= alpha)
+    keys = [(arm, b) for arm in family for b in arms[arm]["L4b"]["comparisons"]]
+    for (arm, b), adj in zip(keys, holm_adjust([arms[arm]["L4b"]["comparisons"][b]["p_value"] for arm, b in keys]) if keys else []):
+        c = arms[arm]["L4b"]["comparisons"][b]
         c["p_holm"] = adj
-        c["supported"] = bool(c["mean"] > 0 and c["ci_low"] is not None and c["ci_low"] > 0 and adj <= 0.05)
-    l4b = {"comparisons": comparisons, "met": bool(comparisons) and all(c["supported"] for c in comparisons.values())}
-    report = {"schema": SCHEMA, "mode": "report", "runs": [str(r) for r in runs], "L4a": l4a, "L4b": l4b,
-              "labels": sorted({str(s.get("label")) for s in summaries})}
+        c["supported"] = bool(c["mean"] > 0 and c["ci_low"] is not None and c["ci_low"] > 0 and adj <= alpha)
+    for arm in family:
+        comps = arms[arm]["L4b"]["comparisons"]
+        arms[arm]["L4b"]["met"] = bool(comps) and all(c["supported"] for c in comps.values())
+    for arm, block in arms.items():                    # descriptive arms: unadjusted
+        if not block["family"]:
+            block["L4a"]["met"] = None
+            block["L4b"]["met"] = None
+    report = {"schema": SCHEMA, "mode": "report", "runs": [str(r) for r in runs], "rule": rule, "family": family,
+              "arms": arms, "L4a_met": any(arms[a]["L4a"]["met"] for a in family),
+              "L4b_met": any(arms[a]["L4b"]["met"] for a in family), "labels": sorted({str(s.get("label")) for s in summaries})}
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "summary.json", report)
-    lines = ["# E10.L pooled endpoints", "", f"Runs: {len(runs)}; labels {report['labels']}.", "",
-             f"**L4a** precision {_fmt(l4a['precision'])} {l4a['precision_ci']}; recall {_fmt(l4a['recall'])} {l4a['recall_ci']}; "
-             f"accepted {l4a['accepted']}; null rates {l4a['null_rates']} → met: {l4a['met']}", "",
-             "**L4b** (recall at precision 0.8, decompose − baseline):", ""]
-    for name, c in comparisons.items():
-        lines.append(f"- vs {name}: {_fmt(c['mean'])} [{_fmt(c['ci_low'])}, {_fmt(c['ci_high'])}], p {_fmt(c['p_value'], 4)}, "
-                     f"Holm {_fmt(c['p_holm'], 4)} → {c['supported']}")
-    lines.append(f"\nL4b met: {l4b['met']}")
+    lines = ["# E10.L pooled endpoints", "", f"Runs: {len(runs)}; rule `{rule}`; labels {report['labels']}; Holm family "
+             f"{family} (amendment 1).", ""]
+    for arm, block in arms.items():
+        a = block["L4a"]
+        lines += [f"## Arm `{arm}`{'' if block['family'] else ' (descriptive, unadjusted)'}", "",
+                  f"**L4a** precision {_fmt(a['precision'])} {a['precision_ci']}; recall {_fmt(a['recall'])} {a['recall_ci']}; "
+                  f"accepted {a['accepted']}; p(precision ≤ {precision}) {_fmt(a['p_precision'], 4)}, Holm {_fmt(a.get('p_holm'), 4)}; "
+                  f"null rates {({k: round(v, 4) for k, v in a['null_rates'].items()})} → met: {a['met']}", "",
+                  "**L4b** (recall at precision 0.8, decompose − baseline):", ""]
+        for name, c in block["L4b"]["comparisons"].items():
+            lines.append(f"- vs {name}: {_fmt(c['mean'])} [{_fmt(c['ci_low'])}, {_fmt(c['ci_high'])}], p {_fmt(c['p_value'], 4)}, "
+                         f"Holm {_fmt(c.get('p_holm'), 4)} → {c.get('supported')}")
+        lines += ["", f"L4b met: {block['L4b']['met']}", ""]
+    lines.append(f"**Overall:** L4a met {report['L4a_met']}; L4b met {report['L4b_met']}.")
     (output / "report.md").write_text("\n".join(lines) + "\n")
     return report
 
@@ -1294,13 +1332,13 @@ HOST = "SmolLM2-360M"
 # sub-levels 54.4995x); T7 trains at 51–54, so its jobs sit behind its checkpoints in priority order.
 PRIORITY = {"t7-features": 54.4995, "t7-erased": 54.49951, "t7-placement": 54.49952, "t1-placement": 54.49953,
             "t4t5-features": 54.49954, "t4t5-erased": 54.49955, "wordnet-placement": 54.49956, "report": 54.49959}
-ERASED_ARMS = {"c2": {}, "features": {"passive.kind": "features", "baselines": "[prior,correlate,lre]"},
+ERASED_ARMS = {"c2": {}, "features": {"passive.kind": "features"},          # co-primary (amendment 1): full baselines
                "c5full": {"passive.kind": "c5full", "baselines": "[prior,correlate]"}}
 # idle-GPU / CPU hour estimates from the CPU smoke (preregistration §9): 360M forward ≈ 500 tokens/s on 4 CPU threads,
 # taken as ≈ 30k tokens/s on the RTX 3090 (bf16, no gradients) plus one minute to load; erased runs scale the smoke's
 # stage timings to the probe count and 100 KGE epochs.
 SPLIT_WINDOWS = {"t7": 19550, "t4": 3850, "t5": 5799}
-ERASED_CPU_H = {"c2": {"t7": 0.15, "t4": 0.3, "t5": 0.2}, "features": {"t7": 0.06, "t4": 0.1, "t5": 0.08},
+ERASED_CPU_H = {"c2": {"t7": 0.15, "t4": 0.3, "t5": 0.2}, "features": {"t7": 0.15, "t4": 0.3, "t5": 0.2},
                 "c5full": {"t7": 0.05, "t4": 0.08, "t5": 0.06}}
 PLACEMENT_SETS = {
     "mesh-2025-2026": {"items": "experiments/toolkit-learn/items/mesh-2025-2026-v1", "files": ["placement-dev.jsonl", "placement-test.jsonl"],
@@ -1354,10 +1392,11 @@ def queue_plan(python: str = "python", *, seeds: Sequence[int] = (1, 2, 3)) -> l
                 job(f"e10l-{track}-erased-{arm}-s{seed}", f"{stage}-erased", "cpu", ERASED_CPU_H[arm][track], args,
                     [run_folder(track, "C5", seed) / "final.pt", run_folder(track, "C2", seed) / "final.pt",
                      features(track, seed) / "occurrences.npz"])
-        for arm in ERASED_ARMS:
-            job(f"e10l-{track}-erased-{arm}-report", "report", "cpu", 0.05,
-                ["report", "--runs", *[str(root / "runs" / f"{track}-{arm}-s{s}") for s in seeds],
-                 "--output", str(root / "runs" / f"{track}-{arm}-report")], [])
+        # amendment 1: the co-primary arms (c2, features) form one Holm family in one report; c5full apart
+        for label, arms in (("primary", PRIMARY_ARMS), ("c5full", ("c5full",))):
+            job(f"e10l-{track}-erased-{label}-report", "report", "cpu", 0.05,
+                ["report", "--runs", *[str(root / "runs" / f"{track}-{arm}-s{s}") for arm in arms for s in seeds],
+                 "--output", str(root / "runs" / f"{track}-{label}-report")], [])
     # placement: MeSH on T7 (SCRs via mapped_to; t7_group eval primary) and on T1 (descriptors via parent; seed 1)
     for track, track_seeds in (("t7", seeds), ("t1", (1,))):
         stage = f"{track}-placement"

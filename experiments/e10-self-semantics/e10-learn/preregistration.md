@@ -236,3 +236,67 @@ only) and ≤ 0.002 (KGE).
 6. ICD-10-CM FY2027 (H3) and OET need the licensed T1c store (decision 58; peer session): the evaluator supports them,
    but no job is queued. MedConceptsQA is a ranking set for the TK-B harness, not placement.
 7. MDL is not implemented. The knockoff and decoy rules cover FDR control.
+
+## 11. Amendment 1 (2026-10-08, before any real run)
+
+**Source:** author / coordinator decisions of 2026-10-08 on the four points of the TK-L report.
+
+**Timing.** Only the synthetic calibration (§6, committed in `runs/synthetic-v1`) has run since §1–§10 were committed. It
+is not a real run. No job of §9 has run, and no T7 data exists. Where this amendment differs from §1–§10, it takes
+precedence.
+
+**A1. Primary rule: approved.** `holm+decoy` (§2) is the primary decision rule.
+- **Why:** on dev seed 7 of the synthetic world, Holm alone accepted **17.9%** of planted-null proposals under
+  dictionary misfit (noisy-prior dictionary). The decoy component brought that to 0.5%. The evaluation seeds of §6
+  showed the same pattern: Holm alone 28.7% planted and 30.6% complete null, against ≤ 0.51% for `holm+decoy`.
+- Holm alone stays a reported secondary rule (S5), with its own null rates.
+
+**A2. Queue: approved as is.** The coordinator runs `queue-commands.sh` after the merge. The T7 jobs wait behind T7's
+training in priority order. The job list changes only as A4 requires: one joint report per track, and full baselines for
+the hidden-state arm.
+
+**A3. Relabel null and relation labels.**
+- The 5% ceiling on every null is **inclusive**: a measured rate of exactly 5.0% passes. This is the "≤ 5%" of §4.
+- New pre-written reading: **relation identity is the weakest point** of the test. With the oracle dictionary of §6, the
+  relabel null sat at exactly 5.0% under `holm+decoy` and at 8.0% under Holm alone.
+  - The metric does not change: an accepted edge counts as correct only if the whole triple
+    `(concept, relation, filler)` is a curated edge.
+  - The primary claim is about **edges**, not about relation labels.
+  - Any claim about *which relation* an accepted edge carries is secondary, and is read against the relabel null. This
+    covers per-relation precision, relation confusions, and "the tool identifies the relation".
+
+**A4. The hidden-state arm is co-primary.** The decompose arms `c2` (C2 free-table row) and `features` (the C0′ host's
+hidden states, half A) form **one Holm family** inside L4a and L4b. Both are on T7, use `holm+decoy`, and are pooled over
+seeds 1–3.
+- **L4a per arm.** Three conditions:
+  1. ≥ 30 accepted decompose edges;
+  2. every null's pooled false-acceptance rate ≤ 5% (inclusive);
+  3. the precision criterion is now a test: H0 "precision ≤ 0.80", tested by the one-sided pigeonhole bootstrap over
+     concepts × seeds, `p = (1 + #{draws ≤ 0.80}) / (1 + #draws)`, with Holm across the 2 arms at 0.05.
+
+  The test replaces the point criterion "pooled precision ≥ 0.80", because Holm needs a p-value to act on. The point
+  value is still reported (`point_met`). L4a is met iff it is met for at least one arm, and the claim names that arm's
+  passive source.
+- **L4b per arm.** The 4 comparisons of §4 (decompose − AMIE / TransE / RotatE / ComplEx, recall at precision 0.8),
+  with **Holm over all 8 comparisons** (2 arms × 4). L4b is met for an arm iff all four of its comparisons are supported,
+  and overall iff it is met for at least one arm.
+  - The `features` arm runs the full baseline set (AMIE, KGE) on its own pool. Its probes are the concepts that have a
+    half-A vector.
+- `c5full` stays the positive control (S4): reported descriptively and unadjusted, outside the family.
+- S3 is absorbed into the primary.
+- New readings:
+  - L4a met by one arm only → the claim names its passive source ("C2 rows" or "host hidden states").
+  - Point precision ≥ 0.80 but the Holm-adjusted test fails → "at the bar, not credibly above it": **no L4a claim**;
+    reported descriptively.
+- **Disclosure.** This promotion follows the CPU feasibility smokes of §10. The deciding observation was the C2-row
+  decoder's out-of-fold R² ≈ 0 on T4 and T5, a measure of decoder fit, not an endpoint. The same smokes also printed
+  smoke-scale acceptance counts and pool AUCs on T4 / T5 (16–85 probes, listed in §10). None was on T7, none at endpoint
+  scale, and none enters any endpoint.
+
+**Code and queue changes:**
+- `e10_learn.run_report` groups runs by passive arm and computes per-arm L4a / L4b with Holm across the co-primary arms.
+  `precision_bootstrap` gained the one-sided test.
+- The queue plan has one `-erased-primary-report` per track over both arms' runs, plus an `-erased-c5full-report`.
+  The `features` erased jobs drop their reduced baseline list.
+- New totals: **78 jobs, ≈ 1.85 GPU-h, ≈ 8.6 CPU-h**. They replace §9's 81 jobs and ≈ 7.6 CPU-h.
+- Tests updated: `tests/test_e10_learn.py::test_run_synthetic_writes_outputs_and_report_pools_runs`.
