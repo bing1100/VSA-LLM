@@ -1,0 +1,76 @@
+model:
+  size: pretrained
+  seq_len: 1024
+  gradient_checkpointing: false
+  pretrained: HuggingFaceTB/SmolLM2-360M
+  host_mode: frozen
+  vocab_size: 49152
+  lora_rank: 64
+  host_quantization:
+    scheme: rtn
+    group_size: null
+    calibration_windows: 64
+train:
+  lr: 0.001
+  min_lr_ratio: 0.1
+  warmup_tokens: 1000000
+  weight_decay: 0.1
+  log_every: 10
+  checkpoint_minutes: 10
+  micro_batch: 4
+  grad_accum: 16
+  total_tokens: 10000000
+  save_trainable_only: true
+  init_from: experiments/e13-learning-cycle/runs/t5/stage0/SmolLM2-360M-full-C5-s3/final.pt
+  init_mode: continue
+data:
+  min_subtokens: 2
+  seed: 4321
+  train: /home/bhux/data/vsa-llm/e13/t5/smollm2/round2/train
+  eval: /home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval
+  ontology: /home/bhux/data/vsa-llm/e13/t5/smollm2/round2/SmolLM2-360M-q4-read-rtn-s3/ontology.pt
+eval:
+  windows: 1024
+  first_tokens: 2500000
+  save_window_losses: true
+  batch: 16
+  reference_strata: /home/bhux/data/vsa-llm/e13/t5/smollm2/reference-1024x1024.npz
+  points:
+  - 250000
+  - 500000
+  - 750000
+  - 1000000
+  - 1500000
+  - 2000000
+  - 3000000
+  - 4000000
+  - 5000000
+  - 6000000
+  - 8000000
+device: cuda
+channel:
+  mode: compose
+  operator: hrr
+  dimension: 256
+  composition: attentive
+  key_dimension: 8
+  context_window: 8
+  gate_bias: 0.0
+  skip_empty_frames: true
+seed: 3
+experiment: e13-t5-round2-SmolLM2-360M-q4-read-rtn-s3
+e9_track: t5
+e13:
+  stage: 5
+  arm: q4-read
+  host: SmolLM2-360M
+  seed: 3
+  scheme: rtn
+  family: smollm2
+  arm_root: /home/bhux/data/vsa-llm/e13/t5/smollm2/round2/SmolLM2-360M-q4-read-rtn-s3
+  seed_ontology: /home/bhux/data/vsa-llm/e13/t5/smollm2/seed/ontology.pt
+  learned: experiments/e13-learning-cycle/runs/t5/cycle/SmolLM2-360M-s3/learn
+  written: experiments/e13-learning-cycle/runs/t5/cycle/SmolLM2-360M-s3/write
+  frames: read
+  general: /home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval-general
+  general_windows: 256

@@ -93,6 +93,27 @@ A linear-attention host (`integrations.linear_attention.is_linear_attention_host
 fast kernels (`install_device_dispatch`: flash-linear-attention / causal-conv1d on CUDA tensors, the PyTorch
 reference on CPU); the bound kernels and the calls of each implementation are printed and recorded in the
 manifest (`linear_attention_kernels`).
+
+Opt-in keys of the learning cycle (E13, decision 63; absent keys change nothing):
+
+- `train.init_mode: continue` (default `exact`, the `init_from` behaviour above): continue a finished run in a model
+  built from another config (`load_continuation_state`): the composer's frame table is the config ontology's (new
+  words' frames written, edges added), a grown dictionary keeps the state's rows first, plain host projections load
+  into LoRA-wrapped ones (`train.init_merge_lora: true` folds the state's adapters into the base weights first, so
+  the new adapters start from the merged host), and a trainable-only state leaves the frozen host as built. The
+  initial state is loaded on resume too (before the checkpoint), so a trainable-only checkpoint finds its host;
+  `load_final` rebuilds such runs the same way.
+- `model.host_quantization` (`{scheme: rtn | nf4 | hqq | gptq | awq, group_size: null = auto, calibration_windows: 64,
+  calibration_seed: 0}`): after the initial state is loaded, the host's linear weights are quantized–dequantized in
+  place with the simulated weight-only schemes of `evaluation.quantization` (the values a 4-bit kernel computes with;
+  gradients reach the channel through them as through any frozen linear). Needs a frozen host (`host_mode` frozen or
+  lora). GPTQ / AWQ calibrate on seeded windows of `data.train`. The scheme record and the nominal host bytes go to
+  the manifest (`host_quantization`).
+- `channel.entry_rows` (`{path, trainable: true}`): a file `{"entries": ids, "rows": (n, width)}` whose rows the
+  given entries inject instead of the channel's own (`SpanChannel.set_entry_rows`; e.g. the subtoken-mean rows of
+  vocabulary expansion, trained as new-token embeddings would be).
+- `eval.points` (a list of token counts): the evaluation points instead of the log-spaced schedule (the end is
+  always evaluated), for curves read off at fixed tokens (tokens to criterion).
 """
 
 from __future__ import annotations
@@ -165,6 +186,14 @@ def eval_token_schedule(first: int, total: int) -> list[int]:
     while t < total:
         points.append(t); t *= 2
     return points + [total]
+
+
+def evaluation_schedule(config: dict[str, Any], total: int) -> list[int]:
+    """The run's evaluation points: `eval.points` (opt-in; E13) below `total` plus the end, else `eval_token_schedule`."""
+    points = config["eval"].get("points")
+    if not points:
+        return eval_token_schedule(config["eval"]["first_tokens"], total)
+    return sorted({int(p) for p in points if 0 < int(p) < total}) + [total]
 
 
 HOST_DTYPES = {"float32": torch.float32, "bfloat16": torch.bfloat16}
@@ -270,6 +299,10 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
             raise ValueError("channel.scale_to_host needs the host model (build_channel(..., host=model))")
         channel.host_scale_record = channel.set_host_scale(host_row_norm(host),
                                                            float(settings.get("host_scale_fraction") or HOST_SCALE_FRACTION))
+    if settings.get("entry_rows"):                     # opt-in (E13): the given entries inject their own rows
+        spec = settings["entry_rows"]
+        table = torch.load(Path(spec["path"]).expanduser(), weights_only=False, map_location="cpu")
+        channel.set_entry_rows(table["entries"], table["rows"], trainable=bool(spec.get("trainable", True)))
     return channel, context
 
 
@@ -507,7 +540,7 @@ def _evaluate_only(model: ChannelLM, config: dict[str, Any], output_dir: Path, e
     seq_len, train_cfg = config["model"]["seq_len"], config["train"]
     tokens_per_step = seq_len * train_cfg["micro_batch"] * train_cfg["grad_accum"]
     total_steps = max(1, train_cfg["total_tokens"] // tokens_per_step)
-    schedule = eval_token_schedule(config["eval"]["first_tokens"], total_steps * tokens_per_step)
+    schedule = evaluation_schedule(config, total_steps * tokens_per_step)
     starts = eval_windows(eval_corpus, count=config["eval"]["windows"], length=seq_len)
     sink: dict[str, tuple[list[np.ndarray], list[np.ndarray]]] | None = {} if config["eval"].get("save_window_losses") else None
     reference = (load_reference_strata(Path(config["eval"]["reference_strata"]), starts, seq_len)
@@ -572,9 +605,19 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         print(json.dumps({"host_records": records}, default=str), flush=True)
     train_cfg = config["train"]
     trainable_only = bool(train_cfg.get("save_trainable_only", False))
-    if train_cfg.get("init_from") and not (resume and checkpoint_path.exists()):
+    continuing = init_mode(config) == "continue"
+    # `continue` (opt-in, E13) loads the initial state on resume too: a trainable-only checkpoint lacks the host it continues.
+    if train_cfg.get("init_from") and (continuing or not (resume and checkpoint_path.exists())):
         initial = torch.load(train_cfg["init_from"], weights_only=False, map_location="cpu")
-        load_model_state(model, initial["model"], trainable_only=bool(initial.get("trainable_only", False)))
+        if continuing:
+            print(json.dumps({"continuation": load_continuation_state(
+                model, initial, merge_lora=bool(train_cfg.get("init_merge_lora", False)))}), flush=True)
+        else:
+            load_model_state(model, initial["model"], trainable_only=bool(initial.get("trainable_only", False)))
+        del initial
+    quantization = quantize_frozen_host(model, config, corpus) if config["model"].get("host_quantization") else None
+    if quantization:
+        print(json.dumps({"host_quantization": quantization}, default=str), flush=True)
     fillers = filler_index(config, ontology)
     if eval_only:
         return _evaluate_only(model, config, output_dir, eval_corpus, frequency, heldout, device, git_at_start, fillers=fillers)
@@ -586,7 +629,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     tokens_per_step = seq_len * micro * accum
     total_steps = max(1, train_cfg["total_tokens"] // tokens_per_step)
     warmup_steps = max(1, train_cfg["warmup_tokens"] // tokens_per_step)
-    schedule = [t for t in eval_token_schedule(config["eval"]["first_tokens"], total_steps * tokens_per_step)]
+    schedule = evaluation_schedule(config, total_steps * tokens_per_step)
     eval_starts = eval_windows(eval_corpus, count=config["eval"]["windows"], length=seq_len)
     entry_mask = None
     if ontology is not None:
@@ -697,7 +740,8 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                            parameters=sum(p.numel() for p in model.parameters()),
                            channel_parameters=sum(p.numel() for p in channel.parameters()) if channel else 0,
                            steps=total_steps, tokens_per_step=tokens_per_step,
-                           **({"channel_host_scale": scale} if scale else {}), **host_records(config, model))
+                           **({"channel_host_scale": scale} if scale else {}), **host_records(config, model),
+                           **({"host_quantization": quantization} if quantization else {}))
     return {"steps": step, "tokens": step * tokens_per_step}
 
 
@@ -788,6 +832,124 @@ def load_model_state(model: ChannelLM, state: dict[str, torch.Tensor], *, traina
         raise RuntimeError(f"trainable-only state does not fit the model: missing {bad[:5]}, unexpected {unexpected[:5]}")
 
 
+INIT_MODES = ("exact", "continue")
+FRAME_BUFFERS = ("channel.composer.frame_offsets", "channel.composer.frame_relations", "channel.composer.frame_fillers")
+
+
+def init_mode(config: dict[str, Any]) -> str:
+    """`train.init_mode` (opt-in, E13; `exact` when absent)."""
+    mode = config["train"].get("init_mode") or "exact"
+    if mode not in INIT_MODES:
+        raise ValueError(f"train.init_mode must be one of {INIT_MODES}")
+    return mode
+
+
+def _merge_adapters(state: dict[str, torch.Tensor], current: dict[str, torch.Tensor]) -> int:
+    """Fold LoRA adapters of `state` (`<p>.lora_a`, `<p>.lora_b`; `LoRALinear`'s default α = 32) into the base weight
+    (the state's, else the built model's — a trainable-only state's host is the hub's), stored under `<p>.weight`."""
+    merged = 0
+    for key in sorted(k for k in state if k.endswith(".lora_a")):
+        prefix = key[:-len(".lora_a")]
+        a, b = state.pop(key).float(), state.pop(prefix + ".lora_b").float()
+        source = next((k for k in (prefix + ".base.weight", prefix + ".weight") if k in state), None)
+        base = state.pop(source) if source else next(current[k] for k in (prefix + ".base.weight", prefix + ".weight") if k in current)
+        update = (32.0 / a.shape[0]) * (b @ a)                        # out × in
+        state[prefix + ".weight"] = (base.float() + (update if update.shape == base.shape else update.T)).to(base.dtype)
+        merged += 1
+    return merged
+
+
+def load_continuation_state(model: ChannelLM, initial: dict[str, Any], *, merge_lora: bool = False) -> dict[str, Any]:
+    """`train.init_mode: continue` (E13): load a finished run's state (`{"model": state, "trainable_only": bool}`) into a
+    model built from another config. The composer's frame table stays the config ontology's; a tensor whose leading
+    dimension grew (atomics or relation parameters of a grown dictionary) keeps the state's rows first and its own
+    initialization after them; a plain host projection loads into a LoRA-wrapped one (`<p>.weight` → `<p>.base.weight`),
+    whose adapters keep their initialization (`merge_lora`: the state's adapters are folded into the base weights first);
+    a trainable-only state leaves the frozen host weights as built. Anything else must match exactly. Returns a record."""
+    state = dict(initial["model"])
+    current = model.state_dict()
+    record: dict[str, Any] = {"merged_adapters": _merge_adapters(state, current) if merge_lora else 0, "grown": [],
+                              "lora_mapped": 0, "trainable_only": bool(initial.get("trainable_only", False))}
+    new: dict[str, torch.Tensor] = {}
+    for key, value in state.items():
+        if key in FRAME_BUFFERS:
+            continue
+        target = key
+        if target not in current:
+            stem, _, leaf = key.rpartition(".")
+            wrapped = f"{stem}.base.{leaf}"
+            if wrapped not in current:
+                raise RuntimeError(f"continuation state key {key!r} does not fit the model")
+            target = wrapped
+            record["lora_mapped"] += 1
+        mine = current[target]
+        if value.shape == mine.shape:
+            new[target] = value
+        elif value.ndim == mine.ndim and value.ndim >= 1 and value.shape[1:] == mine.shape[1:] and value.shape[0] < mine.shape[0]:
+            grown = mine.clone()
+            grown[:value.shape[0]] = value.to(grown.dtype)
+            new[target] = grown
+            record["grown"].append([target, int(value.shape[0]), int(mine.shape[0])])
+        else:
+            raise RuntimeError(f"continuation state {key!r} has shape {tuple(value.shape)}, the model {tuple(mine.shape)}")
+    # What the state may leave out: the frame table, LoRA adapters, opt-in entry rows and (trainable-only) the host.
+    missing = [k for k in current if k not in new and k not in FRAME_BUFFERS and not k.endswith((".lora_a", ".lora_b"))
+               and not k.startswith("channel.entry_row_") and not (record["trainable_only"] and k.startswith("model."))]
+    if missing:
+        raise RuntimeError(f"continuation state lacks {missing[:5]}")
+    model.load_state_dict({**current, **new})
+    record["loaded"] = len(new)
+    return record
+
+
+def _calibration_forward(model: ChannelLM, config: dict[str, Any], corpus: TokenCorpus, windows: int, seed: int) -> Any:
+    """`forward(step)` for `simulate_weight_only_` (GPTQ / AWQ): seeded windows of the training corpus, channel live."""
+    device = next(model.parameters()).device
+    length, batch = int(config["model"]["seq_len"]), max(1, int(config["eval"]["batch"]))
+    batches = [sample_batch(corpus, seed=seed, step=i, micro_step=0, batch=min(batch, windows - i * batch), length=length,
+                            min_subtokens=config["data"]["min_subtokens"]) for i in range(-(-windows // batch))]
+
+    def forward(step: Any) -> None:
+        for ids, spans in batches:
+            ids_d = ids.to(device)
+            spans_d = {k: v.to(device) for k, v in spans.items()} if model.channel is not None else None
+
+            def run(ids_d: torch.Tensor = ids_d, spans_d: dict[str, torch.Tensor] | None = spans_d) -> None:
+                with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                    model(ids_d, spans=spans_d)
+            step(run)
+    return forward
+
+
+def quantize_frozen_host(model: ChannelLM, config: dict[str, Any], corpus: TokenCorpus | None = None) -> dict[str, Any]:
+    """`model.host_quantization` (opt-in, E13 stage 5; module docstring): quantize–dequantize the frozen host's linear
+    weights in place; returns the scheme record with the nominal host bytes (quantized linears at the scheme's bits per
+    weight, every other host tensor at 16 bits)."""
+    from ..evaluation.quantization import (CALIBRATED_SCHEMES, auto_group_size, conv1d_to_linear, host_linears,
+                                           simulate_weight_only_)
+    spec = dict(config["model"]["host_quantization"])
+    if model.host_mode not in {"frozen", "lora"}:
+        raise ValueError("model.host_quantization needs a frozen host (host_mode frozen or lora)")
+    conv1d_to_linear(model.model)
+    group = int(spec.get("group_size") or auto_group_size(model.model))
+    forward = None
+    if spec["scheme"] in CALIBRATED_SCHEMES:
+        corpus = corpus or TokenCorpus.open(Path(config["data"]["train"]))
+        forward = _calibration_forward(model, config, corpus, int(spec.get("calibration_windows") or 64),
+                                       int(spec.get("calibration_seed") or 0))
+    info = simulate_weight_only_(model.model, spec["scheme"], group_size=group, forward=forward)
+    for name, parameter in model.model.named_parameters():      # GPT-2's converted Conv1D layers come back trainable
+        if not name.endswith((".lora_a", ".lora_b")):
+            parameter.requires_grad_(False)
+    quantized = {id(m.weight): m.weight.numel() for _, m in host_linears(model.model)}
+    rest = sum(p.numel() for p in {id(p): p for p in model.model.parameters()}.values() if id(p) not in quantized
+               and not p.requires_grad)
+    info.update(quantized_weights=sum(quantized.values()), other_host_weights=rest,
+                host_bytes=int(sum(quantized.values()) * info["bits_per_weight"] / 8 + 2 * rest),
+                calibration_windows=int(spec.get("calibration_windows") or 64) if forward is not None else None)
+    return info
+
+
 def load_final(path: Path, device: torch.device | str = "cpu") -> ChannelLM:
     """Rebuild a trained `ChannelLM` from a run's `final.pt` (full or trainable-only state).
 
@@ -809,7 +971,19 @@ def load_final(path: Path, device: torch.device | str = "cpu") -> ChannelLM:
             composer.add_relation_copies(torch.zeros(int(saved["relations_count"]) - composer.relation_count, dtype=torch.long))
         composer.set_schedule(FrameSchedule(saved["offsets"], saved["relations"], saved["fillers"]))
     model = wrap_host(config, base, channel, context)
-    load_model_state(model, final["model"], trainable_only=bool(final.get("trainable_only", False)))
+    trainable_only = bool(final.get("trainable_only", False))
+    if trainable_only and init_mode(config) == "continue" and config["train"].get("init_from"):
+        # E13 (opt-in): a trainable-only state lacks the host the run continued (and quantized); rebuild it first.
+        initial = torch.load(config["train"]["init_from"], weights_only=False, map_location="cpu")
+        load_continuation_state(model, initial, merge_lora=bool(config["train"].get("init_merge_lora", False)))
+        del initial
+    if config["model"].get("host_quantization"):
+        from ..evaluation.quantization import conv1d_to_linear
+        if trainable_only:
+            quantize_frozen_host(model.to(device), config)
+        else:                                         # the state holds the quantized host (GPT-2: as nn.Linear)
+            conv1d_to_linear(model.model)
+    load_model_state(model, final["model"], trainable_only=trainable_only)
     return model.to(device).eval()
 
 

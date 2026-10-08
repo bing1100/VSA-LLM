@@ -392,10 +392,35 @@ class SpanChannel(nn.Module):
         self.semantic_head = nn.Linear(model_dimension, model_dimension, bias=False) if semantic_dimension else None
 
     def rows(self, spans: dict[str, Tensor], input_ids: Tensor | None = None, context: Tensor | None = None) -> Tensor:
-        """The rows the channel injects (before the gate), host scale included."""
+        """The rows the channel injects (before the gate), host scale included; entries given their own rows
+        (`set_entry_rows`, opt-in) inject those instead."""
         rows = self._rows(spans, input_ids, context)
         scale = self._buffers.get("host_scale")
-        return rows if scale is None else rows * scale.to(rows.dtype)
+        rows = rows if scale is None else rows * scale.to(rows.dtype)
+        return rows if "entry_row_ids" not in self._buffers else self._entry_rows(spans["entry"], rows)
+
+    def set_entry_rows(self, entries: Tensor | Iterable[int], rows: Tensor, *, trainable: bool = True) -> None:
+        """Opt-in (E13, `channel.entry_rows`): the given entries inject these rows (model width, after the host scale)
+        instead of the channel's own, as a Parameter (`trainable`) — e.g. new words initialized at the subtoken mean of
+        the host's input embeddings, the standard vocabulary-expansion baseline. Registered only when called, so channels
+        without it keep their state-dict keys; every other entry is unchanged."""
+        entries = torch.as_tensor(list(entries) if not isinstance(entries, Tensor) else entries, dtype=torch.long).flatten()
+        width = (self.gate.in_features - 1) // 2
+        rows = torch.as_tensor(rows, dtype=torch.float32)
+        if rows.shape != (entries.numel(), width) or entries.numel() != entries.unique().numel():
+            raise ValueError(f"entry rows need distinct entries and shape ({entries.numel()}, {width}), got {tuple(rows.shape)}")
+        order = torch.argsort(entries)
+        device = self.gate.weight.device
+        self.register_buffer("entry_row_ids", entries[order].to(device))
+        self.entry_row_table = nn.Parameter(rows[order].clone().to(device), requires_grad=trainable)
+
+    def _entry_rows(self, entries: Tensor, rows: Tensor) -> Tensor:
+        ids = self.entry_row_ids
+        position = torch.searchsorted(ids, entries).clamp(max=ids.numel() - 1)
+        hit = ids[position] == entries
+        if not bool(hit.any()):
+            return rows
+        return torch.where(hit[:, None], self.entry_row_table[position].to(rows.dtype), rows)
 
     @torch.no_grad()
     def mean_row_norm(self, sample: int = 4096) -> float:
