@@ -438,3 +438,22 @@ role-ambiguous edges for U5ut and U5tr.
 - S2.6 step 1's probe on every arm (fidelity: U5u, U5sb, U5bu, U5sl against U5).
 - S2.7 C0′ + LRE decoder (probe B, hidden states, held-out) against U5's oracle filler recovery.
 - Optional, not queued by default: a 50M from-scratch screen and a Qwen3-1.7B T5 readout pair (U5 against U5ut, seed 1).
+
+### §13 addendum — step 2 smoke tests (2026-10-08; SMOKE, not a result)
+
+Run after `e1bdf4c` (§13's commit), outputs in a scratch directory; no endpoint was computed or read. The GPU was shared
+with a training job (100% utilization), so throughputs are noisy upper bounds on cost.
+
+- **CPU (tests):** toy readout arms (U5, U5ut, U5sl, U5bu) train through the real trainer, save and reload with the
+  readout (`channel.readout.*` in `final.pt`); the readout is prefix-causal, its initialization leaves every other
+  initialization of the run unchanged, a row override switches it off for that entry, and `e9_binding_readout`
+  replays the final evaluation with the readout on and differs with it off.
+- **GPU, T5 SmolLM2-135M, 30 optimizer steps of 1 × 1,024 tokens** (C5's config with each arm's channel): peak 3.30–3.35 GB;
+  tokens/s C5 15.7k, U5 16.9k, U5bu 14.6k, U5sb 13.6k, U5sl 11.0k (the slotted operator loops over its slots). A first
+  attempt at 2 × 1,024 tokens peaked at 4.8 GB (C5), above the 4 GB smoke budget, and was rerun at 1 × 1,024. The slotted
+  composer recorded the T5 load 10,293 / 10,438 / 10,462 edges.
+- **GPU, `e9_binding_readout` on the smoke U5 run** (4 evaluation windows): replay ok, 13 strata with the gate on and off,
+  196 diagnosed positions (seen 164, rare 7, held-out 25), 1.8 s.
+- **Cost** (`e9_plan --dry-run`): 21 trainings × 67 min × 1.15 (the readout overhead assumed for every arm; the slotted arm may
+  be ≈ 1.3) ≈ 27.0 GPU-h, 189 chained evaluations ≈ 7.1 GPU-h, the R9 batch report 0.4: **≈ 34.5 GPU-h**. The optional
+  Qwen3-1.7B pair (U5, U5ut, seed 1) ≈ 3.2 GPU-h per run by the memory probe (+ evaluations).

@@ -124,6 +124,7 @@ import argparse
 import copy
 import functools
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -1016,7 +1017,8 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
         return minutes / 60
     if module == "vsa_embed.experiments.e9_report":
         return EVAL_MINUTES_360M["report"] / 60
-    suffix = name.rsplit("-s", 1)[-1].split("-", 1)[-1] if "-s" in name else ""
+    marker = re.search(r"-s\d+-(.+)$", name)                  # the job's suffix follows the run's seed marker
+    suffix = marker[1] if marker else (name.rsplit("-s", 1)[-1].split("-", 1)[-1] if "-s" in name else "")
     minutes = EVAL_MINUTES_360M.get(suffix)
     if minutes is None:
         minutes = next((m for prefix, m in EVAL_MINUTES_PREFIX_360M.items() if suffix.startswith(prefix)), 5.0)
