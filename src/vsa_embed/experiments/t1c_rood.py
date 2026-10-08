@@ -35,7 +35,8 @@ Stages (`python -m vsa_embed.experiments.t1c_rood <stage> --config experiments/t
 - `report`: the ROOD endpoints of every encoder and the LM endpoint (L1, from `e4_quant` on `eval-rood`).
 - `plan`: the queue commands (printed; never queued here).
 
-The encode and train stages are T1c-F's (`t1c_icd_frequency encode|train --config experiments/t1c-clinical/rood/rood.yaml`).
+The encode and train stages are T1c-F's (`t1c_icd_frequency encode|train --config experiments/t1c-clinical/rood/rood.yaml`); the
+frozen P0 encode runs with `--reuse-base`, which links T1c-F's P0 states only on an exact manifest match.
 """
 
 from __future__ import annotations
@@ -47,6 +48,7 @@ import hashlib
 import json
 import re
 import time
+import zlib
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from itertools import chain
@@ -897,7 +899,10 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
     generator = np.random.default_rng(int(config["seed"]))
     weights = generator.poisson(1.0, size=(replicates, pool.size)).astype(np.float32)
     code_draw = generator.integers(0, rood_ids.size, size=(replicates, rood_ids.size))
-    seed_draw = {c: generator.integers(0, len(per[c]), size=(replicates, len(per[c]))) for c in per}
+    # Seeds are drawn per condition from a generator keyed by its name, so a contrast does not depend on which other
+    # conditions exist (a later analysis with composed_c5 reproduces the primary contrast exactly).
+    seed_draw = {c: np.random.default_rng([int(config["seed"]), zlib.crc32(c.encode())]).integers(0, len(per[c]), size=(replicates, len(per[c])))
+                 for c in per}
     boot: dict[str, dict[str, np.ndarray]] = {}
     for c in per:
         seed_list = sorted(per[c])
@@ -1095,7 +1100,9 @@ ROOD_CONFIG_ARG = "--config experiments/t1c-clinical/rood/rood.yaml"
 T1CF_CONFIG_ARG = "--config experiments/t1c-clinical/icd-frequency/icd-frequency.yaml"
 E9_STAGE = "t1c-rood"
 E9_RUNS = Path("experiments/e9-retrofit/runs") / E9_STAGE
-LEVELS = (54.4998, 54.49981, 54.49982, 54.49983)   # training, evaluations / encode, analyses, report (decision 63's band)
+# Decision 63's band, decisive first (author, 2026-10-08): frozen-host coding + R1, E9 training, ROOD-trained encoders and
+# rescoring, the remaining analyses, reports.
+LEVELS = (54.4998, 54.49981, 54.49982, 54.49983, 54.49984)
 
 
 BUILD_SUMMARY = Path("experiments/t1c-clinical/rood/runs/build-v1/summary.json")
@@ -1115,24 +1122,26 @@ def whole_split_windows(summary_path: Path = BUILD_SUMMARY, split: str = "eval-r
 
 def plan_commands(*, levels: Sequence[float] = LEVELS, hours: dict[str, float] | None = None,
                   windows: int | None = None) -> str:
-    """The queue commands of T1c-ROOD (printed; never executed here). GPU-h from T1c / T1c-F's measured costs."""
+    """The queue commands of T1c-ROOD (printed; never executed here), decisive block first (author, 2026-10-08): the
+    frozen-host coding and its R1 analysis, then E9, then the ROOD-trained encoders and the rescoring, then the other
+    analyses, then the reports. GPU-h from T1c / T1c-F's measured costs."""
     windows = windows or whole_split_windows()
     h = {"e9_train": 1.16, "e9_p0": 0.03, "encode_p0": 1.5, "encode_run": 1.7, "train_seed": 0.75, "train_seed_c5": 0.85,
          "train_c5_only": 0.15, "analyze": 0.1, "report": 0.4, **(hours or {})}
     quant_rood = 2 * (windows or 21827) * QUANT_HOURS_PER_WINDOW_PASS
     quant_general = 2 * 2048 * QUANT_HOURS_PER_WINDOW_PASS
-    train, evals, analyses, report = levels
+    decisive, training, evaluations, analyses, report = levels
     q = "PYTHONPATH=src $PY -m vsa_embed.jobqueue add"
     m = "$PY -m vsa_embed.experiments.t1c_icd_frequency"
     r = "$PY -m vsa_embed.experiments.t1c_rood"
     c5 = E9_RUNS / "SmolLM2-360M-full-C5-s1"
     c0 = E9_RUNS / "SmolLM2-360M-full-C0p-s1"
     eight = "free composed_head composed_c5 transe title random gram composed_free"
+    p0_hours = h["encode_p0"] + 3 * h["train_seed"] + h["analyze"]
     lm_hours = 9 * h["e9_train"] + h["e9_p0"]
-    p0_hours = h["encode_p0"] + 3 * h["train_seed"]
     run_hours = 2 * h["encode_run"] + 6 * h["train_seed_c5"] + 3 * h["train_c5_only"]
     eval_hours = 10 * (quant_rood + quant_general)
-    analysis_hours = 6 * h["analyze"]
+    analysis_hours = 5 * h["analyze"]
     total = lm_hours + p0_hours + run_hours + eval_hours + analysis_hours
     whole = windows or "WHOLE"
     lines = ["#!/usr/bin/env bash",
@@ -1141,59 +1150,69 @@ def plan_commands(*, levels: Sequence[float] = LEVELS, hours: dict[str, float] |
              "#   cd /home/bhux/workplace/VSA-LLM && PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python",
              "# The CPU stages (select, prepare, build, alias-table) have run; their outputs are under ~/data/vsa-llm/t1c/rood-v1/",
              "# and ~/data/vsa-llm/t1c/e9/t1c-rood.json (shared by every checkout).",
-             f"# Priorities (decision 63's band): training {train}, evaluations / encodes / coding heads {evals}, analyses {analyses},",
-             f"# reports {report}; equal priorities run in creation order, so run this file top to bottom.",
+             f"# Run order (author, 2026-10-08; decisive first): {decisive} frozen-host (P0-360M) encode, coding and R1 analysis;",
+             f"# {training} E9 training (seeds 1–3); {evaluations} coding on the ROOD-trained C0' / C5 and the rescoring;",
+             f"# {analyses} the remaining analyses; {report} reports. Equal priorities run in creation order: run this file top to bottom.",
              "# GPU-h: idle-GPU estimates from measured costs — E9 SmolLM2-360M ≈ 67 min per 50M-token run plus its 2,048-window",
              "# evaluations (e9_plan --dry-run); T1c-F's smoke-scaled encode 1.5 / 1.7 GPU-h and head training ≈ 0.8 GPU-h per",
              "# 7-condition seed (ROOD trains on 84% of T1c-F's admissions; free_mean / free_zero add two scoring passes); e4_quant",
              f"# ≈ 0.25 GPU-h per pass of 21,827 windows (T1c-2). Total ≈ {total:.1f} GPU-h.",
              "set -euo pipefail", ': "${PY:?set PY to the pinned interpreter}"', "",
-             f"# --- 1. E9 on the ROOD corpus (track t1c-rood): SmolLM2-360M P0 / C0' / C2 / C5 × seeds 1–3, training only, at {train}",
-             f"# (no per-run probe / item evaluations: T1c's items are built on its own holdout, trained here). ≈ {lm_hours:.1f} GPU-h ---",
-             f"PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t1c-rood --stage {E9_STAGE} --hosts SmolLM2-360M "
-             f"--models P0 C0p C2 C5 --seeds 1 2 3 --no-evals --priority {train} --level-step 0.00001 --queue", "",
-             "# --- 2. coding on P0 (frozen SmolLM2-360M, never saw MIMIC): the primary encoder. Its states are T1c-F's pass-1",
-             "# states (icd-frequency-v1/states/P0-360M); this is T1c-F's encode command with --resume, so it is idempotent. If",
-             "# T1c-F's own t1cf-encode-P0-360M (55) is still pending it then stops on its first attempt with 'states exist';",
-             f"# `jobqueue retry t1cf-encode-P0-360M` completes it (titles only, about a minute), or remove it. ≈ {p0_hours:.1f} GPU-h ---",
-             f"{q} --name t1crood-encode-P0-360M --priority {evals} --min-free-gb 20 -- {m} encode {T1CF_CONFIG_ARG} "
-             f"--encoder P0-360M --pretrained HuggingFaceTB/SmolLM2-360M --resume   # ≈ {h['encode_p0']:.1f} GPU-h (0 if T1c-F pass 1 ran)"]
+             f"# --- 1. at {decisive}: coding on P0 (frozen SmolLM2-360M, never saw MIMIC), the primary encoder, and R1. The encode",
+             "# reuses T1c-F's P0 states (t1cf-encode-P0-360M, 54.41) only when their manifest matches exactly (host, token store",
+             "# and truncation, chunking, precision, admission order): it then writes only REUSED.json under rood-v1/coding and",
+             "# costs nothing. Absent, incomplete or older (unrecorded fields) states → it encodes into rood-v1/coding/states;",
+             "# a definite mismatch fails loudly. It never writes T1c-F's states, and T1c-F's job never reads ROOD's. "
+             f"≈ {p0_hours:.1f} GPU-h (≈ {p0_hours - h['encode_p0']:.1f} on reuse) ---",
+             f"{q} --name t1crood-encode-P0-360M --priority {decisive} --min-free-gb 20 -- {m} encode {ROOD_CONFIG_ARG} "
+             f"--encoder P0-360M --pretrained HuggingFaceTB/SmolLM2-360M --reuse-base   # 0 on reuse, else ≈ {h['encode_p0']:.1f} GPU-h (resumable)"]
     for seed in (1, 2, 3):
-        lines.append(f"{q} --name t1crood-train-P0-360M-s{seed} --priority {evals} --min-free-gb 10 --no-resume -- {m} train "
+        lines.append(f"{q} --name t1crood-train-P0-360M-s{seed} --priority {decisive} --min-free-gb 10 --no-resume -- {m} train "
                      f"{ROOD_CONFIG_ARG} --encoder P0-360M --seed {seed}   # 7 conditions + free_mean / free_zero ≈ {h['train_seed']:.2f} GPU-h")
-    lines += ["", f"# --- 3. coding on the ROOD-trained encoders (needs E9 seed 1: {c0.name}, {c5.name}): their encodes, 8 conditions",
-              f"# (composed_c5 = the C5-ROOD composer; ROOD concepts never linked in its training) and composed_c5 on P0. ≈ {run_hours:.1f} GPU-h ---"]
+    lines.append(f"{q} --name t1crood-analyze-P0-360M --priority {decisive} --min-free-gb 2 --no-resume -- {r} analyze "
+                 f"{ROOD_CONFIG_ARG} --encoder P0-360M --seeds 1 2 3 --device cuda   # R1 (primary) ≈ {h['analyze']:.2f} GPU-h")
+    lines += ["", f"# --- 2. at {training}: E9 on the ROOD corpus (track t1c-rood): SmolLM2-360M P0 / C0' / C2 / C5 × seeds 1–3, training",
+              f"# only (no per-run probe / item evaluations: T1c's items are built on its own holdout, trained here). ≈ {lm_hours:.1f} GPU-h ---",
+              f"PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t1c-rood --stage {E9_STAGE} --hosts SmolLM2-360M "
+              f"--models P0 C0p C2 C5 --seeds 1 2 3 --no-evals --priority {training} --level-step 0.00001 --queue", "",
+              f"# --- 3. at {evaluations}: coding on the ROOD-trained encoders (E9 seed 1: {c0.name}, {c5.name}): their encodes,",
+              "# 8 conditions (composed_c5 = the C5-ROOD composer; ROOD concepts never linked in its training) and composed_c5 on",
+              f"# P0 (≈ {run_hours:.1f} GPU-h); L1 on the whole eval-rood split ({whole} windows; e4_quant ref + INT8-A; P0, C0', C2, C5",
+              f"# × 3 seeds) and the locality check on eval-general (C3's documents, the runs' 2,048 windows) (≈ {eval_hours:.1f} GPU-h) ---"]
     for enc, run, extra in (("C0p-ROOD-360M", c0, ""), ("C5-ROOD-360M", c5, " --channel on")):
-        lines.append(f"{q} --name t1crood-encode-{enc} --priority {evals} --min-free-gb 20 -- {m} encode {ROOD_CONFIG_ARG} "
+        lines.append(f"{q} --name t1crood-encode-{enc} --priority {evaluations} --min-free-gb 20 -- {m} encode {ROOD_CONFIG_ARG} "
                      f"--encoder {enc} --run {run}{extra}   # ≈ {h['encode_run']:.1f} GPU-h (resumable)")
         for seed in (1, 2, 3):
-            lines.append(f"{q} --name t1crood-train-{enc}-s{seed} --priority {evals} --min-free-gb 10 --no-resume -- {m} train "
+            lines.append(f"{q} --name t1crood-train-{enc}-s{seed} --priority {evaluations} --min-free-gb 10 --no-resume -- {m} train "
                          f"{ROOD_CONFIG_ARG} --encoder {enc} --seed {seed} --conditions {eight} --c5-run {c5}   # ≈ {h['train_seed_c5']:.2f} GPU-h")
     for seed in (1, 2, 3):
-        lines.append(f"{q} --name t1crood-train-P0-360M-c5dict-s{seed} --priority {evals} --min-free-gb 10 --no-resume -- {m} train "
+        lines.append(f"{q} --name t1crood-train-P0-360M-c5dict-s{seed} --priority {evaluations} --min-free-gb 10 --no-resume -- {m} train "
                      f"{ROOD_CONFIG_ARG} --encoder P0-360M --seed {seed} --conditions composed_c5 --c5-run {c5}   # ≈ {h['train_c5_only']:.2f} GPU-h")
     quant_runs = " ".join(str(E9_RUNS / f"SmolLM2-360M-{x}") for x in
                           ["frozen-P0-s1", *[f"full-{model}-s{seed}" for model in ("C0p", "C2", "C5") for seed in (1, 2, 3)]])
-    lines += ["", f"# --- 4. L1 on the whole eval-rood split ({whole} windows; e4_quant ref + INT8-A; P0, C0', C2, C5 × 3 seeds)",
-              f"# and the locality check on eval-general (C3's documents, the runs' 2,048 windows). ≈ {eval_hours:.1f} GPU-h ---",
-              f"{q} --name t1crood-quant-rood --priority {evals} --min-free-gb 5 -- $PY -m vsa_embed.experiments.e4_quant --runs {quant_runs} "
+    lines += [f"{q} --name t1crood-quant-rood --priority {evaluations} --min-free-gb 5 -- $PY -m vsa_embed.experiments.e4_quant --runs {quant_runs} "
               f"--output experiments/e9-retrofit/quant-full/{E9_STAGE} --bits 8 --variants A --baseline \"C0'\" --references C2 "
               f"--windows {whole} --resume --title \"E9 T1c-ROOD on the whole eval-rood split\"",
-              f"{q} --name t1crood-quant-general --priority {evals} --min-free-gb 5 -- $PY -m vsa_embed.experiments.e4_quant --runs {quant_runs} "
+              f"{q} --name t1crood-quant-general --priority {evaluations} --min-free-gb 5 -- $PY -m vsa_embed.experiments.e4_quant --runs {quant_runs} "
               f"--output experiments/e9-retrofit/quant-general/{E9_STAGE} --bits 8 --variants A --baseline \"C0'\" --references C2 "
               f"--eval-corpus {EVAL_GENERAL.expanduser()} --resume --title \"E9 T1c-ROOD on general text\"", "",
-              f"# --- 5. analyses at {analyses} (the bootstrap on the GPU) ≈ {analysis_hours:.1f} GPU-h ---"]
-    for enc in ("P0-360M", "C0p-ROOD-360M", "C5-ROOD-360M"):
+              f"# --- 4. at {analyses}: the remaining analyses (the bootstrap on the GPU): P0 again with composed_c5 (-pass2; the primary",
+              "# contrast is unchanged: its draws do not depend on the other conditions), C0' / C5-ROOD, and T1c-F's endpoints under",
+              f"# ROOD (descriptive). ≈ {analysis_hours:.1f} GPU-h ---",
+              f"{q} --name t1crood-analyze-P0-360M-pass2 --priority {analyses} --min-free-gb 2 --no-resume -- {r} analyze "
+              f"{ROOD_CONFIG_ARG} --encoder P0-360M --seeds 1 2 3 --device cuda --label -pass2   # ≈ {h['analyze']:.2f} GPU-h"]
+    for enc in ("C0p-ROOD-360M", "C5-ROOD-360M"):
         lines.append(f"{q} --name t1crood-analyze-{enc} --priority {analyses} --min-free-gb 2 --no-resume -- {r} analyze "
                      f"{ROOD_CONFIG_ARG} --encoder {enc} --seeds 1 2 3 --device cuda   # ≈ {h['analyze']:.2f} GPU-h")
+    for enc in ("P0-360M", "C0p-ROOD-360M", "C5-ROOD-360M"):
         lines.append(f"{q} --name t1crood-analyze-t1cf-{enc} --priority {analyses} --min-free-gb 2 --no-resume -- {m} analyze "
                      f"{ROOD_CONFIG_ARG} --encoder {enc} --seeds 1 2 3 --device cuda   # T1c-F's endpoints under ROOD (descriptive)")
-    lines += ["", f"# --- 6. reports at {report} (CPU lane: names contain -report): R9 for the stage, then the ROOD endpoints ---",
+    lines += ["", f"# --- 5. at {report} (CPU lane: names contain -report): R9 for the stage, then the ROOD endpoints ---",
               f"{q} --name t1crood-e9-report --priority {report} --min-free-gb 1 --no-resume -- $PY -m vsa_embed.experiments.e9_report "
               f"--runs {E9_RUNS} --quant experiments/e9-retrofit/quant-full/{E9_STAGE} --quant-general experiments/e9-retrofit/quant-general/{E9_STAGE} "
               f"--output experiments/e9-retrofit/report/{E9_STAGE} --overwrite   # ≈ {h['report']:.1f} h",
               f"{q} --name t1crood-report --priority {report} --min-free-gb 1 --no-resume -- {r} report {ROOD_CONFIG_ARG} "
-              f"--encoders P0-360M C0p-ROOD-360M C5-ROOD-360M --quant experiments/e9-retrofit/quant-full/{E9_STAGE}   # minutes"]
+              f"--encoders P0-360M P0-360M-pass2 C0p-ROOD-360M C5-ROOD-360M --quant experiments/e9-retrofit/quant-full/{E9_STAGE}   # minutes"]
     return "\n".join(lines) + "\n"
 
 
@@ -1204,7 +1223,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("stage", choices=("select", "prepare", "build", "alias-table", "analyze", "report", "plan"))
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--encoder")
-    parser.add_argument("--encoders", nargs="+", default=["P0-360M", "C0p-ROOD-360M", "C5-ROOD-360M"])
+    parser.add_argument("--encoders", nargs="+", default=["P0-360M", "P0-360M-pass2", "C0p-ROOD-360M", "C5-ROOD-360M"])
     parser.add_argument("--quant", type=Path, nargs="*", default=[])
     parser.add_argument("--seeds", type=int, nargs="+", default=[1, 2, 3])
     parser.add_argument("--conditions", nargs="+", default=None)

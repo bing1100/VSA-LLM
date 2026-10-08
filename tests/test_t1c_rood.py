@@ -364,10 +364,106 @@ def test_base_root_is_opt_in(tmp_path: Path) -> None:
     assert tf.resolve_states_dir(config, "enc") == tmp_path / "own" / "states" / "enc"
     config["paths"]["base_root"] = str(tmp_path / "base")
     assert tf.base_root(config) == tmp_path / "base"
-    assert tf.resolve_states_dir(config, "enc") == tmp_path / "base" / "states" / "enc"     # not encoded here: read the base's
+    # never a silent fallback: the base root's states are read only through a verified link (`encode --reuse-base`)
+    assert tf.resolve_states_dir(config, "enc") == tmp_path / "own" / "states" / "enc"
     (tmp_path / "own" / "states" / "enc").mkdir(parents=True)
     (tmp_path / "own" / "states" / "enc" / "meta.json").write_text("{}")
     assert tf.resolve_states_dir(config, "enc") == tmp_path / "own" / "states" / "enc"
+
+
+# -- the frozen-host encode: reuse T1c-F's states only on an exact manifest match -------------------------------------
+
+def _encode_roots(tmp_path: Path, *, n_adm: int = 12, length: int = 160, meta_extra: dict | None = None,
+                  complete: bool = True) -> tuple[dict, Path]:
+    """A base root with a token store, admissions and complete frozen-host states, and a ROOD-like data root on top."""
+    base, own = tmp_path / "base", tmp_path / "own"
+    for root in (base, own):
+        root.mkdir()
+    lengths = np.full(n_adm, length, dtype=np.int64)
+    offsets = np.concatenate([[0], np.cumsum(lengths)])
+    empty_spans = {k: np.zeros(0, dtype=np.int64) for k in ("text", "start", "end", "inject", "entry", "length")}
+    empty_spans["confidence"] = np.zeros(0, dtype=np.float32)
+    (base / "tokens").mkdir()
+    tf.save_tokens(base / "tokens" / "admissions", {"ids": np.ones(int(offsets[-1]), dtype=np.uint16), "offsets": offsets,
+                                                    "full_lengths": lengths, "spans": empty_spans})
+    tf.save_tokens(base / "tokens" / "titles", {"ids": np.ones(6, dtype=np.uint16), "offsets": np.array([0, 3, 6]),
+                                                "full_lengths": np.array([3, 3]), "spans": empty_spans})
+    hadm = np.arange(500, 500 + n_adm)
+    torch.save({"hadm": hadm, "split": np.array(["train"] * n_adm)}, base / "admissions.pt")
+    torch.save({"hadm": hadm, "split": np.array(["rood"] * n_adm)}, own / "admissions.pt")
+    config = {"paths": {"data_root": str(own), "base_root": str(base), "runs": str(tmp_path / "runs"),
+                        "alias_table": str(tmp_path / "none.json")},
+              "text": {"chunk_tokens": 1024, "segment_tokens": 32, "max_tokens": 8192, "tokenizer": "stub-tokenizer"},
+              "encode": {"dtype": "bfloat16", "batch_chunks": 8}}
+    _, seg_offsets = tf.chunk_plan(lengths, 1024, 32)
+    states = base / "states" / "P0"
+    states.mkdir(parents=True)
+    np.save(states / "seg_offsets.npy", seg_offsets)
+    np.memmap(states / "segments.f16", dtype=np.float16, mode="w+", shape=(int(seg_offsets[-1]), 8)).flush()
+    np.save(states / "titles.npy", np.zeros((2, 8), dtype=np.float32))
+    meta = {**tf.encode_spec(config, "P0", pretrained="stub/host", tokens_dir="tokens", admissions=n_adm,
+                             tokens=int(lengths.sum())), "width": 8, "segments": int(seg_offsets[-1]),
+            "admissions_done": n_adm if complete else n_adm // 2, "complete": complete, **(meta_extra or {})}
+    (states / "meta.json").write_text(json.dumps(meta))
+    return config, states
+
+
+def _digest(folder: Path) -> dict[str, str]:
+    import hashlib
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(folder.iterdir())}
+
+
+def test_frozen_host_encode_reuses_matching_base_states_without_writing_them(tmp_path: Path) -> None:
+    config, base_states = _encode_roots(tmp_path)
+    before = _digest(base_states)
+    summary = tf.run_encode(config, "P0", pretrained="stub/host", device="cpu", reuse_base=True)
+    assert summary["reuse"]["decision"] == "reuse"
+    own = tmp_path / "own" / "states" / "P0"
+    assert sorted(p.name for p in own.iterdir()) == [tf.REUSE_FILE]           # only the link: no states of its own
+    assert tf.resolve_states_dir(config, "P0") == base_states
+    store = tf.open_store(config, "P0")
+    assert store.offsets.size == 13
+    again = tf.run_encode(config, "P0", pretrained="stub/host", device="cpu", reuse_base=True)    # idempotent
+    assert again["reuse"]["decision"] == "reused"
+    assert _digest(base_states) == before                                      # the base (T1c-F's) states are never written
+    # a later change of the base manifest is refused rather than read silently
+    meta = json.loads((base_states / "meta.json").read_text())
+    (base_states / "meta.json").write_text(json.dumps({**meta, "segments": meta["segments"] + 1}))
+    with pytest.raises(RuntimeError):
+        tf.resolve_states_dir(config, "P0")
+
+
+@pytest.mark.parametrize("field, value", [("pretrained", "other/host"), ("segment_tokens", 64), ("max_tokens", 4096),
+                                          ("dtype", "float32"), ("tokenizer", "other")])
+def test_frozen_host_encode_fails_loudly_on_a_mismatched_base(tmp_path: Path, field: str, value) -> None:
+    config, base_states = _encode_roots(tmp_path, meta_extra={field: value})
+    before = _digest(base_states)
+    with pytest.raises(ValueError):
+        tf.run_encode(config, "P0", pretrained="stub/host", device="cpu", reuse_base=True)
+    assert not (tmp_path / "own" / "states" / "P0" / tf.REUSE_FILE).exists()
+    assert _digest(base_states) == before
+
+
+def test_reuse_decision_rules() -> None:
+    spec = {"encoder": "P0", "pretrained": "h", "channel": False, "tokens": 10, "dtype": "bfloat16"}
+    meta = {**spec, "complete": True, "admissions": 3, "admissions_done": 3}
+    assert tf.reuse_decision(spec, meta, offsets_equal=True, admissions_equal=True) == ("reuse", [])
+    assert tf.reuse_decision(spec, None, offsets_equal=False, admissions_equal=True)[0] == "encode"        # absent
+    partial = {**meta, "complete": False, "admissions_done": 1}
+    assert tf.reuse_decision(spec, partial, offsets_equal=True, admissions_equal=True)[0] == "encode"      # incomplete
+    older = {k: v for k, v in meta.items() if k != "dtype"}                    # written before the field was recorded
+    assert tf.reuse_decision(spec, older, offsets_equal=True, admissions_equal=True)[0] == "encode"
+    assert tf.reuse_decision(spec, {**meta, "tokens": 11}, offsets_equal=True, admissions_equal=True)[0] == "fail"
+    assert tf.reuse_decision(spec, meta, offsets_equal=False, admissions_equal=True) == ("fail", ["seg_offsets"])
+    assert tf.reuse_decision(spec, meta, offsets_equal=True, admissions_equal=False) == ("fail", ["admission order"])
+
+
+def test_reuse_is_opt_in_and_only_for_a_full_frozen_host_encode(tmp_path: Path) -> None:
+    config, _ = _encode_roots(tmp_path)
+    with pytest.raises(ValueError):
+        tf.run_encode(config, "P0", pretrained="stub/host", device="cpu", reuse_base=True, limit=4)
+    with pytest.raises(ValueError):
+        tf.run_encode(config, "P0", run=tmp_path / "run", device="cpu", reuse_base=True)
 
 
 # -- end to end on a synthetic data root: training (T1c-F's stage) and the ROOD analysis -----------------------------
@@ -393,7 +489,22 @@ def _synthetic_rood_experiment(tmp_path: Path) -> dict:
     segments.flush()
     np.save(states / "seg_offsets.npy", np.asarray(offsets))
     np.save(states / "titles.npy", rng.normal(size=(n, width)).astype(np.float32))
-    (states / "meta.json").write_text(json.dumps({"width": width, "complete": True}))
+    empty_spans = {k: np.zeros(0, dtype=np.int64) for k in ("text", "start", "end", "inject", "entry", "length")}
+    empty_spans["confidence"] = np.zeros(0, dtype=np.float32)
+    lengths = np.full(len(adm["labels"]), 160, dtype=np.int64)               # 5 segments of 32 tokens each
+    (base / "tokens").mkdir()
+    tf.save_tokens(base / "tokens" / "admissions", {"ids": np.ones(int(lengths.sum()), dtype=np.uint16),
+                                                    "offsets": np.concatenate([[0], np.cumsum(lengths)]),
+                                                    "full_lengths": lengths, "spans": empty_spans})
+    tf.save_tokens(base / "tokens" / "titles", {"ids": np.ones(n, dtype=np.uint16), "offsets": np.arange(n + 1),
+                                                "full_lengths": np.ones(n, dtype=np.int64), "spans": empty_spans})
+    text_cfg = {"chunk_tokens": 1024, "segment_tokens": 32, "max_tokens": 8192, "tokenizer": "stub-tokenizer"}
+    meta = {"encoder": "stub", "pretrained": "stub/host", "channel": False, "chunk_tokens": 1024, "segment_tokens": 32,
+            "tokens_dir": "tokens", "admissions": len(lengths), "tokens": int(lengths.sum()), "dtype": "bfloat16",
+            "max_tokens": 8192, "tokenizer": "stub-tokenizer", "width": width, "segments": int(offsets[-1]),
+            "admissions_done": len(lengths), "complete": True}
+    (states / "meta.json").write_text(json.dumps(meta))
+    torch.save(adm, base / "admissions.pt")
     (base / "kge").mkdir()
     torch.save({"vectors": torch.randn(n, 8)}, base / "kge" / "transe-d8.pt")
     labels["frames"] = [[(r, int(a)) for r, a in zip(rng.integers(0, 3, 3), rng.integers(0, 20, 3))] for _ in range(n)]
@@ -408,8 +519,9 @@ def _synthetic_rood_experiment(tmp_path: Path) -> dict:
     root.mkdir()
     torch.save(new, root / "labels.pt")
     torch.save(new_adm, root / "admissions.pt")
-    return {"experiment": "t", "version": "test", "seed": 3,
-            "paths": {"data_root": str(root), "base_root": str(base), "runs": str(tmp_path / "runs"), "ontology_pt": str(root / "none.pt")},
+    return {"experiment": "t", "version": "test", "seed": 3, "text": text_cfg, "encode": {"dtype": "bfloat16", "batch_chunks": 8},
+            "paths": {"data_root": str(root), "base_root": str(base), "runs": str(tmp_path / "runs"), "ontology_pt": str(root / "none.pt"),
+                      "alias_table": str(root / "none.json")},
             "head": {"source_dim": 16, "attention_dim": 16, "label_hidden": 32, "batch": 16, "lr": 3e-3, "weight_decay": 0.01,
                      "max_epochs": 3, "patience": 2, "free_std": 0.02, "free_fallbacks": ["mean", "zero"],
                      "conditions": ["free", "composed_head", "transe", "title", "random", "gram", "composed_free"]},
@@ -425,6 +537,8 @@ def _synthetic_rood_experiment(tmp_path: Path) -> dict:
 def test_end_to_end_synthetic_rood_run_writes_only_aggregates(tmp_path: Path) -> None:
     config = _synthetic_rood_experiment(tmp_path)
     conditions = config["head"]["conditions"]
+    linked = tf.run_encode(config, "stub", pretrained="stub/host", device="cpu", reuse_base=True)   # the P0 job's first step
+    assert linked["reuse"]["decision"] == "reuse"
     for seed in (1, 2):
         summary = tf.run_train(config, "stub", seed, conditions=conditions, device="cpu")
         assert set(summary["metrics"]) == set(conditions) | {"free_mean", "free_zero"}
@@ -481,7 +595,17 @@ def test_plan_uses_the_decision_63_slot_and_queues_nothing() -> None:
     import re
     text = tr.plan_commands()
     priorities = {float(p) for p in re.findall(r"--priority ([0-9.]+)", text)}
-    assert priorities == {54.4998, 54.49981, 54.49982, 54.49983}
+    assert priorities == {54.4998, 54.49981, 54.49982, 54.49983, 54.49984}
     assert "-report" in text and "GPU-h" in text and "e9_plan --track t1c-rood" in text and "--no-evals" in text
-    report_lines = [line for line in text.splitlines() if "--priority 54.49983" in line]
+    lines = [line for line in text.splitlines() if "--priority" in line]
+    level = {re.search(r"--name (\S+)", line).group(1) if "--name" in line else "e9_plan": float(re.search(r"--priority ([0-9.]+)", line).group(1))
+             for line in lines}
+    # decisive first: the frozen-host encode, its coding and R1 before E9; the encode reuses T1c-F's states (never --resume)
+    assert {level[k] for k in ("t1crood-encode-P0-360M", "t1crood-train-P0-360M-s1", "t1crood-analyze-P0-360M")} == {54.4998}
+    assert level["e9_plan"] == 54.49981 and level["t1crood-encode-C5-ROOD-360M"] == 54.49982
+    assert level["t1crood-quant-rood"] == 54.49982 and level["t1crood-analyze-C5-ROOD-360M"] == 54.49983
+    encode_p0 = next(line for line in lines if "t1crood-encode-P0-360M" in line)
+    assert "--reuse-base" in encode_p0 and "rood/rood.yaml" in encode_p0 and "--resume" not in encode_p0
+    report_lines = [line for line in lines if "--priority 54.49984" in line]
     assert report_lines and all("-report" in line for line in report_lines)
+    assert all("-report" not in line for line in lines if "--priority 54.49984" not in line)

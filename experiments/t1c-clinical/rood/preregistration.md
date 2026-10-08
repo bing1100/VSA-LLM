@@ -162,7 +162,7 @@ replaces T1c's 2,069-concept holdout on the ROOD track (§9).
     (`head.free_fallbacks`).
 - **Encoders:**
   - **P0-360M (primary):** the frozen SmolLM2-360M. It never saw MIMIC, so its states are clean by construction. These
-    are T1c-F's pass-1 states, reused.
+    are T1c-F's pass-1 states, reused only on an exact manifest match (§15.1).
   - **C0p-ROOD-360M and C5-ROOD-360M:** the seed-1 E9 runs on the ROOD corpus (§9). C5 reads with its channel on, using
     track `t1c-rood`'s alias table.
 
@@ -267,24 +267,24 @@ replaces T1c's 2,069-concept holdout on the ROOD track (§9).
 
 ## 12. Runs and compute (`queue-commands.sh`; not queued)
 
-**Priorities** (decision 63's band):
+**Run order** (decision 63's band; decisive first, author 2026-10-08, §15.1):
 
-| level | priority |
-|---|---:|
-| training | 54.4998 |
-| evaluations, encodes and coding heads | 54.49981 |
-| analyses | 54.49982 |
-| reports (names contain `-report`) | 54.49983 |
+| priority | jobs |
+|---:|---|
+| 54.4998 | frozen-host P0-360M encode (reuse of T1c-F's states, §15.1), its coding heads (seeds 1–3) and the R1 analysis |
+| 54.49981 | E9 training on the ROOD corpus (P0 / C0′ / C2 / C5 × seeds 1–3) |
+| 54.49982 | C0p-ROOD and C5-ROOD encodes and heads, `composed_c5` on P0, whole-split and general-text rescoring |
+| 54.49983 | the remaining analyses (P0 with `composed_c5`, C0p-ROOD, C5-ROOD, T1c-F's endpoints under ROOD) |
+| 54.49984 | reports (names contain `-report`) |
 
 **Cost** (idle-GPU estimates from T1c / T1c-F's measured costs; total ≈ 25.4 GPU-h):
 - E9, 10 runs: ≈ 10.5 GPU-h (`e9_plan --dry-run`: 1.16 per trained run);
-- P0 coding: ≈ 3.8 GPU-h (1.5 of it is T1c-F's pass-1 encode, shared);
+- P0 coding and R1: ≈ 2.4 GPU-h when T1c-F's P0 states are reused, else ≈ 3.9 (a separate 1.5 GPU-h encode);
 - C0p / C5-ROOD coding: ≈ 8.9 GPU-h;
 - whole-split and general-text rescoring: ≈ 1.6 GPU-h;
 - analyses: ≈ 0.6 GPU-h.
 
-**Decisive first:** the P0 block needs no E9 run. Queueing it before section 1 (at 54.4998, created first) would read
-R1 within about 4 GPU-h.
+The P0 block needs no E9 run, so R1 is read after about 2.4–3.9 GPU-h.
 
 ## 13. Licence and DUA
 
@@ -316,7 +316,32 @@ R1 within about 4 GPU-h.
 
 ## 15. Deviations and changes after commit
 
-(none yet)
+- **15.1 (2026-10-08, author, before any run) — run order and the P0 encode; no design change.**
+  - **Order.** Decisive first (table in §12): the frozen-host coding block and its R1 analysis run before E9 training.
+    The E9 runs use all three seeds now.
+  - **The frozen-host P0 encode** (`encode --reuse-base`) reuses T1c-F's P0 states (job `t1cf-encode-P0-360M`, queued
+    earlier at 54.41) only if all of the following hold:
+    - their manifest is complete;
+    - it matches field by field: host, channel off, token store and its truncation (`tokens_dir`, `max_tokens`,
+      tokenizer, token count), chunk and segment sizes, precision, admission count;
+    - their segment plan is identical;
+    - T1c-F's admission order equals this data root's.
+  - **Reuse writes only `REUSED.json`** (the base manifest's sha256) in ROOD's states folder. A base manifest that
+    changes later is refused when the states are opened.
+  - **When the base states are absent, incomplete, or older than the recorded fields,** the encode runs into ROOD's own
+    folder (`rood-v1/coding/states/P0-360M`).
+  - **A definite mismatch fails loudly.**
+  - ROOD never writes T1c-F's states and T1c-F never reads ROOD's, so neither job can fail or overwrite because of the
+    other. The base root is no longer read silently (`resolve_states_dir`).
+  - Tests: `tests/test_t1c_rood.py`, encode-reuse tests (synthetic).
+- **15.2 (same day, before any run) — the bootstrap's seed draws.** Seeds are drawn per condition from a generator
+  keyed by the condition's name, so a contrast does not depend on which other conditions are present. The later P0
+  analysis with `composed_c5` (`-pass2`) then reproduces the primary contrast exactly. The estimator is unchanged.
+- **Confirmed by the author (2026-10-08), as pre-registered:**
+  - the mean-row fallback is the primary control, with the initial (random) and zero rows secondary;
+  - training documents mentioning a ROOD name are dropped;
+  - `eval-rood` is selected by mention;
+  - E9 runs all three seeds.
 
 ## 16. Build record
 
