@@ -220,3 +220,13 @@ secondaries' definitions or the readings.
 - GPU jobs read up to 2,048 tokens (`--max-length 2048`, was 1,024 in the smoke): a few ALCUNA definitions in context
   exceed 1,024 tokens (8 smoke texts were cut on the left). Longer texts are still cut on the left and counted
   (`truncated` in `summary.json`).
+
+### 11.3 Secondary S17: the joint linker reader (added 2026-10-08, before any full run)
+
+- In the 40-item development smoke (SmolLM2-135M, not evidence), the `linker` reader's edge precision on COMPS was 0.05,
+  against 0.85 for `typeprior`. The same weakness is in E11 §13.3.
+- The C5 COMPS jobs therefore also run `store:linker-joint`, and **S17 = `store:linker-joint − none`** (360M) is added as a
+  secondary.
+- W2 stays `store:linker − none` as committed. No reading changes.
+- ALCUNA does not run `linker-joint`, for the same reason as §11.1.
+

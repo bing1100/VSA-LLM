@@ -30,7 +30,7 @@ MODELS = ("C5", "C2", "C0p", "P0")
 SETS = {"comps-wugs": ITEMS / "comps-wugs-wordnet-v1" / "items.jsonl.gz", "alcuna": ITEMS / "alcuna-wordnet-v1" / "items.jsonl.gz"}
 GPU_PRIORITY, REPORT_PRIORITY = 54.498, 54.4981
 CONDITIONS = {
-    "C5": ["none", "channel-off", "store:oracle", "store:linker", "store:typeprior", "store:random", "store:oracle:parent",
+    "C5": ["none", "channel-off", "store:oracle", "store:linker", "store:linker-joint", "store:typeprior", "store:random", "store:oracle:parent",
            "frame-in-context:oracle", "definition-in-context", "store:oracle+definition-in-context"],
     "C2": ["none", "channel-off", "store:oracle", "store:random", "frame-in-context:oracle", "definition-in-context"],
     "C0p": ["none", "frame-in-context:oracle", "definition-in-context"],
@@ -38,7 +38,7 @@ CONDITIONS = {
 }
 # ALCUNA definitions are long property lists: the linker would score ≈ 10² single-edge candidates over ≈ 10² tokens per
 # entity, and no pre-registered contrast uses it there (preregistration §11.1).
-SET_DROP = {"alcuna": frozenset({"store:linker", "store:oracle:parent"})}   # ALCUNA items have no parent-entry frames
+SET_DROP = {"alcuna": frozenset({"store:linker", "store:linker-joint", "store:oracle:parent"})}   # ALCUNA items have no parent-entry frames
 BATCH, TOKEN_BUDGET = 256, 32768            # GPU jobs: texts per batch (short COMPS texts) under a token budget (long prompts)
 # GPU-hour model (`plan`, `job_hours`): per item, the padded forward tokens, unique scored texts and CPU-side seconds
 # (tokenizing, linking, prompts, readers' bookkeeping) measured in the CPU smoke (SmolLM2-135M seed 1, 40 items per set
@@ -94,6 +94,7 @@ def contrast_spec(hosts: Sequence[str] = HOSTS) -> dict[str, list[dict[str, Any]
         c("S13 C5 definition − C0′ definition", big, "definition-in-context", label(hosts[0], "C0p"), "definition-in-context", "comps-wugs"),
         c("S14 135M replication (oracle − none)", small, "store:oracle", small, "none", "comps-wugs"),
         c("S15 135M replication (linker − none)", small, "store:linker", small, "none", "comps-wugs"),
+        c("S17 joint linker − none (§11.3)", big, "store:linker-joint", big, "none", "comps-wugs"),
     ]
     for kind in ("taxonomic", "overlap", "co-occurrence", "random"):
         secondary.append(c(f"S16 {kind} negatives (oracle − none)", big, "store:oracle", big, "none", "comps-wugs",

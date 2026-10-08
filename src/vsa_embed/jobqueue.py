@@ -40,6 +40,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _priority(text: str) -> int | float:
+    """A queue priority from the command line: an integer when integral, else a float (e.g. 54.498)."""
+    value = float(text)
+    return int(value) if value.is_integer() else value
+
+
 def _write(path: Path, job: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(job, indent=2) + "\n")
@@ -151,7 +157,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--queue", type=Path, default=DEFAULT_DIR)
     sub = parser.add_subparsers(dest="action", required=True)
     add_parser = sub.add_parser("add")
-    add_parser.add_argument("--name", required=True); add_parser.add_argument("--priority", type=int, default=100)
+    add_parser.add_argument("--name", required=True); add_parser.add_argument("--priority", type=_priority, default=100)
     add_parser.add_argument("--min-free-gb", type=float, default=10.0)
     add_parser.add_argument("--no-resume", action="store_true", help="do not append --resume on retries")
     add_parser.add_argument("--lane", choices=("gpu", "cpu"), default=None)
