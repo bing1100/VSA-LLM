@@ -1,8 +1,11 @@
 """T8 (decision 63, WP TK-B2): the Wikidata-entity benchmarks — raw files, their entities, and their items on T8.
 
 The general relation benchmarks of the toolkit (methodology §3.1, §3.3, §3.4) are built on Wikidata entities; T8 gives
-those entities frames. This module reads the five benchmarks' raw files (pinned commits, downloaded to
-`~/data/vsa-llm/benchmarks/<name>/`; a directory that already holds the files is kept), extracts their subject and
+those entities frames. This module reads the five benchmarks' raw files (pinned commits) in the layout of the TK-B1
+adapters (`~/data/vsa-llm/benchmarks/<name>/raw/<repository path>`; a file already there — e.g. fetched by TK-B1 from
+the same commit — is kept and only hashed; T8's own record of the files it uses is `<name>/t8-source.json`). BEAR is
+read from its GitHub release (`bear/raw-github/`: per-relation JSONL with subject and object QIDs, which the Hugging Face
+parquet of TK-B1 does not carry). It extracts their subject and
 object entities (Wikidata QIDs where the set gives them; names otherwise, resolved to QIDs with the Wikidata
 `wbsearchentities` API through `ontologies.wikidata.WikidataClient`'s cache), and maps the benchmark items onto the
 built track (stage `items`: each item's subject concept and whether it is held out).
@@ -10,7 +13,7 @@ built track (stage `items`: each item's subject concept and whether it is held o
 | benchmark | source (pinned) | licence | entities given as |
 |---|---|---|---|
 | `entity-inferences` (Onoe et al., ACL 2023) | GitHub `yasumasaonoe/entity_knowledge_propagation` | see repository | names (fictitious entities in part; ECBD 2020–21 entities) |
-| `lre-relations` (Hernandez et al., ICLR 2024) | GitHub `evandez/relations` (`data/factual`) | MIT | names |
+| `lre` (Hernandez et al., ICLR 2024) | GitHub `evandez/relations` (`data/factual`) | MIT | names |
 | `bear` (Wiland et al., Findings NAACL 2024) | GitHub `lm-pub-quiz/BEAR` (`BEAR/`) | CC BY-SA 4.0 | QIDs |
 | `popqa` (Mallen et al., ACL 2023) | HF `akariasai/PopQA` (`test.tsv`) | see dataset card (MIT in the paper's repository) | QIDs (`s_uri`, `o_uri`) |
 | `twohopfact` (Yang et al., ACL 2024) | HF `soheeyang/TwoHopFact` (`TwoHopFact.csv`) | CC BY 4.0 | QIDs (`e1/e2/e3` URIs) when present, else names |
@@ -52,7 +55,8 @@ QID = re.compile(r"Q[1-9][0-9]*")
 
 @dataclass(frozen=True)
 class Source:
-    """A benchmark's pinned raw files: `files` are repository paths, saved under `<root>/<name>/` with the same path."""
+    """A benchmark's pinned raw files: `files` are repository paths, saved under `<root>/<name>/<subdir>/` with the same
+    path."""
 
     name: str
     kind: str                  # "github" or "hf"
@@ -61,6 +65,10 @@ class Source:
     files: tuple[str, ...]
     licence: str
     citation: str
+    subdir: str = "raw"
+
+    def folder(self, root: Path) -> Path:
+        return Path(root).expanduser() / self.name / self.subdir
 
     def url(self, path: str) -> str:
         if self.kind == "github":
@@ -91,8 +99,8 @@ SOURCES: dict[str, Source] = {
         tuple(f"data/entity_inferences/{f}.json" for f in EI_FILES) + tuple(f"data/ecbd/{f}.json" for f in ECBD_FILES) + ("README.md",),
         "no licence file in the repository (research use; cite Onoe et al. 2023)",
         "Onoe, Zhang, Padmanabhan, Durrett, Choi. Can LMs Learn New Entities from Descriptions? ACL 2023"),
-    "lre-relations": Source(
-        "lre-relations", "github", "evandez/relations", "1b9ec3cf2b8368e42bde7e80fcef384312a6ec07",
+    "lre": Source(
+        "lre", "github", "evandez/relations", "1b9ec3cf2b8368e42bde7e80fcef384312a6ec07",
         tuple(f"data/factual/{r}.json" for r in LRE_FACTUAL) + ("LICENSE", "README.md"), "MIT",
         "Hernandez, Sharma, Haklay, Meng, Wattenberg, Andreas, Belinkov, Bau. Linearity of Relation Decoding in "
         "Transformer Language Models. ICLR 2024"),
@@ -102,7 +110,7 @@ SOURCES: dict[str, Source] = {
                                                           "bear_lite_indices.json", "license.txt", "README.md"),
         "CC BY-SA 4.0 (license.txt)",
         "Wiland, Ploner, Akbik. BEAR: A Unified Framework for Evaluating Relational Knowledge in Causal and Masked "
-        "Language Models. Findings of NAACL 2024"),
+        "Language Models. Findings of NAACL 2024", subdir="raw-github"),
     "popqa": Source(
         "popqa", "hf", "akariasai/PopQA", "098765c79ea10a2cb19c828324e33281b8336ec0", ("test.tsv", "README.md"),
         "see the dataset card (the paper's repository is MIT)",
@@ -124,15 +132,16 @@ def file_sha256(path: Path) -> str:
 
 
 def fetch(root: Path = BENCHMARK_ROOT, names: Iterable[str] | None = None, *, session: Any = None) -> dict[str, Any]:
-    """Download every pinned file that is not on disk yet (`<root>/<name>/<path>`) and write `<root>/<name>/SOURCE.json`
-    (repository, revision, licence, per-file sha256). Files already present are kept and only hashed."""
+    """Download every pinned file that is not on disk yet (`<root>/<name>/<subdir>/<path>`) and write
+    `<root>/<name>/t8-source.json` (repository, revision, licence, per-file sha256 and whether T8 downloaded it or found
+    it). Files already present are kept and only hashed."""
     import requests
     session = session or requests.Session()
     session.headers.setdefault("User-Agent", USER_AGENT)
     out = {}
     for name in names or SOURCES:
         source = SOURCES[name]
-        folder = Path(root).expanduser() / name
+        folder = source.folder(root)
         files = {}
         for path in source.files:
             target = folder / path
@@ -147,10 +156,9 @@ def fetch(root: Path = BENCHMARK_ROOT, names: Iterable[str] | None = None, *, se
                 status = "downloaded"
             files[path] = {"sha256": file_sha256(target), "bytes": target.stat().st_size, "status": status}
         record = {"name": name, "kind": source.kind, "repo": source.repo, "revision": source.revision, "licence": source.licence,
-                  "citation": source.citation, "files": files}
-        source_file = folder / "SOURCE.json"
-        if not source_file.exists():
-            source_file.write_text(json.dumps(record, indent=2) + "\n")
+                  "citation": source.citation, "subdir": source.subdir,
+                  "files": {f"{source.subdir}/{path}": info for path, info in files.items()}}
+        (folder.parent / "t8-source.json").write_text(json.dumps(record, indent=2) + "\n")
         out[name] = {k: v for k, v in record.items() if k != "files"} | {"files": len(files),
                                                                          "downloaded": sum(f["status"] == "downloaded" for f in files.values())}
     return out
@@ -172,7 +180,7 @@ def _qid_of(uri: str | None) -> str | None:
 
 def bear_rows(root: Path = BENCHMARK_ROOT) -> Iterator[dict[str, Any]]:
     """BEAR instances with their relation's templates and answer space (metadata_relations.json)."""
-    folder = Path(root).expanduser() / "bear" / "BEAR"
+    folder = SOURCES["bear"].folder(root) / "BEAR"
     metadata = json.loads((folder / "metadata_relations.json").read_text())
     for relation in BEAR_RELATIONS:
         meta = metadata[relation]
@@ -182,7 +190,7 @@ def bear_rows(root: Path = BENCHMARK_ROOT) -> Iterator[dict[str, Any]]:
 
 
 def popqa_rows(root: Path = BENCHMARK_ROOT) -> Iterator[dict[str, Any]]:
-    with open(Path(root).expanduser() / "popqa" / "test.tsv", newline="") as handle:
+    with open(SOURCES["popqa"].folder(root) / "test.tsv", newline="") as handle:
         for row in csv.DictReader(handle, delimiter="\t"):
             yield {**row, "s_qid": _qid_of(row["s_uri"]), "o_qid": _qid_of(row["o_uri"]),
                    "possible_answers": json.loads(row["possible_answers"]), "s_pop": int(row["s_pop"]), "o_pop": int(row["o_pop"])}
@@ -190,12 +198,12 @@ def popqa_rows(root: Path = BENCHMARK_ROOT) -> Iterator[dict[str, Any]]:
 
 def twohop_rows(root: Path = BENCHMARK_ROOT) -> Iterator[dict[str, Any]]:
     csv.field_size_limit(1 << 30)
-    with open(Path(root).expanduser() / "twohopfact" / "TwoHopFact.csv", newline="") as handle:
+    with open(SOURCES["twohopfact"].folder(root) / "TwoHopFact.csv", newline="") as handle:
         yield from csv.DictReader(handle)
 
 
 def lre_rows(root: Path = BENCHMARK_ROOT) -> Iterator[dict[str, Any]]:
-    folder = Path(root).expanduser() / "lre-relations" / "data" / "factual"
+    folder = SOURCES["lre"].folder(root) / "data" / "factual"
     for relation in LRE_FACTUAL:
         data = json.loads((folder / f"{relation}.json").read_text())
         for index, sample in enumerate(data["samples"]):
@@ -207,7 +215,7 @@ def lre_rows(root: Path = BENCHMARK_ROOT) -> Iterator[dict[str, Any]]:
 def ei_rows(root: Path = BENCHMARK_ROOT, *, ecbd: bool = False) -> Iterator[dict[str, Any]]:
     """Entity Inferences rows (`ecbd=True`: the ECBD 2020–21 rows), each with `file`, the class QIDs of its `qid` field
     and, for ECBD, the Wikipedia title encoded in `ex_id` (`<title>_<page id>_<i>_<j>`)."""
-    folder = Path(root).expanduser() / "entity-inferences" / "data" / ("ecbd" if ecbd else "entity_inferences")
+    folder = SOURCES["entity-inferences"].folder(root) / "data" / ("ecbd" if ecbd else "entity_inferences")
     for name in (ECBD_FILES if ecbd else EI_FILES):
         for row in _jsonl(folder / f"{name}.json"):
             classes = QID.findall(str(row.get("qid", "")))
@@ -642,7 +650,7 @@ def run_items(config: dict[str, Any], run_dir: Path, *, output: Path | None = No
             ref = json.loads(line)
             refs.setdefault((ref["benchmark"], ref["role"], ref["relation"], ref["name"]), ref)
     output.mkdir(parents=True, exist_ok=True)
-    generators = {"bear": bear_items(view, root, seed), "lre-relations": lre_items(view, root, refs, seed),
+    generators = {"bear": bear_items(view, root, seed), "lre": lre_items(view, root, refs, seed),
                   "popqa": popqa_items(view, root, seed), "twohopfact": twohop_items(view, root, seed),
                   "entity-inferences": ei_items(view, root, refs)}
     sets: dict[str, Any] = {}

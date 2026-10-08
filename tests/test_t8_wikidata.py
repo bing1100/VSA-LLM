@@ -284,7 +284,7 @@ def test_choose_candidate_methods():
 
 def _benchmark_root(tmp_path: Path) -> Path:
     root = tmp_path / "benchmarks"
-    bear = root / "bear" / "BEAR"
+    bear = root / "bear" / "raw-github" / "BEAR"
     bear.mkdir(parents=True)
     meta = {}
     for relation in tb.BEAR_RELATIONS:
@@ -294,28 +294,28 @@ def _benchmark_root(tmp_path: Path) -> Path:
             {"sub_id": "Q1", "sub_label": "Kyriakos Mitsotakis", "sub_aliases": [], "obj_id": "Q41", "obj_label": "Greece",
              "answer_idx": 0}) + "\n")
     (bear / "metadata_relations.json").write_text(json.dumps(meta))
-    (root / "popqa").mkdir()
+    (root / "popqa" / "raw").mkdir(parents=True)
     header = ["id", "subj", "prop", "obj", "subj_id", "prop_id", "obj_id", "s_aliases", "o_aliases", "s_uri", "o_uri",
               "s_wiki_title", "o_wiki_title", "s_pop", "o_pop", "question", "possible_answers"]
     lines = ["\t".join(header)]
     for i, (s, sq, o, oq) in enumerate([("Kyriakos Mitsotakis", "Q1", "politician", "Q82955"), ("Apple Inc.", "Q2", "lawyer", "Q40348")]):
         lines.append("\t".join([str(i), s, "occupation", o, "1", "22", "2", "[]", "[]", wd.ENTITY_PREFIX + sq, wd.ENTITY_PREFIX + oq,
                                 s, o, "10", "20", f"What is {s}'s occupation?", json.dumps([o])]))
-    (root / "popqa" / "test.tsv").write_text("\n".join(lines) + "\n")
-    (root / "twohopfact").mkdir()
+    (root / "popqa" / "raw" / "test.tsv").write_text("\n".join(lines) + "\n")
+    (root / "twohopfact" / "raw").mkdir(parents=True)
     cols = ["uid", "fact_comp_type", "e1.value", "e1.wikidata_qid", "e2.value", "e2.wikidata_qid", "e3.value", "e3.wikidata_qid",
             "r1.category", "r2.category", "r1(e1).prompt", "r2(e2).prompt", "r2(r1(e1)).prompt"]
     row = ["0", "x", "Apple Inc.", "Q2", "United States", "Q30", "Washington", "Q61", "orgz-hqcntry", "cntry-capital",
            "Apple Inc. is based in", "The capital of United States is", "The capital of the country of Apple Inc. is"]
-    (root / "twohopfact" / "TwoHopFact.csv").write_text(",".join(cols) + "\n" + ",".join(row) + "\n")
-    lre = root / "lre-relations" / "data" / "factual"
+    (root / "twohopfact" / "raw" / "TwoHopFact.csv").write_text(",".join(cols) + "\n" + ",".join(row) + "\n")
+    lre = root / "lre" / "raw" / "data" / "factual"
     lre.mkdir(parents=True)
     for relation in tb.LRE_FACTUAL:
         samples = [{"subject": "Kyriakos Mitsotakis", "object": "Greece"}, {"subject": "Zorblax", "object": "France"}] \
             if relation == "city_in_country" else []
         (lre / f"{relation}.json").write_text(json.dumps({"prompt_templates": ["{} is part of"], "samples": samples}))
     for folder, names in (("entity_inferences", tb.EI_FILES), ("ecbd", tb.ECBD_FILES)):
-        (root / "entity-inferences" / "data" / folder).mkdir(parents=True)
+        (root / "entity-inferences" / "raw" / "data" / folder).mkdir(parents=True)
         for name in names:
             row = {"ex_id": "Apple Inc._1_0_0" if folder == "ecbd" else "tv_dev_0", "ent_str": "Apple Inc.",
                    "category": "tv_show", "qid": "television series (Q5398426)",
@@ -323,7 +323,7 @@ def _benchmark_root(tmp_path: Path) -> Path:
                    "attribute": "x", "label": "funny",
                    "probe_sentences": {"template_0": {"probe_sentence": "Apple Inc. is very <extra_id_0> today.",
                                                       "labels": ["<extra_id_0> funny <extra_id_1>", "<extra_id_0> sad <extra_id_1>"]}}}
-            (root / "entity-inferences" / "data" / folder / f"{name}.json").write_text(json.dumps(row) + "\n")
+            (root / "entity-inferences" / "raw" / "data" / folder / f"{name}.json").write_text(json.dumps(row) + "\n")
     return root
 
 

@@ -418,17 +418,36 @@ def run_screen(config: dict[str, Any], output_dir: Path, *, log: Callable[[str],
                                      source_order=list(spec.get("source_order") or SOURCE_ORDER), pool=pool)
     output_dir.mkdir(parents=True, exist_ok=True)
     digest = wd.write_selection(output_dir / "selection.tsv", rows)
+    coverage = fineweb_coverage(records, table, sources, {r["qid"] for r in rows})
     selected = sorted({r["qid"] for r in rows}, key=wd.qid_number)
     by_benchmark = Counter(role.split(":")[0] for q in selected for role in sorted({r.split(":")[0] for r in sources.get(q, [])}))
     result = {"policy": {k: v for k, v in policy.__dict__.items() if k != "function_words"},
               "records": len(records), "names": len(keys), "documents_read": {"train": int(counts.read[0]), "eval": int(counts.read[1])},
               "selection": stats, "selection_sha256": digest, "counts": str(counts_path), "counts_sha256": counts_digest,
-              "selected_by_benchmark": dict(by_benchmark), "homonym_labels_checked": len(labels),
+              "selected_by_benchmark": dict(by_benchmark), "fineweb_coverage": coverage, "homonym_labels_checked": len(labels),
               "labels_with_homonym": sum(1 for q in pool if records[q].get("homonym_sitelinks")),
               "selected_mentions": int(sum(r["train"] for r in rows)),
               "max_concepts": int(spec["max_concepts"]), "min_entity_mentions": int(spec["min_entity_mentions"])}
     (output_dir / "screen.json").write_text(json.dumps(result, indent=2, default=str) + "\n")
     return result
+
+
+def fineweb_coverage(records: dict[str, dict[str, Any]], table: dict[str, dict[str, int]], sources: dict[str, list[str]],
+                     selected: set[str]) -> dict[str, dict[str, int]]:
+    """Per benchmark role (`bear:subject`, …): entities, how many any of whose Wikidata names occurs in the training-side
+    FineWeb-Edu text at least once / at least 5 times, and how many are selected concepts."""
+    out: dict[str, Counter] = {}
+    for qid, roles in sources.items():
+        record = records.get(qid)
+        mentions = sum(table.get(wd.entity_key(n), {}).get("train", 0) for n in wd.entity_names(record)) if record else 0
+        for role in roles:
+            c = out.setdefault(role, Counter())
+            c["entities"] += 1
+            c["in_records"] += record is not None
+            c["mentioned"] += mentions >= 1
+            c["mentioned_5"] += mentions >= 5
+            c["selected"] += qid in selected
+    return {role: dict(c) for role, c in sorted(out.items())}
 
 
 # -- holdout -------------------------------------------------------------------------------------------------------------
