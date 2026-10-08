@@ -23,6 +23,7 @@ Batch reports write their own folder (`experiments/e12-self-query/report/<stage>
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import time
@@ -45,8 +46,49 @@ F1_REFERENCE = "C5ut"
 TAU_KEY = "comprehensiveness"
 
 
+def _parts(run: Path, base: str) -> list[dict[str, Any]]:
+    """The summary documents of `run/<base>` and of its tagged parts `run/<base>-<tag>` (a job split by conditions or by term
+    range), in name order."""
+    folders = [run / base] + sorted(p for p in run.glob(f"{base}-*") if p.is_dir())
+    return [json.loads((f / "summary.json").read_text()) for f in folders if (f / "summary.json").exists()]
+
+
+def merge_phase_a(documents: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """One phase-A document from parts that scored different conditions of the same item set (later parts win)."""
+    merged = copy.deepcopy(documents[0])
+    for doc in documents[1:]:
+        merged["summary"]["conditions"].update(copy.deepcopy(doc["summary"]["conditions"]))
+    return merged
+
+
+def merge_faithfulness(documents: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """One F1 document from parts that scored different term ranges (and, once, the twins)."""
+    merged = copy.deepcopy(documents[0])
+    summary = merged["summary"]
+    for doc in documents[1:]:
+        part = doc["summary"]
+        if "new_words" in part:
+            if "new_words" not in summary:
+                summary["new_words"] = copy.deepcopy(part["new_words"])
+            else:
+                for block in ("terms", "undecoded", "all_edges"):
+                    summary["new_words"][block].update(part["new_words"][block])
+                for key in ("edges", "decoded_edges", "linked"):
+                    summary["new_words"][key] = summary["new_words"].get(key, 0) + part["new_words"].get(key, 0)
+        if "twins" in part:
+            if "twins" not in summary:
+                summary["twins"] = copy.deepcopy(part["twins"])
+            else:
+                summary["twins"]["pairs"].update(part["twins"]["pairs"]); summary["twins"]["swap"].update(part["twins"]["swap"])
+    if "new_words" in summary:
+        terms = summary["new_words"]["terms"]
+        keys = next(iter(terms.values()), {}).keys()
+        summary["new_words"]["mean"] = {k: float(np.mean([t[k] for t in terms.values()])) for k in keys}
+    return merged
+
+
 def discover(runs_root: Path, *, hosts: Sequence[str] | None = None, sets: Sequence[str] = ()) -> dict[str, dict[str, dict[int, dict[str, Any]]]]:
-    """host → model → seed → {set name: phase-A summary document, "faithfulness": F1 summary document}."""
+    """host → model → seed → {set name: phase-A summary document, "faithfulness": F1 summary document} (split jobs merged)."""
     out: dict[str, dict[str, dict[int, dict[str, Any]]]] = defaultdict(lambda: defaultdict(dict))
     for run in sorted(Path(runs_root).iterdir()):
         match = RUN_NAME.match(run.name)
@@ -54,12 +96,12 @@ def discover(runs_root: Path, *, hosts: Sequence[str] | None = None, sets: Seque
             continue
         record: dict[str, Any] = {}
         for name in sets:
-            path = run / f"{OUTPUT_PREFIX}{name}" / "summary.json"
-            if path.exists():
-                record[name] = json.loads(path.read_text())
-        faith = run / FAITH_OUTPUT / "summary.json"
-        if faith.exists():
-            record["faithfulness"] = json.loads(faith.read_text())
+            parts = _parts(run, f"{OUTPUT_PREFIX}{name}")
+            if parts:
+                record[name] = merge_phase_a(parts)
+        parts = _parts(run, FAITH_OUTPUT)
+        if parts:
+            record["faithfulness"] = merge_faithfulness(parts)
         if record:
             out[match["host"]][match["model"]][int(match["seed"])] = record
     return {h: dict(m) for h, m in out.items()}
@@ -211,6 +253,23 @@ def f1(models: dict[str, dict[int, dict[str, Any]]], *, resamples: int = 2000, s
     return out
 
 
+def f1_table(models: dict[str, dict[int, dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Per composing model: seed-averaged term means of the F1 measures and the twins' role specificity."""
+    rows = []
+    for model in sorted(models):
+        row: dict[str, Any] = {"model": model}
+        for key in ("comprehensiveness", "moved", "sufficiency", "specificity", "gap"):
+            row[key] = _mean_by_seed(f1_units(models, model, key))
+        row["decoded_edges"] = _mean_by_seed({s: {"n": float(r["faithfulness"]["summary"]["new_words"]["decoded_edges"])}
+                                              for s, r in models[model].items() if "faithfulness" in r and "new_words" in r["faithfulness"]["summary"]})
+        row["role_specificity"] = _mean_by_seed(twin_units(models, model))
+        row["rs"] = _mean_by_seed(twin_units(models, model, "rs"))
+        row["seeds"] = sorted(s for s, r in models[model].items() if "faithfulness" in r)
+        if row["seeds"]:
+            rows.append(row)
+    return rows
+
+
 def f1_reading(result: dict[str, Any]) -> dict[str, str]:
     rows = result["contrasts"]
     a = rows.get("F1a: C5 − 0", {})
@@ -305,6 +364,7 @@ def analyse(runs_root: Path, *, hosts: Sequence[str] | None = None, twins: str |
             block["twins_table"] = {kind: table(models, twins, kind, ("contrast", "item", "decode", "decode_all")) for kind in ("choice", "cloze")}
             block["twins_secondaries"] = twin_secondaries(models, twins, resamples=resamples, seed=seed)
         block["f1"] = f1(models, resamples=resamples, seed=seed)
+        block["f1_table"] = f1_table(models)
         if natural:
             block["natural_table"] = {kind: table(models, natural, kind, ("contrast", "item", "decode")) for kind in ("choice", "cloze")}
         if understanding:
@@ -377,6 +437,14 @@ def render(analysis: dict[str, Any], *, title: str, label: str | None = None) ->
                       "| contrast | estimate |", "|---|---|"] + [f"| {n} | {_cell(r)} |" for n, r in f["contrasts"].items()]
             lines += ["", "| secondary | estimate |", "|---|---|"] + [f"| {n} | {_cell(r)} |" for n, r in f["secondaries"].items()]
             lines += ["", f"Reading: {f['reading']}", ""]
+        if block.get("f1_table"):
+            lines += ["### F1 by model (seed-averaged term means; twins: role specificity per pair)", "",
+                      "| model | comprehensiveness | moved | sufficiency | specificity | gap (nats) | decoded edges | role specificity | RS (nats) | seeds |",
+                      "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
+            lines += [f"| {r['model']} | {_f(r['comprehensiveness'], signed=True)} | {_f(r['moved'])} | {_f(r['sufficiency'], signed=True)} | "
+                      f"{_f(r['specificity'])} | {_f(r['gap'], signed=True)} | {_f(r['decoded_edges'])} | {_f(r['role_specificity'], signed=True)} | "
+                      f"{_f(r['rs'], signed=True)} | {r['seeds']} |" for r in block["f1_table"]]
+            lines.append("")
         for name in ("natural_table",):
             for kind, rows in (block.get(name) or {}).items():
                 if rows:

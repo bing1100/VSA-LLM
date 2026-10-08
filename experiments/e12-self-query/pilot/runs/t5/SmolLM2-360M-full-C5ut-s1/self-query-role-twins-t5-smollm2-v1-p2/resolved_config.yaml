@@ -1,0 +1,18 @@
+experiment: e12-self-query
+phase: A
+run: /home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5ut-s1
+items: experiments/e9-retrofit/items/role-twins-t5-smollm2-v1
+conditions:
+- recall:C5
+- symbolic
+stores:
+  C5: /home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5-s1
+cleanup: typed
+seed: 0
+limit: null
+item_kinds: choice
+batch_size: 24
+max_length: 768
+max_lines: 32
+alias_table: /home/bhux/data/vsa-llm/e9/alias-tables/t5.json
+label: PILOT

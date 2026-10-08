@@ -104,6 +104,9 @@ def test_store_resolution_and_defaults(world) -> None:
     assert sqx.default_conditions("C0p", "twins", stage_models=stage)[:3] == ["none", "recall:C5", "symbolic"]
     assert sqx.default_conditions("P0", "twins", stage_models=stage, store_seeds=[1, 2])[:3] == ["none", "recall:C5@1", "recall:C5@2"]
     assert "wrong:own" not in sqx.default_conditions("C5", "understanding", stage_models=stage)
+    assert sqx.default_conditions("C5", "twins", stage_models=stage, core=True) == ["none", "recall:own", "symbolic", "roleless:own",
+                                                                                    "recall:C5ut", "recall:C5tr"]
+    assert sqx.default_conditions("C0p", "twins", stage_models=stage, core=True) == ["none", "recall:C5", "symbolic", "roleless:C5"]
 
 
 # -- phase A on the twins ----------------------------------------------------------------------------------------------------
@@ -230,6 +233,20 @@ def test_drop_mask_and_decision_24_semantics() -> None:
     assert torch.allclose(dropped, composer.compose(torch.tensor([1])), atol=1e-6)
 
 
+def test_text_cache_scores_as_the_standard_scorer(world, item_dirs) -> None:
+    from vsa_embed.experiments import e9_binding_items as role_items
+    run = _open(world, "C5")
+    _, concepts, items = role_items.load_items(item_dirs["natural"])          # existing entries: linked, nothing inserted
+    surface = {c["concept"]: c["surface"] for c in concepts}
+    pairs = [(und.render(t, {"x": surface[i["concept"]]}), c) for i in items for t in i["templates"] for c in i["candidates"]]
+    expected = role_items.continuation_scores(run.adapter, [p for p, _ in pairs], [c for _, c in pairs])
+    cache = faith.TextCache(run.adapter)
+    got = cache.scores(pairs)
+    assert np.allclose(got[0], expected[0], atol=1e-4) and np.array_equal(got[1], expected[1])
+    again = cache.scores(pairs[::-1])                                            # reused, in any order
+    assert np.allclose(again[0][::-1], got[0], atol=1e-5)
+
+
 def test_faithfulness_on_new_words_and_twins(world, new_dir, item_dirs, stores) -> None:
     for model, label in (("C5", "own"), ("C5ut", "C5ut")):
         run = _open(world, model)
@@ -251,22 +268,32 @@ def test_faithfulness_on_new_words_and_twins(world, new_dir, item_dirs, stores) 
 
 
 def test_cli_outputs_and_the_report(world, item_dirs, new_dir, tmp_path) -> None:
-    for model, conditions in (("C5", "none,recall:own,symbolic"), ("C5ut", "none,recall:C5,symbolic")):
-        sqx.main(["evaluate", "--run", str(world["runs"][model]), "--items", str(item_dirs["twins"]), "--alias-table", str(world["alias"]),
-                  "--device", "cpu", "--batch-size", "8", "--max-length", "64", "--max-lines", "1", "--conditions", conditions,
-                  "--overwrite", "--label", "SMOKE"])
-        faith.main(["evaluate", "--run", str(world["runs"][model]), "--new-items", str(new_dir), "--twins", str(item_dirs["twins"]),
-                    "--alias-table", str(world["alias"]), "--device", "cpu", "--batch-size", "8", "--overwrite"])
+    common_args = ["--items", str(item_dirs["twins"]), "--alias-table", str(world["alias"]), "--device", "cpu", "--batch-size", "8",
+                   "--max-length", "64", "--max-lines", "1", "--overwrite", "--label", "SMOKE"]
+    # C5 in two parts (conditions split over jobs: the report merges `self-query-<items>` and `self-query-<items>-<tag>`)
+    sqx.main(["evaluate", "--run", str(world["runs"]["C5"]), "--conditions", "none,recall:own", *common_args])
+    sqx.main(["evaluate", "--run", str(world["runs"]["C5"]), "--conditions", "symbolic", "--tag", "part2", *common_args])
+    sqx.main(["evaluate", "--run", str(world["runs"]["C5ut"]), "--conditions", "none,recall:C5,symbolic", *common_args])
+    faith_args = ["--new-items", str(new_dir), "--twins", str(item_dirs["twins"]), "--alias-table", str(world["alias"]), "--device", "cpu",
+                  "--batch-size", "8", "--overwrite"]
+    for model in ("C5", "C5ut"):            # F1 in two term ranges; the twins once
+        faith.main(["evaluate", "--run", str(world["runs"][model]), "--limit", "2", *faith_args])
+        faith.main(["evaluate", "--run", str(world["runs"][model]), "--limit", "2", "--offset", "2", "--skip-twins", "--tag", "part2",
+                    *faith_args])
     folder = world["runs"]["C5"] / f"{sqx.OUTPUT_PREFIX}{item_dirs['twins'].name}"
     for name in ("summary.json", "predictions.jsonl.gz", "recalls.jsonl.gz", "report.md", "manifest.json"):
         assert (folder / name).exists()
-    recalls = und.read_jsonl(folder / "recalls.jsonl")
-    assert {r["condition"] for r in recalls} >= {"recall:own", "symbolic"}
+    assert {r["condition"] for r in und.read_jsonl(folder / "recalls.jsonl")} == {"recall:own"}
+    assert {r["condition"] for r in und.read_jsonl(folder.with_name(folder.name + "-part2") / "recalls.jsonl")} == {"symbolic"}
     analysis = report.analyse(world["runs"]["C5"].parent, twins=item_dirs["twins"].name)
     host = analysis["hosts"]["fake"]
     assert set(host["q1"]["contrasts"]) == {"recall:own − none"} and host["q1"]["reading"]
     assert host["f1"]["available"] and "F1b: C5 − C5ut" in host["f1"]["contrasts"]
     assert any(r["model"] == "C5ut" and r["condition"] == "recall:C5" for r in host["twins_table"]["choice"])
+    assert any(r["model"] == "C5" and r["condition"] == "symbolic" for r in host["twins_table"]["choice"])      # the merged part
+    merged = report.discover(world["runs"]["C5"].parent, sets=[item_dirs["twins"].name])["fake"]["C5"][1]["faithfulness"]["summary"]
+    assert len(merged["new_words"]["terms"]) > len(json.loads((world["runs"]["C5"] / faith.OUTPUT / "summary.json").read_text())
+                                                   ["summary"]["new_words"]["terms"])          # both term ranges
     text = report.render(analysis, title="toy", label="SMOKE")
     assert "Q1" in text and "F1" in text and "SMOKE" in text
     with pytest.raises(ValueError):
@@ -316,3 +343,74 @@ def test_queue_dry_runs(world, item_dirs, tmp_path) -> None:
     assert all(j["name"].endswith(f"{sqx.OUTPUT_PREFIX}{item_dirs['twins'].name}") for j in jobs)
     f_jobs = faith.queue_stage("toy", root=root, dry_run=True)
     assert {j["model"] for j in f_jobs} == {"C5", "C5ut"} and all(j["name"].endswith(faith.OUTPUT) for j in f_jobs)
+    formats = sqx.queue_stage("toy", item_dirs["twins"], root=root, models=["C5"], override=["recall-all:own", "fields:own"], tag="formats",
+                              dry_run=True)
+    assert len(formats) == 1 and formats[0]["name"].endswith("-formats") and "recall-all:own,fields:own" in " ".join(formats[0]["command"])
+    assert formats[0]["command"][-2:] == ["--tag", "formats"]
+
+
+# -- 3a: the agent harness (scripted generation: the fake host has 64 positions) ------------------------------------------------
+
+from vsa_embed.experiments import e12_agent as agent  # noqa: E402
+
+
+def _toolbox(world, item_dirs, understanding_dir, stores):
+    run = _open(world, "C5")
+    twins, und_set = sqx.load_item_set(item_dirs["twins"]), sqx.load_item_set(understanding_dir)
+    combined = sqx.ItemSet("agent", twins.path, {"track": "toy", "family": "gpt2"},
+                           list({c["concept"]: c for c in twins.concepts + und_set.concepts}.values()), twins.prompts + und_set.prompts)
+    builder = sqx.ContextBuilder(combined, run.ontology, _lexicon(), {"own": stores["own"]})
+    return run, twins, und_set, combined, builder, agent.Toolbox(builder, stores["own"], run.table)
+
+
+def test_agent_tools_parse_and_answer(world, item_dirs, understanding_dir, stores) -> None:
+    run, twins, und_set, combined, builder, tools = _toolbox(world, item_dirs, understanding_dir, stores)
+    text, record = tools.call("recall", "Brightwater Ledger")
+    assert text.startswith("recall(Brightwater Ledger):") and record["parsed"] and len(text.splitlines()) == 1 + len(_frame("Brightwater Ledger"))
+    text, record = tools.call("recall", "Brightwater Ledger, depends on")
+    assert text.splitlines()[0] == "recall(Brightwater Ledger, depends on):" and len(text.splitlines()) == 2 and record["relation"] == "depends_on"
+    twin = combined.concepts[0]
+    assert tools.call("recall", twin["surface"])[1]["parsed"]                       # a new term resolves by its surface
+    assert tools.call("recall", "the Zash Team")[1]["parsed"]                       # "the …" names resolve too
+    assert not tools.call("recall", "Nonexistent Thing")[1]["parsed"]
+    assert not tools.call("recall", "Brightwater Ledger, likes")[1]["parsed"]
+    text, record = tools.call("lookup", "owned by, the Zash Team")
+    assert text.startswith("lookup(owned by, the Zash Team):") and record == {"parsed": True, "relation": "owned_by", "value": "term:Zash Team"}
+    assert len(text.splitlines()) == 6
+    assert not tools.call("lookup", "owned by")[1]["parsed"]
+    qs = agent.questions(twins, und_set, twin_pairs=2, two_hop=1, reverse=1)
+    assert [q.kind for q in qs].count("twins") == 4 and {q.kind for q in qs} == {"twins", "two_hop", "reverse"}
+    assert qs[0].text().startswith("Question: ") and " ___? Options: " in qs[0].text()
+    demos = agent.demonstrations(builder, tools, set())
+    assert "Action: recall[" in demos and "Observation: recall(" in demos and "Answer:" in demos
+    assert "Action:" not in agent.demonstrations(builder, tools, set(), tool=False)
+
+
+def test_agent_episodes_insert_observations_and_stop_at_the_answer(world, item_dirs, understanding_dir, stores, monkeypatch) -> None:
+    run, twins, und_set, combined, builder, tools = _toolbox(world, item_dirs, understanding_dir, stores)
+    tokenizer = run.adapter.tokenizer
+    scripts = {"called": " I need it.\nAction: recall[Brightwater Ledger, depends on]\n Done.\nAnswer: Grosh Console",
+               "direct": " I know.\nAnswer: x", "rambling": " " + "word " * 60}
+    queues = {k: tokenizer.encode(v) for k, v in scripts.items()}
+
+    def scripted(adapter, texts):
+        out = []
+        for text in texts:
+            key = text.split("<<")[1].split(">>")[0]
+            out.append(queues[key].pop(0) if queues[key] else tokenizer.eos_token_id)
+        return out
+
+    monkeypatch.setattr(agent, "next_tokens", scripted)
+    q = agent.questions(twins, None, twin_pairs=1, two_hop=0, reverse=0)[0]
+    episodes = agent.run_episodes(run.adapter, tools, [(q, f"<<{k}>>\nThought:") for k in scripts], batch=2, log=lambda *_: None)
+    called, direct, rambling = episodes
+    assert called.answered and called.text.endswith("Answer:") and len(called.actions) == 1 and called.actions[0]["parsed"]
+    assert "Observation: recall(Brightwater Ledger, depends on):" in called.text
+    assert direct.answered and not direct.actions
+    assert not rambling.answered and rambling.text.endswith("\nAnswer:") and rambling.tokens <= agent.MAX_SEGMENT + 1
+    rows = [{"kind": "twins", "gold": 0, "meta": {"pair": 0, "twin": t}, "actions": [], "answered": True, "called": c, "format_ok": c,
+             "relevant": c, "scores": {k: ([0.0, -1.0] if t == "A" else [-1.0, 0.0]) for k in ("agent", "no_tool", "fixed")},
+             "correct": {k: 1.0 for k in ("agent", "no_tool", "fixed")}} for t, c in (("A", True), ("B", False))]
+    rows[1]["gold"] = 1
+    summary = agent.summarize(rows)
+    assert summary["all"]["called"] == 0.5 and summary["twins_contrast"] == {"agent": 1.0, "no_tool": 1.0, "fixed": 1.0, "pairs": 1}

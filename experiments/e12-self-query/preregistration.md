@@ -428,8 +428,81 @@ them, and they never enter an endpoint.
 
 ## 15. Pilots (PILOT; not endpoints)
 
-*(added after this commit)*
+Run after `6638c39` (this document's first commit) on real checkpoints of the main checkout (read only), outputs in
+`experiments/e12-self-query/pilot/` (never in a run folder): T5 SmolLM2-360M **seed 1 only**; the twins' `choice` items only;
+the GPU shared with a training job at 100% (15.6 GB in use), every job ≤ 4 GB and ≤ 5 minutes (peak 3.5 GB). **These numbers do
+not count toward Q1 or F1**, which use seeds 1–3 in the queued runs. Report: `pilot/report/t5-q1-f1/report.md`.
+
+**Phase A — the twins** (300 pairs; twin contrast accuracy, chance 0.5; decode = the share of the four critical slots the
+context states; "all four" = pairs whose four critical slots are all right):
+
+| host | condition | contrast | decode | all four |
+|---|---|---:|---:|---:|
+| C5 | `none` | 0.507 | — | — |
+| C5 | `recall:own` | **0.790** | 0.959 | 0.857 |
+| C5 | `recall:C5ut` (role-blind store) | 0.495 | 0.897 (fillers) | — |
+| C5 | `recall:C5tr` (translation store) | 0.497 | 0.443 | 0.000 |
+| C5 | `roleless:own` | 0.497 | 0.959 (fillers) | — |
+| C5 | `symbolic` (gold frame) | 0.863 | 1.000 | 1.000 |
+| C5 | `definition` (E11 prose) | 0.748 | — | — |
+| C5 | `wrong:own` (partner's recall) | 0.228 | 0.000 | 0.000 |
+| C5ut | `none` / `recall:own` / `recall:C5` / `symbolic` | 0.500 / 0.485 / **0.798** / 0.864 | | |
+| C0′ | `none` / `recall:C5` / `roleless:C5` / `symbolic` | 0.488 / **0.794** / 0.498 / 0.868 | | |
+| P0 | `none` / `recall:C5@1` / `wrong:C5@1` / `symbolic` | 0.492 / **0.690** / 0.311 / 0.730 | | |
+
+Q1 as it would read on this seed (one-sample t over 300 pairs): `recall:own − none` +0.283 [+0.252, +0.313], `recall:own −
+recall:C5ut` +0.295 [+0.266, +0.324] — reading (a), "text-driven" (`wrong:own` 0.228). Pairs with all four slots decoded: 0.838
+(257 pairs); with a decode error: 0.506 (43 pairs) — the gain tracks the decoded content (Q-R5 not met). `symbolic − recall:own`
++0.073 (the decode's cost); `definition − symbolic` −0.116 (prose in held-out wording reads worse than statements).
+**The store, not the host, carries the roles:** the bound store's recall works on every fine-tuned host (C5 0.790, C0′ 0.794,
+C5ut 0.798; C5 − C0′ −0.004 [−0.019, +0.011]), the role-blind store's on none (0.495, 0.485). The base host reads the
+statements less well (P0: `symbolic` 0.730, `recall:C5` 0.690).
+
+**Cost** (per condition, 4,800 texts of ≈ 230 tokens, effective batch 12, the GPU shared): recall-type conditions 63–91 s
+(`recall:own` 86 s, `symbolic` 67–85 s, `wrong` 63–92 s, `definition` 74 s), shorter contexts less (`recall:C5ut` 63–70 s,
+`roleless` 34–54 s), `none` 8–24 s (with the null cache); job overhead ≈ 20 s; peak 3.5 GB.
+
+**F1 — faithfulness of decoding** (300 new words, `e9n-0000`–`e9n-0299`, three 100-word parts merged; τ = 0.05 nats; per-word
+means; one-sample or paired t over the 300 words):
+
+| measure | C5 | C5ut |
+|---|---:|---:|
+| decoded tested edges (of 1,529 tested edges) | 1,497 | 1,470 |
+| comprehensiveness net share | **+0.342** [+0.299, +0.385] | +0.392 |
+| moved beyond the matched control / the other way (share) | 0.599 / ≈ 0.26 | 0.640 / ≈ 0.25 |
+| mean gap (nats) | +0.375 | +0.538 |
+| sufficiency net share | +0.266 | +0.299 |
+| specificity (share of decoded edges) | 0.222 | 0.239 |
+| τ = 0 / 0.02 / 0.1 | +0.364 / +0.354 / +0.322 | +0.405 / +0.402 / +0.383 |
+| twins: role specificity (net share; mean RS) | −0.036 [−0.091, +0.020]; −0.021 nats | +0.008; +0.001 nats |
+| twins: contrast own / swapped frames (recomputed step-1 `swap`) | 0.504 / 0.501 | — |
+
+F1 as it would read on this seed: **F1a (a)** — removing a decoded edge moves its filler's preference more than removing another
+edge (+0.342); **F1b** C5 − C5ut −0.050 [−0.098, −0.002] (the untyped store's decoded fillers are, if anything, a little more
+comprehensive). Role specificity is ≈ 0 on both stores: through the channel, the model uses the decoded **fillers** but not
+the decoded **roles** — the joint reading with Q1 stated in §5 (the roles act only when read back through the tool). C5's 29
+words with an undecoded tested edge: +0.07 [−0.23, +0.37] (too few to read). **Cost:** 300 words in 520 s plus the twins'
+three passes in ≈ 30 s (2.3 GB peak; batch 64 with the text cache).
 
 ## 16. Amendments
 
-*(none yet)*
+### 16.1 Cost profiles, scorer speed-ups and pilot options (2026-10-08, after `6638c39`; no endpoint, unit, rule or threshold changed)
+
+Decided from the pilot's timings (§15), before any endpoint run:
+- **Cost profiles.** The primary block — T5 SmolLM2-360M twins on C5, C5ut and C0′ × seeds 1–3 and P0 — runs every condition of
+  §3. The secondary arms (C5tr, C5rf, C5sh, C2), the replications (SmolLM2-135M, Qwen3), the readout arms, the T5 new-word set
+  and the WP-UB sets on T4 run the **core** conditions: `none`, the recall, `symbolic`, `roleless` (and on C5 the role-blind
+  stores) — not `definition` or `wrong` (`e12_self_query queue --core`). Reason: on the shared GPU a full condition set costs
+  ≈ 15 minutes per 360M run.
+- **Speed-ups that do not change a score.** F1 tokenizes and links each text once and reuses it across interventions
+  (`e12_faithfulness.TextCache`; equal to the standard scorer within 10⁻⁴ on the CPU, `tests/test_e12_self_query.py`); the
+  phase-A context batch of SmolLM2-360M is 24 (12 per forward with a context; 3.5 GB peak).
+- **Pilot-only options.** `--item-kinds` (phase A; the pilot scored the twins' `choice` items) and `--offset` (F1; the pilot
+  split 300 words into three ranges) keep pilot jobs under 5 minutes; the report merges a run's split folders
+  (`<folder>-<tag>`). Endpoint jobs score every item kind, and F1's first 300 words in one job.
+- **Wording (§2).** An untemplated one-word relation that is a verb in -s keeps its words ("X replaces Y."); another one-word
+  relation reads "X has <relation> Y." (T4's `charge`, `branch`). Every relation the T5 items test is templated.
+- **3a demonstrations** are verified against the tool's real output: their recalls decode the gold fillers and their lookup
+  lists the answer and not the other option (a first draft showed a lookup that did not list its answer).
+- **Reporting.** A role-blind context (no role stated) reports its filler-level decode only; the report adds a per-model F1
+  table (the readout arms, the secondary arms).

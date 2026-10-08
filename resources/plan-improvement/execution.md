@@ -1181,3 +1181,103 @@ self-query, Qwen3 few-shot ReAct; feasibility pilot now), 3b (LoRA on tool-using
 **Placement** (author): existing-checkpoint jobs at 50 (→ 50.7), their reports at 51 (→ 50.75, CPU lane); natural tracks
 once trained at 54 (→ 54.448); readout-arm jobs at 54 (→ 54.4927, after the step-2 evaluations). Exact commands and GPU-h
 follow the pilot (below).
+
+**Pilot** (PILOT, T5 SmolLM2-360M seed 1, twins `choice`, 300 pairs; not an endpoint; pre-registration §15, report
+`experiments/e12-self-query/pilot/report/t5-q1-f1`): twin contrast accuracy `none` 0.507 → `recall:own` **0.790** (decode:
+95.9% of the critical slots, all four in 85.7% of pairs), `recall:C5ut` 0.495, `symbolic` 0.863, `wrong:own` 0.228,
+`roleless:own` 0.497, `definition` 0.748; C0′ + C5 store 0.794, C5ut host + C5 store 0.798, P0 + C5 store 0.690. F1: C5
+comprehensiveness net share **+0.342** [+0.299, +0.385], C5ut +0.392 (C5 − C5ut −0.050), sufficiency +0.27, role specificity on
+the twins ≈ 0 (C5 −0.036, C5ut +0.008). Reading on this seed: the store carries the roles and any host reads them through the
+tool; through the channel the model uses the decoded fillers, not the roles.
+
+**Queue** (from the main checkout after merging; nothing queued). GPU-h are **upper bounds** from the pilot on the shared
+GPU (100% busy with training): per twin condition 63–92 s per 4,800 `choice` texts (`cloze` adds half), scaled by texts ×
+tokens per item set and by host size; F1 300 words in 520 s. Jobs are idempotent by name; every `queue` takes `--dry-run`.
+
+| Block | Priority (author's float) | Jobs | GPU-h |
+|---|---|---:|---:|
+| **Q1 primary**: T5 SmolLM2-360M twins, every condition — C5, C5ut, C0′ × s1–3; P0 (C5 stores of s1–3) | 50 (50.7) | 10 | ≈ 2.1 |
+| **F1 primary** + secondaries: T5 360M C5, C5ut (primary), C5rf, C5tr, C5sh × s1–3 | 50 (50.7) | 15 | ≈ 2.4 |
+| SQ4 formats (C5 s1: all-atom cleanup, slot-free, fields, no confidences) | 50 (50.7) | 1 | ≈ 0.15 |
+| SQ1 secondary arms on the twins, core conditions: C5tr, C5rf, C5sh, C2 × s1–3 | 50 (50.7) | 12 | ≈ 1.3 |
+| SQ6 T5 360M WP-UB two-hop / reverse (≤ 150 anchors per subset): C5, C5ut, C0′, P0 | 50 (50.7) | 10 | ≈ 1.3 |
+| SQ6 T5 360M new words (first 300), core: C5, C5ut, C0′, P0 | 50 (50.7) | 10 | ≈ 2.6 |
+| SQ5 SmolLM2-135M: twins core (C5, C2, C0′ × s1–3; P0) + F1 (C5 × s1–3) | 50 (50.7) | 10 + 3 | ≈ 0.55 + 0.2 |
+| SQ5 Qwen3-0.6B / 1.7B s1–2: twins core (C5, C0′; P0) + F1 (C5) | 50 (50.7) | 10 + 4 | ≈ 4.2 + 2.3 |
+| T4 seed 1: natural items (360M C5, C5ut, C5rf, C2, C0′, P0; 135M C5, C2, C0′, P0) + WP-UB core (C5, C5ut, C0′, P0) | 50 (50.7) | 10 + 7 | ≈ 1.6 + 0.5 |
+| Reports: T5, T5-Qwen3, T4 seed 1 (CPU lane) | 51 (50.75) | 3 | 0 |
+| T4's other configs once trained (C5, C5ut every condition; C5rf, C5tr, C5sh, C2, C0′, C6m/d/g core; seed-1 jobs skipped by name) + report | 54 (54.448) / 55 | 4 + 21 + 1 | ≈ 1.0 + 3.2 |
+| Readout arms U5, U5u, U5sb, U5bu, U5sl, U5tr, U5ut × s1–3: twins (core) + F1 + report | 54 (54.4927) / 55 | 21 + 21 + 1 | ≈ 2.3 + 3.4 |
+
+**Total ≈ 29 GPU-h** (upper bounds; the GPU was shared): ≈ 19 at 50, ≈ 4.2 for T4 at 54, ≈ 5.7 for the readout arms at 54.
+The primary tier alone (Q1 twins on C5, C5ut, C0′, P0 and F1 on C5, C5ut) is ≈ 3.1 GPU-h; the Qwen3 replication (≈ 6.5) and the
+new-word set (≈ 2.6) are the largest secondaries.
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+I=experiments/e9-retrofit/items
+# --- existing checkpoints: priority 50 (author: 50.7) ---
+# Q1 primary block (every pre-registered condition; P0 reads the C5 stores of seeds 1-3)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C0p P0 \
+  --items $I/role-twins-t5-smollm2-v1 --priority 50
+# F1 (C5 and C5ut primary; C5rf, C5tr, C5sh secondaries)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C5rf C5tr C5sh --priority 50
+# SQ4 formats on C5 seed 1 (folder self-query-<items>-formats; the report merges it)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 --seeds 1 \
+  --items $I/role-twins-t5-smollm2-v1 --conditions recall-all:own,recall-free:own,fields:own,noconf:own --tag formats --priority 50
+# SQ1 secondary arms (core conditions)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5tr C5rf C5sh C2 --core \
+  --items $I/role-twins-t5-smollm2-v1 --priority 50
+# SQ6 other item sets (360M)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C0p P0 \
+  --items $I/understanding-t5-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-360M --models C5 C5ut C0p P0 --core \
+  --items $I/new-words-t5-smollm2-v2 --priority 50
+# SQ5 replications
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --hosts SmolLM2-135M --models C5 C2 C0p P0 --core \
+  --items $I/role-twins-t5-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5 --hosts SmolLM2-135M --models C5 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5-qwen3 --models C5 C0p P0 --seeds 1 2 --core \
+  --items $I/role-twins-t5-qwen3-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5-qwen3 --models C5 --seeds 1 2 --priority 50
+# T4 seed 1: natural role items (every condition) and WP-UB (core)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --seeds 1 --models C5 C5ut C5rf C2 C0p P0 \
+  --items $I/role-natural-t4-smollm2-v1 --priority 50
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --seeds 1 --models C5 C5ut C0p P0 --core \
+  --items $I/understanding-t4-smollm2-v1 --priority 50
+# --- reports: priority 51 (author: 50.75), CPU lane ---
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-e12 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5 --output experiments/e12-self-query/report/t5-q1-f1 \
+  --twins role-twins-t5-smollm2-v1 --understanding understanding-t5-smollm2-v1 --new-words new-words-t5-smollm2-v2 --overwrite \
+  --title "E12 T5 — self-query (Q1) and faithfulness of decoding (F1)"
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-qwen3-report-e12 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5-qwen3 --output experiments/e12-self-query/report/t5-qwen3 \
+  --twins role-twins-t5-qwen3-v1 --overwrite --title "E12 T5 Qwen3 — self-query and faithfulness"
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-e12-s1 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e12-self-query/report/t4-s1 \
+  --natural role-natural-t4-smollm2-v1 --understanding understanding-t4-smollm2-v1 --overwrite --title "E12 T4 seed 1 — self-query"
+# --- T4's other configs once trained: priority 54 (author: 54.448); report at 55 ---
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --models C5 C5ut --items $I/role-natural-t4-smollm2-v1 --priority 54
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --models C5rf C5tr C5sh C2 C0p C6m C6d C6g --core \
+  --items $I/role-natural-t4-smollm2-v1 --priority 54
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-e12 --priority 55 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e12-self-query/report/t4 \
+  --natural role-natural-t4-smollm2-v1 --understanding understanding-t4-smollm2-v1 --overwrite --title "E12 T4 — self-query"
+# --- readout arms (decision 60 step 2) once trained: priority 54 (author: 54.4927); report at 55 ---
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --models U5 U5u U5sb U5bu U5sl U5tr U5ut --core \
+  --items $I/role-twins-t5-smollm2-v1 --priority 54
+PYTHONPATH=src $PY -m vsa_embed.experiments.e12_faithfulness queue --stage t5 --models U5 U5u U5sb U5bu U5sl U5tr U5ut --priority 54
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-e12-readout --priority 55 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5 --hosts SmolLM2-360M \
+  --output experiments/e12-self-query/report/t5-readout --twins role-twins-t5-smollm2-v1 --overwrite \
+  --title "E12 T5 — self-query and faithfulness with the readout arms"
+```
+
+Dry runs (2026-10-08): Q1 primary 10, F1 15, formats 1, secondary arms 12, WP-UB 10, new words 10, 135M 10 + 3, Qwen3 10 + 4,
+T4 seed 1 10 + 7, T4 at 54 4 + 21 new (8 seed-1 jobs skipped by name), readout arms 21 + 21.
+
+| # | Open decision (E12) | Default |
+|---|---|---|
+| SQ-1–SQ-5 | pre-registration §14 (context format, role-blind reference, null, subsets, τ) | as registered |
+| SQ-6 | the secondary blocks' size: the Qwen3 replication (≈ 6.5 GPU-h) and the new-word set (≈ 2.6) could move below the primary tier or be cut to seed 1 | queue as listed; the author sets the floats |
+| SQ-7 | 3b (LoRA on tool traces) and 3c (calibrated self-critique) need two small harnesses (≈ one day each) before their pre-registered runs | build after the Q1 / F1 endpoint report |

@@ -841,19 +841,21 @@ def evaluate(run: E5Run, item_set: ItemSet, conditions: Sequence[Condition], sto
             "stores": {label: s.describe() for label, s in stores.items()}}
 
 
-def default_conditions(model: str, kind: str, *, stage_models: Sequence[str] = (), store_seeds: Sequence[int] = ()) -> list[str]:
-    """The pre-registered conditions of a host model on an item set kind (pre-registration §5). Composing hosts read their
+def default_conditions(model: str, kind: str, *, stage_models: Sequence[str] = (), store_seeds: Sequence[int] = (),
+                       core: bool = False) -> list[str]:
+    """The pre-registered conditions of a host model on an item set kind (pre-registration §3). Composing hosts read their
     own store; hosts without one (C0′, C2, C6*) read the C5 store of their seed; P0 (one run) reads the C5 stores of
-    `store_seeds`."""
+    `store_seeds`. `core` (secondary arms and replications): `none`, the recall, `symbolic` and `roleless` (and C5's
+    role-blind stores) — no `definition` or `wrong`."""
     if model == "P0":
         stores = [f"C5@{s}" for s in store_seeds] or ["C5"]
     else:
         stores = ["own" if model in COMPOSING else "C5"]
     primary = stores[0]
-    out = ["none", *(f"recall:{s}" for s in stores), "symbolic", "definition"]
+    out = ["none", *(f"recall:{s}" for s in stores), "symbolic"] + ([] if core else ["definition"])
     if kind in {"twins", "natural", "new"}:
         out.append(f"roleless:{primary}")
-    if kind == "twins":
+    if kind == "twins" and not core:
         out.append(f"wrong:{primary}")
     if model == "C5":                                  # the role-blind stores of the same seed (decision 60's controls)
         out += [f"recall:{m}" for m in ("C5ut", "C5tr") if m in stage_models and (kind != "new" or m == "C5ut")]
@@ -903,6 +905,9 @@ def render_report(summary: dict[str, Any], header: dict[str, Any]) -> str:
 def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     from .e9_tracks import ensure_alias_table, track_spec
     item_set = load_item_set(args.items, limit=args.limit)
+    if args.item_kinds:                         # role items only: e.g. `choice` (the twins' primary kind) in a pilot
+        kinds = {k.strip() for k in args.item_kinds.split(",") if k.strip()}
+        item_set.prompts = [p for p in item_set.prompts if p.row.get("kind") in kinds]
     run_dir = Path(args.run)
     match = RUN_NAME.match(run_dir.name)
     model = match["model"] if match else run_dir.name
@@ -915,7 +920,7 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     alias_table = args.alias_table or ensure_alias_table(track_spec(item_set.track, family))
     config = {"experiment": "e12-self-query", "phase": "A", "run": str(run_dir), "items": str(args.items),
               "conditions": [c.name for c in conditions], "stores": {l: str(resolve_store(run_dir, l)) for l in labels},
-              "cleanup": args.cleanup, "seed": args.seed, "limit": args.limit, "batch_size": args.batch_size,
+              "cleanup": args.cleanup, "seed": args.seed, "limit": args.limit, "item_kinds": args.item_kinds, "batch_size": args.batch_size,
               "max_length": args.max_length, "max_lines": args.max_lines, "alias_table": str(alias_table) if alias_table else None,
               "label": args.label}
     if args.overwrite:
@@ -975,7 +980,7 @@ def evaluate_command(run_dir: Path, items: Path, *, python: str = sys.executable
             *(["--conditions", ",".join(conditions)] if conditions else []), *(["--tag", tag] if tag else [])]
 
 
-CONTEXT_BATCH = {"SmolLM2-135M": 32, "SmolLM2-360M": 16, "Qwen3-0.6B-Base": 8, "Qwen3-1.7B-Base": 4}
+CONTEXT_BATCH = {"SmolLM2-135M": 48, "SmolLM2-360M": 24, "Qwen3-0.6B-Base": 8, "Qwen3-1.7B-Base": 4}   # 360M at 24: 3.5 GB peak (pilot)
 # Pre-registered subsets (preregistration §3): the first 300 new words; at most 150 WP-UB anchors per subset. T4's natural items
 # hold frames of up to 24 edges with long chemical names (contexts up to ≈ 1,250 tokens).
 SET_LIMIT = {"new": 300, "understanding": 150}
@@ -984,7 +989,8 @@ SET_MAX_LENGTH = {"natural": 1536}
 
 def queue_stage(stage: str, items: Path, *, priority: int = 50, models: Sequence[str] | None = None, seeds: Sequence[int] | None = None,
                 hosts: Sequence[str] | None = None, root: Path = ROOT, queue_dir: Path | None = None, python: str | None = None,
-                dry_run: bool = False) -> list[dict[str, Any]]:
+                dry_run: bool = False, core: bool = False, override: Sequence[str] | None = None,
+                tag: str | None = None) -> list[dict[str, Any]]:
     """One GPU-lane job per run of `stage` (finished or not: a job waits in the queue for its run's training), named
     `<stage>-<stem>-<output folder>` (idempotent). P0 reads the C5 stores of seeds 1–3 (its single run stands for every seed)."""
     from vsa_embed.jobqueue import DEFAULT_DIR, add
@@ -1006,13 +1012,13 @@ def queue_stage(stage: str, items: Path, *, priority: int = 50, models: Sequence
             continue
         c5_seeds = sorted(int(m["seed"]) for _, m in parsed if m and m["host"] == host and m["model"] == "C5"
                           and (not seeds or int(m["seed"]) in seeds))
-        conditions = default_conditions(model, kind, stage_models=[m["model"] for _, m in parsed if m and m["host"] == host],
-                                        store_seeds=c5_seeds)
+        conditions = list(override) if override else default_conditions(
+            model, kind, stage_models=[m["model"] for _, m in parsed if m and m["host"] == host], store_seeds=c5_seeds, core=core)
         run_dir = Path(root) / "runs" / stage / path.stem
         batch = CONTEXT_BATCH.get(host, 8) // (2 if kind == "natural" else 1)
-        jobs.append({"name": f"{stage}-{path.stem}-{output_folder(run_dir, items).name}", "priority": int(priority), "model": model,
+        jobs.append({"name": f"{stage}-{path.stem}-{output_folder(run_dir, items, tag).name}", "priority": int(priority), "model": model,
                      "command": evaluate_command(run_dir, items, python=python, batch_size=max(1, batch), conditions=conditions,
-                                                 max_length=SET_MAX_LENGTH.get(kind, 768), limit=SET_LIMIT.get(kind))})
+                                                 max_length=SET_MAX_LENGTH.get(kind, 768), limit=SET_LIMIT.get(kind), tag=tag)})
     if dry_run:
         return jobs
     queued = []
@@ -1040,6 +1046,7 @@ def main(argv: list[str] | None = None) -> None:
     ev.add_argument("--limit", type=int, default=None, help="the first N concepts (twins: pairs; understanding: anchors per subset): "
                     "the pre-registered subsets (new words 300, understanding 150; `queue` passes them), else pilots and smoke tests")
     ev.add_argument("--label", default=None, help="a free label recorded in the outputs (e.g. PILOT)")
+    ev.add_argument("--item-kinds", default="", help="role items: score only these kinds (choice, cloze); default every kind")
     ev.add_argument("--overwrite", action="store_true")
     rc = sub.add_parser("recall", help="print the recalled texts of an item set from one store (CPU, no host)")
     rc.add_argument("--store", type=Path, required=True); rc.add_argument("--items", type=Path, required=True)
@@ -1051,6 +1058,9 @@ def main(argv: list[str] | None = None) -> None:
     qu.add_argument("--priority", type=int, default=50); qu.add_argument("--models", nargs="*", default=None)
     qu.add_argument("--seeds", type=int, nargs="*", default=None); qu.add_argument("--hosts", nargs="*", default=None)
     qu.add_argument("--root", type=Path, default=ROOT); qu.add_argument("--dry-run", action="store_true")
+    qu.add_argument("--core", action="store_true", help="the core conditions (secondary arms, replications; preregistration §3)")
+    qu.add_argument("--conditions", default="", help="these conditions on every selected run instead of the defaults (e.g. SQ4's formats)")
+    qu.add_argument("--tag", default=None, help="output folder suffix (`self-query-<items>-<tag>`; the report merges it with the base)")
     args = parser.parse_args(argv)
     if args.command == "evaluate":
         result = run_evaluate(args)
@@ -1060,8 +1070,9 @@ def main(argv: list[str] | None = None) -> None:
         for record in run_recall(args):
             print(record.get("text", ""), "\n")
     else:
-        jobs = queue_stage(args.stage, args.items, priority=args.priority, models=args.models, seeds=args.seeds, hosts=args.hosts,
-                           root=args.root, dry_run=args.dry_run)
+        override = [c.name for c in parse_conditions(args.conditions)] if args.conditions else None
+        jobs = queue_stage(args.stage, args.items, priority=args.priority, models=args.models, seeds=args.seeds, hosts=args.hosts, core=args.core,
+                           root=args.root, dry_run=args.dry_run, override=override, tag=args.tag)
         print(json.dumps([{"name": j["name"], "priority": j["priority"], "command": " ".join(j["command"])} for j in jobs], indent=2))
 
 

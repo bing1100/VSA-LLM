@@ -69,9 +69,74 @@ RESULT_FILES = ("summary.json", "edges.jsonl.gz", "report.md", "resolved_config.
 # ---------------------------------------------------------------- scoring
 
 
-def item_scores(adapter: Any, items: Sequence[dict[str, Any]], surfaces: dict[str, str], *, per_token: bool = False
-                ) -> dict[str, np.ndarray]:
-    """Per item: the (templates × candidates) summed log-probability of each candidate after the prompt (cloze: per token)."""
+class TextCache:
+    """Texts tokenized and linked once, scored many times: an intervention changes the composer, never the texts. Scores
+    are `e9_binding_items.continuation_scores`'s (Σ log p of the continuation tokens after the prefix; the same right-padded
+    batches, spans, bf16 autocast and float32 output head; `last_hidden_state` is the final hidden state the adapter
+    reads)."""
+
+    def __init__(self, adapter: Any) -> None:
+        self.adapter = adapter
+        self.rows: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def _prepare(self, pairs: Sequence[tuple[str, str]]) -> None:
+        missing = [pair for pair in dict.fromkeys(pairs) if pair not in self.rows]
+        if not missing:
+            return
+        adapter = self.adapter
+        texts = [p + c for p, c in missing]
+        encoded = adapter.tokenizer(texts, return_offsets_mapping=True, add_special_tokens=False, truncation=True,
+                                    max_length=adapter.max_length)
+        for (prefix, _), text, ids, offsets in zip(missing, texts, encoded["input_ids"], encoded["offset_mapping"]):
+            offsets = [tuple(o) for o in offsets]
+            spans = adapter.spans_fn([text], [offsets]) if adapter.spans_fn is not None else None
+            targets = [(t - 1, int(ids[t])) for t in range(1, len(ids)) if offsets[t][1] > len(prefix)]
+            self.rows[(prefix, text[len(prefix):])] = {"ids": list(ids), "spans": spans, "targets": targets}
+
+    @torch.no_grad()
+    def scores(self, pairs: Sequence[tuple[str, str]]) -> tuple[np.ndarray, np.ndarray]:
+        """(Σ log p, token count) of each (prefix, continuation) pair."""
+        from torch.nn import functional as F
+        self._prepare(pairs)
+        adapter = self.adapter
+        model, device = adapter.model, adapter.device
+        sums, counts = np.zeros(len(pairs)), np.zeros(len(pairs))
+        order = sorted(range(len(pairs)), key=lambda i: len(self.rows[pairs[i]]["ids"]))
+        pad = adapter.tokenizer.pad_token_id if adapter.tokenizer.pad_token_id is not None else adapter.tokenizer.eos_token_id
+        head = model.model.get_output_embeddings()
+        for start in range(0, len(order), adapter.batch_size):
+            chunk = order[start:start + adapter.batch_size]
+            rows = [self.rows[pairs[i]] for i in chunk]
+            width = max(len(r["ids"]) for r in rows)
+            ids = torch.full((len(rows), width), int(pad), dtype=torch.long)
+            mask = torch.zeros((len(rows), width), dtype=torch.long)
+            for b, r in enumerate(rows):
+                ids[b, :len(r["ids"])] = torch.tensor(r["ids"]); mask[b, :len(r["ids"])] = 1
+            spans = None
+            if adapter.spans_fn is not None:
+                parts = [{**r["spans"], "batch": torch.full_like(r["spans"]["batch"], b)} for b, r in enumerate(rows)]
+                spans = {k: torch.cat([p[k] for p in parts]).to(device) for k in parts[0]}
+            with adapter._autocast():
+                embeddings = model.embed(ids.to(device), spans) if hasattr(model, "embed") else model.get_input_embeddings()(ids.to(device))
+                base = model.base if hasattr(model, "embed") else model.base_model
+                hidden = base(inputs_embeds=embeddings, attention_mask=mask.to(device)).last_hidden_state
+            select = [(b, col, token, i) for b, (r, i) in enumerate(zip(rows, chunk)) for col, token in r["targets"]]
+            if not select:
+                continue
+            with torch.autocast(device.type, enabled=False):
+                picked_hidden = hidden[torch.tensor([s[0] for s in select], device=device), torch.tensor([s[1] for s in select], device=device)].float()
+                logits = F.linear(picked_hidden, head.weight.float(), None if head.bias is None else head.bias.float())
+                picked = torch.log_softmax(logits, -1).gather(-1, torch.tensor([s[2] for s in select], device=device)[:, None]).squeeze(-1)
+            owners = [s[3] for s in select]
+            np.add.at(sums, owners, picked.cpu().double().numpy())
+            np.add.at(counts, owners, 1.0)
+        return sums, counts
+
+
+def item_scores(adapter: Any, items: Sequence[dict[str, Any]], surfaces: dict[str, str], *, per_token: bool = False,
+                cache: TextCache | None = None) -> dict[str, np.ndarray]:
+    """Per item: the (templates × candidates) summed log-probability of each candidate after the prompt (cloze: per token);
+    with a `TextCache`, its tokenized and linked texts are reused."""
     prefixes, continuations, shapes = [], [], []
     for item in items:
         for template in item["templates"]:
@@ -79,7 +144,12 @@ def item_scores(adapter: Any, items: Sequence[dict[str, Any]], surfaces: dict[st
             for candidate in item["candidates"]:
                 prefixes.append(prefix); continuations.append(candidate)
         shapes.append((len(item["templates"]), len(item["candidates"])))
-    sums, counts = role_items.continuation_scores(adapter, prefixes, continuations) if prefixes else (np.zeros(0), np.zeros(0))
+    if not prefixes:
+        sums, counts = np.zeros(0), np.zeros(0)
+    elif cache is not None:
+        sums, counts = cache.scores(list(zip(prefixes, continuations)))
+    else:
+        sums, counts = role_items.continuation_scores(adapter, prefixes, continuations)
     values = sums / np.maximum(counts, 1) if per_token else sums
     out, cursor = {}, 0
     for item, (n_t, k) in zip(items, shapes):
@@ -139,10 +209,9 @@ def decoded_edges(store: sq.RecallStore, frame: Sequence[tuple[int, int]], vecto
 # ---------------------------------------------------------------- the evaluation
 
 
-def _new_word_terms(items_dir: Path, ontology: dict[str, Any], *, limit: int | None) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
+def _new_word_terms(items_dir: Path, ontology: dict[str, Any], *, limit: int | None, offset: int = 0) -> tuple[list[dict[str, Any]], dict[str, list[dict[str, Any]]]]:
     _, concepts, items = edit.load_item_dir(items_dir, edit.SCHEMA_NEW)
-    if limit:
-        concepts = concepts[:limit]
+    concepts = concepts[offset:offset + limit] if limit else concepts[offset:]
     keep = {c["concept"] for c in concepts}
     by_concept: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for item in items:
@@ -152,12 +221,12 @@ def _new_word_terms(items_dir: Path, ontology: dict[str, Any], *, limit: int | N
 
 
 def faithfulness_new_words(run: E5Run, store: sq.RecallStore, store_ontology: dict[str, Any], items_dir: Path, *,
-                           limit: int | None = None, log: Callable[[str], None] = print) -> dict[str, Any]:
+                           limit: int | None = None, offset: int = 0, log: Callable[[str], None] = print) -> dict[str, Any]:
     """Comprehensiveness, sufficiency and specificity on the new words' property items (module docstring)."""
     ontology = run.ontology
     relation_id = {n: i for i, n in enumerate(ontology["relation_names"])}
     atomic_id = {n: i for i, n in enumerate(ontology["atomic_names"])}
-    concepts, items_by = _new_word_terms(items_dir, ontology, limit=limit)
+    concepts, items_by = _new_word_terms(items_dir, ontology, limit=limit, offset=offset)
     frames = [edit.resolve_frame(c["frame"], relation_id, atomic_id) for c in concepts]
     store_rel = {n: i for i, n in enumerate(store_ontology["relation_names"])}
     store_atom = {n: i for i, n in enumerate(store_ontology["atomic_names"])}
@@ -166,6 +235,7 @@ def faithfulness_new_words(run: E5Run, store: sq.RecallStore, store_ontology: di
     entry_of = {c["concept"]: base + i for i, c in enumerate(concepts)}
     surfaces = {c["concept"]: c["surface"] for c in concepts}
     adapter = edit.extended_adapter(run, {c["surface"]: entry_of[c["concept"]] for c in concepts})
+    cache = TextCache(adapter)
     resolved = edit.link_check(adapter, concepts, [i for c in concepts for i in items_by[c["concept"]]], entry_of)
     linked = [c for c in concepts if resolved[c["concept"]]["status"] == "linked"]
     degrees = {c["concept"]: len(f) for c, f in zip(concepts, frames)}
@@ -180,7 +250,7 @@ def faithfulness_new_words(run: E5Run, store: sq.RecallStore, store_ontology: di
         def score(name: str, affected: Sequence[dict[str, Any]], drop: torch.Tensor | None) -> None:
             items = [i for c in affected for i in items_by[c["concept"]]]
             with dropped_edges(composer, drop) if drop is not None else contextlib.nullcontext():
-                passes[name] = item_scores(adapter, items, surfaces)
+                passes[name] = item_scores(adapter, items, surfaces, cache=cache)
 
         score("full", linked, None)
         for k in range(d_max):
@@ -250,6 +320,7 @@ def role_specificity(run: E5Run, store: sq.RecallStore, store_ontology: dict[str
     ids = {c["concept"]: base + i for i, c in enumerate(concepts)}
     surfaces = {c["concept"]: c["surface"] for c in concepts}
     adapter = edit.extended_adapter(run, {c["surface"]: ids[c["concept"]] for c in concepts})
+    cache = TextCache(adapter)
     resolved = edit.link_check(adapter, concepts, items, ids)
     store_rel = {n: i for i, n in enumerate(store_ontology["relation_names"])}
     store_atom = {n: i for i, n in enumerate(store_ontology["atomic_names"])}
@@ -264,15 +335,15 @@ def role_specificity(run: E5Run, store: sq.RecallStore, store_ontology: dict[str
     channel = run.channel
     with edit.inserted_entries(channel, len(concepts), frames):
         offsets = channel.composer.schedule.offsets.cpu()
-        passes["full"] = item_scores(adapter, items, surfaces)
+        passes["full"] = item_scores(adapter, items, surfaces, cache=cache)
         for role in ("r1", "r2"):
             mask = torch.zeros(int(offsets[-1]), dtype=torch.bool)
             for c in concepts:
                 mask[int(offsets[ids[c["concept"]]]) + positions[c["concept"]][role]] = True
             with dropped_edges(channel.composer, mask):
-                passes[f"remove_{role}"] = item_scores(adapter, items, surfaces)
+                passes[f"remove_{role}"] = item_scores(adapter, items, surfaces, cache=cache)
     with edit.inserted_entries(channel, len(concepts), swapped):
-        passes["swap"] = item_scores(adapter, items, surfaces)
+        passes["swap"] = item_scores(adapter, items, surfaces, cache=cache)
     by_key = {(i["concept"], i["relation"]): i for i in items}
     rows = []
     for c in concepts:
@@ -410,7 +481,7 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     output = Path(args.output or run_dir / (OUTPUT + (f"-{args.tag}" if args.tag else "")))
     alias_table = args.alias_table or ensure_alias_table(track_spec(track, family))
     record = {"experiment": "e12-faithfulness", "run": str(run_dir), "new_items": str(new_items) if new_items else None,
-              "twins": str(twins) if twins else None, "limit": args.limit, "twin_limit": args.twin_limit, "tau": TAU,
+              "twins": str(twins) if twins else None, "limit": args.limit, "offset": args.offset, "twin_limit": args.twin_limit, "tau": TAU,
               "batch_size": args.batch_size, "alias_table": str(alias_table) if alias_table else None, "label": args.label}
     if args.overwrite:
         for name in RESULT_FILES:
@@ -423,7 +494,8 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError(f"{run_dir}: F1 needs a composing channel")
     result: dict[str, Any] = {}
     if new_items is not None and not args.skip_new:
-        result["new_words"] = faithfulness_new_words(run, loaded.store, loaded.ontology, Path(new_items), limit=args.limit or None)
+        result["new_words"] = faithfulness_new_words(run, loaded.store, loaded.ontology, Path(new_items), limit=args.limit or None,
+                                                     offset=args.offset)
     if twins is not None and not args.skip_twins:
         result["twins"] = role_specificity(run, loaded.store, loaded.ontology, Path(twins), limit=args.twin_limit)
     summary = summarize(result)
@@ -491,6 +563,7 @@ def main(argv: list[str] | None = None) -> None:
     ev.add_argument("--tag", default=None); ev.add_argument("--alias-table", type=Path, default=None)
     ev.add_argument("--batch-size", type=int, default=32); ev.add_argument("--device", default=None)
     ev.add_argument("--limit", type=int, default=300, help="the first N new words (pre-registered: 300, the v1 base set; 0 = all)")
+    ev.add_argument("--offset", type=int, default=0, help="pilots only: skip the first N new words (a term range split over jobs)")
     ev.add_argument("--twin-limit", type=int, default=None, help="pilots and smoke tests only: the first N twin pairs")
     ev.add_argument("--skip-new", action="store_true"); ev.add_argument("--skip-twins", action="store_true")
     ev.add_argument("--label", default=None); ev.add_argument("--overwrite", action="store_true")
