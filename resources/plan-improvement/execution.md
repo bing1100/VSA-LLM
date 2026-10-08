@@ -1055,3 +1055,43 @@ B5 T4 35 + 35 (8 + 8 already queued in B3), T7 14, T1c 20.
 | BU-2 | T5 twins use the two relation pairs that share fillers *and* co-occur in real frames (`depends_on`/`part_of`, `owned_by`/`approved_by`); `depends_on`/`uses` (the most shared) never co-occur, so it is not used | as built |
 | BU-3 | P2's store is the static bundle (every edge weight 1); the context-weighted conditions are secondaries | as pre-registered |
 | BU-4 | Probe B trains each relation's map on the seen concepts that carry the relation (multi-hot targets) | as built |
+
+**Step 2 — the unbinding readout arm (training; decisions 60–61).** Pre-registration §13 (`e1bdf4c`, before any run):
+R1 = twin contrast accuracy U5 − U5ut and U5 − U5tr (Holm), R2 = U5 − C5 relative loss on `after_heldout`. Arms (T5,
+SmolLM2-360M × s1–3, C5's recipe and channel plus `channel.readout`): U5 learned HRR, U5u learned unitary, U5sb bounded
+spectral (61a), U5bu block-diagonal unitary (61b), U5sl slotted unitary (61c; T5 load 33.0 / 33.5 / 33.5%), U5tr
+translation, U5ut untyped. Each arm's chain (`e9_plan.readout_jobs`): `pq` items, rescoring, v2 items, WP-UB items, twins,
+strict / filler strata, the readout evaluation (gate on and off: the operator's loss without the readout; role prediction;
+filler recovery) and the binding probe. Configs: `experiments/e9-retrofit/configs/t5/SmolLM2-360M-full-U5*-s{1,2,3}.yaml`.
+
+| Block | Priority (suggested float) | Jobs | GPU-h |
+|---|---|---|---:|
+| S2a training, 7 arms × 3 seeds | 54 (54.4, before the Qwen blocks at ≈ 54.44) | 21 | ≈ 27.0 |
+| S2a chained evaluations (`e9_plan` puts them at priority + 1) | 55 | 189 | ≈ 7.1 |
+| S2a R9 batch report (`report-s1-2-3-readout-SmolLM2-360M`) | 57 | 1 | ≈ 0.4 |
+| S2b binding report, steps 1–2 (CPU lane) | 56 | 1 | 0 |
+| optional: Qwen3-1.7B T5 pair U5 / U5ut, seed 1 | 54 | 2 + chain | ≈ 7 + 1.5 |
+
+**Total ≈ 34.5 GPU-h** (training: 67 min per run × 1.15 readout overhead from the smoke; the slotted arm may take ≈ 1.3×).
+
+```bash
+PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
+# S2a — training + chained evaluations (55) + R9 batch report (57)
+PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --stage t5 --hosts SmolLM2-360M \
+  --models U5 U5u U5sb U5bu U5sl U5tr U5ut --seeds 1 2 3 --priority 54 --queue
+# S2b — the binding report with steps 1 and 2 (CPU lane: starts once every job below 56 is done)
+PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-binding-step2 --priority 56 --lane cpu --min-free-gb 0 --no-resume -- \
+  $PY -m vsa_embed.experiments.e9_binding_report --runs experiments/e9-retrofit/runs/t5 --output experiments/e9-retrofit/report/t5-binding \
+  --twins role-twins-t5-smollm2-v1 --overwrite --title "E9 T5 — binding program, steps 1–2"
+# optional — the Qwen3-1.7B readout pair (not queued by default)
+# PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t5 --hosts Qwen3-1.7B-Base --models U5 U5ut --seeds 1 --priority 54 --queue
+```
+
+Add `--dry-run` to the `e9_plan` command to list the 211 jobs (2026-10-08: 21 trainings, 189 evaluations, 1 report).
+
+| # | Open decision (step 2) | Default |
+|---|---|---|
+| BU-5 | The readout reads the static frame store (every edge weight 1), not the context-weighted vector | as pre-registered |
+| BU-6 | Typed soft cleanup (atomics observed under the relation) for every arm, untyped included | as pre-registered |
+| BU-7 | No auxiliary role / filler loss (LM loss only) | as pre-registered |
+| BU-8 | The optional Qwen3-1.7B pair and the 50M from-scratch screen are not queued | author's call |

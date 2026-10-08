@@ -77,6 +77,15 @@ The arms get the `pq` evaluations (`evaluation_jobs`: track zero-shot and editin
 `e9_rescore` job (filler / non-filler strata, `int4-A`); `--rescore all` adds `e9_rescore` with the claim-B controls
 (channel off at INT4, HQQ / NF4 / GPTQ / AWQ, quantized input embedding) to P0 / C0′ / C2 / C5.
 
+Unbinding readout arms (decisions 60 step 2 and 61; `READOUT_ARMS`, opt-in through `--models`; pre-registration
+`experiments/e9-retrofit/preregistration-binding.md` §13): C5's channel plus `channel.readout` (`readout.UnbindingReadout`)
+with one operator each — `U5` learned HRR, `U5u` learned unitary, `U5sb` bounded-magnitude spectral, `U5bu` block-diagonal
+unitary, `U5sl` slotted unitary (3 load-balanced slots), `U5tr` translation and `U5ut` untyped (controls). Besides the `pq`
+chain and the rescoring they get `readout_jobs`: the v2 dimension-3 items, the WP-UB understanding items, the role-swap
+twins, the strict / filler strata (`e9_freqbias score`), the readout evaluation (losses with the readout gate on and off,
+role prediction, filler recovery; `e9_binding_readout`) and the binding probe; their batch reports under
+`report-<seeds>-readout-<hosts>`.
+
 Job chaining (the queue runs the lowest priority number first, so everything queued after training at
 priority P runs once the stage's training is done): per run (P0 included) at P + 1 — channel probes at bf16
 and INT4 (`RUN/probes.json`, `RUN/probes-int4.json`), the track's zero-shot items at bf16 and INT4
@@ -115,6 +124,7 @@ import argparse
 import copy
 import functools
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -142,8 +152,23 @@ C5_ABLATIONS: dict[str, dict[str, Any]] = {
     "C5sh": {"frames": "shuffled"},                       # every entry reads another entry's frame (a derangement)
 }
 ROW_SOURCE_ARMS = {"C6m": "subtoken_mean", "C6d": "definition", "C6g": "kge"}
+# Decisions 60 (step 2) and 61: the unbinding readout arms (opt-in through --models; pre-registration-binding.md §13): C5's
+# channel plus `readout.UnbindingReadout` (a head that predicts a role from the hidden state at a third of the depth,
+# unbinds it from the most recent linked concept's frame store, cleans up and injects the filler, gated), one operator each.
+READOUT = {"layer": "third", "window": 32, "gate_bias": 0.0, "beta": 16.0, "steps": 1, "typed": True, "source": "static"}
+READOUT_ARMS: dict[str, dict[str, Any]] = {
+    "U5": {"operator": "hrr"},                            # learned HRR (C5's operator)
+    "U5u": {"operator": "unitary_hrr"},                   # learned unitary HRR (trainable phases)
+    "U5sb": {"operator": "spectral_bounded"},             # learned phases, magnitudes in [0.5, 2] (decision 61a)
+    "U5bu": {"operator": "block_unitary"},                # block-diagonal rotations, non-commutative (decision 61b)
+    "U5sl": {"operator": "slotted_unitary", "slots": 3},  # unitary within 3 load-balanced slots (decision 61c)
+    "U5tr": {"operator": "translation"},                  # control: unbinding by subtraction
+    "U5ut": {"operator": "untyped"},                      # control: the bundle readout (no role)
+}
 ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS)
-ALL_MODELS = MODELS + ARMS
+# Every arm planned and evaluated like the WP-PQ1 arms (the `pq` chain, rescoring, no `e4_quant`): those and the readout arms.
+ARM_LIKE = (*ARMS, *READOUT_ARMS)
+ALL_MODELS = MODELS + ARM_LIKE
 MODE_LABELS = {"train": "full", "lora": "lora", "frozen": "frozen"}
 HOST_LR = {"train": 3.0e-5, "lora": 2.0e-4}
 # Micro-batches: SmolLM2-360M as in the engagement check (full and LoRA-64 at 4); SmolLM2-135M at twice
@@ -259,6 +284,10 @@ def model_spec(model: str, *, free_dimension: int, gate_bias: float, source: dic
     if model in C5_ABLATIONS:
         spec = copy.deepcopy(table["C5"])
         spec["channel"].update(C5_ABLATIONS[model])
+    elif model in READOUT_ARMS:
+        spec = copy.deepcopy(table["C5"])
+        spec["channel"].update(READOUT_ARMS[model])
+        spec["channel"]["readout"] = dict(READOUT)
     elif model in ROW_SOURCE_ARMS:
         if not source:
             raise ValueError(f"{model} needs its row-source table (source_table, source_hidden)")
@@ -503,6 +532,36 @@ def evaluation_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executa
     return jobs
 
 
+def readout_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executable, batch_size: int | None = None
+                 ) -> list[tuple[str, list[str], list[str]]]:
+    """(suffix, command, retry arguments) of a readout arm's evaluations beyond the WP-PQ1 `pq` chain and rescoring
+    (pre-registration-binding.md §13): the v2 dimension-3 items, the WP-UB understanding items (two-hop, reverse, …;
+    `own`), the role-swap twins (`own`, `none`, `swap`), the strict non-copy and filler strata (`e9_freqbias score`), the
+    readout evaluation (losses with the readout on and off, role prediction, filler recovery: `e9_binding_readout`) and
+    step 1's binding probe. Item sets that are not built for the track are skipped."""
+    from . import e9_binding_items as role_items
+    from . import e9_understanding as understanding
+    from .e9_binding_probe import probe_command
+    from .e9_binding_readout import OUTPUT as READOUT_OUTPUT, evaluate_command as readout_command
+    from .e9_freqbias import score_command
+    jobs: list[tuple[str, list[str], list[str]]] = []
+    if item_counts(spec.name, spec.family, "v2") is not None:
+        jobs.append(edit_job(run_dir, spec, python=python, batch_size=batch_size, version="v2"))
+    understanding_items = ITEMS / f"understanding-{spec.name}-{spec.family}-v1"
+    if (understanding_items / "manifest.json").exists():
+        jobs.append((understanding.output_folder(run_dir, understanding_items).name,
+                     understanding.evaluate_command(run_dir, understanding_items, python=python, batch_size=batch_size,
+                                                    sources=["own"]), []))
+    twins = ITEMS / f"role-twins-{spec.name}-{spec.family}-v1"
+    if (twins / "manifest.json").exists():
+        jobs.append((role_items.output_folder(run_dir, twins).name,
+                     role_items.evaluate_command(run_dir, twins, python=python, batch_size=batch_size, sources=["own", "none", "swap"]), []))
+    jobs.append(("freqbias", score_command(run_dir, python=python), []))
+    jobs.append((READOUT_OUTPUT, readout_command(run_dir, python=python), []))
+    jobs.append(("binding-probe", probe_command(run_dir, python=python), []))
+    return jobs
+
+
 def quant_command(stage: str, run_dirs: list[Path], *, python: str = sys.executable, root: Path = ROOT,
                   eval_corpus: Path | None = None) -> list[str]:
     folder = "quant-general" if eval_corpus else "quant"
@@ -604,22 +663,27 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
         model = stem_model(path.stem)
         submit(f"{stage}-{path.stem}", [python, "-m", "vsa_embed.training.lm", "--config", str(path), "--output", str(run_dir)],
                priority, min_free_gb=20)
-        if model not in ARMS:
+        if model not in ARM_LIKE:
             quant_dirs.append(run_dir)
         if evals:
             batch = EVAL_JOB_BATCH.get(_config_host(configs[path]) or "")
             for suffix, command, retry in evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
                                                           int4_probes=int4_probes, batch_size=batch, model=model,
-                                                          profile="pq" if model in ARMS else "full", item_versions=item_versions):
+                                                          profile="pq" if model in ARM_LIKE else "full", item_versions=item_versions):
                 submit(f"{stage}-{path.stem}-{suffix}", command, priority + 1, min_free_gb=5, resume_args=retry)
-            if rescore == "all" or (rescore == "arms" and model in ARMS):
+            if rescore == "all" or (rescore == "arms" and model in ARM_LIKE):
                 submit(f"{stage}-{path.stem}-rescore", rescore_command(run_dir, profile_variants("auto", model), python=python,
                                                                        batch_size=batch),
                        priority + 1, min_free_gb=5, resume_args=[])
+            if model in READOUT_ARMS:                                 # the readout arms' own chain (decision 60 step 2)
+                for suffix, command, retry in readout_jobs(run_dir, spec, python=python, batch_size=batch):
+                    submit(f"{stage}-{path.stem}-{suffix}", command, priority + 1, min_free_gb=5, resume_args=retry)
     if evals and run_dirs:
         seeds = sorted({int(p.stem.rsplit("-s", 1)[1]) for p in paths if "-P0-" not in p.stem}) or [1]
         batch = f"s{'-'.join(map(str, seeds))}"
-        if any(stem_model(p.stem) in ARMS for p in paths):          # a batch with WP-PQ1 arms: its own quant/report names
+        if any(stem_model(p.stem) in READOUT_ARMS for p in paths):  # a batch with readout arms: its own report name
+            batch += "-readout-" + "-".join(sorted(set(hosts)))
+        elif any(stem_model(p.stem) in ARMS for p in paths):        # a batch with WP-PQ1 arms: its own quant/report names
             batch += "-pq-" + "-".join(sorted(set(hosts)))           # (per host set, so a later batch reports again)
         if quant_dirs:
             submit(f"{stage}-quant-{batch}", quant_command(stage, quant_dirs, python=python, root=root), priority + 2,
@@ -870,13 +934,13 @@ def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2"
         host = _config_host(config) or ""
         if (models and model not in models) or (seeds and model != "P0" and seed not in seeds) or (hosts and host not in hosts):
             continue
-        reference = "C5" if model in ARMS else model                 # the arms are costed like C5 (a channel per entry)
+        reference = "C5" if model in ARM_LIKE else model             # the arms are costed like C5 (a channel per entry)
         siblings = sorted((p for p in runs.glob(f"{host}-*-s*") if p.name != stem
                            and _channel_kind(stem_model(p.name)) == _channel_kind(reference)
-                           and (model not in ARMS or stem_model(p.name) == "C5")),
+                           and (model not in ARM_LIKE or stem_model(p.name) == "C5")),
                           key=lambda p: (stem_model(p.name) != reference, p.name))      # the same model first
         shuffled = model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled"
-        for quantize in ([None] if model in ARMS else [None, "int4"]):
+        for quantize in ([None] if model in ARM_LIKE else [None, "int4"]):
             suffix, command, _ = edit_job(runs / stem, spec, python=python, alias_table=alias_table,
                                           batch_size=EVAL_JOB_BATCH.get(host), model=model, version=version, quantize=quantize)
             hours, basis = edit_estimate_hours(runs / stem, host=host, quantize=quantize, scale=scale, siblings=siblings,
@@ -897,12 +961,19 @@ def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2"
 # Measured training minutes per 50M-token E9 run on the RTX 3090 shared with the queue (execution.md, WP-PQ1 "Measured
 # costs": SmolLM2-360M 67–68 min, -135M 31 min); other hosts use the 6N model or the memory probe.
 MEASURED_TRAINING_MINUTES = {"SmolLM2-360M": 67.0, "SmolLM2-135M": 31.0}
+# Training time of a readout arm relative to C5 (WP-BU GPU smoke, step 2: the readout's per-step overhead).
+READOUT_TRAINING_OVERHEAD = 1.15
 # Minutes of one evaluation job on SmolLM2-360M, measured on the T1-open seed-1 block (2,048 windows; `probes*.json`
 # timing, `quant/t1` per-run file times): probes 2.0 (bf16) / 3.8 (INT4); e4_quant per run 4 (P0, C0′) / 7.2 (C2, C5,
 # with variant B); WP-PQ1: zero-shot + editing ≈ 3 min at bf16, the R9 report ≈ 22 min. SmolLM2-135M takes ≈ 0.55×
 # (measured 1.3–2.4 min probes, 2–3.8 min quant); other hosts scale with parameters.
 EVAL_MINUTES_360M = {"probes": 2.0, "probes-int4": 3.8, "zeroshot": 1.5, "zeroshot-int4": 3.0, "edit": 1.5, "edit-int4": 3.0,
-                     "rescore": 3.0, "quant_base": 4.0, "quant_channel": 7.2, "report": 22.0, "eval_only": 2.0}
+                     "rescore": 3.0, "quant_base": 4.0, "quant_channel": 7.2, "report": 22.0, "eval_only": 2.0,
+                     # binding program (WP-BU smoke on the shared GPU, 2026-10-08): probe 65 s, twins 61 s; readout on/off
+                     # and diagnostics ≈ three evaluation passes; WP-UB items ≈ 3.8 min and rescoring ≈ 3 min per 360M run
+                     "binding-probe": 1.1, "readout": 2.0, "freqbias": 3.0, "edit-v2": 3.5}
+# Job-name suffix prefixes with their minutes (item folders carry the item set's name).
+EVAL_MINUTES_PREFIX_360M = {"understanding-": 3.8, "role-twins-": 1.0, "role-natural-": 1.6}
 # The measured training minutes include the run's own stratified evaluations on T5's 1,024 windows; a track evaluated on
 # more windows (T1/T1c 2,048, T7 4,096) adds the extra windows at each of its evaluation points, at the measured cost of
 # one 1,024-window pass (same WP-PQ1 measurement: 24 s for 360M, 12 s for 135M at bf16).
@@ -932,7 +1003,8 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
         if config["train"].get("eval_only"):
             return EVAL_MINUTES_360M["eval_only"] * _host_scale(host) / 60
         if host in MEASURED_TRAINING_MINUTES:
-            return (MEASURED_TRAINING_MINUTES[host] * tokens / 50_000_000 + extra_evaluation_minutes(config, host)) / 60
+            overhead = READOUT_TRAINING_OVERHEAD if (config.get("channel") or {}).get("readout") else 1.0
+            return (MEASURED_TRAINING_MINUTES[host] * overhead * tokens / 50_000_000 + extra_evaluation_minutes(config, host)) / 60
         return estimate_hours(host, tokens) if host in HOST_PARAMETERS else float("nan")
     host = next((h for h in HOST_PARAMETERS if h in name), "SmolLM2-360M")
     if module == "vsa_embed.experiments.e4_quant":
@@ -945,8 +1017,12 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
         return minutes / 60
     if module == "vsa_embed.experiments.e9_report":
         return EVAL_MINUTES_360M["report"] / 60
-    suffix = name.rsplit("-s", 1)[-1].split("-", 1)[-1] if "-s" in name else ""
-    return EVAL_MINUTES_360M.get(suffix, 5.0) * _host_scale(host) / 60
+    marker = re.search(r"-s\d+-(.+)$", name)                  # the job's suffix follows the run's seed marker
+    suffix = marker[1] if marker else (name.rsplit("-s", 1)[-1].split("-", 1)[-1] if "-s" in name else "")
+    minutes = EVAL_MINUTES_360M.get(suffix)
+    if minutes is None:
+        minutes = next((m for prefix, m in EVAL_MINUTES_PREFIX_360M.items() if suffix.startswith(prefix)), 5.0)
+    return minutes * _host_scale(host) / 60
 
 
 def _host_scale(host: str) -> float:
@@ -984,7 +1060,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--stage", default=None, help="run-folder stage name (default: the track; <track>-qwen3 / <track>-qwen35 for Qwen3 / Qwen3.5 hosts)")
     parser.add_argument("--hosts", nargs="+", default=list(E9_HOSTS), choices=list(ALL_HOSTS))
     parser.add_argument("--models", nargs="+", default=list(MODELS), choices=list(ALL_MODELS),
-                        help=f"default {' '.join(MODELS)}; WP-PQ1 arms: {' '.join(ARMS)}")
+                        help=f"default {' '.join(MODELS)}; WP-PQ1 arms: {' '.join(ARMS)}; readout arms: {' '.join(READOUT_ARMS)}")
     parser.add_argument("--rescore", default="arms", choices=["arms", "all", "none"],
                         help="e9_rescore jobs (filler strata, claim-B controls): for the WP-PQ1 arms (default), for every "
                              "model (P0/C0p/C2/C5 get the controls variants), or none")

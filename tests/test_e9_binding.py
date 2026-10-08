@@ -128,6 +128,12 @@ COMPOSE = {"mode": "compose", "composition": "attentive", "context_window": 4}
 SPECS = {"P0": ({"mode": "none"}, "frozen"), "C0p": ({"mode": "none"}, "lora"), "C2": ({"mode": "free", "free_dimension": 8}, "lora"),
          "C5": ({**COMPOSE, "operator": "hrr"}, "lora"), "C5ut": ({**COMPOSE, "operator": "untyped"}, "lora"),
          "C5tr": ({**COMPOSE, "operator": "translation"}, "lora"), "C5rf": ({**COMPOSE, "operator": "random_fixed:unitary_hrr"}, "lora")}
+# Step 2's readout arms (decision 60 step 2, decision 61): C5's channel plus the unbinding readout.
+READOUT = {"layer": "third", "window": 8, "gate_bias": 0.0, "beta": 16.0}
+READOUT_SPECS = {"U5": ({**COMPOSE, "operator": "hrr", "readout": READOUT}, "lora"),
+                 "U5ut": ({**COMPOSE, "operator": "untyped", "readout": READOUT}, "lora"),
+                 "U5sl": ({**COMPOSE, "operator": "slotted_unitary", "slots": 3, "readout": READOUT}, "lora"),
+                 "U5bu": ({**COMPOSE, "operator": "block_unitary", "readout": READOUT}, "lora")}
 
 
 @pytest.fixture(scope="module")
@@ -154,15 +160,18 @@ def world(tmp_path_factory) -> dict:
     tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2", local_files_only=True)
     lexicon = _lexicon()
     fb.build_exclusion_table(ontology, full, tokenizer, root / "exclusions.pt", lexicon=lexicon, track="toy")
+    from vsa_embed.experiments import e9_rescore
+    e9_rescore.build_filler_table(ontology, full, tokenizer, root / "fillers.pt", lexicon=lexicon)
     runs = {}
-    for name, (channel, mode) in SPECS.items():
+    for name, (channel, mode) in {**SPECS, **READOUT_SPECS}.items():
         folder = root / "runs" / "toy" / f"fake-{mode}-{name}-s1"
         lm.train(_config(root, name, channel, mode), folder)
         runs[name] = folder
     ctx = und.BuildContext(track="toy", family="gpt2", ontology=ontology, table=full, lexicon=lexicon, tokenizer=tokenizer,
                            tokenizer_name="gpt2", exclusions=torch.load(root / "exclusions.pt", weights_only=False), families_spec=SPEC,
                            min_subtokens=1, ontology_path=root / "ontology.pt", alias_table_path=root / "alias_table.json")
-    yield {"root": root, "table": full, "ontology": ontology, "runs": runs, "ctx": ctx, "alias": root / "alias_table.json"}
+    yield {"root": root, "table": full, "ontology": ontology, "runs": runs, "ctx": ctx, "alias": root / "alias_table.json",
+           "fillers": root / "fillers.pt"}
     patch.undo()
 
 
@@ -403,4 +412,119 @@ def test_queue_dry_runs(world, item_dirs, tmp_path) -> None:
     sources = {j["model"]: j["command"][j["command"].index("--sources") + 1] for j in items}
     assert sources == {"P0": "own", "C0p": "own", "C2": "own,none", "C5": "own,none,swap", "C5ut": "own,none,swap",
                        "C5tr": "own,none,swap", "C5rf": "own,none,swap"}
+    readout = bi.queue_stage("toy", item_dirs["twins"], root=tmp_path, dry_run=True, python="python", models=["U5"])
+    assert readout == []                                                   # no U5 config written in this test
     assert all(j["name"].endswith("-role-twins-toy-v1") for j in items)
+
+
+# -- step 2: the unbinding readout arms ------------------------------------------------------------------------------------------
+
+def test_readout_runs_train_save_and_reload(world) -> None:
+    from vsa_embed.readout import UnbindingReadout
+    for name in READOUT_SPECS:
+        final = torch.load(world["runs"][name] / "final.pt", weights_only=False)
+        assert any(k.startswith("channel.readout.") for k in final["model"])
+        model = lm.load_final(world["runs"][name] / "final.pt", "cpu")
+        readout = model.channel.readout
+        assert isinstance(readout, UnbindingReadout) and model._readout_hook is not None and readout.layer == 1
+        assert readout.method == {"U5": "correlation", "U5ut": "bundle", "U5sl": "conjugate", "U5bu": "transpose"}[name]
+        torch.testing.assert_close(readout.query.weight, final["model"]["channel.readout.query.weight"])
+    slots = json.loads((world["runs"]["U5sl"] / "slots.json").read_text())
+    assert slots["groups"] == 3 and sum(slots["load"]) == int(world["ontology"]["offsets"][-1])
+    assert sorted(r for group in slots["relations"].values() for r in group) == sorted(RELATIONS)
+    assert not (world["runs"]["U5"] / "slots.json").exists()
+
+
+def test_readout_initialization_leaves_the_rest_of_the_run_unchanged(world) -> None:
+    config = lm.resolve_config(_config(world["root"], "C5", {**COMPOSE, "operator": "hrr"}))
+    with_readout = lm.resolve_config(_config(world["root"], "U5", READOUT_SPECS["U5"][0]))
+    torch.manual_seed(1)
+    host = fake_host()
+    torch.manual_seed(1)
+    plain, _ = lm.build_channel(config, world["ontology"], 32, host=host)
+    after_plain = torch.rand(3)
+    torch.manual_seed(1)
+    readout, _ = lm.build_channel(with_readout, world["ontology"], 32, host=host)
+    after_readout = torch.rand(3)
+    assert torch.equal(after_plain, after_readout)                       # the readout draws from its own generator
+    shared = {k: v for k, v in readout.state_dict().items() if not k.startswith("readout.")}
+    assert all(torch.equal(v, plain.state_dict()[k]) for k, v in shared.items())
+
+
+def test_readout_evaluation_on_and_off_with_diagnostics(world, tmp_path) -> None:
+    from vsa_embed.experiments import e9_binding_readout as ro
+    record = ro.evaluate_run(world["runs"]["U5"], tmp_path / "readout", device="cpu", fillers=world["fillers"])
+    assert set(record["variants"]) == {"on", "off"} and record["ref_check"]["replay_ok"]
+    on, off = record["variants"]["on"], record["variants"]["off"]
+    assert on["after"]["targets"] == off["after"]["targets"] and on["after"]["loss"] != off["after"]["loss"]
+    block = record["diagnostics"]["subsets"]["all"]
+    assert block["positions"] > 10 and 0 <= block["role_accuracy"] <= 1 and 0 < block["oracle_mrr"] <= 1
+    assert record["diagnostics"]["chance"] == pytest.approx(1 / len(RELATIONS))
+    loaded = ro.load_evaluation(tmp_path / "readout")
+    assert loaded["windows"]["sum_on"].shape == loaded["windows"]["sum_off"].shape
+    assert loaded["positions"]["correct"].size == block["positions"]
+    with pytest.raises(ValueError, match="no unbinding readout"):
+        ro.evaluate_run(world["runs"]["C5"], tmp_path / "none", device="cpu", fillers=world["fillers"])
+
+
+def test_row_overrides_switch_the_readout_off_for_those_entries(world) -> None:
+    run = _open(world, "U5")
+    readout = run.channel.readout
+    assert readout.blocked is None
+    with common.override_rows(run.channel, {0: torch.zeros(32), 4: torch.zeros(32)}):
+        assert readout.blocked.tolist() == [0, 4]
+        spans = {"batch": torch.tensor([0, 0]), "inject": torch.tensor([2, 6]), "entry": torch.tensor([0, 5])}
+        rows, cols, span = readout.locate(1, 12, spans, torch.device("cpu"))
+        assert set(span.tolist()) == {1} and cols.min() == 6                # the blocked entry is not read out
+    assert readout.blocked is None
+
+
+def test_probe_and_twins_read_the_readout_arms(world, item_dirs, tmp_path) -> None:
+    settings = bp.ProbeSettings(cap=50, contexts=1, folds=2, min_train=3, batch_size=8)
+    slotted = bp.probe_run(world["runs"]["U5sl"], tmp_path / "sl", device="cpu", alias_table=world["alias"], settings=settings,
+                           log=lambda *_: None)
+    assert slotted["algebraic"]["methods"] == ["conjugate"] and "a.static.conjugate.filler.typed" in slotted["summary"]["algebraic"]
+    single = bp.probe_run(world["runs"]["U5bu"], tmp_path / "bu", device="cpu", alias_table=world["alias"], settings=settings,
+                          log=lambda *_: None)
+    assert single["algebraic"]["methods"] == ["transpose"]
+    evaluation = bi.evaluate(_open(world, "U5"), item_dirs["twins"], log=lambda *_: None)
+    assert evaluation["sources"] == ["own", "none", "swap"] and bi.unit_scores(evaluation, "none", "choice")
+
+
+def test_plan_wires_the_readout_arms() -> None:
+    from vsa_embed.experiments import e9_plan
+    from vsa_embed.experiments.e9_tracks import track_spec
+    for model, operator in (("U5", "hrr"), ("U5u", "unitary_hrr"), ("U5sb", "spectral_bounded"), ("U5bu", "block_unitary"),
+                            ("U5sl", "slotted_unitary"), ("U5tr", "translation"), ("U5ut", "untyped")):
+        spec = e9_plan.model_spec(model, free_dimension=8, gate_bias=0.0)["channel"]
+        assert spec["mode"] == "compose" and spec["operator"] == operator and spec["readout"] == e9_plan.READOUT
+        assert spec["composition"] == "attentive" and spec["context_window"] == 8 and spec["gate_bias"] == 0.0
+        assert model in e9_plan.ARM_LIKE and model in e9_plan.ALL_MODELS and model not in e9_plan.ARMS
+    assert e9_plan.model_spec("U5sl", free_dimension=8, gate_bias=0.0)["channel"]["slots"] == 3
+    assert "readout" not in e9_plan.model_spec("C5", free_dimension=8, gate_bias=0.0)["channel"]       # C5 unchanged
+    jobs = e9_plan.readout_jobs(Path("runs/x"), track_spec("t5"), python="python")
+    assert [s for s, _, _ in jobs] == ["edit-v2", "understanding-t5-smollm2-v1", "role-twins-t5-smollm2-v1", "freqbias", "readout",
+                                       "binding-probe"]
+    twins = next(c for s, c, _ in jobs if s.startswith("role-twins"))
+    assert twins[twins.index("--sources") + 1] == "own,none,swap"
+
+
+def test_step2_analysis_reads_the_readout_arms(world, item_dirs, tmp_path) -> None:
+    from vsa_embed.experiments import e9_binding_readout as ro
+    for name in ("U5", "U5ut", "C5"):
+        bi.main(["evaluate", "--run", str(world["runs"][name]), "--items", str(item_dirs["twins"]), "--alias-table", str(world["alias"]),
+                 "--device", "cpu", "--batch-size", "8", "--resamples", "50", "--overwrite"])
+    for name in ("U5", "U5ut"):
+        ro.main(["evaluate", "--run", str(world["runs"][name]), "--device", "cpu", "--fillers", str(world["fillers"]), "--overwrite"])
+        assert (world["runs"][name] / "readout" / "summary.json").exists()
+    analysis = br.analyse(world["root"] / "runs" / "toy", twins=item_dirs["twins"].name, resamples=50)
+    step = analysis["hosts"]["fake"]["step2"]
+    assert step["available"] and set(step["R1"]["contrasts"]) == {"U5 − U5ut"}            # U5tr is not trained in the toy
+    assert step["R1"]["contrasts"]["U5 − U5ut"]["available"] and "p_holm" in step["R1"]["contrasts"]["U5 − U5ut"]
+    r2 = step["R2"]
+    assert r2["available"] and r2["stratum"] == "after_heldout" and r2["seeds"] == [1] and r2["relative_ci_low"] <= r2["relative_ci_high"]
+    assert set(step["off_minus_on"]) == {"U5", "U5ut"} and step["off_minus_on"]["U5"]["after"]["available"]
+    assert "U5 − C5" in step["twins_secondary"] and {"U5", "U5ut"} <= set(step["diagnostics"])
+    assert step["reading"]["R1"] == "incomplete" and "R2" in step["reading"]
+    text = br.render(analysis, title="toy")
+    assert "Step 2 — readout arms" in text and "| R2 | U5 − C5" in text

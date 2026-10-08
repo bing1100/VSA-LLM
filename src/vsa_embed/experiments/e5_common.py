@@ -193,10 +193,18 @@ def override_rows(channel: SpanChannel, rows: dict[int, Tensor] | None) -> Itera
         return out
 
     channel.rows = patched
+    # A channel with an unbinding readout (decision 60 step 2): an overridden entry is not read out either, so a zero row
+    # is still "no information about this entry".
+    readout = getattr(channel, "readout", None)
+    previous = readout.blocked if readout is not None else None
+    if readout is not None:
+        readout.blocked = id_tensor if previous is None else torch.unique(torch.cat([previous.cpu(), id_tensor]))
     try:
         yield
     finally:
         del channel.rows
+        if readout is not None:
+            readout.blocked = previous
 
 
 # -- edge weights -------------------------------------------------------------------------------------

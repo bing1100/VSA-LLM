@@ -114,6 +114,26 @@ class ChannelLM(nn.Module):
                 parameter.requires_grad_(False)
         if host_mode == "lora":
             add_lora(self.model, rank=lora_rank, dtype=adapter_dtype, targets=lora_targets)
+        # Opt-in (decision 60, step 2): the channel's unbinding readout reads and writes the input of one decoder layer.
+        readout = getattr(channel, "readout", None) if channel is not None else None
+        self._readout_hook = None
+        if readout is not None:
+            from ..readout import decoder_layers
+            self._readout_hook = decoder_layers(self.model)[readout.layer].register_forward_pre_hook(
+                self._apply_readout, with_kwargs=True)
+
+    def _apply_readout(self, module: nn.Module, args: tuple, kwargs: dict) -> tuple[tuple, dict] | None:
+        readout = getattr(self.channel, "readout", None) if self.channel is not None else None
+        if readout is None or not readout.enabled:
+            return None
+        hidden = args[0] if args else kwargs["hidden_states"]
+        addition = readout(hidden)
+        if addition is None:
+            return None
+        hidden = hidden + addition
+        if args:
+            return (hidden, *args[1:]), kwargs
+        return args, {**kwargs, "hidden_states": hidden}
 
     @property
     def base(self) -> nn.Module:
@@ -121,6 +141,9 @@ class ChannelLM(nn.Module):
 
     def embed(self, input_ids: Tensor, spans: dict[str, Tensor] | None) -> Tensor:
         embeddings = self.model.get_input_embeddings()(input_ids)
+        readout = getattr(self.channel, "readout", None) if self.channel is not None else None
+        if readout is not None:               # the spans of this forward, for the readout hook
+            readout.current = None if spans is None else {k: v.to(input_ids.device) for k, v in spans.items()}
         if self.channel is None or spans is None:
             return embeddings
         context = None

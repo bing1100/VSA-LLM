@@ -287,9 +287,22 @@ def decode_fillers(composer: Any, summed: Tensor, segments: Tensor, relations: T
     atomics = F.normalize(composer.atomic_vectors().detach().float(), dim=-1)
     n = relations.numel()
     out = {f"{c}_{k}": torch.empty(n, device=summed.device) for c in CLEANUPS for k in ("rank", "hit")}
+    masks = composer.slot_masks() if hasattr(composer, "slot_masks") else None
+    if masks is not None:                     # slotted layout: clean up within the relation's slot (decision 61c)
+        slot_keys = F.normalize(composer.atomic_vectors().detach().float()[None] * masks[:, None, :].to(summed.device), dim=-1)
+        slot_of = composer.slot_of().to(summed.device)
     for part in _chunks(n, chunk):
         unbound = composer.unbind(relations[part], summed[segments[part]], method=method)
-        scores = F.normalize(unbound.float(), dim=-1) @ atomics.T
+        queries = F.normalize(unbound.float(), dim=-1)
+        if masks is None:
+            scores = queries @ atomics.T
+        else:
+            scores = torch.empty(queries.shape[0], atomics.shape[0], device=summed.device)
+            slots = slot_of[relations[part]]
+            for g in range(masks.shape[0]):
+                rows = (slots == g).nonzero(as_tuple=True)[0]
+                if rows.numel():
+                    scores[rows] = queries[rows] @ slot_keys[g].T
         exclude = _pairs_mask(exclusions, part, atomics.shape[0], summed.device)
         for cleanup, allowed in (("all", None), ("typed", candidates[relations[part]])):
             rank, hit = cl.filtered_ranks(scores, fillers[part], allowed=allowed, exclude=exclude, return_hits=True)
@@ -307,11 +320,18 @@ def decode_roles(composer: Any, summed: Tensor, segments: Tensor, relations: Ten
     n = relations.numel()
     out = {f"{c}_{k}": torch.empty(n, device=summed.device) for c in CLEANUPS for k in ("rank", "hit")}
     every = torch.arange(count, device=summed.device)
+    masks = composer.slot_masks() if hasattr(composer, "slot_masks") else None
     for part in _chunks(n, chunk):
         size = part.stop - part.start
         filler_vectors = atomics[fillers[part]]
         bound = composer.transform(every.repeat(size), filler_vectors.repeat_interleave(count, 0)).float().view(size, count, -1)
-        scores = torch.einsum("nd,nrd->nr", F.normalize(summed[segments[part]].float(), dim=-1), F.normalize(bound, dim=-1))
+        bundles = summed[segments[part]].float()
+        if masks is None:
+            scores = torch.einsum("nd,nrd->nr", F.normalize(bundles, dim=-1), F.normalize(bound, dim=-1))
+        else:                                 # slotted: compare within each relation's slot (decision 61c)
+            slot_norms = torch.sqrt((bundles[:, None, :] * masks[None].to(bundles.device)).square().sum(-1)).clamp_min(1e-12)
+            norms = slot_norms[:, composer.slot_of().to(bundles.device)]
+            scores = torch.einsum("nd,nrd->nr", bundles, F.normalize(bound, dim=-1)) / norms
         exclude = _pairs_mask(exclusions, part, count, summed.device)
         for cleanup, allowed in (("all", None), ("typed", candidates[:, fillers[part]].T)):
             rank, hit = cl.filtered_ranks(scores, relations[part], allowed=allowed, exclude=exclude, return_hits=True)

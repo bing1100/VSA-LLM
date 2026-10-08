@@ -116,7 +116,7 @@ class FrameComposer(nn.Module):
         operator: str = "hrr", mode: str = "bundle", concept_factor: str = "induced",
         key_dimension: int = 16, context_dimension: int = 0, temperature: float = 1.0,
         learn_temperature: bool = False, weight_mode: str = "softmax", output_dimension: int | None = None,
-        normalize_atomics: bool = True, rank: int = 8,
+        normalize_atomics: bool = True, rank: int = 8, slots: int = 3,
     ) -> None:
         super().__init__()
         if mode not in {"bundle", "salience", "attentive"}:
@@ -137,8 +137,17 @@ class FrameComposer(nn.Module):
         family, frozen = operator, False
         if operator.startswith("random_fixed"):
             family, frozen = (operator.split(":", 1)[1] if ":" in operator else "hrr"), True
-        self.transform = create_composition_operator("additive" if family == "untyped" else family,
-                                                   relation_count, dimension, rank=rank)
+        if family == "slotted_unitary":
+            # Decision 61c: relations split into `slots` groups, load-balanced greedily by their edge counts in these
+            # frames; the per-slot load is recorded on the operator (`slot_load`).
+            from .relations import SlottedUnitaryRelation, balanced_slots
+            counts = torch.bincount(schedule.relations.long(), minlength=relation_count).tolist()
+            slot_of = balanced_slots(counts, slots)
+            load = [sum(c for c, s in zip(counts, slot_of) if s == g) for g in range(slots)]
+            self.transform = SlottedUnitaryRelation(relation_count, dimension, slot_of=slot_of, groups=slots, load=load)
+        else:
+            self.transform = create_composition_operator("additive" if family == "untyped" else family,
+                                                       relation_count, dimension, rank=rank)
         if frozen:
             self.transform.requires_grad_(False)
         self.key_dimension = key_dimension
@@ -281,6 +290,15 @@ class FrameComposer(nn.Module):
         composer's `bundle` readout, which ignores the role; `relations.readout_method`)."""
         from .relations import readout_method
         return self.transform.unbind(relation_ids, vectors, method=method or readout_method(self.transform))
+
+    def slot_masks(self) -> Tensor | None:
+        """Slotted layout (`operator="slotted_unitary"`): the `(slots, dimension)` coordinate masks, within which a
+        relation's filler is unbound and cleaned up (`slot_of()` gives each relation's slot); None otherwise."""
+        masks = getattr(self.transform, "slot_masks", None)
+        return masks() if callable(masks) else None
+
+    def slot_of(self) -> Tensor | None:
+        return getattr(self.transform, "slot_of", None)
 
     # -- growth (used by the developmental dictionary, M3) --------------------------------------
 
