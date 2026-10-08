@@ -1,0 +1,21 @@
+experiment: e12-critique
+run: /home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-135M-full-C5-s1
+sets:
+- twins
+- new
+- heldout
+paths:
+  twins: experiments/e9-retrofit/items/role-twins-t5-smollm2-v1
+  new: experiments/e9-retrofit/items/new-words-t5-smollm2-v2
+  heldout: experiments/t5-enterprise-glossary/items/zeroshot_property.jsonl
+evidence: experiments/e12-self-query/items/critique-evidence-t5-v1
+limits:
+  twins: 4
+  new: 8
+  heldout: 6
+seen_cap: 3000
+null_seed: 0
+split_seed: 0
+batch_size: 8
+max_length: 1024
+label: SMOKE

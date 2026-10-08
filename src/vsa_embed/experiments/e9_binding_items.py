@@ -146,8 +146,11 @@ def invented_names(ctx: und.BuildContext, count: int, *, name_seed: int, contami
 
 def build_twins(ctx: und.BuildContext, output: Path, *, count: int = 300, seed: int = 0, name_seed: int = 23, min_shared: int = 20,
                 contamination_texts: Sequence[str] = (), reserved_names: set[str] | None = None, wordnet: Any = None,
-                pairs: Sequence[tuple[str, str]] | None = None) -> dict[str, Any]:
-    """Role-swap twin pairs (module docstring); `count` pairs split evenly over the usable relation pairs."""
+                pairs: Sequence[tuple[str, str]] | None = None, exclude_frames: Sequence[Sequence[tuple[int, int]]] = (),
+                exclude_fillers: Sequence[tuple[int, int]] = ()) -> dict[str, Any]:
+    """Role-swap twin pairs (module docstring); `count` pairs split evenly over the usable relation pairs. Opt-in (E12 3b's
+    training twins): no twin frame equals one of `exclude_frames` ((relation, atomic) id pairs) and no pair swaps an
+    unordered filler pair {X, Y} of `exclude_fillers`; with both empty the draw is unchanged."""
     view, lexicon = ctx.view, ctx.lexicon
     rng = random.Random(seed)
     found = relation_pairs(ctx, min_shared=min_shared)
@@ -167,6 +170,8 @@ def build_twins(ctx: und.BuildContext, output: Path, *, count: int = 300, seed: 
         raise ValueError("no relation pair shares enough fillers and has a donor frame")
     quota = [count // len(usable) + (1 if k < count % len(usable) else 0) for k in range(len(usable))]
     frames_seen = {frozenset(view.frame(e)) for e in range(view.entry_count)}
+    frames_seen |= {frozenset((int(r), int(f)) for r, f in frame) for frame in exclude_frames}
+    banned = {frozenset((int(x), int(y))) for x, y in exclude_fillers}
     pools = {r: ctx.pools[view.relation_names[r]] for r in range(len(view.relation_names)) if view.relation_names[r] in ctx.pools}
     built = []
     for (r1, r2, _), n in zip(usable, quota):
@@ -179,7 +184,7 @@ def build_twins(ctx: und.BuildContext, output: Path, *, count: int = 300, seed: 
                 raise ValueError(f"could not build {n} twin pairs for ({r1}, {r2})")
             donor = rng.choice(donors[(r1, r2)])
             x, y = rng.sample(shared, 2)
-            if ctx.text(x) == ctx.text(y):
+            if ctx.text(x) == ctx.text(y) or frozenset((x, y)) in banned:
                 continue
             rest = []
             used = {x, y}
@@ -231,6 +236,8 @@ def build_twins(ctx: und.BuildContext, output: Path, *, count: int = 300, seed: 
                           "candidates": "[X, Y] in this order for both twins and both relations",
                           "scoring": "choice: PMI against the null prompt; cloze: per-token log-probability minus the null "
                                      "prompt's; twin contrast z = ±[(s_A(X) − s_A(Y)) − (s_B(X) − s_B(Y))]"}}
+    if exclude_frames or exclude_fillers:              # opt-in record (absent from every earlier build)
+        manifest["excluded"] = {"frames": len({frozenset(map(tuple, f)) for f in exclude_frames}), "filler_pairs": len(banned)}
     return _write(output, manifest, concepts, items)
 
 

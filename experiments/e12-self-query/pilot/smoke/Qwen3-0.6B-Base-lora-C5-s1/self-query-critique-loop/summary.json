@@ -1,0 +1,59 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "Qwen/Qwen3-0.6B-Base/lora",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "scale_to_host": true,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-qwen3-Qwen3-0.6B-Base-lora-C5-s1",
+    "run_git_sha": "797ceaf4874d7fba0233bc0d8e3c85bdd4f9f3f0",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/eval",
+    "min_subtokens": 2,
+    "tokenizer": "Qwen/Qwen3-0.6B-Base"
+  },
+  "store": {
+    "label": "own",
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5-qwen3/Qwen3-0.6B-Base-lora-C5-s1",
+    "operator": "hrr",
+    "method": "correlation",
+    "role_blind": false,
+    "family": "hrr"
+  },
+  "label": "SMOKE",
+  "items": 6,
+  "seconds": 187.96329784486443,
+  "demonstrations": "Question: In the glossary, Bailk Reconciliation is filed under the type ___? Options: tool | dataset | process | system\nAnswer given: process\nRecall: Bailk Reconciliation is a process. (p = 1.00)\nEvidence: none\nDecision: Keep\n\nQuestion: Bailk Reconciliation belongs to the ___? Options: procurement area | data area | sales area | finance area\nAnswer given: finance area\nRecall: Bailk Reconciliation belongs to the sales area. (p = 1.00)\nEvidence: none\nDecision: Revise to sales area\n\nQuestion: Droundflirb Drashskaish is currently ___? Options: planned | deprecated | active | pilot\nAnswer given: pilot\nRecall: Droundflirb Drashskaish is currently planned. (p = 1.00)\nEvidence: Droundflirb Drashskaish is currently pilot.\nDecision: Keep\n\nQuestion: Drourk Mirkklesh Hub is governed by ___? Options: Flolkge Guideline | Neim Policy | Floush Protocol | Toulk Traind Standard\nAnswer given: Toulk Traind Standard\nRecall: Drourk Mirkklesh Hub is governed by Flolkge Guideline. (p = 0.43)\nEvidence: none\nDecision: Unsure\n",
+  "loop": {
+    "items": 6,
+    "k1_loop": 0.39999999999999997,
+    "k1_no_tool": 0.39999999999999997,
+    "k2_loop": 0.19999999999999998,
+    "k2_naive": 1.0,
+    "decisions": {
+      "real": {
+        "Keep": 6
+      },
+      "null": {
+        "Keep": 6
+      }
+    }
+  },
+  "peak_gb": null
+}

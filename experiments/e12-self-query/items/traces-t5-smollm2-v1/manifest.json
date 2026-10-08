@@ -1,0 +1,97 @@
+{
+  "schema": "e12-traces/1",
+  "kind": "traces",
+  "track": "t5",
+  "family": "smollm2",
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "twins": {
+    "pairs": 2000,
+    "seed": 1,
+    "name_seed": 29,
+    "relation_pairs": [
+      [
+        "depends_on",
+        "part_of"
+      ],
+      [
+        "owned_by",
+        "approved_by"
+      ]
+    ],
+    "sha256": {
+      "concepts.jsonl": "30ff3882caf7c56f261a780253b5516dd9b1dc4fa507e68fb2189e7dcd07b1cc",
+      "items.jsonl.gz": "486e3937aedc40e4c861f397bb61de4be49eab05d3b11448872798351fd451ca"
+    }
+  },
+  "question_seed": 0,
+  "test_twins": "experiments/e9-retrofit/items/role-twins-t5-smollm2-v1",
+  "test_twins_sha256": {
+    "concepts.jsonl": "4a34899cfe634f9e3da6161cb1e64f3fbcef071b3affcf1686fdf6f3d02848e7",
+    "items.jsonl.gz": "52cea5801fc4fa734dc8cce100baeb8eb4e0a012e3bbd00a862a9c8c61fb33da"
+  },
+  "reference_sets": [
+    "edits-t5-qwen3-v1",
+    "edits-t5-qwen3-v2",
+    "edits-t5-qwen3_5-v1",
+    "edits-t5-qwen3_5-v2",
+    "edits-t5-smollm2-v1",
+    "edits-t5-smollm2-v2",
+    "new-words-t5-qwen3-v1",
+    "new-words-t5-qwen3-v2",
+    "new-words-t5-qwen3_5-v1",
+    "new-words-t5-qwen3_5-v2",
+    "new-words-t5-smollm2-v1",
+    "new-words-t5-smollm2-v2",
+    "role-twins-t5-qwen3-v1",
+    "role-twins-t5-smollm2-v1",
+    "understanding-t5-qwen3-v1",
+    "understanding-t5-smollm2-v1"
+  ],
+  "reserved_names": 10701,
+  "excluded_entries": 3005,
+  "excluded_frames": 1300,
+  "excluded_filler_pairs": 288,
+  "checks": {
+    "twin names in reserved item-set names": 0,
+    "twin frames equal to a test frame": 0,
+    "twin filler pairs of a test twin": 0,
+    "seen entries named by an item set": 0,
+    "seen entries held out": 0
+  },
+  "counts": {
+    "questions": 14245,
+    "twins": 8000,
+    "seen": 6245,
+    "seen_entries": 955,
+    "seen_distractor": {
+      "pool": 6167,
+      "own": 78
+    },
+    "seen_skipped": {},
+    "relations": {
+      "approved_by": 2015,
+      "area": 955,
+      "cadence": 303,
+      "depends_on": 2215,
+      "governed_by": 230,
+      "is_a": 955,
+      "measured_by": 187,
+      "owned_by": 2855,
+      "part_of": 2235,
+      "produces": 93,
+      "purpose": 955,
+      "reports_to": 1,
+      "status": 693,
+      "tier": 369,
+      "uses": 184
+    }
+  },
+  "rules": {
+    "twins": "e9_binding_items.build_twins with the test set's relation pairs, item seed 1, name seed 29; names disjoint from every item set's surfaces; frames disjoint from every test frame; no test {X, Y} pair",
+    "seen": "training frequency >= 10, not held out, not synthetic, one concept, linkable surface, named by no item set of the track; one question per templated relation; gold = the relation's first filler; other option = the term's own filler of another relation of the same answer type (atom_type), else a frequency-weighted filler of the relation's pool",
+    "wording": "one of the property templates' first two paraphrases (seeded); options in a seeded order (twins: [X, Y] as the test twins)"
+  },
+  "sha256": {
+    "questions.jsonl.gz": "d2aa96dc2e890c3676904dc1efad97d0a251d6b9a7a27cf4be36ebccc3ec5d57"
+  }
+}
