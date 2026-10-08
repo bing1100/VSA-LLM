@@ -29,8 +29,10 @@ Stages (`--stage`):
      documents). Evaluation: `eval-entities` = evaluation-side documents that mention a selected name **and** every
      document that mentions a held-out entity (ROOD: they are never trained on), in stream order;
      `eval-general` = C3's evaluation documents (locality); `eval` = their mix.
-  3. pre-sample (first `presample_tokens` of the training mix, before any exclusion) → frozen holdout: T1-open's
-     stratified choice + closure (node-, alias-disjoint) over **ROOD-eligible** entries — single-concept entries whose
+  3. pre-sample (first `presample_tokens` of the training mix, before any exclusion) and the frequencies the holdout is
+     stratified by (`data.holdout_counts`: the pre-sample's linked spans, or `screen` — the training-side screen counts
+     of the selected names over the whole pool) → frozen holdout: T1-open's stratified choice + closure (node-,
+     alias-disjoint) over **ROOD-eligible** entries — single-concept entries whose
      entity is no frame filler (node-disjoint: no other frame names it) and whose Wikidata names (all of them, ≥
      `data.rood_min_chars` characters) occur in at most `data.rood_max_documents` training-side screen documents (the
      exclusion cost), and whose closure stays eligible. Pinned by `expected_holdout_sha256`.
@@ -493,6 +495,18 @@ def rood_eligibility(table: AliasTable, ontology: FrameOntology, records: dict[s
     return {"eligible": eligible, "cost": cost, "reasons": dict(reasons), "fillers": fillers}
 
 
+def screen_entry_counts(selection: Sequence[dict[str, Any]], table: AliasTable, ontology: FrameOntology) -> Counter:
+    """Training-side screen occurrences per single-concept entry (the sum over its selected names)."""
+    concept = {q: i for i, q in enumerate(ontology.concept_names)}
+    entry_of = {concepts[0]: e for e, concepts in enumerate(table.entry_concepts) if len(concepts) == 1}
+    counts: Counter = Counter()
+    for row in selection:
+        entry = entry_of.get(concept[row["qid"]])
+        if entry is not None:
+            counts[entry] += int(row["train"])
+    return counts
+
+
 def choose_rood_holdout(counts: Counter, lengths: dict[int, int], table: AliasTable, ontology: FrameOntology,
                         records: dict[str, dict[str, Any]], key_counts: dict[str, dict[str, int]], *, fraction: float,
                         min_count: int, seed: int, max_containing: int | None, min_chars: int,
@@ -604,6 +618,12 @@ def run(config: dict[str, Any], output_dir: Path, *, log: Callable[[str], None] 
     counts = Counter(presample.spans["entry"][long_enough].tolist())
     key_counts = read_counts(Path(config["wikidata"]["dir"]).expanduser() / "screen_counts.tsv.gz",
                              expected_sha256=config["ontology"].get("counts_sha256"))
+    if data.get("holdout_counts", "presample") == "screen":
+        # The whole training-side pool's counts (the screen) instead of the pre-sample's: a 20M-token pre-sample names
+        # only entities frequent enough that excluding their documents would cost too much.
+        counts = screen_entry_counts(selection, base_table, ontology)
+    elif data.get("holdout_counts", "presample") != "presample":
+        raise ValueError("data.holdout_counts must be presample or screen")
     holdout = choose_rood_holdout(counts, entry_length, base_table, ontology, records, key_counts,
                                   fraction=float(data["holdout_fraction"]), min_count=int(data["holdout_min_count"]),
                                   seed=int(config["seed"]), max_containing=data.get("holdout_max_containing"),
