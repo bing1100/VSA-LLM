@@ -528,3 +528,169 @@ def test_step2_analysis_reads_the_readout_arms(world, item_dirs, tmp_path) -> No
     assert step["reading"]["R1"] == "incomplete" and "R2" in step["reading"]
     text = br.render(analysis, title="toy")
     assert "Step 2 — readout arms" in text and "| R2 | U5 − C5" in text
+
+
+# -- step 3: chained two-hop, reverse lookup, capacity, path order ------------------------------------------------------------
+
+CHAIN_SPEC = {**SPEC, "two_hop": [{"path": ("depends_on", "owned_by"), "distractors": 0,
+                                   "templates": ["{x} depends on something that is owned by", "Something {x} depends on is owned by"]}],
+              "reverse": {"owned_by": {"cue": "owned by {t}", "match": None}},
+              "reverse_templates": ["Of {x} and {y}, the one {c} is", "Between {y} and {x}, the one {c} is"]}
+
+
+@pytest.fixture(scope="module")
+def chain_items(world, tmp_path_factory) -> Path:
+    ctx = world["ctx"]
+    previous = ctx.families_spec
+    ctx.families_spec = CHAIN_SPEC
+    try:
+        out = tmp_path_factory.mktemp("chainitems") / "understanding-toy-v1"
+        und.build_items_from_context(ctx, out, counts={"seen": 20, "rare": 20}, families=("two_hop", "reverse"))
+    finally:
+        ctx.families_spec = previous
+    return out
+
+
+def test_chain_on_toy_composers(world, chain_items, tmp_path, monkeypatch) -> None:
+    from vsa_embed.experiments import e9_binding_chain as ch
+    monkeypatch.setattr(ch, "_item_atoms", lambda ontology, track, family: _toy_item_atoms(world))
+    settings = ch.ChainSettings(cap=50, paths=50, reverse=40, memory_targets=20, global_paths=20, path_order=200)
+    record = ch.chain_run(world["runs"]["C5"], tmp_path / "c5", items=chain_items, settings=settings, log=lambda *_: None)
+    assert record["fidelity"]["methods"] == ["correlation", "inverse", "exact"]
+    assert set(record["fidelity"]["results"]["exact"]["by_degree"]) and record["two_hop"]["paths"] > 0
+    two = record["two_hop"]["all"]
+    assert {"hop1_hit", "chain_hit", "oracle_hit", "soft_hit", "bridge_found"} <= set(two) and 0 <= two["chain_hit"] <= 1
+    assert record["two_hop_global"]["memory_concepts"] == len(TERMS) and record["reverse"]["queries"] > 0
+    sizes = record["capacity"]["sizes"]
+    assert "1" in sizes and str(len(TERMS)) in sizes
+    assert record["items"]["two_hop"]["items"] > 0 and record["items"]["reverse"]["items"] > 0
+    assert (tmp_path / "c5" / "items.jsonl.gz").exists() and (tmp_path / "c5" / "report.md").exists()
+    untyped = ch.chain_run(world["runs"]["C5ut"], tmp_path / "ut", settings=settings, log=lambda *_: None)
+    assert untyped["fidelity"]["methods"] == ["bundle"] and untyped["path_order"]["by_distractors"]["0"]["accuracy"] == pytest.approx(0.5)
+    blocks = ch.chain_run(world["runs"]["U5bu"], tmp_path / "bu", settings=settings, log=lambda *_: None)
+    assert blocks["path_order"]["by_distractors"]["0"]["accuracy"] > 0.9                    # non-commutative keeps the order
+    slotted = ch.chain_run(world["runs"]["U5sl"], tmp_path / "sl", settings=settings, licensed=True, log=lambda *_: None)
+    assert not (tmp_path / "sl" / "items.jsonl.gz").exists() and slotted["method"] == "conjugate"
+
+
+def _toy_item_atoms(world):
+    lexicon = _lexicon()
+    pools = {}
+    o = world["ontology"]
+    for r, f in zip(np.asarray(o["relations"]).tolist(), np.asarray(o["fillers"]).tolist()):
+        pools.setdefault(RELATIONS[r], set()).add(f)
+    def answer_atom(relation, text):
+        for a in sorted(pools.get(relation, ())):
+            atom_text = lexicon.text(ATOMS[a])
+            if atom_text and lexicon.answer(relation, atom_text) == text:
+                return a
+        return None
+    return answer_atom, {t: world["table"].alias_to_entry[t.lower()] for t in TERMS}
+
+
+def test_global_memory_of_one_concept_is_the_local_store(world) -> None:
+    from vsa_embed.experiments import e9_binding_chain as ch
+    composer, _, ontology = ch.load_composer(world["runs"]["C5rf"])
+    store = ch.Store(composer)
+    atom_entry = ch.atom_entries(ontology)
+    assert atom_entry[A["term:Zash Team"]] == world["table"].alias_to_entry["zash team"] and atom_entry[A["type:system"]] == -1
+    keys = ch.memory_keys(store, atom_entry, seed=0)
+    spectrum = torch.fft.rfft(keys).abs()
+    torch.testing.assert_close(spectrum, torch.ones_like(spectrum), atol=1e-4, rtol=0)        # unitary keys
+    memory = ch.global_memory(store, torch.tensor([3]), keys)
+    recovered = ch.HRRAlgebra().unbind(memory[None], keys[[3]])[0]
+    torch.testing.assert_close(recovered, torch.nn.functional.normalize(store.stores()[3], dim=0), atol=1e-4, rtol=1e-4)
+
+
+def test_reverse_lookup_of_an_untyped_store_ignores_the_relation(world) -> None:
+    from vsa_embed.experiments import e9_binding_chain as ch
+    composer, _, _ = ch.load_composer(world["runs"]["C5ut"])
+    store = ch.Store(composer)
+    filler = torch.tensor([A["term:Grosh Console"]] * 2)
+    scores = ch.reverse_scores(store, torch.tensor([3, 4]), filler)                       # depends_on vs uses
+    torch.testing.assert_close(scores[0], scores[1])
+    bound, _, _ = ch.load_composer(world["runs"]["C5"])
+    typed = ch.reverse_scores(ch.Store(bound), torch.tensor([3, 4]), filler)
+    assert not torch.allclose(typed[0], typed[1])
+
+
+def test_synthetic_sweep_runs_and_orders_the_families() -> None:
+    from vsa_embed.experiments import e9_binding_chain as ch
+    result = ch.sweep(atoms=256, relations=8, trials=8, dimensions=(64,), loads=(1, 4), families=("unitary_hrr", "hrr_exact", "additive"))
+    assert result["local"]["unitary_hrr"]["64"]["1"] == 1.0 and result["local"]["additive"]["64"]["4"] < 0.6
+    assert result["path_order"]["block_unitary"]["by_distractors"]["0"]["accuracy"] > result["path_order"]["unitary_hrr"]["by_distractors"]["0"]["accuracy"]
+    assert result["global"]["unitary_hrr"]["1"] > result["global"]["unitary_hrr"]["2048"]
+    assert "Path order" in ch.render_sweep(result)
+
+
+def test_chain_queue_takes_composing_configs_only(world, tmp_path) -> None:
+    from vsa_embed.experiments import e9_binding_chain as ch
+    configs = tmp_path / "configs" / "toy"
+    configs.mkdir(parents=True)
+    for name, (channel, mode) in {**SPECS, **READOUT_SPECS}.items():
+        (configs / f"SmolLM2-360M-{'frozen' if mode == 'frozen' else 'full'}-{name}-s1.yaml").write_text(
+            yaml.safe_dump(_config(world["root"], name, channel, mode)))
+    jobs = ch.queue_stage("toy", root=tmp_path, dry_run=True, python="python", items=Path("items/u"))
+    assert sorted(j["model"] for j in jobs) == sorted(["C5", "C5ut", "C5tr", "C5rf", *READOUT_SPECS])
+    assert all(j["name"].endswith("-binding-chain") and "--items" in j["command"] for j in jobs)
+
+
+def test_no_arm_batch_writes_the_stage_report_folder(tmp_path) -> None:
+    """An arm batch (WP-PQ1 or readout arms, alone or with base models) writes its R9 report to report/<stage>-<tag>;
+    only a base batch writes report/<stage>, the folder R9, the claims ledger and the draft cite."""
+    from vsa_embed.experiments import e9_plan
+    batches = {"base": ["P0", "C0p", "C2", "C5"], "pq": ["C5rf", "C5ut", "C5tr", "C5sh"], "readout": list(e9_plan.READOUT_ARMS),
+               "mixed": ["C5", "U5", "U5ut"], "mixed_pq": ["C0p", "C5ut"]}
+    expected = {"base": None, "pq": "pq", "readout": "readout", "mixed": "readout", "mixed_pq": "pq"}
+    for name, models in batches.items():
+        folder = tmp_path / name
+        folder.mkdir()
+        paths = []
+        for model in models:
+            stem, config = e9_plan.run_config(stage="toy", host="SmolLM2-360M", mode="train", model=model, seed=1,
+                                              data_root=tmp_path / "corpus", tokens=1_000_000, lora_rank=64, host_lr=None,
+                                              gate_bias=0.0, free_dimension=8)
+            config["e9_track"] = "t5"
+            path = folder / f"{stem}.yaml"
+            path.write_text(yaml.safe_dump(config))
+            paths.append(path)
+        planned: list = []
+        e9_plan.queue_jobs(paths, "toy", 50, track="t5", root=Path("experiments/e9-retrofit"), plan=planned)
+        reports = [(job, command) for job, _, command in planned if command[2] == "vsa_embed.experiments.e9_report"]
+        assert len(reports) == 1
+        job, command = reports[0]
+        output = Path(command[command.index("--output") + 1])
+        tag = expected[name]
+        assert e9_plan.batch_tag(models) == tag
+        if tag is None:
+            assert output == Path("experiments/e9-retrofit/report/toy") and "-pq-" not in job and "-readout-" not in job
+        else:
+            assert output == Path(f"experiments/e9-retrofit/report/toy-{tag}") and f"-{tag}-" in job
+            assert output.name != "toy"                                          # never the stage's base report
+
+
+def test_step3_analysis_reads_the_chain_outputs(world, chain_items, tmp_path, monkeypatch) -> None:
+    from vsa_embed.experiments import e9_binding_chain as ch
+    monkeypatch.setattr(ch, "_item_atoms", lambda ontology, track, family: _toy_item_atoms(world))
+    settings = ch.ChainSettings(cap=50, paths=50, reverse=60, memory_targets=20, global_paths=20, path_order=100)
+    for name in ("C5", "C5ut", "C5tr"):
+        ch.chain_run(world["runs"][name], items=chain_items, settings=settings, overwrite=True, log=lambda *_: None)
+        arrays = ch.load_chain(world["runs"][name] / ch.OUTPUT)["paths"]
+        assert arrays["global_chain_hit"].size == min(20, arrays["path_chain_hit"].size) and arrays["query_rr"].size > 0
+    analysis = br.analyse(world["root"] / "runs" / "toy", resamples=50)
+    step = analysis["hosts"]["fake"]["step3"]
+    assert step["available"] and step["C1"]["available"] and step["C1"]["seeds"] == [1]
+    assert set(step["C2"]) == {"C5 − C5ut", "C5 − C5tr"} and set(step["C3"]) == {"C5 − C5ut", "C5 − C5tr"}
+    assert all("p_holm" in v for v in step["C3"].values() if v.get("available"))
+    assert {"C5", "C5ut", "C5tr"} <= set(step["descriptive"]) and "exact" in step["descriptive"]["C5"]["fidelity_mrr"]
+    text = br.render(analysis, title="toy")
+    assert "Step 3 — chains, reverse lookup, capacity" in text and "| C1 | C5: local − global" in text
+
+
+def test_the_binding_report_refuses_the_stage_base_report_folder(world, tmp_path) -> None:
+    base = tmp_path / "report" / "toy"
+    base.mkdir(parents=True)
+    (base / "keep.md").write_text("R9")
+    with pytest.raises(SystemExit):
+        br.main(["--runs", str(world["root"] / "runs" / "toy"), "--output", str(base), "--overwrite"])
+    assert (base / "keep.md").read_text() == "R9"

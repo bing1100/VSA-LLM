@@ -1068,7 +1068,7 @@ filler recovery) and the binding probe. Configs: `experiments/e9-retrofit/config
 |---|---|---|---:|
 | S2a training, 7 arms × 3 seeds | 54 (54.4, before the Qwen blocks at ≈ 54.44) | 21 | ≈ 27.0 |
 | S2a chained evaluations (`e9_plan` puts them at priority + 1) | 55 | 189 | ≈ 7.1 |
-| S2a R9 batch report (`report-s1-2-3-readout-SmolLM2-360M`) | 57 | 1 | ≈ 0.4 |
+| S2a R9 batch report (`t5-report-s1-2-3-readout-SmolLM2-360M`, folder `report/t5-readout`: an arm batch never writes `report/t5`, §12.4) | 57 | 1 | ≈ 0.4 |
 | S2b binding report, steps 1–2 (CPU lane) | 56 | 1 | 0 |
 | optional: Qwen3-1.7B T5 pair U5 / U5ut, seed 1 | 54 | 2 + chain | ≈ 7 + 1.5 |
 

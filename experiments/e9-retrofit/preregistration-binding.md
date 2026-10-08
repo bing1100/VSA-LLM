@@ -352,6 +352,16 @@ training); their pre-registration, with decision 61's stated predictions, is §1
 §13 (step 2) is committed with the step-2 code before any step-2 run or GPU smoke; §14 (step 3) likewise before step 3's
 runs. Neither changes §§1–10.
 
+### 12.4 Arm-batch report folders (2026-10-08; no endpoint changed)
+
+`e9_plan` planned the readout arms' R9 batch report (`t5-report-s1-2-3-readout-SmolLM2-360M`) with `--output
+experiments/e9-retrofit/report/t5 --overwrite`, the folder R9, the claims ledger and the draft cite (the WP-PQ1 report, `dd612dc`),
+which `--overwrite` would have deleted before recomputing (found by the coordinator, who changed the queued job by hand to
+`report/t5-readout`). Now a batch with arms carries a tag in its job names (`-readout-`, `-pq-`; `e9_plan.batch_tag`) and writes
+its report to `report/<stage>-<tag>`; only a base batch (P0 / C0′ / C2 / C5) writes `report/<stage>`
+(`tests/test_e9_binding.py::test_no_arm_batch_writes_the_stage_report_folder`). Job names are unchanged. Everything this
+program queues follows the same rule: the stage analyses write `report/<stage>-binding`, never `report/<stage>`.
+
 ## 13. Step 2 — the unbinding readout arm (pre-registered 2026-10-08, before any step-2 run)
 
 This section is committed with the step-2 code, before any step-2 training run and before its GPU smoke. It folds in
@@ -457,3 +467,75 @@ with a training job (100% utilization), so throughputs are noisy upper bounds on
 - **Cost** (`e9_plan --dry-run`): 21 trainings × 67 min × 1.15 (the readout overhead assumed for every arm; the slotted arm may
   be ≈ 1.3) ≈ 27.0 GPU-h, 189 chained evaluations ≈ 7.1 GPU-h, the R9 batch report 0.4: **≈ 34.5 GPU-h**. The optional
   Qwen3-1.7B pair (U5, U5ut, seed 1) ≈ 3.2 GPU-h per run by the memory probe (+ evaluations).
+
+## 14. Step 3 — chained two-hop, reverse lookup and capacity (pre-registered 2026-10-08, before any step-3 run)
+
+Committed with the step-3 code before any chain job reads a trained checkpoint. Algebra only: on each composing run's
+trained composer (`e9_binding_chain chain`; the composer is read from `final.pt`, the host is not loaded, so the jobs run
+in the CPU lane) and on random vectors (`sweep`). Stores are the static frame bundles; unbinding is the operator's own;
+cleanup is typed (within the relation's slot for the slotted layout).
+
+**Runs.** Every composing run of T5 (SmolLM2-360M: C5, C5rf, C5ut, C5tr, C5sh × s1–3; 135M: C5 × s1–3; Qwen3 C5 × s1–2;
+the readout arms U5* once trained), T4 (seed 1 now, every other composing config once trained), T1 and WordNet seed 1
+(controls), T7 (its fillers name no concept: no two-hop) and T1c (`--licensed`: aggregates only, once trained). The WP-UB
+items (`understanding-t5-smollm2-v1`, `-t5-qwen3-v1`, `-t4-smollm2-v1`) add the item-level outcomes on T5 and T4.
+
+**Measures.**
+- *Fidelity:* typed filler recovery by frame size k for every unbinding method, plus exact (unregularized) spectral division
+  for learned HRR.
+- *Two-hop:* up to 2,000 ontology paths per run (an anchor from the probe's entries; its r1 filler names a concept; that
+  concept's frame holds (r2, f2)) and the WP-UB two-hop items (the item's path, bridge and five options): the first hop, the
+  chained second hop (the argmax filler's own store), the second hop from the true bridge (`oracle`) and a soft chain (the
+  candidate bridges' stores mixed by the first cleanup's softmax at β = 16).
+- *Reverse lookup:* up to 1,000 (entry, r, F) queries; every concept scored by `cos(c, T_r a_F)`; the entry's filtered rank
+  (other concepts holding (r, F) removed); split by whether F occurs under ≥ 2 relations; and the WP-UB reverse pairs (the
+  anchor against its partner).
+- *Capacity:* one global memory `G_N = Σ_j k_j ⊛ ĉ_j` of N concept stores (N = 1, 4, 16, …, 16,384 and all, in a seeded
+  order; keys: the unitary projection of the trained atomic that names the concept, else of a seeded random vector, so key
+  unbinding is exact and the loss comes from superposition); typed recovery of up to 300 members' fillers against N; two-hop
+  through the global memory of every concept on the first 300 ontology paths.
+- *Path order* (decision 61b): 1,000 pairs of opposite-order paths in one vector per m ∈ {0, 2, 6} distractor paths
+  (slotted: relation pairs within one slot, since chained binding across slots is empty).
+- *Synthetic sweep* (random vectors; descriptive): d ∈ {64, …, 2,048} × k ∈ {1, …, 32} for unitary HRR, Gaussian HRR
+  (correlation; exact division), the bounded spectral family (adjoint; exact), block unitary, translation and untyped; one
+  global memory against N (k = 8, d = 256); path order (d = 256). Output: `report/binding-sweep`.
+
+**Primary endpoints (step 3)** (T5, SmolLM2-360M, seeds 1–3):
+- **C1** (Kumar's contrast on trained atomics) — C5's chained two-hop top-1 through the local stores − through one global
+  memory of every T5 concept, on the same 300 ontology paths; paths × seeds crossed model.
+- **C2** (binding for chaining) — chained two-hop top-1 among the WP-UB T5 two-hop items' options, **C5 − C5ut** and
+  **C5 − C5tr**; items × seeds; Holm over the two.
+- **C3** (binding for reverse lookup) — reverse-lookup reciprocal rank on queries whose filler occurs under ≥ 2 relations,
+  **C5 − C5ut** and **C5 − C5tr**; queries × seeds; Holm over the two.
+
+**Decision rules.** C1: > 0 with p < 0.05 — "per-concept superposition keeps chaining possible where one global memory fails"
+(Kumar's failure, replicated on trained atomics); CI including 0 — no difference; < 0 — the global memory is better. C2:
+both > 0 (Holm) — "binding enables algebraic chaining"; one — partial; neither — "role-blind stores chain as well (the typed
+cleanup suffices)"; a significant negative — role-blind better. C3: likewise, "binding enables reverse lookup where fillers
+are role-ambiguous".
+
+**Predictions** (written before running).
+- C1: large and positive — at 4,200 stores in 256 dimensions the global memory is near chance, the local chain near the
+  oracle.
+- C2: positive but modest — on T5 the first hop's filler is often the only candidate of its type in the frame, where typed
+  cleanup solves untyped stores too; C5tr ≈ C5ut.
+- C3: positive — an untyped store cannot tell which relation holds F, and ambiguous fillers expose it.
+- Decision 61: block-unitary ≈ circulant at one hop (fidelity, two-hop) and better at path order (near 1 against 0.5 at
+  m = 0); unitary ≈ bounded ≥ learned HRR with the adjoint ≫ learned HRR with exact division; slotted ≈ single vector at T5's
+  even load.
+- The soft chain ≥ the hard chain; the oracle second hop ≥ the chained one.
+
+**Secondaries** (Holm within each):
+- S3.1 item-level agreement of the algebra with each model's behaviour on the same WP-UB items (P(behaviour | algebra right /
+  wrong), φ), including the readout arms' behaviour (their WP-UB evaluation in step 2's chain).
+- S3.2 fidelity by k and method per arm (decision 61's ordering).
+- S3.3 path order per arm (U5bu against U5u, U5sb, U5 and C5).
+- S3.4 capacity curves per arm; local recovery by k.
+- S3.5 the readout arms, C5rf and C5sh on C1–C3's measures.
+- S3.6 T4 (two-hop items, reverse), T1c aggregates, the 135M and Qwen3 replications; the synthetic sweep (descriptive).
+
+**Exclusions.** WP-UB items whose bridge, answer or options do not map to atomics are dropped (counted in the summary);
+ontology paths are sampled only where the first-hop filler names a concept.
+
+**Queueing.** Every step-3 job writes into its run folder (`RUN/binding-chain`) or `report/<stage>-binding` /
+`report/binding-sweep`, never a stage's base report folder (§12.4).
