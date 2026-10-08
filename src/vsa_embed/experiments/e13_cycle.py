@@ -28,8 +28,6 @@ per-window losses (`eval_windows.npz`) feed the paired cluster bootstrap over wi
     python -m vsa_embed.experiments.e13_cycle round2 --config ARM_YAML --output RUN [--resume]
     python -m vsa_embed.experiments.e13_cycle report --config CFG --output DIR
     python -m vsa_embed.experiments.e13_cycle plan   --config CFG [--no-write-configs]   (prints the queue commands; queues nothing)
-    python -m vsa_embed.experiments.e13_cycle enqueue --name N --priority 54.4985 [--min-free-gb G] [--no-resume] -- CMD
-        (`jobqueue add` with a fractional priority; used by queue-commands.sh)
     python -m vsa_embed.experiments.e13_cycle smoke  --output DIR                          (CPU, SmolLM2-135M, a few steps; SMOKE)
 """
 
@@ -625,6 +623,8 @@ def write(config: dict[str, Any], run_dir: Path, learned: Path | None, output: P
     output.mkdir(parents=True, exist_ok=True)
     rows_fvt, info_fvt = fvt_rows(run, sorted(entries))
     torch.save({"entries": torch.tensor(sorted(entries)), "rows": rows_fvt.cpu()}, output / "fvt_rows.pt")
+    items = score_round2_items(config, run, {int(e) for e in entry_of.values()}, output, log=log) \
+        if settings.get("items", True) else {"items": 0}
     base = general_window_losses(run.model, run.config, Path(run.config["data"]["eval"]).with_name("eval-general"),
                                  windows=int(config["round2"].get("general_windows", 256)), device=run.device)
     np.save(output / "general_base.npy", base)
@@ -633,6 +633,10 @@ def write(config: dict[str, Any], run_dir: Path, learned: Path | None, output: P
                "reading_cost": {"forward_tokens": scorer.forward_tokens, "training_token_equivalent": scorer.forward_tokens / 3.0,
                                 "rows_scored": scorer.rows, "headword_unlinked": scorer.unlinked_rows},
                "fvt": info_fvt, "general_base_loss": float(base[0].sum() / max(1.0, base[1].sum())),
+               "items": {"items": items["items"], "accuracy": {c: v["sum"]["mean"] for c, v in items["summary"]["sets"]["all"]["accuracy"].items()}
+                         if items.get("summary") else None,
+                         "contrasts": [{k: c[k] for k in ("a", "b", "mean", "ci_low", "ci_high") if k in c}
+                                       for c in items["summary"]["sets"]["all"]["contrasts"]] if items.get("summary") else None},
                "seconds": time.monotonic() - started}
     _json(output / "frames.json", {"arms": {k: {str(e): f for e, f in v.items()} for k, v in arms.items()},
                                    "readers": {k: {str(e): f for e, f in v.items()} for k, v in by_reader.items()}})
@@ -643,6 +647,60 @@ def write(config: dict[str, Any], run_dir: Path, learned: Path | None, output: P
     log(f"write: {len(read_set.concepts)} definitions read; reader F1 "
         + ", ".join(f"{k} {v.get('f1')}" for k, v in summary["frames"].get(style, {}).items()))
     return summary
+
+
+ITEM_FAMILIES = {("negation", "affirm"): "relation", ("paraphrase", "paraphrase"): "property"}
+ITEM_CONDITIONS = ("none", "store:linker", "store:oracle", "store:random", "definition-in-context")
+
+
+def round2_rank_items(config: dict[str, Any], family: str, definitions: dict[int, dict[str, str]]) -> list[Any]:
+    """Stage 2's relation and property items in the ranking harness's format (`benchmarks.ranking`, `rank-items/1`): the
+    E9 understanding items `negation/affirm` (relation) and `paraphrase` (property) of the round-2 anchors with a
+    definition, one item per template; the term is written (`insert: true`) with its gold frame and the definition the
+    harness's readers read."""
+    from ..benchmarks.ranking import Item, Term
+    from . import e9_understanding as und
+    _, concepts, items = und.load_items(item_path(config, "understanding", family))
+    by = {c["concept"]: c for c in concepts}
+    out = []
+    for item in items:
+        kind = ITEM_FAMILIES.get((item["family"], item["test"]))
+        anchor = by[item["anchor"]]
+        entry = anchor.get("entry")
+        if kind is None or item["subset"] != "heldout" or entry is None or int(entry) not in definitions:
+            continue
+        fills = {slot: by[cid]["surface"] for slot, cid in item["slots"].items()} | dict(item["text"])
+        term = Term(anchor["surface"], str(anchor.get("source") or anchor["surface"]), tuple(tuple(e) for e in anchor["frame"]),
+                    definitions[int(entry)]["text"], True)
+        for k, template in enumerate(item["templates"]):
+            out.append(Item(f"{item['id']}#{k}", kind, und.render(template, fills), [und.render(c, fills) for c in item["candidates"]],
+                            int(item["gold"]), [term], meta={"anchor": item["anchor"], "entry": int(entry), "test": item["test"],
+                                                             "template": k}))
+    return out
+
+
+def score_round2_items(config: dict[str, Any], run: Any, entries: set[int], output: Path, *, log: Callable[[str], None] = print
+                       ) -> dict[str, Any]:
+    """The stage-2 items under `write.item_conditions` (no row, the reader's / gold / random rows, the definition in
+    context), scored by the shared harness (`ranking.Evaluation`: summed log-probability, ties 1/k); per item rows to
+    `items.jsonl.gz`, accuracies and contrasts with `none` (paired over items) to `items-summary.json`."""
+    from ..benchmarks.ranking import Evaluation, parse_condition, summarize
+    settings = config.get("write") or {}
+    definitions = prose_definitions(item_path(config, "read_set", run_family(config, run)), entries, str(settings.get("style", "prose")))
+    items = round2_rank_items(config, run_family(config, run), definitions)
+    if not items:
+        return {"items": 0}
+    conditions = [parse_condition(c) for c in settings.get("item_conditions", ITEM_CONDITIONS)]
+    evaluation = Evaluation(run, items, batch_size=int(settings.get("item_batch", 32)), log=log)
+    result = evaluation.evaluate(conditions)
+    summary = summarize(result["items"], [c.name for c in conditions], resamples=int((config.get("statistics") or {}).get("resamples", 2000)))
+    with gzip.open(output / "items.jsonl.gz", "wt") as handle:
+        for row in result["items"].values():
+            handle.write(json.dumps(row, default=str) + "\n")
+    record = {"items": len(items), "terms": len(evaluation.terms), "readers": evaluation.reader_summary(),
+              "scorer": dict(evaluation.scorer.stats), "timing": result["timing"], "summary": summary}
+    _json(output / "items-summary.json", record)
+    return record
 
 
 def arm_frames(written: Path, arm: str, store_names: tuple[dict[str, int], dict[str, int]]) -> dict[int, list[tuple[int, int]]]:
@@ -1075,6 +1133,12 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
                            "recall": hits / max(1, sum(m["erased_gold"] for m in learned)),
                            "null_rate": null_acc / nulls if nulls else float("nan"), "null_ci": list(wilson_interval(null_acc, nulls)) if nulls else None,
                            "p_value": float(stats.binom.sf(hits - 1, accepted, float(stats_cfg.get("l4_precision", 0.8)))) if accepted else 1.0}
+        scored = [json.loads((cycle_dir(config, host, s) / "write" / "items-summary.json").read_text()) for s in seeds
+                  if (cycle_dir(config, host, s) / "write" / "items-summary.json").exists()]
+        if scored:                                          # stage-2 relation / property items (secondary; ranking harness)
+            block["write_items"] = {"accuracy": [{c: v["sum"]["mean"] for c, v in i["summary"]["sets"]["all"]["accuracy"].items()}
+                                                 for i in scored],
+                                    "contrasts_vs_none": [i["summary"]["sets"]["all"]["contrasts"] for i in scored]}
         reasons = [json.loads((cycle_dir(config, host, s) / "reason" / "summary.json").read_text()) for s in seeds
                    if (cycle_dir(config, host, s) / "reason" / "summary.json").exists()]
         if reasons and all("recall:own" in r["units"] and "none" in r["units"] for r in reasons):
@@ -1246,7 +1310,7 @@ def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bo
                                                                "--run", str(run_dir), "--output", str(cdir / "learn")], 0.08 * evaluation_scale(host))
             add(f"e13-{track}-{host}-s{seed}-write", "stage0", [python, "-m", "vsa_embed.experiments.e13_cycle", "write", "--config", cfg,
                                                                "--run", str(run_dir), "--learned", str(cdir / "learn"), "--output",
-                                                               str(cdir / "write")], 0.1 * evaluation_scale(host))
+                                                               str(cdir / "write")], 0.3 * evaluation_scale(host))
     tokens = int(config["round2"]["tokens"])
     for host, spec in config["hosts"].items():
         for seed in spec["seeds"]:
@@ -1283,25 +1347,15 @@ def _schedule(run: dict[str, Any]) -> list[int]:
 
 
 def queue_lines(jobs: Sequence[dict[str, Any]]) -> list[str]:
-    """`enqueue` lines (`jobqueue.add` with a fractional priority, which the `jobqueue add` CLI's integer `--priority`
-    refuses; run from the repository root with PY set); training jobs resume on retry, the others do not."""
+    """`jobqueue add` lines (fractional priorities; run from the repository root with PY set); training jobs resume on
+    retry, the others do not."""
     out = []
     for job in jobs:
         resume = "" if job["resume"] else " --no-resume"
         command = " ".join(job["command"])
-        out.append(f"PYTHONPATH=src $PY -m vsa_embed.experiments.e13_cycle enqueue --name {job['name']} --priority {job['priority']} "
+        out.append(f"PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name {job['name']} --priority {job['priority']} "
                    f"--min-free-gb {job['min_free_gb']}{resume} -- {command}   # ≈ {job['hours']:.2f} GPU-h")
     return out
-
-
-def enqueue(name: str, priority: float, command: list[str], *, min_free_gb: float = 10.0, no_resume: bool = False,
-            queue: Path | None = None) -> Path:
-    """`jobqueue add` with a float priority (as `e9_plan --queue` adds its fractional levels); the job runs with
-    `PYTHONPATH=src` from the directory it was added in."""
-    from ..jobqueue import DEFAULT_DIR, add
-    command = command[1:] if command[:1] == ["--"] else command
-    return add(queue or DEFAULT_DIR, command, name=name, priority=float(priority), min_free_gb=min_free_gb,
-               env={"PYTHONPATH": "src"}, resume_args=[] if no_resume else None)
 
 
 # ---------------------------------------------------------------- smoke (CPU; SMOKE)
@@ -1414,14 +1468,7 @@ def main(argv: list[str] | None = None) -> None:
     p = sub.add_parser("plan"); p.add_argument("--config", type=Path, required=True); p.add_argument("--no-write-configs", action="store_true")
     p = sub.add_parser("smoke"); p.add_argument("--output", type=Path, required=True); p.add_argument("--data", type=Path, default=None)
     p.add_argument("--threads", type=int, default=4)
-    p = sub.add_parser("enqueue", help="jobqueue add with a fractional priority")
-    p.add_argument("--name", required=True); p.add_argument("--priority", type=float, required=True)
-    p.add_argument("--min-free-gb", type=float, default=10.0); p.add_argument("--no-resume", action="store_true")
-    p.add_argument("--queue", type=Path, default=None); p.add_argument("job", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
-    if args.command == "enqueue":
-        print(enqueue(args.name, args.priority, args.job, min_free_gb=args.min_free_gb, no_resume=args.no_resume, queue=args.queue))
-        return
     if args.command == "smoke":
         print(json.dumps(smoke(args.output, data=args.data, threads=args.threads), indent=1, default=str))
         return

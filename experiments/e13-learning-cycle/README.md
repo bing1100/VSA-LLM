@@ -31,8 +31,11 @@ evaluation windows), `round2/<run>/` (each arm's ontology and entry rows); the g
   `write` / `written` / `commit`, `propose` (proposers: `rule_closure` default, `reader`, any `"module:function"`) and
   `accept` (tests: `HeldOutUtilityTest` = LM held-out utility with Holm, `composer_self_test` = `self_test.accept_edges`);
   `null_proposals` / `false_acceptance_rate` (M3's null world); `call` exposes each verb as a tool.
-- `vsa_embed.experiments.e13_cycle` — `prepare` (round split, corpora, reference strata), `learn`, `write`, `reason`,
-  `round2` (materialize an arm, train, locality), `report`, `plan`, `smoke`.
+- `vsa_embed.experiments.e13_cycle` — `prepare` (round split, corpora, reference strata), `learn`, `write` (frames,
+  `fvt` rows, and the round-2 relation / property items scored by the shared TK-B1 harness `benchmarks.ranking` under
+  `none` / `store:linker` / `store:oracle` / `store:random` / `definition-in-context`), `reason` (E12's recall-tool
+  scorer: the harness has no recall condition and no PMI), `round2` (materialize an arm, train, locality), `report`,
+  `plan`, `smoke`.
 - Opt-in trainer keys (`vsa_embed.training.lm`; absent keys change nothing): `train.init_mode: continue` (+
   `init_merge_lora`), `model.host_quantization`, `channel.entry_rows`, `eval.points`.
 
@@ -46,16 +49,18 @@ PYTHONPATH=src $PY -m vsa_embed.experiments.e13_cycle smoke --output experiments
 
 ## Smoke (SMOKE — a pipeline check, not a result)
 
-`smoke/smoke.json`, `smoke/report/` (2026-10-08, CPU, 4 threads, SmolLM2-135M; `e13_cycle.smoke_config`: 128-token
-windows, 8 evaluation windows, stage 0 for 3 steps of 256 tokens, round 2 for 2 steps): every stage ran end to end —
-`prepare` (27 s; seed ontology 6,024 of 30,121 round-1 edges erased, 3,240 `owns` / 690 `has_part` edges derived, 716 edges
-to round-2 terms dropped; round-2 and `defs` streams 50/50 with general text), stage 0 (2.2 s per step), `learn`
-(24 rule-closure proposals, all erased gold, + 24 null proposals; 6 testable on the small validation text; none accepted
-after 3 steps), `write` (the 4 round-2 terms present in the smoke windows read by `linker`: F1 0.55 against gold;
-5.2k definition forward tokens per term), `reason` (4 anchors, 33 items, 4 conditions), the stage-4 arms `read` /
-`noread` / `fvt` and the stage-5 RTN arms `q4-read` / `q4-noread` / `qlora` (the channel trains, the 4-bit host stays
-frozen, `qlora` saves only its adapters), and `report` (L1–L5 with Holm; every verdict False, as expected after a few
-steps on 8 windows). Read − no-read after round-2 terms at step 0: −0.009 nats (4 windows).
+`smoke/smoke.json`, `smoke/report/` (2026-10-08, after merging main 35e9414; CPU, 4 threads, SmolLM2-135M;
+`e13_cycle.smoke_config`: 128-token windows, 8 evaluation windows, stage 0 for 3 steps of 256 tokens, round 2 for 2
+steps; ≈ 4 min in all, deterministic: a repeat gave the same numbers): every stage ran end to end — `prepare` (seed
+ontology 6,024 of 30,121 round-1 edges erased, 3,240 `owns` / 690 `has_part` edges derived, 716 edges to round-2 terms
+dropped; round-2 and `defs` streams 50/50 with general text), stage 0 (1.2 s per step), `learn` (24 rule-closure
+proposals, all erased gold, + 24 null proposals; 6 testable on the small validation text; none accepted after 3
+steps), `write` (the 4 round-2 terms present in the smoke windows read by `linker`: F1 0.55 against gold; their 54
+relation / property items through the ranking harness: `definition-in-context` 0.72 vs `none` 0.43, the `store:*` rows
+change the option scores but not yet the argmax), `reason` (4 anchors, 33 items, 4 conditions), the stage-4 arms
+`read` / `noread` / `fvt` and the stage-5 RTN arms `q4-read` / `q4-noread` / `qlora` (the channel trains, the 4-bit host
+stays frozen, `qlora` saves only its adapters), and `report` (L1–L5 with Holm; every verdict False, as expected after a
+few steps on 8 windows). Read − no-read after round-2 terms at step 0: −0.009 nats (4 windows).
 
 ## Design notes
 

@@ -137,13 +137,34 @@ def test_round2_configs_and_the_plan(tmp_path: Path) -> None:
     assert names.index("e13-t5-SmolLM2-360M-s1-learn") > names.index("e13-t5-SmolLM2-360M-full-C5-s3")
     assert all(j["hours"] >= 0 for j in jobs) and 15 < sum(j["hours"] for j in jobs) < 60
     lines = e13.queue_lines(jobs[:2])
-    assert lines[0].startswith("PYTHONPATH=src $PY -m vsa_embed.experiments.e13_cycle enqueue --name e13-t5-prep-")
+    assert lines[0].startswith("PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name e13-t5-prep-") and "--priority 54.4985 " in lines[0]
 
 
-def test_enqueue_adds_a_job_with_a_fractional_priority(tmp_path: Path) -> None:
+def test_round2_rank_items_follow_the_harness_format() -> None:
     import json
-    e13.main(["enqueue", "--queue", str(tmp_path / "q"), "--name", "e13-x", "--priority", "54.4986", "--no-resume", "--",
-              "python", "-m", "x", "--flag"])
-    job = json.loads((tmp_path / "q" / "e13-x.json").read_text())
-    assert job["priority"] == 54.4986 and job["command"] == ["python", "-m", "x", "--flag"] and job["resume_args"] == []
-    assert job["env"] == {"PYTHONPATH": "src"} and job["status"] == "pending"
+    from vsa_embed.benchmarks.ranking import Item
+    config = e13.load_config(e13.ROOT / "t5.yaml")
+    concepts = [json.loads(l) for l in (e13.item_path(config, "read_set", "smollm2") / "concepts.jsonl").read_text().splitlines()]
+    entries = {int(c["entry"]) for c in concepts if c["split"] == "heldout"}
+    definitions = e13.prose_definitions(e13.item_path(config, "read_set", "smollm2"), set(sorted(entries)[:5]))
+    assert len(definitions) == 5 and all(d["headword"] in d["text"] for d in definitions.values())
+    items = e13.round2_rank_items(config, "smollm2", definitions)
+    assert items and {i.set for i in items} <= {"relation", "property"} and len({i.id for i in items}) == len(items)
+    for item in items:
+        term = item.terms[0]
+        assert term.insert and term.frame and term.surface in term.definition and int(item.meta["entry"]) in definitions
+        assert 0 <= item.answer < len(item.options) and term.surface in item.context
+        assert Item.from_json(item.to_json()).to_json() == item.to_json()
+
+
+def test_queue_lines_parse_with_the_jobqueue_cli(tmp_path: Path) -> None:
+    import json
+    import shlex
+
+    from vsa_embed import jobqueue
+    config = e13.load_config(e13.ROOT / "t5.yaml")
+    line = e13.queue_lines([j for j in e13.plan(config, write_configs=False) if j["name"].endswith("-s1-learn")][:1])[0]
+    words = shlex.split(line.split("   #")[0].replace("$PY", "python"))[1:]          # drop the PYTHONPATH assignment
+    jobqueue.main(["--queue", str(tmp_path / "q"), *words[words.index("add"):]])
+    job = json.loads(next((tmp_path / "q").glob("*.json")).read_text())
+    assert job["priority"] == 54.4985 and job["resume_args"] == [] and job["command"][2] == "vsa_embed.experiments.e13_cycle"
