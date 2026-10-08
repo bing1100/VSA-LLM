@@ -1,0 +1,122 @@
+experiment: e10-learn-synthetic
+label: CALIBRATION
+seed: 0
+num_threads: 4
+erase:
+  fraction: 0.2
+  min_distinct_fillers: 10
+  keep: 1
+  probe_cap: 2000
+  min_frequency: 10
+  min_degree: 2
+  probe_requires_evidence: true
+store: null
+passive:
+  kind: c2
+  run: null
+  features: null
+evidence:
+  kind: occurrences
+  features: null
+  max_observations: 16
+  layer: middle
+decoder:
+  folds: 5
+sources:
+- decompose
+- closure
+decompose:
+  method: omp
+  max_new: 2
+  threshold: 0.1
+  min_relative: 0.0
+rules:
+  min_pca: 0.8
+  min_support: 2
+  min_head_coverage: 0.01
+  chains: true
+  limit: 200000
+  max_rules: 50
+  concept_valued: 0.5
+test:
+  alpha: 0.05
+  correction: holm+decoy
+  control: head
+  controls: 8
+  min_observations: 4
+  decoy_statistic: utility
+  variants:
+  - holm
+  - bh
+  - knockoff
+  - decoy
+types:
+  min_members: 5
+nulls:
+- relabel
+- swap
+- permute
+pool:
+  distractors: 2
+baselines:
+- prior
+- correlate
+- lre
+- amie
+- transe
+- rotate
+- complex
+kge:
+  dimension: 64
+  epochs: 400
+  negatives: 32
+  batch_size: null
+  lr: 0.01
+amie:
+  min_pca: 0.1
+  min_support: 2
+  min_head_coverage: 0.01
+precision_target: 0.8
+placement:
+  items: null
+  files: null
+  store: null
+  fit_features: null
+  features: null
+  relation_map: {}
+  layer: middle
+  methods:
+  - unbind
+  - correlate
+  kge:
+  - transe
+  - rotate
+  - complex
+  groups:
+    primary:
+      split: test
+    dev:
+      split: dev
+synthetic:
+  seeds:
+  - 101
+  - 202
+  - 303
+  dimension: 64
+  observation_noise: 0.6
+  dictionary: truth
+  proposal_observations:
+  - 0
+  - 1
+  - 2
+  - 3
+  test_observations:
+  - 4
+  - 5
+  - 6
+  - 7
+  - 8
+  - 9
+  - 10
+  - 11
+  planted_null: true
