@@ -1,0 +1,54 @@
+{
+  "schema": "e9-role-items/1",
+  "kind": "natural",
+  "track": "t4",
+  "family": "smollm2",
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "seed": 0,
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+  "ontology_alias_sha256": "ab5351ccc62a4be2644dada25ed9c6c1c27c7934f571b1153ef306bde4974f5a",
+  "alias_table": "/home/bhux/data/vsa-llm/e9/alias-tables/t4.json",
+  "counts_requested": {
+    "seen": 300,
+    "rare": 300,
+    "heldout": 600
+  },
+  "anchors": {
+    "seen": 300,
+    "rare": 300,
+    "heldout": 115
+  },
+  "eligible": {
+    "rare": 4610,
+    "seen": 749,
+    "heldout": 115
+  },
+  "relation_pairs": {
+    "is_a|has_functional_parent": 315,
+    "is_a|is_conjugate_base_of": 185,
+    "is_a|is_conjugate_acid_of": 164,
+    "is_a|is_enantiomer_of": 18,
+    "is_a|has_parent_hydride": 7,
+    "is_conjugate_base_of|is_enantiomer_of": 7,
+    "has_functional_parent|is_conjugate_acid_of": 7,
+    "is_conjugate_acid_of|is_enantiomer_of": 5,
+    "has_functional_parent|is_conjugate_base_of": 4,
+    "has_functional_parent|is_enantiomer_of": 2,
+    "is_conjugate_acid_of|is_conjugate_base_of": 1
+  },
+  "rules": {
+    "anchors": "single-concept entries whose shown surface links (\u2265 \u2113_min subtokens) with a frame pair (r1, F), (r2, G): templated, F \u2260 G (distinct texts), F not a filler of r2 and G not of r1 in the frame, F observed under r2 and G under r1 elsewhere; one pair per anchor (seeded); seeded sample per subset",
+    "candidates": "[F, G] in this order; gold F for r1, G for r2",
+    "scoring": "role contrast z = [PMI_r1(F) \u2212 PMI_r1(G)] \u2212 [PMI_r2(F) \u2212 PMI_r2(G)] per template index"
+  },
+  "counts": {
+    "concepts": 715,
+    "items": 2860,
+    "choice": 1430,
+    "cloze": 1430
+  },
+  "sha256": {
+    "concepts.jsonl": "1ab2d96ea0f604bd2b16ff2f04f36adf74c967aac7b99f1258ea0b9969ded902",
+    "items.jsonl.gz": "4462062aded0de1813f71b8c0288ece9e9c203ba916a13e07cb3fb73b7749398"
+  }
+}
