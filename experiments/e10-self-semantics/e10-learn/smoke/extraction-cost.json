@@ -1,0 +1,71 @@
+{
+  "t4-C0p-s1-eval64": {
+    "run": "experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C0p-s1",
+    "window": 512,
+    "max_per_entry": 32,
+    "layers": 32,
+    "middle_layer": 16,
+    "windows_scanned": 64,
+    "windows": 64,
+    "entries_wanted": 8950,
+    "entries_found": 514,
+    "occurrences": 987,
+    "split": "eval",
+    "label": "SMOKE",
+    "seconds": 78.9
+  },
+  "t5-C0p-s1-eval128": {
+    "run": "experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C0p-s1",
+    "window": 512,
+    "max_per_entry": 32,
+    "layers": 32,
+    "middle_layer": 16,
+    "splits": [
+      {
+        "split": "eval",
+        "cap": 128,
+        "windows": 128,
+        "windows_scanned": 128,
+        "occurrences": 2412
+      }
+    ],
+    "entries_wanted": 2845,
+    "entries_found": 667,
+    "entries_at_cap": 8,
+    "occurrences": 2412,
+    "label": "SMOKE",
+    "seconds": 336.3
+  },
+  "wordnet-C0p-s1-store-entries-3000": {
+    "run": "experiments/e9-retrofit/runs/wordnet/SmolLM2-360M-full-C0p-s1",
+    "items": 3000,
+    "placed": 3000,
+    "layers": 32,
+    "template": "We discussed {x}",
+    "max_contexts": 8,
+    "store_entries": true,
+    "label": "SMOKE",
+    "seconds": 92.3
+  },
+  "wordnet-C0p-s1-taxoexpan-noun-dev": {
+    "run": "experiments/e9-retrofit/runs/wordnet/SmolLM2-360M-full-C0p-s1",
+    "items": 349,
+    "placed": 349,
+    "layers": 32,
+    "template": "We discussed {x}",
+    "max_contexts": 8,
+    "store_entries": false,
+    "label": "SMOKE",
+    "seconds": 14.1
+  },
+  "t5-C0p-s1-heldout-fixture-40": {
+    "run": "experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C0p-s1",
+    "items": 40,
+    "placed": 40,
+    "layers": 32,
+    "template": "We discussed {x}",
+    "max_contexts": 8,
+    "label": "SMOKE",
+    "seconds": 4.3
+  }
+}

@@ -269,34 +269,41 @@ class KGEModel(nn.Module):
 
 def train_kge(triples: Tensor, entities: int, relations: int, *, kind: str, dimension: int = 64, epochs: int = 400,
               negatives: int = 32, lr: float = 0.01, gamma: float = 6.0, adversarial: float = 1.0,
-              regularization: float = 1e-3, seed: int = 0) -> KGEModel:
+              regularization: float = 1e-3, seed: int = 0, batch_size: int | None = None) -> KGEModel:
     """Full-batch training on `(h, r, t)` rows with `negatives` uniformly corrupted heads or tails per triple.
     TransE / RotatE: the negative-sampling loss of Sun et al. (self-adversarial weights at temperature
-    `adversarial`; 0 = uniform); ComplEx: logistic loss with an L2 penalty on the used embeddings."""
+    `adversarial`; 0 = uniform); ComplEx: logistic loss with an L2 penalty on the used embeddings.
+    `batch_size` (opt-in, E10.L on real graphs): shuffled mini-batches of that many triples per optimizer step
+    instead of one full batch per epoch (None or ≥ the triple count: the full-batch path, unchanged)."""
     torch.manual_seed(seed)
     model = KGEModel(kind, entities, relations, dimension, gamma=gamma, seed=seed)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     g = torch.Generator().manual_seed(seed + 1)
-    h, r, t = triples[:, 0], triples[:, 1], triples[:, 2]
     n = triples.shape[0]
+    full = batch_size is None or int(batch_size) >= n
     for _ in range(epochs):
-        corrupt = torch.randint(entities, (n, negatives), generator=g)
-        tail_side = torch.rand(n, negatives, generator=g) < 0.5
-        nh = torch.where(tail_side, h[:, None].expand(-1, negatives), corrupt)
-        nt = torch.where(tail_side, corrupt, t[:, None].expand(-1, negatives))
-        positive = model.score(h, r, t)
-        negative = model.score(nh, r[:, None].expand(-1, negatives), nt)
-        if kind == "complex":
-            loss = F.softplus(-positive).mean() + F.softplus(negative).mean()
-            loss = loss + regularization * (model.entity[h].pow(2).sum(-1) + model.entity[t].pow(2).sum(-1)
-                                            + model.relation[r].pow(2).sum(-1)).mean()
-        else:
-            weights = torch.softmax(adversarial * negative.detach(), -1) if adversarial > 0 else \
-                torch.full_like(negative, 1.0 / negatives)
-            loss = -F.logsigmoid(positive).mean() - (weights * F.logsigmoid(-negative)).sum(-1).mean()
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        order = torch.arange(n) if full else torch.randperm(n, generator=g)
+        for start in range(0, n, n if full else int(batch_size)):
+            rows = triples if full else triples[order[start:start + int(batch_size)]]
+            h, r, t = rows[:, 0], rows[:, 1], rows[:, 2]
+            m = rows.shape[0]
+            corrupt = torch.randint(entities, (m, negatives), generator=g)
+            tail_side = torch.rand(m, negatives, generator=g) < 0.5
+            nh = torch.where(tail_side, h[:, None].expand(-1, negatives), corrupt)
+            nt = torch.where(tail_side, corrupt, t[:, None].expand(-1, negatives))
+            positive = model.score(h, r, t)
+            negative = model.score(nh, r[:, None].expand(-1, negatives), nt)
+            if kind == "complex":
+                loss = F.softplus(-positive).mean() + F.softplus(negative).mean()
+                loss = loss + regularization * (model.entity[h].pow(2).sum(-1) + model.entity[t].pow(2).sum(-1)
+                                                + model.relation[r].pow(2).sum(-1)).mean()
+            else:
+                weights = torch.softmax(adversarial * negative.detach(), -1) if adversarial > 0 else \
+                    torch.full_like(negative, 1.0 / negatives)
+                loss = -F.logsigmoid(positive).mean() - (weights * F.logsigmoid(-negative)).sum(-1).mean()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
     return model.eval()
 
 

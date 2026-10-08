@@ -1,0 +1,20 @@
+# E10.L placement of new MeSH records on the T1 store (MeSH descriptors with `parent` frames; SmolLM2-360M C5, seed 1;
+# preregistration §5 S1, replicate). Descriptor items are placed through the trained `parent` relation; SCR items
+# (gold relation `mapped_to`, absent from T1) through `parent` as a proxy (reported per kind). T1 is not T7-trained, so
+# every item counts (TK-H3L README). The queue plan supplies items / files / store / fit_features / features.
+experiment: e10-learn-placement-mesh-t1
+label: E10L
+seed: 0
+num_threads: 4
+decoder: {folds: 5}
+kge: {dimension: 64, epochs: 100, negatives: 32, batch_size: 4096, lr: 0.01}
+placement:
+  relation_map: {parent: parent, mapped_to: parent}
+  layer: middle
+  methods: [unbind, correlate]
+  kge: [transe, rotate, complex]
+  groups:
+    primary: {split: test}
+    primary-descriptor: {split: test, kind: descriptor}
+    primary-scr: {split: test, kind: scr}
+    dev: {split: dev}

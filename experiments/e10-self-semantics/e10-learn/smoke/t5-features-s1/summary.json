@@ -1,0 +1,457 @@
+{
+  "schema": "e10-learn/1",
+  "mode": "erased",
+  "label": "SMOKE",
+  "runs": [
+    {
+      "name": "SmolLM2-360M-full-C5-s1",
+      "seen": 2845,
+      "probes": 29,
+      "erased": 3346,
+      "gold": 43,
+      "typed_coverage": 0.9069767441860465,
+      "content_relations": [
+        "is_a",
+        "area",
+        "purpose",
+        "subtype_of",
+        "owned_by",
+        "depends_on",
+        "part_of",
+        "measured_by",
+        "governed_by",
+        "replaces",
+        "uses",
+        "produces",
+        "reports_to",
+        "computed_from",
+        "reported_in",
+        "approved_by",
+        "applies_to",
+        "describes",
+        "sponsored_by",
+        "produced_by"
+      ],
+      "types": 138,
+      "decoders": {
+        "passive": {
+          "folds": 5,
+          "fold_alphas": [
+            0.01,
+            0.01,
+            0.01,
+            0.01,
+            0.01
+          ],
+          "alpha": 0.01,
+          "oof_r2": -1.468329099578272,
+          "oof_cosine": 0.23115228116512299,
+          "rows": 404,
+          "input_dim": 960,
+          "output_dim": 256
+        },
+        "evidence": {
+          "rows": 374,
+          "fold_alphas": [
+            0.01,
+            0.01,
+            0.01,
+            0.01,
+            0.01
+          ],
+          "mean_cosine_to_target": 0.2319961376550463,
+          "observations": 1149
+        }
+      },
+      "rule": "holm+decoy",
+      "thresholds": {
+        "decompose/0": null,
+        "decompose/1": null
+      },
+      "decisions": {
+        "holm+decoy": {
+          "all": {
+            "accepted": 0,
+            "gold": 43,
+            "tp": 0,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.0,
+            "testable": 46
+          },
+          "decompose": {
+            "accepted": 0,
+            "gold": 43,
+            "tp": 0,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.0,
+            "testable": 46
+          }
+        },
+        "holm": {
+          "all": {
+            "accepted": 4,
+            "gold": 43,
+            "tp": 2,
+            "precision": 0.5,
+            "recall": 0.046511627906976744,
+            "f1": 0.0851063829787234,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.038461538461538464,
+            "testable": 46
+          },
+          "decompose": {
+            "accepted": 4,
+            "gold": 43,
+            "tp": 2,
+            "precision": 0.5,
+            "recall": 0.046511627906976744,
+            "f1": 0.0851063829787234,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.038461538461538464,
+            "testable": 46
+          }
+        },
+        "bh": {
+          "all": {
+            "accepted": 6,
+            "gold": 43,
+            "tp": 2,
+            "precision": 0.3333333333333333,
+            "recall": 0.046511627906976744,
+            "f1": 0.08163265306122448,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.07692307692307693,
+            "testable": 46
+          },
+          "decompose": {
+            "accepted": 6,
+            "gold": 43,
+            "tp": 2,
+            "precision": 0.3333333333333333,
+            "recall": 0.046511627906976744,
+            "f1": 0.08163265306122448,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.07692307692307693,
+            "testable": 46
+          }
+        },
+        "knockoff": {
+          "all": {
+            "accepted": 0,
+            "gold": 43,
+            "tp": 0,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.0,
+            "testable": 46
+          },
+          "decompose": {
+            "accepted": 0,
+            "gold": 43,
+            "tp": 0,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.0,
+            "testable": 46
+          }
+        },
+        "decoy": {
+          "all": {
+            "accepted": 0,
+            "gold": 43,
+            "tp": 0,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.0,
+            "testable": 46
+          },
+          "decompose": {
+            "accepted": 0,
+            "gold": 43,
+            "tp": 0,
+            "precision": null,
+            "recall": 0.0,
+            "f1": 0.0,
+            "proposed": 58,
+            "proposal_coverage": 0.13953488372093023,
+            "false_acceptance_nongold": 0.0,
+            "testable": 46
+          }
+        }
+      },
+      "nulls": {
+        "complete": {
+          "holm+decoy": {
+            "proposals": 58,
+            "tested": 49,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.07270029673590504
+          },
+          "holm": {
+            "proposals": 58,
+            "tested": 49,
+            "accepted": 1,
+            "rate": 0.02040816326530612,
+            "rate_all": 0.017241379310344827,
+            "ci_low": 0.003611579538530696,
+            "ci_high": 0.10693768467754147
+          },
+          "bh": {
+            "proposals": 58,
+            "tested": 49,
+            "accepted": 1,
+            "rate": 0.02040816326530612,
+            "rate_all": 0.017241379310344827,
+            "ci_low": 0.003611579538530696,
+            "ci_high": 0.10693768467754147
+          },
+          "decoy": {
+            "proposals": 58,
+            "tested": 49,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.07270029673590504
+          }
+        },
+        "relabel": {
+          "holm+decoy": {
+            "proposals": 10,
+            "tested": 6,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.3903430336530645
+          },
+          "holm": {
+            "proposals": 10,
+            "tested": 6,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.3903430336530645
+          },
+          "bh": {
+            "proposals": 10,
+            "tested": 6,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.3903430336530645
+          },
+          "decoy": {
+            "proposals": 10,
+            "tested": 6,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.3903430336530645
+          }
+        },
+        "swap": {
+          "holm+decoy": {
+            "proposals": 58,
+            "tested": 44,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 6.938893903907228e-18,
+            "ci_high": 0.08029831778201396
+          },
+          "holm": {
+            "proposals": 58,
+            "tested": 44,
+            "accepted": 1,
+            "rate": 0.022727272727272728,
+            "rate_all": 0.017241379310344827,
+            "ci_low": 0.004023148385637013,
+            "ci_high": 0.11807979131537633
+          },
+          "bh": {
+            "proposals": 58,
+            "tested": 44,
+            "accepted": 1,
+            "rate": 0.022727272727272728,
+            "rate_all": 0.017241379310344827,
+            "ci_low": 0.004023148385637013,
+            "ci_high": 0.11807979131537633
+          },
+          "decoy": {
+            "proposals": 58,
+            "tested": 44,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 6.938893903907228e-18,
+            "ci_high": 0.08029831778201396
+          }
+        },
+        "permute": {
+          "holm+decoy": {
+            "proposals": 39,
+            "tested": 34,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.10151790621961015
+          },
+          "holm": {
+            "proposals": 39,
+            "tested": 34,
+            "accepted": 1,
+            "rate": 0.029411764705882353,
+            "rate_all": 0.02564102564102564,
+            "ci_low": 0.00521077192559663,
+            "ci_high": 0.1491590221634482
+          },
+          "bh": {
+            "proposals": 39,
+            "tested": 34,
+            "accepted": 1,
+            "rate": 0.029411764705882353,
+            "rate_all": 0.02564102564102564,
+            "ci_low": 0.00521077192559663,
+            "ci_high": 0.1491590221634482
+          },
+          "decoy": {
+            "proposals": 39,
+            "tested": 34,
+            "accepted": 0,
+            "rate": 0.0,
+            "rate_all": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.10151790621961015
+          }
+        }
+      },
+      "rules": [],
+      "meta": {
+        "store": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5-s1",
+        "operator": "hrr",
+        "passive": {
+          "kind": "features",
+          "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C2-s1",
+          "features": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/feat-t5-c0p/occurrences.npz"
+        },
+        "evidence": {
+          "features": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/feat-t5-c0p/occurrences.npz",
+          "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C0p-s1",
+          "window": 512,
+          "max_per_entry": 32,
+          "layers": 32,
+          "middle_layer": 16,
+          "splits": [
+            {
+              "split": "eval",
+              "cap": 128,
+              "windows": 128,
+              "windows_scanned": 128,
+              "occurrences": 2412
+            }
+          ],
+          "entries_wanted": 2845,
+          "entries_found": 667,
+          "entries_at_cap": 8,
+          "occurrences": 2412,
+          "label": "SMOKE",
+          "seconds": 336.3
+        }
+      },
+      "primary": {
+        "all": {
+          "accepted": 0,
+          "gold": 43,
+          "tp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "proposed": 58,
+          "proposal_coverage": 0.13953488372093023,
+          "false_acceptance_nongold": 0.0,
+          "testable": 46
+        },
+        "decompose": {
+          "accepted": 0,
+          "gold": 43,
+          "tp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0,
+          "proposed": 58,
+          "proposal_coverage": 0.13953488372093023,
+          "false_acceptance_nongold": 0.0,
+          "testable": 46
+        }
+      },
+      "null_far_max": {
+        "holm+decoy": 0.0,
+        "holm": 0.029411764705882353,
+        "bh": 0.029411764705882353,
+        "decoy": 0.0
+      },
+      "pool": {
+        "rows": 129,
+        "positives": 43,
+        "methods": {
+          "decompose": {
+            "auc": 0.5486749594375337,
+            "recall_at_0.8": 0.06976744186046512
+          },
+          "correlate": {
+            "auc": 0.5235262303948081,
+            "recall_at_0.8": 0.06976744186046512
+          },
+          "prior": {
+            "auc": 0.5148729042725798,
+            "recall_at_0.8": 0.0
+          },
+          "lre": {
+            "auc": 0.6085722011898324,
+            "recall_at_0.8": 0.13953488372093023
+          }
+        }
+      },
+      "timings": {
+        "setup": 0.13,
+        "decoders": 0.39,
+        "propose": 0.48,
+        "test": 0.04,
+        "complete-null": 1.18,
+        "decide": 0.11,
+        "nulls": 0.22,
+        "pool-readouts": 1.78
+      }
+    }
+  ],
+  "seconds": 6.7
+}

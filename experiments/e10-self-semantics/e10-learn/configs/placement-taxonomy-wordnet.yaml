@@ -1,0 +1,18 @@
+# E10.L placement on TaxoExpan SemEval noun / verb (primary: official split) and TMN WordNet noun / verb (secondary:
+# re-drawn split, not comparable to published TMN numbers; 99% of its test synsets are concepts of the WordNet track,
+# whose edges the models were trained with) on the E9 WordNet-track store (SmolLM2-360M C5, seed 1; preregistration §5
+# S7). Items and outputs stay local (~/data/vsa-llm; the data carry no explicit licence).
+experiment: e10-learn-placement-taxonomy-wordnet
+label: E10L
+seed: 0
+num_threads: 4
+decoder: {folds: 5}
+kge: {dimension: 64, epochs: 100, negatives: 32, batch_size: 4096, lr: 0.01}
+placement:
+  relation_map: {parent: hypernym}
+  layer: middle
+  methods: [unbind, correlate]
+  kge: [transe, rotate, complex]
+  groups:
+    primary: {split: test}
+    dev: {split: dev}
