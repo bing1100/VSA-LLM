@@ -1,0 +1,1011 @@
+{
+  "runs_root": "experiments/e12-self-query/pilot/smoke",
+  "hosts": {
+    "SmolLM2-135M": {
+      "arms": {
+        "I": [
+          1
+        ],
+        "L": [
+          1
+        ],
+        "S": [
+          1
+        ],
+        "T": [
+          1
+        ],
+        "base": [
+          1
+        ]
+      },
+      "b1": {
+        "B1: I \u2212 L": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          },
+          "p_holm": 1.0
+        },
+        "B1: S \u2212 L": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.08333333333333333,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.020833333333333336,
+            "ms_cluster": 0.020833333333333336,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.14433756729740646,
+            "seed_means": [
+              0.08333333333333333
+            ],
+            "se": 0.08333333333333334,
+            "df": 2.0,
+            "t": 0.9999999999999999,
+            "ci_low": -0.27522106081245523,
+            "ci_high": 0.44188772747912186,
+            "p_value": 0.4226497308103743
+          },
+          "bootstrap": {
+            "mean": 0.08333333333333333,
+            "ci_low": 0.0,
+            "ci_high": 0.25,
+            "p_value": 0.7263681592039801,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          },
+          "p_holm": 0.8452994616207486
+        }
+      },
+      "b1_reading": "not shown: neither I \u2212 L nor S \u2212 L is significant",
+      "b2": {
+        "test: T \u2212 I (agentic twin contrast)": {
+          "available": false
+        },
+        "descriptive": {
+          "T": {
+            "format_ok": 0.75,
+            "relevant": 0.25,
+            "answered": 1.0,
+            "called": 1.0,
+            "swapped": 0.0,
+            "twin contrast agent": 1.0,
+            "twin contrast no_tool": 1.0,
+            "twin contrast fixed": 0.0,
+            "seeds": 1
+          },
+          "I": {
+            "seeds": 1
+          },
+          "base": {
+            "seeds": 1
+          }
+        }
+      },
+      "secondaries": {
+        "T \u2212 L (twins, no tool)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "T \u2212 I (twins, no tool): do the traces add to the answers?": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "S \u2212 I (twins, no tool)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.08333333333333333,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.020833333333333336,
+            "ms_cluster": 0.020833333333333336,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.14433756729740646,
+            "seed_means": [
+              0.08333333333333333
+            ],
+            "se": 0.08333333333333334,
+            "df": 2.0,
+            "t": 0.9999999999999999,
+            "ci_low": -0.27522106081245523,
+            "ci_high": 0.44188772747912186,
+            "p_value": 0.4226497308103743
+          },
+          "bootstrap": {
+            "mean": 0.08333333333333333,
+            "ci_low": 0.0,
+            "ci_high": 0.25,
+            "p_value": 0.7263681592039801,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "I \u2212 L (twins cloze, never-trained wording)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "I \u2212 L (twins, trained question format, no tool)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": -0.3333333333333333,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.33333333333333337,
+            "ms_cluster": 0.33333333333333337,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.5773502691896258,
+            "seed_means": [
+              -0.3333333333333333
+            ],
+            "se": 0.33333333333333337,
+            "df": 2.0,
+            "t": -0.9999999999999999,
+            "ci_low": -1.7675509099164874,
+            "ci_high": 1.100884243249821,
+            "p_value": 0.4226497308103743
+          },
+          "bootstrap": {
+            "mean": -0.3333333333333333,
+            "ci_low": -1.0,
+            "ci_high": 0.0,
+            "p_value": 0.7263681592039801,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "I \u2212 L (twins, recall:own)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "I \u2212 L (new words, no tool; accuracy)": {
+          "available": true,
+          "units": 15,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 15,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 15,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "I \u2212 L (two-hop, no tool; accuracy)": {
+          "available": true,
+          "units": 19,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.02631578947368421,
+            "clusters": 19,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.013157894736842105,
+            "ms_cluster": 0.013157894736842105,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.11470786693528089,
+            "seed_means": [
+              0.02631578947368421
+            ],
+            "se": 0.02631578947368421,
+            "df": 18.0,
+            "t": 1.0,
+            "ci_low": -0.02897163263792206,
+            "ci_high": 0.08160321158529048,
+            "p_value": 0.3305649312781842
+          },
+          "bootstrap": {
+            "mean": 0.02631578947368421,
+            "ci_low": 0.0,
+            "ci_high": 0.07894736842105263,
+            "p_value": 0.5970149253731343,
+            "clusters": 19,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "I \u2212 L (two-hop, chained recall; accuracy)": {
+          "available": true,
+          "units": 19,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 19,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 19,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "S \u2212 L (twins cloze, never-trained wording)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "S \u2212 L (twins, trained question format, no tool)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": -0.3333333333333333,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.33333333333333337,
+            "ms_cluster": 0.33333333333333337,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.5773502691896258,
+            "seed_means": [
+              -0.3333333333333333
+            ],
+            "se": 0.33333333333333337,
+            "df": 2.0,
+            "t": -0.9999999999999999,
+            "ci_low": -1.7675509099164874,
+            "ci_high": 1.100884243249821,
+            "p_value": 0.4226497308103743
+          },
+          "bootstrap": {
+            "mean": -0.3333333333333333,
+            "ci_low": -0.6749999999999998,
+            "ci_high": 0.0,
+            "p_value": 0.7164179104477612,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "S \u2212 L (twins, recall:own)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": -0.08333333333333333,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.020833333333333336,
+            "ms_cluster": 0.020833333333333336,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.14433756729740646,
+            "seed_means": [
+              -0.08333333333333333
+            ],
+            "se": 0.08333333333333334,
+            "df": 2.0,
+            "t": -0.9999999999999999,
+            "ci_low": -0.44188772747912186,
+            "ci_high": 0.27522106081245523,
+            "p_value": 0.4226497308103743
+          },
+          "bootstrap": {
+            "mean": -0.08333333333333333,
+            "ci_low": -0.25,
+            "ci_high": 0.0,
+            "p_value": 0.7263681592039801,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "S \u2212 L (new words, no tool; accuracy)": {
+          "available": true,
+          "units": 15,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 15,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 15,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "S \u2212 L (two-hop, no tool; accuracy)": {
+          "available": true,
+          "units": 19,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.02631578947368421,
+            "clusters": 19,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.013157894736842105,
+            "ms_cluster": 0.013157894736842105,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.11470786693528089,
+            "seed_means": [
+              0.02631578947368421
+            ],
+            "se": 0.02631578947368421,
+            "df": 18.0,
+            "t": 1.0,
+            "ci_low": -0.02897163263792206,
+            "ci_high": 0.08160321158529048,
+            "p_value": 0.3305649312781842
+          },
+          "bootstrap": {
+            "mean": 0.02631578947368421,
+            "ci_low": 0.0,
+            "ci_high": 0.07894736842105263,
+            "p_value": 0.5970149253731343,
+            "clusters": 19,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "S \u2212 L (two-hop, chained recall; accuracy)": {
+          "available": true,
+          "units": 19,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 19,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 19,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "T \u2212 L (twins cloze, never-trained wording)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "T \u2212 L (twins, trained question format, no tool)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "T \u2212 L (twins, recall:own)": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": -0.08333333333333333,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.020833333333333336,
+            "ms_cluster": 0.020833333333333336,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.14433756729740646,
+            "seed_means": [
+              -0.08333333333333333
+            ],
+            "se": 0.08333333333333334,
+            "df": 2.0,
+            "t": -0.9999999999999999,
+            "ci_low": -0.44188772747912186,
+            "ci_high": 0.27522106081245523,
+            "p_value": 0.4226497308103743
+          },
+          "bootstrap": {
+            "mean": -0.08333333333333333,
+            "ci_low": -0.25,
+            "ci_high": 0.0,
+            "p_value": 0.7263681592039801,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "T \u2212 L (new words, no tool; accuracy)": {
+          "available": true,
+          "units": 15,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 15,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 15,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "T \u2212 L (two-hop, no tool; accuracy)": {
+          "available": true,
+          "units": 19,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.02631578947368421,
+            "clusters": 19,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.013157894736842105,
+            "ms_cluster": 0.013157894736842105,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.11470786693528089,
+            "seed_means": [
+              0.02631578947368421
+            ],
+            "se": 0.02631578947368421,
+            "df": 18.0,
+            "t": 1.0,
+            "ci_low": -0.02897163263792206,
+            "ci_high": 0.08160321158529048,
+            "p_value": 0.3305649312781842
+          },
+          "bootstrap": {
+            "mean": 0.02631578947368421,
+            "ci_low": 0.0,
+            "ci_high": 0.07894736842105263,
+            "p_value": 0.5970149253731343,
+            "clusters": 19,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "T \u2212 L (two-hop, chained recall; accuracy)": {
+          "available": true,
+          "units": 19,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.02631578947368421,
+            "clusters": 19,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.013157894736842105,
+            "ms_cluster": 0.013157894736842105,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.11470786693528089,
+            "seed_means": [
+              0.02631578947368421
+            ],
+            "se": 0.02631578947368421,
+            "df": 18.0,
+            "t": 1.0,
+            "ci_low": -0.02897163263792206,
+            "ci_high": 0.08160321158529048,
+            "p_value": 0.3305649312781842
+          },
+          "bootstrap": {
+            "mean": 0.02631578947368421,
+            "ci_low": 0.0,
+            "ci_high": 0.07960526315789489,
+            "p_value": 0.7562189054726368,
+            "clusters": 19,
+            "seeds": 1,
+            "resamples": 200
+          }
+        },
+        "L \u2212 base (twins, no tool): the size-matched update itself": {
+          "available": true,
+          "units": 3,
+          "seeds": [
+            1
+          ],
+          "model": {
+            "mean": 0.0,
+            "clusters": 3,
+            "seeds": 1,
+            "var_cluster": null,
+            "var_seed": null,
+            "var_residual": null,
+            "var_total": 0.0,
+            "ms_cluster": 0.0,
+            "ms_seed": null,
+            "ms_residual": null,
+            "sd_cluster_mean": 0.0,
+            "seed_means": [
+              0.0
+            ],
+            "se": 0.0,
+            "df": null,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0
+          },
+          "bootstrap": {
+            "mean": 0.0,
+            "ci_low": 0.0,
+            "ci_high": 0.0,
+            "p_value": 1.0,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          }
+        }
+      },
+      "means": {
+        "I": {
+          "twins none choice": 0.3333333333333333,
+          "twins none cloze": 0.3333333333333333,
+          "twins recall:own choice": 1.0,
+          "twins question format": 0.6666666666666666,
+          "new words none": 0.2,
+          "two-hop none": 0.15789473684210525,
+          "two-hop recall:own": 0.9210526315789473,
+          "agent twin contrast": null
+        },
+        "L": {
+          "twins none choice": 0.3333333333333333,
+          "twins none cloze": 0.3333333333333333,
+          "twins recall:own choice": 1.0,
+          "twins question format": 1.0,
+          "new words none": 0.2,
+          "two-hop none": 0.13157894736842105,
+          "two-hop recall:own": 0.9210526315789473,
+          "agent twin contrast": null
+        },
+        "S": {
+          "twins none choice": 0.4166666666666667,
+          "twins none cloze": 0.3333333333333333,
+          "twins recall:own choice": 0.9166666666666666,
+          "twins question format": 0.6666666666666666,
+          "new words none": 0.2,
+          "two-hop none": 0.15789473684210525,
+          "two-hop recall:own": 0.9210526315789473,
+          "agent twin contrast": null
+        },
+        "T": {
+          "twins none choice": 0.3333333333333333,
+          "twins none cloze": 0.3333333333333333,
+          "twins recall:own choice": 0.9166666666666666,
+          "twins question format": 1.0,
+          "new words none": 0.2,
+          "two-hop none": 0.15789473684210525,
+          "two-hop recall:own": 0.9473684210526315,
+          "agent twin contrast": 1.0
+        },
+        "base": {
+          "twins none choice": 0.3333333333333333,
+          "twins none cloze": 0.3333333333333333,
+          "twins recall:own choice": 1.0,
+          "twins question format": 0.6666666666666666,
+          "new words none": 0.23333333333333334,
+          "two-hop none": 0.13157894736842105,
+          "two-hop recall:own": 0.9210526315789473,
+          "agent twin contrast": null
+        }
+      },
+      "predictions": {
+        "I twins none \u2264 0.65": true,
+        "S twins none \u2264 0.65": true,
+        "S \u2265 I": true,
+        "T well-formed calls \u2265 0.9": false
+      }
+    }
+  }
+}

@@ -1,0 +1,680 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-135M-full-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-SmolLM2-135M-full-C5-s1",
+    "run_git_sha": "db753467e253ecc1c840eaa46ebbfb2b77f8ddc3",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "arm": "base",
+  "model": "C5",
+  "label": "SMOKE",
+  "store": {
+    "label": "own",
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-135M-full-C5-s1",
+    "operator": "hrr",
+    "method": "correlation",
+    "role_blind": false,
+    "family": "hrr"
+  },
+  "training": {
+    "arm": "base",
+    "trained": false
+  },
+  "tests": {
+    "twins": {
+      "summary": {
+        "kind": "twins",
+        "conditions": {
+          "none": {
+            "choice": {
+              "units": {
+                "0": {
+                  "contrast": 0.5,
+                  "margin": -0.27614749999999955,
+                  "item": 0.5
+                },
+                "1": {
+                  "contrast": 0.5,
+                  "margin": 0.1615150000000014,
+                  "item": 0.5
+                },
+                "2": {
+                  "contrast": 0.0,
+                  "margin": -2.1607650000000005,
+                  "item": 0.375
+                }
+              },
+              "mean": {
+                "contrast": 0.3333333333333333,
+                "item": 0.4583333333333333,
+                "margin": -0.7584658333333328,
+                "n": 3
+              }
+            },
+            "cloze": {
+              "units": {
+                "0": {
+                  "contrast": 0.5,
+                  "margin": -0.24873000000000056,
+                  "item": 0.5
+                },
+                "1": {
+                  "contrast": 0.5,
+                  "margin": -0.21473999999999993,
+                  "item": 0.5
+                },
+                "2": {
+                  "contrast": 0.0,
+                  "margin": -0.6888550000000002,
+                  "item": 0.5
+                }
+              },
+              "mean": {
+                "contrast": 0.3333333333333333,
+                "item": 0.5,
+                "margin": -0.38410833333333355,
+                "n": 3
+              }
+            }
+          },
+          "recall:own": {
+            "choice": {
+              "units": {
+                "0": {
+                  "contrast": 1.0,
+                  "margin": 3.333035,
+                  "item": 0.625,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                },
+                "1": {
+                  "contrast": 1.0,
+                  "margin": 3.1261525,
+                  "item": 0.5,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                },
+                "2": {
+                  "contrast": 1.0,
+                  "margin": 3.3445374999999995,
+                  "item": 0.5,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                }
+              },
+              "mean": {
+                "contrast": 1.0,
+                "decode": 1.0,
+                "decode_all": 1.0,
+                "item": 0.5416666666666666,
+                "margin": 3.267908333333333,
+                "n": 3
+              }
+            },
+            "cloze": {
+              "units": {
+                "0": {
+                  "contrast": 1.0,
+                  "margin": 1.191705,
+                  "item": 0.75,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                },
+                "1": {
+                  "contrast": 1.0,
+                  "margin": 0.636865,
+                  "item": 0.5,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                },
+                "2": {
+                  "contrast": 1.0,
+                  "margin": 0.81485,
+                  "item": 1.0,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                }
+              },
+              "mean": {
+                "contrast": 1.0,
+                "decode": 1.0,
+                "decode_all": 1.0,
+                "item": 0.75,
+                "margin": 0.8811399999999999,
+                "n": 3
+              }
+            }
+          }
+        },
+        "linked": 6,
+        "concepts": 6
+      },
+      "timings": {
+        "none": 1.7,
+        "recall:own": 17.7
+      },
+      "seconds": 19.519206729950383
+    },
+    "new_words": {
+      "summary": {
+        "kind": "new",
+        "conditions": {
+          "none": {
+            "property": {
+              "units": {
+                "e9n-0000-property-area": {
+                  "accuracy": 0.5,
+                  "edge_kind": "resampled",
+                  "relation": "area"
+                },
+                "e9n-0000-property-is_a": {
+                  "accuracy": 0.5,
+                  "edge_kind": "category",
+                  "relation": "is_a"
+                },
+                "e9n-0000-property-owned_by": {
+                  "accuracy": 0.5,
+                  "edge_kind": "resampled",
+                  "relation": "owned_by"
+                },
+                "e9n-0000-property-purpose": {
+                  "accuracy": 0.5,
+                  "edge_kind": "resampled",
+                  "relation": "purpose"
+                },
+                "e9n-0001-property-area": {
+                  "accuracy": 0.0,
+                  "edge_kind": "resampled",
+                  "relation": "area"
+                },
+                "e9n-0001-property-depends_on": {
+                  "accuracy": 0.0,
+                  "edge_kind": "resampled",
+                  "relation": "depends_on"
+                },
+                "e9n-0001-property-is_a": {
+                  "accuracy": 0.0,
+                  "edge_kind": "category",
+                  "relation": "is_a"
+                },
+                "e9n-0001-property-owned_by": {
+                  "accuracy": 0.0,
+                  "edge_kind": "resampled",
+                  "relation": "owned_by"
+                },
+                "e9n-0001-property-purpose": {
+                  "accuracy": 1.0,
+                  "edge_kind": "resampled",
+                  "relation": "purpose"
+                },
+                "e9n-0002-property-area": {
+                  "accuracy": 0.0,
+                  "edge_kind": "resampled",
+                  "relation": "area"
+                },
+                "e9n-0002-property-depends_on": {
+                  "accuracy": 0.5,
+                  "edge_kind": "resampled",
+                  "relation": "depends_on"
+                },
+                "e9n-0002-property-governed_by": {
+                  "accuracy": 0.0,
+                  "edge_kind": "resampled",
+                  "relation": "governed_by"
+                },
+                "e9n-0002-property-is_a": {
+                  "accuracy": 0.0,
+                  "edge_kind": "category",
+                  "relation": "is_a"
+                },
+                "e9n-0002-property-owned_by": {
+                  "accuracy": 0.0,
+                  "edge_kind": "resampled",
+                  "relation": "owned_by"
+                },
+                "e9n-0002-property-purpose": {
+                  "accuracy": 0.0,
+                  "edge_kind": "resampled",
+                  "relation": "purpose"
+                }
+              },
+              "mean": {
+                "accuracy": 0.23333333333333334,
+                "n": 15
+              }
+            }
+          }
+        },
+        "linked": 3,
+        "concepts": 3
+      },
+      "timings": {
+        "none": 10.1
+      },
+      "seconds": 10.070009643910453
+    },
+    "two_hop": {
+      "summary": {
+        "kind": "understanding",
+        "conditions": {
+          "none": {
+            "items": {
+              "units": {
+                "u-t5-0-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-0-two_hop-governed_by-approved_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-0-two_hop-governed_by-owned_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-0-two_hop-part_of-sponsored_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-0-two_hop-uses-owned_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-6-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-6-two_hop-governed_by-approved_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-6-two_hop-governed_by-owned_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen"
+                },
+                "u-t5-20-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.5,
+                  "score": 0.3,
+                  "family": "two_hop",
+                  "subset": "rare"
+                },
+                "u-t5-40-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "rare"
+                },
+                "u-t5-40-two_hop-governed_by-approved_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "rare"
+                },
+                "u-t5-40-two_hop-governed_by-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare"
+                },
+                "u-t5-40-two_hop-part_of-sponsored_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "rare"
+                },
+                "u-t5-40-two_hop-measured_by-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare"
+                },
+                "u-t5-3-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "heldout"
+                },
+                "u-t5-37-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "heldout"
+                },
+                "e9n-0000-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "new"
+                },
+                "e9n-0001-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "new"
+                },
+                "e9n-0001-two_hop-depends_on-owned_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "new"
+                }
+              },
+              "by": {
+                "two_hop/all": {
+                  "accuracy": 0.13157894736842105,
+                  "score": -0.06842105263157894,
+                  "n": 19
+                },
+                "two_hop/heldout": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "n": 2
+                },
+                "two_hop/new": {
+                  "accuracy": 0.0,
+                  "score": -0.20000000000000004,
+                  "n": 3
+                },
+                "two_hop/rare": {
+                  "accuracy": 0.4166666666666667,
+                  "score": 0.21666666666666667,
+                  "n": 6
+                },
+                "two_hop/seen": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "n": 8
+                }
+              }
+            }
+          },
+          "recall:own": {
+            "items": {
+              "units": {
+                "u-t5-0-two_hop-owned_by-reports_to": {
+                  "accuracy": 0.5,
+                  "score": 0.3,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-0-two_hop-governed_by-approved_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-0-two_hop-governed_by-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-0-two_hop-part_of-sponsored_by": {
+                  "accuracy": 0.0,
+                  "score": -0.2,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 0.0,
+                  "bridge_correct": 0.0,
+                  "hop2_correct": 0.0
+                },
+                "u-t5-0-two_hop-uses-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-6-two_hop-owned_by-reports_to": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-6-two_hop-governed_by-approved_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-6-two_hop-governed_by-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "seen",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-20-two_hop-owned_by-reports_to": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-40-two_hop-owned_by-reports_to": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-40-two_hop-governed_by-approved_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-40-two_hop-governed_by-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-40-two_hop-part_of-sponsored_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 0.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-40-two_hop-measured_by-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "rare",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-3-two_hop-owned_by-reports_to": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "heldout",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "u-t5-37-two_hop-owned_by-reports_to": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "heldout",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "e9n-0000-two_hop-owned_by-reports_to": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "new",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "e9n-0001-two_hop-owned_by-reports_to": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "new",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                },
+                "e9n-0001-two_hop-depends_on-owned_by": {
+                  "accuracy": 1.0,
+                  "score": 0.8,
+                  "family": "two_hop",
+                  "subset": "new",
+                  "hop1_correct": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop2_correct": 1.0
+                }
+              },
+              "by": {
+                "two_hop/all": {
+                  "accuracy": 0.9210526315789473,
+                  "bridge_correct": 0.8947368421052632,
+                  "hop1_correct": 0.9473684210526315,
+                  "hop2_correct": 0.9473684210526315,
+                  "score": 0.7210526315789475,
+                  "n": 19
+                },
+                "two_hop/heldout": {
+                  "accuracy": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop1_correct": 1.0,
+                  "hop2_correct": 1.0,
+                  "score": 0.8,
+                  "n": 2
+                },
+                "two_hop/new": {
+                  "accuracy": 1.0,
+                  "bridge_correct": 1.0,
+                  "hop1_correct": 1.0,
+                  "hop2_correct": 1.0,
+                  "score": 0.8000000000000002,
+                  "n": 3
+                },
+                "two_hop/rare": {
+                  "accuracy": 1.0,
+                  "bridge_correct": 0.8333333333333334,
+                  "hop1_correct": 1.0,
+                  "hop2_correct": 1.0,
+                  "score": 0.7999999999999999,
+                  "n": 6
+                },
+                "two_hop/seen": {
+                  "accuracy": 0.8125,
+                  "bridge_correct": 0.875,
+                  "hop1_correct": 0.875,
+                  "hop2_correct": 0.875,
+                  "score": 0.6125,
+                  "n": 8
+                }
+              }
+            }
+          }
+        },
+        "linked": 1267,
+        "concepts": 1267
+      },
+      "timings": {
+        "none": 23.6,
+        "recall:own": 26.4
+      },
+      "seconds": 49.97740468196571
+    },
+    "question_format": {
+      "units": {
+        "0": {
+          "contrast": 0.0
+        },
+        "1": {
+          "contrast": 1.0
+        },
+        "2": {
+          "contrast": 1.0
+        }
+      },
+      "mean": {
+        "contrast": 0.6666666666666666,
+        "accuracy": 0.5,
+        "n": 3
+      },
+      "seconds": 3.1756565319374204
+    }
+  },
+  "seconds": 84.10993658192456,
+  "peak_gb": null
+}

@@ -647,3 +647,97 @@ first calls 0.52 and 0.02), while the untouched base hosts do (0.82 and 0.84). T
   with the output head computed in vocabulary slices). Cost at the pilot's rate (8 s per question on the 1.7B with both
   baselines): 900 questions × 2 seeds ≈ 4.0 GPU-h for the 1.7B, ≈ 2.0 for the 0.6B, ≈ 3.2 for the two self-hosted C5 runs at
   seed 1 — ≈ 9 GPU-h in all (an upper bound from the shared GPU).
+
+### 16.3 3b and 3c: the harnesses' fixed choices (2026-10-08, before any 3b or 3c run; no endpoint, unit, contrast or threshold changed)
+
+Written with the harnesses (`vsa_embed.experiments.e12_traces`, `e12_critique`; tests `tests/test_e12_traces_critique.py`, CPU)
+and before any 3b or 3c job; only a labelled CPU SMOKE ran (SmolLM2-135M C5 seed 1 and Qwen3-0.6B-Base C5 seed 1, a handful of
+items, outputs `pilot/smoke/`; not an endpoint). §12 and §13 leave the choices below open, or could not be implemented as
+written (items 9b and 10, said so there). Every open value is fixed **by rule**; none was tuned on any data, so 3b needs no
+dev split. B1, B2, K1 and K2 are unchanged.
+
+**3b (§12).**
+1. *Training questions* (built once, committed: `items/traces-t5-smollm2-v1`; 14,245 questions, every disjointness check 0):
+   one question per (term, relation), worded with one of the property templates' first two paraphrases drawn with seed 0
+   (one draw per question is what §12's ≈ 0.45 M-token I budget implies; measured 0.53 M); twin options [X, Y] as the test
+   twins, seen-term options in a seeded order. Training twins: 2,000 pairs (seed 1, name seed 29, the test set's relation
+   pairs depends_on | part_of and owned_by | approved_by); names reserved against every item directory under
+   `experiments/e9-retrofit/items` (10,701 names), frames against every T5 test frame (twins and new words of every family,
+   1,300), {X, Y} against the test twins (288 pairs). "Not an anchor of any E9/E12 item set" is read literally — no entry
+   that a T5 item set of any tokenizer family names (WP-UB anchors, bridges and reverse partners; the edit sets' edited
+   entries): 3,005 entries are named, leaving **955 of the 2,845 seen entries** (6,245 questions). "Same answer type" =
+   `TrackLexicon.atom_type` (a term filler by its term type); 78 questions find such an own filler, the rest take §12's
+   frequency-weighted pool filler.
+2. *Trace wording* (T): `Thought: I should recall <term>, <relation words>.` / `Action: recall[<term>, <relation words>]` /
+   `Observation: <3a's tool output for that call>` / `Thought: The recall says <option>.` (`The recall names neither option.`
+   when the decoded filler is no option: 3.5% of the questions on the 360M C5 seed-1 store; the other option: 0.01%) /
+   `Answer: <gold>` — the gold always, as §12 writes. The loss covers exactly what 3a's harness lets the model generate (the
+   first thought and the action up to `]`; the second thought, `Answer:` and the answer), never the question, the
+   observation or the labels the harness inserts. S's second epoch drops the observation and keeps both thoughts and the
+   action; its third is I's format. Tokens per epoch (SmolLM2 tokenizer): T 1.77 M (mean 124, max 174 per sequence),
+   T without observation 1.20 M, I 0.53 M.
+3. *L*: per epoch as many sequences as T, each a window of T's mean length (124 tokens) of the T5 training corpus — T's
+   tokens per epoch matched; fresh seeded windows each epoch, held-out entries unlinked as in training, LM loss on every token.
+4. *Optimizer values §12 leaves open*: LoRA α = 32 (`add_lora`'s default; scale 2); AdamW betas (0.9, 0.95), weight decay 0.1,
+   gradient clip 1.0, and after the 3% warmup the E9 trainer's cosine decay to 10% (`training.lm._lr`); one sequence per
+   question (no packing); the loss the mean over a step's loss tokens; data order seeded by (run seed, epoch); bf16 autocast
+   as the E9 runs; the host in eval mode (no dropout). Training twins are inserted with their gold frames and linked while
+   training, as at evaluation. (A host that already carries LoRA would have it merged into its frozen weights first; the
+   SmolLM2-360M runs carry none.)
+5. *Tests added* (secondaries): the twins in the trained question format without the tool (3a's `no_tool` prompt, both twins
+   of all 300 pairs, first relation), to tell "learned the role" from "learned the format"; a `base` arm (the untrained run,
+   the same tests): B2's "3a's few-shot episodes on the same host size" — 3a ran only on Qwen3, so 3a's harness is run on the
+   SmolLM2-360M C5 runs; the agentic episodes also for arm I, since B2's test is T − I on the agentic twins (§12 costed arm T
+   only; I-ut runs none, its tool reading a role-blind store). Agentic: both twins of the first 100 pairs, first relation,
+   3a's prompt and demonstrations.
+6. *Report* (`e12_traces report`): B1 = I − L and S − L on the twins' `choice` contrast without the tool (pairs × seeds, Holm
+   over the two); secondaries (family SB, never promoted): T − L, T − I, S − I, I-ut − 0.5 (the leak check), the cloze
+   wording, the question format, `recall:own`, new words, two-hop (no tool and chained recall) against L, L − base; B2
+   descriptive by arm and its T − I test; §12's predictions checked as written.
+
+**3c (§13).**
+7. *Calibration model*: isotonic regression is one-dimensional, so "P(decode correct | cosine, margin, frame size), isotonic
+   regression" is a per-relation logistic score of the three features (the cleanup cosine; the margin to the next candidate,
+   the (m+1)-th of the slot; log frame size; standardized, ridge 1) followed by isotonic regression of correctness on that
+   score; a relation with < 50 decoded seen edges or < 5 of a class uses the pooled model. Seen entries: ≤ 3,000 (phase A's
+   `seen_entries`, seed 0). Calibration is reported against the store and against the world, in both worlds.
+8. *An item's belief*: of slot r's top-m decoded fillers (m = r's multiplicity in the term's frame; a role-blind store: the
+   type-restricted bundle readout), the best one that is an option of the item; none when no decoded filler is an option.
+9. *Null world*: (a) the store the tool reads is corrupted; the channel's injection and the behaviour stay the real world's
+   (§13's cost reuses phase A's `none`). (b) As written (fillers redrawn frequency-weighted, as E9's `random_frame`) the false
+   filler of the tested relation would almost never be one of the item's options (term pools hold hundreds of fillers), so
+   false-belief adoption could not be measured; the tested edge (the item's gold) is therefore redrawn among the item's
+   distractors (frequency-weighted) and the other edges follow E9's random frame (new words: the frame stored with the item
+   set; held-out entries: `e9_tracks.random_frames`, seed 0), no edge of a tested relation keeping the gold. Twins: roles
+   swapped within the pair, as written. Null frames are seeded per term and the same in every run.
+10. *Rule loop*: the answer is the belief when p ≥ θ, else the behaviour (as written). **Flag** = the available signals
+    (belief, behaviour and, on held-out terms with a sentence, the evidence answer: the host's answer with the sentence in
+    context) do not all agree. §13 does not say what a flag does; at a fixed coverage it acts by abstention: a flagged item
+    is abstained before any unflagged one. Each method then abstains on its own lowest-confidence 20%: the loop by its
+    answer's calibrated confidence (the belief's p; for a behaviour answer the behaviour's softmax calibrated by isotonic
+    regression on the dev half), no-tool by its softmax, naive recall by p (it always answers with the belief when it has
+    one, else with the behaviour). θ ∈ {0, 0.05, …, 1} maximizes the loop's accuracy at 80% coverage on the dev half (ties:
+    the smallest), per run. Dev / test halves: the first 300 v2 new words split by word, seed 0.
+11. *K1 / K2 units*: per item `1(answered ∧ correct) / 0.8` and, in the null world, `1(answered ∧ answer = the false option) /
+    0.8` (each method abstaining 20%); their means are the accuracy and the false-belief adoption at 80% coverage, so the
+    items × seeds crossed model of their paired differences tests K1 and K2 as defined. Pool: the new words' test half and
+    the held-out terms' WP-C7 property items (1,006 items, three paraphrases, four options). Per-set results (new words,
+    held-out, twins) are secondaries: §13's predictions (K2 < 0 on held-out terms, ≈ 0 on new words) and refutation readings
+    are read on them.
+12. *Evidence*: the first evaluation-corpus sentence (document order) that names the term and exactly one of the item's
+    options (`items/critique-evidence-t5-v1`, built once: 750 of the 1,006 items have one; 740 of the 750 state the gold).
+13. *Model loop* (secondary, Qwen3-1.7B-Base C5 seeds 1–2 as registered): 300 items per set (seeded; the new words' test half,
+    the held-out items) in both worlds; four demonstrations on seen entries with real decodes and their p (Keep; Revise; Keep
+    against a real decode error, the evidence being the relation's training statement; Unsure on a low-p decode); forced
+    choice over " Keep" / " Revise" / " Unsure", then after "Revise to" over the other options; Unsure abstains; confidence =
+    the decision's probability (× the option's for Revise).
+14. *Added secondaries*: the loop with evidence revision (a disagreeing evidence answer replaces the loop's); the host reading
+    the false recall in context against naive recall (K2); `recall:own` on new words and held-out terms (the fixed pipeline);
+    C5ut (role-blind store) on the twins and the new words.
+
+**Cost** (re-estimated from the measured token counts, e9_plan's 12k tokens/s for SmolLM2-360M LoRA and phase A's / 3a's
+measured rates on the shared GPU; upper bounds). 3b: training 52 M tokens (per seed T 5.3 M, S 3.5 M, I 1.6 M, L 5.3 M, I-ut
+1.6 M) ≈ 1.2 GPU-h, ≈ 1.6 with padding; tests ≈ 7 min per arm and seed (18 jobs) ≈ 2.1; agentic episodes for T, I and base
+(200 questions × ≈ 3 s, 9 jobs) ≈ 1.5 — **≈ 5.2 GPU-h** (§12: 3.8; the difference is item 5's added episodes and tests).
+3c: C5 × 3 (twins, new words, held-out; every condition) ≈ 25 min each, C5ut × 3 (twins, new words) ≈ 14 min each, the
+model loop ≈ 0.5 GPU-h per seed — **≈ 3.0 GPU-h** (§13: 2.6). Commands: `queue-commands-3bc.sh` (not queued).
