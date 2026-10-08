@@ -1,0 +1,175 @@
+{
+  "schema": "rank-eval/1",
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/wordnet/SmolLM2-135M-full-C0p-s1",
+    "checkpoint": "final.pt",
+    "condition": "C0p",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/train",
+    "channel_mode": "none",
+    "channel": {
+      "mode": "none",
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "gate_bias": -2.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-wordnet-SmolLM2-135M-full-C0p-s1",
+    "run_git_sha": "7e9771973de22bb491a7ea6211169f98deb1b544",
+    "ontology": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/c3/wordnet-smollm2-v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "items": "experiments/toolkit-bench/items/comps-wugs-wordnet-v1/items.jsonl.gz",
+  "items_name": "items.jsonl.gz",
+  "conditions": [
+    "none",
+    "frame-in-context:oracle",
+    "definition-in-context"
+  ],
+  "skipped_conditions": [],
+  "smoke": true,
+  "new_surfaces": 0,
+  "shadowed": 0,
+  "shadowed_surfaces": [],
+  "unresolved_frames": 0,
+  "terms": 77,
+  "readers": {
+    "oracle": {
+      "terms": 77,
+      "frames": 77,
+      "precision": null,
+      "recall": null,
+      "mean_edges": null,
+      "cost_per_term": {}
+    }
+  },
+  "scorer": {
+    "tokenize_seconds": 0.013257418991997838,
+    "link_seconds": 0.0001677048858255148,
+    "model_seconds": 5.408341039670631,
+    "batches": 8,
+    "forward_tokens": 3872,
+    "padded_tokens": 4104,
+    "requests": 240,
+    "unique_requests": 200,
+    "truncated": 0,
+    "seconds": 5.424484455958009
+  },
+  "timing": {
+    "none": 0.8950447870884091,
+    "frame-in-context:oracle": 2.740269091213122,
+    "definition-in-context": 1.8029957751277834
+  },
+  "seconds": 5.443022744031623,
+  "summary": {
+    "items": 40,
+    "sets": {
+      "all": {
+        "accuracy": {
+          "none": {
+            "sum": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.5,
+              "ci_low": 0.5,
+              "ci_high": 0.5,
+              "n": 40
+            }
+          },
+          "frame-in-context:oracle": {
+            "sum": {
+              "mean": 0.7,
+              "ci_low": 0.55,
+              "ci_high": 0.825625,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.7,
+              "ci_low": 0.55,
+              "ci_high": 0.825625,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.7,
+              "ci_low": 0.55,
+              "ci_high": 0.825625,
+              "n": 40
+            }
+          },
+          "definition-in-context": {
+            "sum": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            },
+            "per_byte": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            },
+            "per_token": {
+              "mean": 0.675,
+              "ci_low": 0.525,
+              "ci_high": 0.825,
+              "n": 40
+            }
+          }
+        },
+        "contrasts": [
+          {
+            "a": "frame-in-context:oracle",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.2,
+            "ci_low": 0.025,
+            "ci_high": 0.325,
+            "n": 40,
+            "p_value": 0.01990049751243781
+          },
+          {
+            "a": "definition-in-context",
+            "b": "none",
+            "norm": "sum",
+            "mean": 0.175,
+            "ci_low": 0.05,
+            "ci_high": 0.325,
+            "n": 40,
+            "p_value": 0.01990049751243781
+          }
+        ],
+        "context_tokens": {
+          "none": 0.0,
+          "frame-in-context:oracle": 17.9125,
+          "definition-in-context": 8.6125
+        },
+        "linked": {
+          "none": 1.0,
+          "frame-in-context:oracle": 1.0,
+          "definition-in-context": 1.0
+        }
+      }
+    },
+    "chance": 0.5
+  }
+}

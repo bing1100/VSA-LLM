@@ -65,6 +65,7 @@ SCHEMA = "rank-items/1"
 OUTPUT_SCHEMA = "rank-eval/1"
 NORMS = ("sum", "per_byte", "per_token")             # summed log-prob; length-normalized (bytes); per-token mean
 PRIMARY_NORM = "sum"
+HEAD_CHUNK = 2048                                    # scored positions per output-head matmul (memory bound)
 MODEL_READERS = frozenset({"linker", "linker-all", "linker-joint"})
 DEFINITION_READERS = frozenset({"typeprior", "pattern", "stated"}) | MODEL_READERS
 BASE_READERS = ("oracle", "random", "none", "typeprior", "pattern", "stated", "linker", "linker-all", "linker-joint")
@@ -452,13 +453,15 @@ class RankScorer:
                 for t in range(1, len(offs)):
                     if offs[t][1] > start:
                         rows.append(row); cols.append(t - 1); targets.append(ids_all[i][t]); owners.append(i)
-            if rows:
-                picked_hidden = hidden[torch.tensor(rows, device=hidden.device), torch.tensor(cols, device=hidden.device)].float()
-                logits = F.linear(picked_hidden, head.weight.float(),
-                                  None if getattr(head, "bias", None) is None else head.bias.float())
-                picked = torch.log_softmax(logits, -1).gather(-1, torch.tensor(targets, device=logits.device)[:, None]).squeeze(-1)
-                np.add.at(sums, owners, picked.cpu().double().numpy())
-                np.add.at(counts, owners, 1.0)
+            weight = head.weight.float()
+            bias = None if getattr(head, "bias", None) is None else head.bias.float()
+            for lo in range(0, len(rows), HEAD_CHUNK):     # output logits only at scored positions, in chunks
+                hi = lo + HEAD_CHUNK
+                picked_hidden = hidden[torch.tensor(rows[lo:hi], device=hidden.device), torch.tensor(cols[lo:hi], device=hidden.device)].float()
+                logits = F.linear(picked_hidden, weight, bias)
+                picked = torch.log_softmax(logits, -1).gather(-1, torch.tensor(targets[lo:hi], device=logits.device)[:, None]).squeeze(-1)
+                np.add.at(sums, owners[lo:hi], picked.cpu().double().numpy())
+                np.add.at(counts, owners[lo:hi], 1.0)
             self.stats["link_seconds"] += t1 - t0
             self.stats["model_seconds"] += time.monotonic() - t1
             self.stats["batches"] += 1

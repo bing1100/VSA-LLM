@@ -154,6 +154,69 @@ this pre-registration.
 
 Added below after this document was committed (§10 addendum).
 
+### §10 addendum — CPU smoke test (2026-10-08; SMOKE, not a result)
+
+**Setup.** `write_bench smoke`: SmolLM2-135M seed 1, every model (C5, C2, C0′, P0), 40 items per set spread evenly over
+the file (ALCUNA: 24 multiple choice, 16 Yes/No), the planned conditions, CPU, 4 threads (the GPU belongs to the
+queue). Outputs: `experiments/toolkit-bench/smoke/<set>-SmolLM2-135M-<model>-s1/`, costs in `smoke/cost.json`.
+Peak resident memory ≈ 5 GB.
+
+**Checks passed.**
+- Every bound new term linked in every scored text (`linked` 1.00); `channel-off` 0.00.
+- `none` is exactly 0.5 on every COMPS pair (exact ties); C2's store conditions equal its `none` (frame-independent
+  fallback row), as expected.
+- No COMPS text was truncated. ALCUNA: 8 long definition-in-context texts exceeded 1,024 tokens and were cut on the
+  left (question and options kept); the GPU jobs use `--max-length 2048`.
+- Unit tests (`tests/test_rank_benchmark.py`): store rows equal E9's `own`, `none` equals E9's zero row (1e-5), the
+  scorer equals the shared continuation scorers, every other row and the entry count are restored exactly.
+
+**Smoke numbers** (40 items, 135M, one seed: not evidence for anything; accuracy by summed log-probability):
+
+| Set | Condition (C5 unless stated) | Accuracy | − none [95% CI] |
+|---|---|---|---|
+| COMPS-WUGS | none | 0.500 | — |
+| COMPS-WUGS | store:oracle | 0.525 | +0.025 [−0.126, +0.176] |
+| COMPS-WUGS | store:linker | 0.412 | −0.087 [−0.213, +0.038] |
+| COMPS-WUGS | store:typeprior / store:random / store:oracle:parent | 0.537 / 0.550 / 0.500 | CIs include 0 |
+| COMPS-WUGS | frame-in-context:oracle | 0.700 | +0.200 [+0.025, +0.325] |
+| COMPS-WUGS | definition-in-context (= the COMPS prompt); P0: 0.725 | 0.675 | +0.175 [+0.050, +0.325] |
+| ALCUNA (all) | store:oracle | 0.300 | +0.000 |
+| ALCUNA (all) | definition-in-context | 0.550 | +0.250 [+0.049, +0.450] |
+
+Readers on the COMPS definitions ("A wug is a mussel."): `typeprior` edge precision 0.85 (recall 0.15: it reads only
+the hypernym), `linker` 0.05 — the single-edge linker rarely picks `hypernym` (as E11 §13.3). On ALCUNA's property
+lists `typeprior` writes many wrong edges (precision 0.001).
+
+**Cost and commands.** `experiments/toolkit-bench/queue-commands.sh` (from `write_bench plan`): 16 GPU jobs at priority
+54.498 (gpu lane) and `tk-bench-write-report` at 54.4981 (cpu lane), added through the queue's Python API
+(`write_bench queue`; the queue CLI takes integer priorities only). Estimated idle-GPU hours (`write_bench.job_hours`:
+the smoke's padded tokens and scored texts per item, 39k / 80k tokens/s for 360M / 135M, 50 / 35 ms per batch, CPU-side
+seconds, × 1.5):
+
+| Host | C5 | C2 | C0′ | P0 |
+|---|---|---|---|---|
+| SmolLM2-360M (COMPS / ALCUNA) | 0.36 / 0.41 | 0.15 / 0.27 | 0.08 / 0.17 | 0.08 / 0.17 |
+| SmolLM2-135M (COMPS / ALCUNA) | 0.31 / 0.29 | 0.14 / 0.21 | 0.07 / 0.11 | 0.07 / 0.12 |
+| **Total** | | | | **≈ 3.0 GPU-h** |
+
 ## 11. Deviations and changes after commit
 
-None yet.
+All made on 2026-10-08, after the commit of this document and **before any full run**. None changes W1, W2, the
+secondaries' definitions or the readings.
+
+### 11.1 ALCUNA runs without `store:linker` and `store:oracle:parent`
+
+- `store:linker` on ALCUNA would score every single-edge candidate (≈ 10² per entity: many found atoms × 14 synset
+  relations) over a ≈ 10²-token property list per entity. No pre-registered contrast uses it on ALCUNA (S1 is
+  `store:oracle − none`), so it is not run there (`write_bench.SET_DROP`).
+- ALCUNA items carry no parent-entry frame, so `store:oracle:parent` would equal `none`; it is not run there.
+- COMPS-WUGS keeps every condition of §2.
+
+### 11.2 Implementation details settled by the smoke test (numerically equal)
+
+- The output head is applied to scored positions in chunks of 2,048 (`ranking.HEAD_CHUNK`), bounding memory when the
+  linker scores whole definitions. Same numbers.
+- GPU jobs batch up to 256 texts under a 32,768-token budget (short COMPS texts are latency-bound).
+- GPU jobs read up to 2,048 tokens (`--max-length 2048`, was 1,024 in the smoke): a few ALCUNA definitions in context
+  exceed 1,024 tokens (8 smoke texts were cut on the left). Longer texts are still cut on the left and counted
+  (`truncated` in `summary.json`).
