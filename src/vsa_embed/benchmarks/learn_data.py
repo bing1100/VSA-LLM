@@ -6,6 +6,7 @@ release, plus two ranking sets in the MedConceptsQA format:
 | Set | Builder | Before → after | Licence of the items |
 |---|---|---|---|
 | `mesh-2025-2026` | `learn_mesh` | MeSH 2025 → 2026 (new descriptors, new SCRs; evidence from PubMed 2025–26) | public domain (NLM) |
+| `mesh-2024-2025` (secondary) | `learn_mesh --split 2024-2025` | MeSH 2024 → 2025 (same code) | public domain (NLM) |
 | `icd10cm-fy2027` | `learn_icd10cm` | ICD-10-CM FY2026 → FY2027 (holdout H3; placement + code↔title choice) | public domain (CMS/NCHS) |
 | `medconceptsqa-icd10cm` | `learn_public` | MedConceptsQA (Shoham & Rappoport 2024), ICD-10-CM subsets | Apache-2.0 |
 | `oet-snomed-{disease,cpp}` | `learn_public` | SNOMED CT US 2014-09-01 → 2017-03-01 (Dong et al., CIKM 2023) | SNOMED/UMLS-derived: local only |
@@ -70,12 +71,21 @@ class Source:
 GDRIVE = "https://drive.usercontent.google.com/download?export=download&confirm=t&id="
 CMS = "https://www.cms.gov/files/zip/"
 MESH_2025 = "https://nlmpubs.nlm.nih.gov/projects/mesh/2025/xmlmesh/"
+MESH_2024 = "https://nlmpubs.nlm.nih.gov/projects/mesh/2024/xmlmesh/"
 MCQA_REVISION = "98c30d83762e51a397c9a7b0eeee6722e751da17"
 MCQA = f"https://huggingface.co/datasets/ofir408/MedConceptsQA/resolve/{MCQA_REVISION}/"
 NLM_TERMS = "NLM MeSH terms and conditions (free of charge; acknowledge NLM; mark modified records)"
 CMS_PD = "public domain (CMS / NCHS ICD-10-CM)"
 
 SOURCES: tuple[Source, ...] = (
+    Source("mesh2024", MESH_2024 + "desc2024.gz", "mesh/2024/desc2024.gz",
+           "f141dff3ac09ca325b4215fa9a4380cd582078ef23f4f0efb320b994bf5ed80e", NLM_TERMS),
+    Source("mesh2024", MESH_2024 + "supp2024.gz", "mesh/2024/supp2024.gz",
+           "0c56efb58e70ba97ebe53fbf0a4b6f5fa2e26faaf89db7a05c856f00f7e16bec", NLM_TERMS),
+    Source("mesh2024", MESH_2024 + "desc2024.zip", "mesh/2024/desc2024.zip",
+           "c001a3473ccca774e65901b5eb25d81d5f3d5074ae497a6e8ceba825928522da", NLM_TERMS),
+    Source("mesh2024", MESH_2024 + "supp2024.zip", "mesh/2024/supp2024.zip",
+           "688dbd053b5be4e9a8b41d94c02b424edd0238eb76bc4441b28cf174a8a420d6", NLM_TERMS),
     Source("mesh2025", MESH_2025 + "desc2025.gz", "mesh/2025/desc2025.gz",
            "99285a75544779de23747f062830b8e36746bdfc5fc44a25ece5855172439c8f", NLM_TERMS),
     Source("mesh2025", MESH_2025 + "supp2025.gz", "mesh/2025/supp2025.gz",

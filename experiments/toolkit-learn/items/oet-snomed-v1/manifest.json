@@ -16,7 +16,7 @@
       "MedMentions st21pv"
     ]
   },
-  "protocol": "official split: valid-NIL → dev, test-NIL → test (ver4: out-of-KB mentions only in evaluation); OET ranks edges <parent, child> from candidate_edges (child null = leaf position); gold edges in meta.positions",
+  "protocol": "valid-NIL → dev; primary test = test-NIL concepts absent from valid-NIL (concept-disjoint); secondary test = OET's mention split (all test-NIL concepts). ver4 has out-of-KB mentions only in evaluation. OET ranks edges <parent, child> from candidate_edges (child null = leaf position); gold edges in meta.positions",
   "sets": {
     "oet-snomed-disease": {
       "files": {
@@ -27,6 +27,11 @@
         },
         "placement-test": {
           "file": "placement-test.jsonl",
+          "items": 28,
+          "sha256": "ed8e815556098f9ca5ee47cbeab7890f77c145a74e126a3a98ed81501eda7f42"
+        },
+        "placement-test-mention-split": {
+          "file": "placement-test-mention-split.jsonl",
           "items": 48,
           "sha256": "6987dbcefcadda118be4374db18e6979bec9027c3e413c4fb9bffc618a703c8c"
         }
@@ -34,14 +39,15 @@
       "local": "/home/bhux/data/vsa-llm/toolkit-learn/oet-snomed-v1/disease",
       "concepts": {
         "dev": 66,
-        "test": 48
+        "test (primary, concept-disjoint)": 28,
+        "test-mention-split (secondary)": 48
       },
       "mentions": {
         "dev": 329,
         "test": 276
       },
       "concepts_in_both_dev_and_test": 20,
-      "note_split": "OET splits mentions, not concepts: test items with meta.also_in_dev=true were also seen in dev; filter them for a concept-disjoint test",
+      "note_split": "OET splits mentions, not concepts. Primary test = placement-test.jsonl, the test-NIL concepts that do not occur in valid-NIL (author, 2026-10-08); secondary = placement-test-mention-split.jsonl, every test-NIL concept (meta.also_in_dev marks the overlap)",
       "items_with_complex_parent": {
         "dev": 2,
         "test": 2
@@ -79,6 +85,11 @@
         },
         "placement-test": {
           "file": "placement-test.jsonl",
+          "items": 59,
+          "sha256": "14cdb67a8a3ae776c7f3409c19182f9aba35086aa060dbdc2213b795d4d7d283"
+        },
+        "placement-test-mention-split": {
+          "file": "placement-test-mention-split.jsonl",
           "items": 97,
           "sha256": "5a8b134cdb646a86cbee8889c5ccdbceff492200439f3cb843ab04884acc3401"
         }
@@ -86,14 +97,15 @@
       "local": "/home/bhux/data/vsa-llm/toolkit-learn/oet-snomed-v1/cpp",
       "concepts": {
         "dev": 143,
-        "test": 97
+        "test (primary, concept-disjoint)": 59,
+        "test-mention-split (secondary)": 97
       },
       "mentions": {
         "dev": 568,
         "test": 432
       },
       "concepts_in_both_dev_and_test": 38,
-      "note_split": "OET splits mentions, not concepts: test items with meta.also_in_dev=true were also seen in dev; filter them for a concept-disjoint test",
+      "note_split": "OET splits mentions, not concepts. Primary test = placement-test.jsonl, the test-NIL concepts that do not occur in valid-NIL (author, 2026-10-08); secondary = placement-test-mention-split.jsonl, every test-NIL concept (meta.also_in_dev marks the overlap)",
       "items_with_complex_parent": {
         "dev": 7,
         "test": 7

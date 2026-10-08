@@ -16,7 +16,8 @@ characters fall out naturally), a 3-character category's parent is its block, a 
 **Placement items** (`icd10cm-fy2027`, one per new code): the gold parent is the *nearest ancestor that exists in
 FY2026* (walking up the FY2027 chain through new headers); the gold relations add the FY2026 block and chapter. The
 definition is the title plus the tabular inclusion terms and includes notes; aliases are the inclusion terms.
-`candidates` is null (= every FY2026 node). Dev/test by `learn_data.split_of` (20/80).
+`candidates` is null (= every FY2026 node). Dev/test by `learn_data.split_of` (20/80). The FY2026 before snapshot is
+committed with the items (`before-fy2026/`; public domain).
 
 **Choice items** (`icd10cm-fy2027-mc`, MedConceptsQA format, 4 options): `code2title` ("What is the description of
 the medical code C78.31 in ICD10CM?" → titles) and `title2code` (→ codes). Distractors: up to 2 siblings (other children
@@ -50,6 +51,7 @@ from . import learn_data as ld
 SET_PLACEMENT = "icd10cm-fy2027"
 SET_CHOICE = "icd10cm-fy2027-mc"
 VERSION = "v1"
+SNAPSHOT_DIR = "before-fy2026"     # committed (public domain); the `snapshot-*` ignore rule does not match it
 RAW = ld.DATA_ROOT / "icd10cm" / "raw"
 ORDER_FILES = {   # release → (zip, member)
     "fy2027": ("2027-code-descriptions-tabular-order.zip", "Code Descriptions/icd10cm_order_2027.txt"),
@@ -490,7 +492,7 @@ def build(out_dir: Path, local_dir: Path, *, raw: Path = RAW, seed: int = 202610
         files[f"choice-{split}"] = ld.write_jsonl(out_dir / f"choice-{split}.jsonl",
                                                   [i for i in choice if i["meta"]["split"] == split])
     nodes, edges = snapshot_rows(before)
-    snapshot = ld.write_snapshot(Path(local_dir) / "snapshot-fy2026", nodes, edges, description={
+    snapshot = ld.write_snapshot(out_dir / SNAPSHOT_DIR, nodes, edges, description={
         "ontology": "ICD-10-CM", "release": "FY2026 (October 1, 2025; unchanged on April 1, 2026)",
         "source": f"CMS {ORDER_FILES['fy2026'][0]}, {TABULAR_FILES['fy2026'][0]}", "licence": ld.CMS_PD})
     added_billable = sum(1 for c in codes if after.codes[c]["billable"])
@@ -516,7 +518,7 @@ def build(out_dir: Path, local_dir: Path, *, raw: Path = RAW, seed: int = 202610
         "before": "ICD-10-CM FY2026", "after": "ICD-10-CM FY2027 (effective 2026-10-01)",
         "licence": ld.CMS_PD, "sources": [s.__dict__ for s in ld.SOURCES if s.name == "icd10cm"],
         "files": files, "stats": stats, "seed": seed, "split_rule": f"learn_data.split_of(code), salt {ld.SPLIT_SALT!r}, dev 20%",
-        "snapshot": {"path": str(Path(local_dir) / "snapshot-fy2026"), "nodes": snapshot["nodes"], "edges": snapshot["edges"],
+        "snapshot": {"path": str(out_dir / SNAPSHOT_DIR), "committed": True, "nodes": snapshot["nodes"], "edges": snapshot["edges"],
                      "node_kinds": snapshot["node_kinds"]},
         "choice": {"directions": ["code2title", "title2code"], "options": 4,
                    "distractors": "≤ 2 siblings (same FY2027 parent) + same-chapter codes; never an ancestor or descendant; "
