@@ -1,0 +1,93 @@
+# E13 learning cycle on T5 (decision 63; methodology §4; pre-registration: preregistration.md).
+# Read by `python -m vsa_embed.experiments.e13_cycle {prepare,learn,write,reason,report,plan} --config <this file>`.
+experiment: e13-learning-cycle
+track: t5
+seed: 20261008                       # seed ontology erasure (+0), round-2 text (+1), learn-validation text (+2)
+data_root: ~/data/vsa-llm/e13/t5     # <data_root>/<family>/ : seed ontology, round-2 corpora, reference strata
+families: {SmolLM2-360M: smollm2, Qwen3-1.7B-Base: qwen3}
+
+seed_ontology:
+  erase_fraction: 0.20               # of the round-1 entries' edges (after the derivations below): the stage-1 gold
+  min_keep: 2                        # edges every round-1 frame keeps
+  drop_round2_fillers: true          # round-1 frames lose their edges to round-2 terms (round 1 cannot know them)
+  derived_inverses: {owns: owned_by, has_part: part_of}   # materialized inverses (E10.9b's ontology): what rule closure closes
+
+text:
+  round2_domain_chars: 18000000      # ≈ 5M SmolLM2 tokens of new T5 documents about the 360 round-2 terms
+  round2_uniform_focus: 0.5
+  general_share: 0.5                 # round-2 stream = round-2 documents + the same number of tokens of fresh FineWeb-Edu
+  general_shards: [~/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet]
+  general_skip_docs: 100000          # beyond every T5 build's general text (SmolLM2: 51,457 docs; Qwen3: 55,543)
+  validation_chars: 8000000          # round-1 documents under a fresh seed: the learn stage's held-out windows
+  definition_style: prose            # E11's held-out wording (no item or training template)
+
+items:                               # a path, or family → path
+  read_set: experiments/e11-read-to-learn/items/t5-heldout-smollm2-v1          # definitions + gold + random frames of round-2 terms (text: any tokenizer)
+  understanding:                                                               # relation / reverse / two-hop items (heldout subset)
+    smollm2: experiments/e9-retrofit/items/understanding-t5-smollm2-v1
+    qwen3: experiments/e9-retrofit/items/understanding-t5-qwen3-v1
+
+stage0:
+  configs:                           # the E9 C5 recipe per host (format: {seed}); only data.ontology and the strata change
+    SmolLM2-360M: experiments/e9-retrofit/configs/t5/SmolLM2-360M-full-C5-s{seed}.yaml
+    Qwen3-1.7B-Base: experiments/e9-retrofit/configs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s{seed}.yaml
+  references:                        # C0′ / C2 do not read frames: their E9 T5 runs are the stage-0 references
+    C0p:
+      SmolLM2-360M: experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C0p-s{seed}
+    C2:
+      SmolLM2-360M: experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C2-s{seed}
+
+hosts:
+  SmolLM2-360M:
+    seeds: [1, 2, 3]
+    round2_arms: [read, noread, fvt, gold, defs, random, C0p, C2]
+    frozen_arms: {rtn: [q4-read, q4-noread, qlora, qlora-read], nf4: [q4-read, q4-noread, qlora]}
+  Qwen3-1.7B-Base:                   # secondary host (one seed)
+    seeds: [1]
+    round2_arms: [read, noread, gold]
+    frozen_arms: {rtn: [q4-read, q4-noread, qlora]}
+
+measure:                             # measured per-step costs (median train tokens/s of metrics.jsonl) for the GPU-h estimates
+  SmolLM2-360M: experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5-s1
+  Qwen3-1.7B-Base: experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1
+
+learn:
+  proposer: rule_closure             # TK-L's proposer plugs in as "module:function" (e.g. vsa_embed.learn:propose)
+  rules: {min_support: 10, min_confidence: 0.6, kinds: [inverse_of, symmetric, transitive, composition_of]}
+  validation: {per_entry: 8, length: 128, min_windows: 3, seed: 0}
+  alpha: 0.05                        # Holm over every proposal of the call (true and null)
+  null_seed: 0
+  precision_threshold: 0.8
+
+write:
+  reader: linker                     # E11's pre-registered primary reader = the `read` arm
+  secondary_readers: [linker-joint, typeprior]
+  style: prose
+
+reason:
+  conditions: none,recall:own,symbolic,definition
+
+round2:
+  tokens: 10000000                   # per run (≈ 153 steps of 65,536 tokens); same optimizer recipe as stage 0, fresh AdamW
+  data_seed: 4321                    # the same round-2 batches in every arm and seed
+  eval_points: [250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 4000000, 5000000, 6000000, 8000000]
+  eval_windows: 1024                 # the E9 T5 windows; reference strata ref_round2 / ref_round1 on them
+  seq_len: 1024
+  general_windows: 256               # eval-general windows for locality
+  use_learned: true                  # every arm starts from the store with the stage-1 accepted edges
+  lora_rank: 64
+  lora_host_lr: 0.0002
+  group_size: null                   # auto (128 when every input width divides)
+  calibration_windows: 64
+
+statistics:
+  resamples: 2000
+  holm_alpha: 0.05
+  noninferiority_relative: 0.01      # L3: q4-read − qlora upper CI < 1% of qlora's loss after round-2 terms
+  l4_precision: 0.8
+  l4_far: 0.05
+
+priority:                            # queue levels (lower runs first); nothing is queued by the code
+  base: 54.4985
+  step: 0.0001
+  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 3, report: 4}

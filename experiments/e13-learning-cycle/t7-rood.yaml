@@ -1,0 +1,82 @@
+# E13 learning cycle on T7-ROOD (the main real-text track; methodology §4, holdout H1).
+# TODO(TK-H1): the round split (records split by entry date into round 1 / round 2; every training document that
+# mentions a round-2 record dropped) is built by the TK-H1 agent, which documents it in
+# experiments/t7-new-vocabulary/ROOD.md. Neither that file nor the data existed in this worktree on 2026-10-08, so
+# `e13_cycle prepare` refuses this config (`prepare_t7_rood`) and the paths below are the expected interface
+# (`e13_cycle.T7_ROOD_INTERFACE`). When ROOD.md lands: fix the paths, wire `prepare_t7_rood` (seed ontology from
+# round1_entries / round2_entries, round-2 corpora from round2/train-domain + fresh general text, the learn-validation
+# corpus from held-out round-1 abstracts, reference strata on eval-pubmed), build the round-2 read set
+# (scope / SCR notes of round-2 records, E11 `scr_definition`) and round-2 understanding items, then run `plan`.
+experiment: e13-learning-cycle
+track: t7-rood
+seed: 20261008
+data_root: ~/data/vsa-llm/e13/t7-rood
+rood_root: ~/data/vsa-llm/tracks/t7-rood/v1          # TODO(TK-H1): confirm
+families: {SmolLM2-360M: smollm2, Qwen3-1.7B-Base: qwen3}
+
+seed_ontology:
+  erase_fraction: 0.20
+  min_keep: 2
+  drop_round2_fillers: true
+  derived_inverses: {}               # TODO(TK-H1 / author): T7 relations with a materializable inverse (e.g. mapped_to⁻¹)
+
+text:
+  general_share: 0.5
+  general_shards: [~/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet]   # a shard no T7 build read
+  general_skip_docs: 0
+  definition_style: scr
+
+items:
+  read_set: experiments/e11-read-to-learn/items/t7-rood-round2-smollm2-v1        # TODO(TK-H1): to be built from round-2 SCR notes
+  understanding: experiments/e9-retrofit/items/understanding-t7-rood-smollm2-v1  # TODO: round-2 anchors (e9_understanding --track t7)
+
+stage0:
+  configs:                           # the E9 T7 C5 recipe; data.train must become the ROOD round-1 corpus (TODO(TK-H1))
+    SmolLM2-360M: experiments/e9-retrofit/configs/t7-rood/SmolLM2-360M-full-C5-s{seed}.yaml
+    Qwen3-1.7B-Base: experiments/e9-retrofit/configs/t7-rood-qwen3/Qwen3-1.7B-Base-lora-C5-s{seed}.yaml
+  references: {}                     # C0′ / C2 of T7-ROOD are TK-H1's E9 configs (not reusable from T7: different corpus)
+
+hosts:
+  SmolLM2-360M:
+    seeds: [1, 2, 3]
+    round2_arms: [read, noread, fvt, gold, defs, random]
+    frozen_arms: {rtn: [q4-read, q4-noread, qlora, qlora-read], nf4: [q4-read, q4-noread, qlora]}
+  Qwen3-1.7B-Base:
+    seeds: [1]
+    round2_arms: [read, noread, gold]
+    frozen_arms: {rtn: [q4-read, q4-noread, qlora]}
+
+measure:
+  SmolLM2-360M: experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5-s1
+  Qwen3-1.7B-Base: experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1
+
+learn:
+  proposer: rule_closure
+  rules: {min_support: 10, min_confidence: 0.6, kinds: [inverse_of, symmetric, transitive, composition_of]}
+  validation: {per_entry: 8, length: 128, min_windows: 3, seed: 0}
+  alpha: 0.05
+  null_seed: 0
+  precision_threshold: 0.8
+
+write: {reader: linker, secondary_readers: [linker-joint, typeprior], style: scr}
+reason: {conditions: "none,recall:own,symbolic"}
+
+round2:
+  tokens: 10000000
+  data_seed: 4321
+  eval_points: [250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 4000000, 5000000, 6000000, 8000000]
+  eval_windows: 4096                 # T7's evaluation windows (feasibility); reference strata on them
+  seq_len: 1024
+  general_windows: 256
+  use_learned: true
+  lora_rank: 64
+  lora_host_lr: 0.0002
+  group_size: null
+  calibration_windows: 64
+
+statistics: {resamples: 2000, holm_alpha: 0.05, noninferiority_relative: 0.01, l4_precision: 0.8, l4_far: 0.05}
+
+priority:                            # four levels: stage 0 (+ learn / write), stage 4, stage 5 + evaluations, report
+  base: 54.4996
+  step: 0.0001
+  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 2, report: 3}
