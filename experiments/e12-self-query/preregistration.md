@@ -741,3 +741,15 @@ measured rates on the shared GPU; upper bounds). 3b: training 52 M tokens (per s
 (200 questions × ≈ 3 s, 9 jobs) ≈ 1.5 — **≈ 5.2 GPU-h** (§12: 3.8; the difference is item 5's added episodes and tests).
 3c: C5 × 3 (twins, new words, held-out; every condition) ≈ 25 min each, C5ut × 3 (twins, new words) ≈ 14 min each, the
 model loop ≈ 0.5 GPU-h per seed — **≈ 3.0 GPU-h** (§13: 2.6). Commands: `queue-commands-3bc.sh` (not queued).
+
+### 16.4 3b and 3c: the author's decisions on the harness questions (2026-10-08, before any 3b or 3c run)
+
+Decided by the owner session under decision 63's delegation. No endpoint, unit, contrast or threshold changes.
+- **K2 keeps its registered rule.** Under that rule, adoption is likely ≈ 0 to be separable: in the CPU smoke ≈ 97% of
+  null-world items were flagged. The evidence-override variant (smoke: adoption 1.0 → 0.15 on held-out terms) stays a
+  reported secondary. It is not promoted, because it was seen on smoke data.
+- **3b's seen terms keep the literal rule:** an entry that anchors no item set. That leaves 955 entries.
+- **The model loop also runs on the untouched Qwen3-1.7B-Base host reading the C5 store,** seeds 1–2, as a secondary
+  (as 16.2 did for 3a; ≈ +1.0 GPU-h).
+- **Accepted:** the GPU total above the registered estimate (3b ≈ 5.2, 3c ≈ 3.0 + 1.0 GPU-h).
+

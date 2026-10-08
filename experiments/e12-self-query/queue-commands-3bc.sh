@@ -45,14 +45,14 @@ for s in 1 2; do
     "$PY" -m vsa_embed.experiments.e12_critique loop --run "$R/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s$s" --items 300 \
     --host-dtype bfloat16 --batch-size 4 --max-length 4096 --overwrite
 done
-# Optional (author decision, not in amendment 16.3): the model loop on the untouched base host reading the C5 store, as 3a's
-# amendment 16.2 did for the agent (≈ +1.0 GPU-h). Uncomment to queue.
-# for s in 1 2; do
-#   add --name "t5-qwen3-Qwen3-1.7B-Base-frozen-P0-C5store-s$s-self-query-critique-loop" --priority 54.4498 --min-free-gb 5 --no-resume -- \
-#     "$PY" -m vsa_embed.experiments.e12_critique loop --run "$R/t5-qwen3/Qwen3-1.7B-Base-frozen-P0-s1" \
-#     --store "$R/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s$s" --output "experiments/e12-self-query/critique-loop/qwen3-1.7b-base-C5store-s$s" \
-#     --items 300 --host-dtype bfloat16 --batch-size 4 --max-length 4096 --overwrite
-# done
+# Secondary (amendment 16.4, 2026-10-08): the model loop on the untouched base host reading the C5 store, as 3a's
+# amendment 16.2 did for the agent (≈ +1.0 GPU-h).
+for s in 1 2; do
+  add --name "t5-qwen3-Qwen3-1.7B-Base-frozen-P0-C5store-s$s-self-query-critique-loop" --priority 54.4498 --min-free-gb 5 --no-resume -- \
+    "$PY" -m vsa_embed.experiments.e12_critique loop --run "$R/t5-qwen3/Qwen3-1.7B-Base-frozen-P0-s1" \
+    --store "$R/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s$s" --output "experiments/e12-self-query/critique-loop/qwen3-1.7b-base-C5store-s$s" \
+    --items 300 --host-dtype bfloat16 --batch-size 4 --max-length 4096 --overwrite
+done
 
 # ---- reports: priority 54.44985, CPU lane ----
 add --name t5-report-e12-3b --priority 54.44985 --lane cpu --min-free-gb 0 --no-resume -- \
