@@ -1,0 +1,15 @@
+# T7 with the Qwen3 tokenizer (WP-Qwen; decision 63 TK-H1): t7.yaml plus one host relink, `hosts/qwen3` (the Qwen3 base
+# tokenizer, shared by Qwen3-0.6B/1.7B/4B-Base; uint32 ids, NFC decode check, fingerprint recorded) =
+# e9_tracks.QWEN3_ROOTS["t7"]. The holdout is chosen from the SmolLM2 reference presample as in t7.yaml (pinned hash), so
+# it is the same; the reference corpora are reused (same alias table and stream signatures; `ontology.pt` is rewritten
+# only if its bytes would change) and only `hosts/qwen3` is built. Its training budget is an upper bound, as SmolLM2's:
+# the mention-bearing stream ends first, so both tokenizers read the same documents.
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1_open_corpus --config experiments/t7-new-vocabulary/t7-qwen3.yaml \
+#     --output experiments/t7-new-vocabulary/runs/v1-qwen3
+extends: t7.yaml
+experiment: t7-new-vocabulary-qwen3
+hosts:
+  - name: qwen3
+    tokenizer: Qwen/Qwen3-0.6B-Base
+    train_tokens: 130000000
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-360M, Qwen/Qwen3-0.6B-Base]

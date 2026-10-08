@@ -45,8 +45,17 @@ TOKEN = re.compile(r"[a-z0-9]+|[^a-z0-9\s]")
 
 # -- parsing -------------------------------------------------------------------------------------------------------
 
+def _xml_date(element: ET.Element | None) -> str | None:
+    """`<Year>/<Month>/<Day>` → "YYYY-MM-DD" (a missing month or day reads as 01); None without a year."""
+    year = element.findtext("Year") if element is not None else None
+    if not year:
+        return None
+    return f"{int(year):04d}-{int(element.findtext('Month') or 1):02d}-{int(element.findtext('Day') or 1):02d}"
+
+
 def parse_supplementary(path: Path) -> list[dict[str, Any]]:
-    """SCRs of a MeSH `supp<year>` XML file (gzip or plain): UI, name, class, year introduced, mapped headings
+    """SCRs of a MeSH `supp<year>` XML file (gzip or plain): UI, name, class, year introduced (and the full date,
+    `introduced_date`: the record-level `DateIntroduced`, which replaced `DateCreated` in the 2025+ XML), mapped headings
     (`*` = major heading, the marker dropped), pharmacological actions and every term with its lexical tag."""
     opener = gzip.open if Path(path).suffix == ".gz" else open
     records = []
@@ -66,6 +75,7 @@ def parse_supplementary(path: Path) -> list[dict[str, Any]]:
             records.append({"ui": element.findtext("SupplementalRecordUI"),
                             "name": element.findtext("SupplementalRecordName/String"),
                             "scr_class": element.get("SCRClass") or "", "introduced": int(year) if year else None,
+                            "introduced_date": _xml_date(element.find("DateIntroduced")),
                             "mapped": [m.lstrip("*") for m in mapped if m], "mapped_major": [m.startswith("*") for m in mapped if m],
                             "actions": [a for a in actions if a], "term_info": term_info,
                             "note": " ".join((element.findtext("Note") or "").split())})

@@ -1,0 +1,13 @@
+# T7-ROOD with the Qwen3 tokenizer (decision 63 TK-H1): t7-rood.yaml plus one host relink, `hosts/qwen3` =
+# e9_tracks.QWEN3_ROOTS["t7rood"]. The SmolLM2 reference corpora are reused; the excluding stream's document count is
+# fixed by the SmolLM2 budget, so `hosts/qwen3/train` holds exactly the SmolLM2 training documents (the upper bound below
+# is never reached). The leakage audit decodes the Qwen3 training corpus too and compares it with T7's Qwen3 relink.
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1_open_corpus --config experiments/t7-new-vocabulary/t7-rood-qwen3.yaml \
+#     --output experiments/t7-new-vocabulary/runs/rood-v1-qwen3
+extends: t7-rood.yaml
+experiment: t7-new-vocabulary-rood-qwen3
+hosts:
+  - name: qwen3
+    tokenizer: Qwen/Qwen3-0.6B-Base
+    train_tokens: 130000000
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-360M, Qwen/Qwen3-0.6B-Base]

@@ -18,6 +18,9 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
   names are frequent in PubMed 2025–26 and absent from general web text, linked in the abstracts that mention them
   (`ontologies/mesh_novel.py`, built by `t1_open_corpus` with the `mesh_novel` adapter); evaluation on
   `eval-pubmed`; no WP-C7 zero-shot items (dimension 3 = invented new words + edits, as T1).
+- `t7rood` — T7-ROOD (decision 63, holdout H1; `t7_rood`): T7's ontology, alias table, holdout and evaluation corpora,
+  with every training document that mentions a held-out record dropped (the tokens refilled), so the host never reads a
+  held-out name; the T7 lexicon and relation choices.
 
 Host tokenizer families (WP-Qwen): every track is built for SmolLM2 (`data_root`) and, relinked with the same
 ontology, alias table and holdout, for the Qwen3 base tokenizer (`TrackSpec.for_family("qwen3")`, `QWEN3_ROOTS`)
@@ -192,7 +195,8 @@ DATA = Path("~/data/vsa-llm").expanduser()
 T1C_ROOT = DATA / "t1c/snomed-mimic3-smollm2-v2"     # v2: holdout re-frozen at fraction 0.30 (T1c-1); v1 is stale
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1",
-               "t1c": T1C_ROOT / "hosts/qwen3", "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3"}
+               "t1c": T1C_ROOT / "hosts/qwen3", "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3",
+               "t7rood": DATA / "tracks/t7-newvocab/rood-v1/hosts/qwen3"}
 # Qwen3.5 corpora (WP-Qwen35): the same builders with the Qwen3.5 base tokenizer (`Qwen/Qwen3.5-0.8B-Base`, shared by the
 # 0.8B/2B hosts), run with the Qwen3.5 environment. T5 is built (`experiments/t5-enterprise-glossary/t5-qwen35.yaml`).
 QWEN35_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen35", "t4": DATA / "tracks/t4-chemistry/v1-qwen35",
@@ -234,6 +238,16 @@ TRACKS: dict[str, TrackSpec] = {
                     kept_relations=("mapped_to", "parent", "branch_top", "branch_second", "record_class"),
                     edit_relations=("pharmacological_action", "mapped_to", "parent"),
                     family_roots={"qwen3": QWEN3_ROOTS["t7"], "qwen3_5": QWEN35_ROOTS["t7"]}),
+    # T7-ROOD (decision 63, H1): T7 with the held-out records' documents dropped from training (`t7_rood`); the same
+    # ontology, alias table (digest), holdout, evaluation corpora, windows and relation choices as T7.
+    "t7rood": TrackSpec("t7rood", "T7-ROOD new biomedical vocabulary, held-out documents excluded from training (H1)",
+                        DATA / "tracks/t7-newvocab/rood-v1", eval_split="eval-pubmed", windows=4096,
+                        config=Path("experiments/t7-new-vocabulary/t7-rood.yaml"),
+                        holdout_names=Path("experiments/t7-new-vocabulary/runs/rood-v1/holdout_concepts.txt"),
+                        category_relations=("mapped_to", "parent"),
+                        kept_relations=("mapped_to", "parent", "branch_top", "branch_second", "record_class"),
+                        edit_relations=("pharmacological_action", "mapped_to", "parent"),
+                        family_roots={"qwen3": QWEN3_ROOTS["t7rood"]}),
 }
 FAMILY_TOKENIZERS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-0.6B-Base", "qwen3_5": "Qwen/Qwen3.5-0.8B-Base"}
 
@@ -256,7 +270,7 @@ def track_frame_ontology(spec: TrackSpec) -> tuple[Any, list[int], dict[str, Any
     """(FrameOntology with the synthetic concepts appended, their concept indices, track config) — the
     state `track_corpus.run` / `t1_open_corpus` had when it built the alias table."""
     config = _load_config(spec)
-    if spec.name in ("t1", "t7"):              # built by t1_open_corpus (adapters `mesh`, `mesh_novel`)
+    if spec.name in ("t1", "t7", "t7rood"):    # built by t1_open_corpus (adapters `mesh`, `mesh_novel`)
         from .t1_open_corpus import build_track_ontology
         return build_track_ontology(config["ontology"]), [], config
     if spec.name == "t1c":
@@ -437,7 +451,7 @@ def track_lexicon(spec: TrackSpec, ontology: dict[str, Any] | None = None) -> Tr
             if kind == "mesh" and value in heading:
                 texts[atom] = heading[value]
         templates = T1_TEMPLATES
-    elif spec.name == "t7":
+    elif spec.name in ("t7", "t7rood"):
         frame_ontology, _, _ = track_frame_ontology(spec)
         fillers = frame_ontology.metadata["filler_headings"]
         for atom in atoms:
