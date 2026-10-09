@@ -1,0 +1,316 @@
+{
+  "schema": "e9-understanding/1",
+  "track": "t8",
+  "family": "smollm2",
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "seed": 0,
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t8-wikidata/v1/ontology.pt",
+  "ontology_alias_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+  "alias_table": "/home/bhux/data/vsa-llm/e9/alias-tables/t8.json",
+  "new_items": "experiments/e9-retrofit/items/new-words-t8-smollm2-v1",
+  "counts_requested": {
+    "seen": 300,
+    "rare": 300
+  },
+  "anchors": {
+    "heldout": 869,
+    "new": 297,
+    "rare": 300,
+    "seen": 299
+  },
+  "families": [
+    "two_hop",
+    "affordance",
+    "paraphrase",
+    "reverse",
+    "comparison",
+    "negation"
+  ],
+  "items": 19219,
+  "items_by": {
+    "heldout/affordance/affordance": 787,
+    "heldout/comparison/comparison": 3186,
+    "heldout/negation/affirm": 1404,
+    "heldout/negation/negate": 1404,
+    "heldout/paraphrase/paraphrase": 812,
+    "heldout/reverse/reverse": 744,
+    "heldout/two_hop/bridge": 591,
+    "heldout/two_hop/hop1": 591,
+    "heldout/two_hop/two_hop": 591,
+    "new/affordance/affordance": 156,
+    "new/comparison/comparison": 892,
+    "new/negation/affirm": 380,
+    "new/negation/negate": 380,
+    "new/paraphrase/paraphrase": 167,
+    "new/reverse/reverse": 161,
+    "new/two_hop/bridge": 215,
+    "new/two_hop/hop1": 215,
+    "new/two_hop/two_hop": 215,
+    "rare/affordance/affordance": 257,
+    "rare/comparison/comparison": 1056,
+    "rare/negation/affirm": 455,
+    "rare/negation/negate": 455,
+    "rare/paraphrase/paraphrase": 266,
+    "rare/reverse/reverse": 230,
+    "rare/two_hop/bridge": 195,
+    "rare/two_hop/hop1": 195,
+    "rare/two_hop/two_hop": 195,
+    "seen/affordance/affordance": 230,
+    "seen/comparison/comparison": 1022,
+    "seen/negation/affirm": 423,
+    "seen/negation/negate": 423,
+    "seen/paraphrase/paraphrase": 253,
+    "seen/reverse/reverse": 220,
+    "seen/two_hop/bridge": 151,
+    "seen/two_hop/hop1": 151,
+    "seen/two_hop/two_hop": 151
+  },
+  "rules": {
+    "overlap": "an option sharing a content-word stem (\u2265 3 letters, not a stopword) with any verbalization within two hops of the term (exclusion table) is not used",
+    "two_hop": "answer = the first sorted r2 filler of the r1 filler's frame that is not in the term's frame (atom or text); distractors = other r2 fillers not in the term's frame",
+    "scoring": "PMI against the null prompt (term \u2192 'this'/'that'; reverse: cue \u2192 'we mean'); argmax per template"
+  },
+  "spec": {
+    "anchor": {
+      "relation": "instance_of",
+      "values": [
+        "wd:Q11424",
+        "wd:Q215380",
+        "wd:Q3624078",
+        "wd:Q3918",
+        "wd:Q482994",
+        "wd:Q4830453",
+        "wd:Q5",
+        "wd:Q515",
+        "wd:Q5398426",
+        "wd:Q6256",
+        "wd:Q7725634",
+        "wd:Q7889"
+      ]
+    },
+    "two_hop": [
+      {
+        "path": [
+          "place_of_birth",
+          "country"
+        ],
+        "templates": [
+          "{x} was born in a place located in",
+          "The birthplace of {x} lies in the country of"
+        ]
+      },
+      {
+        "path": [
+          "country_of_citizenship",
+          "capital"
+        ],
+        "templates": [
+          "The capital of the country {x} is a citizen of is",
+          "{x} holds the citizenship of a country whose capital is"
+        ]
+      },
+      {
+        "path": [
+          "author",
+          "country_of_citizenship"
+        ],
+        "templates": [
+          "The author of {x} is a citizen of",
+          "{x} was written by a citizen of"
+        ]
+      },
+      {
+        "path": [
+          "director",
+          "country_of_citizenship"
+        ],
+        "templates": [
+          "The director of {x} is a citizen of",
+          "{x} was directed by a citizen of"
+        ]
+      },
+      {
+        "path": [
+          "headquarters_location",
+          "country"
+        ],
+        "templates": [
+          "{x} is headquartered in a city in the country of",
+          "The headquarters of {x} lie in the country of"
+        ]
+      },
+      {
+        "path": [
+          "educated_at",
+          "country"
+        ],
+        "templates": [
+          "{x} studied at an institution located in",
+          "{x} was educated in the country of"
+        ]
+      },
+      {
+        "path": [
+          "developer",
+          "country"
+        ],
+        "templates": [
+          "{x} was developed by a company based in",
+          "The developer of {x} is based in the country of"
+        ]
+      }
+    ],
+    "affordance": {
+      "relation": "instance_of",
+      "items": {
+        "experience": {
+          "templates": [
+            "Most people come across {x} by",
+            "People usually experience {x} by"
+          ],
+          "options": {
+            "wd:Q5": " meeting this person or reading about them",
+            "wd:Q11424": " watching it in a cinema",
+            "wd:Q7725634": " reading its pages",
+            "wd:Q7889": " playing it on a console",
+            "wd:Q482994": " listening to its tracks",
+            "wd:Q515": " walking through its streets"
+          }
+        }
+      }
+    },
+    "paraphrase": {
+      "instance_of": {
+        "templates": [
+          "Put simply, {x} is",
+          "In plain words, {x} is"
+        ],
+        "k": 4,
+        "options": {
+          "wd:Q5": [
+            " a man or a woman"
+          ],
+          "wd:Q11424": [
+            " a motion picture"
+          ],
+          "wd:Q7725634": [
+            " a book"
+          ],
+          "wd:Q7889": [
+            " a game played on computers"
+          ],
+          "wd:Q482994": [
+            " a collection of recorded songs"
+          ],
+          "wd:Q4830453": [
+            " a company"
+          ],
+          "wd:Q3918": [
+            " a place of higher education"
+          ],
+          "wd:Q5398426": [
+            " a show on TV"
+          ],
+          "wd:Q215380": [
+            " a band"
+          ],
+          "wd:Q515": [
+            " a town"
+          ],
+          "wd:Q6256": [
+            " a nation"
+          ],
+          "wd:Q3624078": [
+            " an independent nation"
+          ]
+        }
+      }
+    },
+    "reverse": {
+      "country_of_citizenship": {
+        "cue": "who is a citizen of {t}",
+        "match": "instance_of"
+      },
+      "author": {
+        "cue": "written by {t}",
+        "match": "instance_of"
+      },
+      "country": {
+        "cue": "located in {t}",
+        "match": "instance_of"
+      }
+    },
+    "reverse_templates": [
+      "Of {x} and {y}, the one {c} is",
+      "Between {y} and {x}, the one {c} is"
+    ],
+    "comparison": {
+      "country_of_citizenship": {
+        "templates": [
+          "{x} and {y} are citizens of",
+          "By citizenship, {x} and {y} belong to"
+        ],
+        "candidates": [
+          " the same country",
+          " two different countries"
+        ]
+      },
+      "instance_of": {
+        "templates": [
+          "{x} and {y} are",
+          "In Wikidata, {x} and {y} are recorded as"
+        ],
+        "candidates": [
+          " the same kind of thing",
+          " two different kinds of things"
+        ]
+      },
+      "country": {
+        "templates": [
+          "{x} and {y} are located in",
+          "Geographically, {x} and {y} lie in"
+        ],
+        "candidates": [
+          " the same country",
+          " two different countries"
+        ]
+      }
+    },
+    "negation": {
+      "country_of_citizenship": {
+        "affirm": [
+          "{x} is a citizen of",
+          "{x} holds the citizenship of"
+        ],
+        "negate": [
+          "{x} is not a citizen of",
+          "{x} does not hold the citizenship of"
+        ]
+      },
+      "occupation": {
+        "affirm": [
+          "{x} works as",
+          "By profession, {x} is"
+        ],
+        "negate": [
+          "{x} does not work as",
+          "By profession, {x} is not"
+        ]
+      },
+      "country": {
+        "affirm": [
+          "{x} is located in the country of",
+          "{x} is in"
+        ],
+        "negate": [
+          "{x} is not located in the country of",
+          "{x} is not in"
+        ]
+      }
+    }
+  },
+  "sha256": {
+    "concepts.jsonl": "3e276cebfbf6b6bc882ac7978f740d21071835db6508337d4d5e491e20776c22",
+    "items.jsonl.gz": "c6a544853fd243e3b2df1dc6beb06c9449b68d05393c38b25cec6df599cf367a"
+  }
+}

@@ -1,0 +1,86 @@
+experiment: t8-wikidata
+track_label: Wikidata entities (Wikidata + FineWeb-Edu)
+seed: 20261008
+tokenizer: HuggingFaceTB/SmolLM2-360M
+workers: 6
+paths:
+  data_root: ~/data/vsa-llm/tracks/t8-wikidata/v1
+  general_config: experiments/c3-general-corpus/c3.yaml
+benchmarks:
+  root: ~/data/vsa-llm/benchmarks
+  items: ~/data/vsa-llm/benchmarks/t8-items
+wikidata:
+  cache: ~/data/vsa-llm/wikidata/cache
+  dir: ~/data/vsa-llm/wikidata/t8
+  min_interval: 1.0
+  api_interval: 0.1
+  search_limit: 5
+  filler_rounds: 1
+  min_filler_sitelinks: 10
+  records_sha256: 7ad8fa653105fbf6a4802ec99cc90c426d9782aa65ebe60a6fdfb32b6856d7a8
+ontology:
+  adapter: wikidata
+  selection: experiments/t8-wikidata/screen/selection.tsv
+  selection_sha256: 4916a8c539b92aea57981f124c087fed56a7cbca05258698813edda9a5c9be77
+  counts_sha256: d07328835cdce772e0233f3d31370c43bdcdfe77875f7e7f13ab33e5a066c480
+  max_concepts: 20000
+  min_entity_mentions: 5
+  source_order:
+  - entity_inferences
+  - ecbd
+  - lre
+  - bear
+  - popqa
+  - twohopfact
+  - filler
+  max_atomics: 8192
+  max_degree: 16
+  max_values: 3
+  max_values_by_property:
+    P31: 2
+  aliases:
+    min_chars: 4
+    max_lowercase_share: 0.1
+    min_case_evidence: 5
+    min_domain_mentions: 1
+    max_aliases: 8
+screen:
+  workers: 6
+  docs: null
+mix:
+  domain_share: 0.5
+  calibration_docs: 2000
+data:
+  eval_buckets: 1000
+  presample_tokens: 20000000
+  holdout_counts: screen
+  holdout_fraction: 0.2
+  holdout_min_count: 20
+  holdout_min_subtokens: 2
+  holdout_max_containing: 5
+  rood_min_chars: 3
+  rood_max_documents: 300
+  expected_holdout_sha256: 99312697ee24fd8b6d5abb5ff8ee4f8b34ed32622061b8153e78349dfb14291d
+  min_subtokens: 2
+  train_tokens: 100000000
+  train_min_subtokens: 1
+  eval_domain_docs: 5000
+  eval_rood_docs: 8000
+  eval_general_docs: 5000
+  eval_mix_tokens: null
+  cardinality_docs: 2000
+hosts:
+- name: qwen3
+  tokenizer: Qwen/Qwen3-0.6B-Base
+  train_tokens: 100000000
+cardinality_tokenizers:
+- HuggingFaceTB/SmolLM2-360M
+- Qwen/Qwen3-0.6B-Base
+feasibility:
+  split: eval-entities
+  heldout_min_entries_5plus: 300
+  heldout_min_occurrences: 2000
+  rare_min_entries: 300
+  rare_min_occurrences: 2000
+  trainer_windows: 8192
+  window_length: 1024

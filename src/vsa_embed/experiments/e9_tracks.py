@@ -21,6 +21,10 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
 - `t7rood` — T7-ROOD (decision 63, holdout H1; `t7_rood`): T7's ontology, alias table, holdout and evaluation corpora,
   with every training document that mentions a held-out record dropped (the tokens refilled), so the host never reads a
   held-out name; the T7 lexicon and relation choices.
+- `t8` — T8 Wikidata entities (decision 63, methodology M5): the entities of the Wikidata-based benchmarks and their
+  frames' fillers, frames from Wikidata statements (`ontologies/wikidata.py`), linked in FineWeb-Edu documents that
+  mention them (`t8_wikidata_corpus`); M1 holdout (node- and alias-disjoint, every training document naming a held-out
+  entity excluded); evaluation on `eval-entities`; no WP-C7 zero-shot items.
 
 Host tokenizer families (WP-Qwen): every track is built for SmolLM2 (`data_root`) and, relinked with the same
 ontology, alias table and holdout, for the Qwen3 base tokenizer (`TrackSpec.for_family("qwen3")`, `QWEN3_ROOTS`)
@@ -201,7 +205,8 @@ T1C_TRACKS = ("t1c", "t1c-rood")
 QWEN3_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen3", "t4": DATA / "tracks/t4-chemistry/v1-qwen3",
                "t1": DATA / "t1/mesh-pubmed-gpt2-v1/hosts/qwen3", "wordnet": DATA / "c3/wordnet-qwen3-v1",
                "t1c": T1C_ROOT / "hosts/qwen3", "t7": DATA / "tracks/t7-newvocab/v1/hosts/qwen3",
-               "t7rood": DATA / "tracks/t7-newvocab/rood-v1/hosts/qwen3"}
+               "t7rood": DATA / "tracks/t7-newvocab/rood-v1/hosts/qwen3",
+               "t8": DATA / "tracks/t8-wikidata/v1/hosts/qwen3"}
 # Qwen3.5 corpora (WP-Qwen35): the same builders with the Qwen3.5 base tokenizer (`Qwen/Qwen3.5-0.8B-Base`, shared by the
 # 0.8B/2B hosts), run with the Qwen3.5 environment. T5 is built (`experiments/t5-enterprise-glossary/t5-qwen35.yaml`).
 QWEN35_ROOTS = {"t5": DATA / "tracks/t5-glossary/v1-qwen35", "t4": DATA / "tracks/t4-chemistry/v1-qwen35",
@@ -261,6 +266,17 @@ TRACKS: dict[str, TrackSpec] = {
                         kept_relations=("mapped_to", "parent", "branch_top", "branch_second", "record_class"),
                         edit_relations=("pharmacological_action", "mapped_to", "parent"),
                         family_roots={"qwen3": QWEN3_ROOTS["t7rood"]}),
+    # T8 (decision 63): 8,192 windows = the fewest that meet the held-out and rare criteria at ℓ_min 2 (runs/v1/feasibility.json).
+    # Category = the entity's type (P31); edits change a typed, single-valued fact (citizenship,
+    # occupation, country, birthplace, …) to a filler of the same type.
+    "t8": TrackSpec("t8", "T8 Wikidata entities (Wikidata + FineWeb-Edu)", DATA / "tracks/t8-wikidata/v1",
+                    eval_split="eval-entities", windows=8192, config=Path("experiments/t8-wikidata/t8.yaml"),
+                    holdout_names=Path("experiments/t8-wikidata/runs/v1/holdout_concepts.txt"),
+                    category_relations=("instance_of",), kept_relations=("instance_of", "subclass_of"),
+                    edit_relations=("country_of_citizenship", "occupation", "country", "place_of_birth", "genre", "author",
+                                    "director", "performer", "developer", "headquarters_location", "educated_at", "sport",
+                                    "instrument", "member_of_sports_team", "located_in_admin"),
+                    family_roots={"qwen3": QWEN3_ROOTS["t8"]}),
 }
 FAMILY_TOKENIZERS = {"smollm2": "HuggingFaceTB/SmolLM2-135M", "qwen3": "Qwen/Qwen3-0.6B-Base", "qwen3_5": "Qwen/Qwen3.5-0.8B-Base"}
 
@@ -289,6 +305,9 @@ def track_frame_ontology(spec: TrackSpec) -> tuple[Any, list[int], dict[str, Any
     if spec.name in T1C_TRACKS:
         from .t1c_corpus import build_track_ontology as build_t1c_ontology
         return build_t1c_ontology(config["ontology"]), [], config
+    if spec.name == "t8":                       # built by t8_wikidata_corpus (adapter `wikidata`)
+        from .t8_wikidata_corpus import build_track_ontology as build_t8_ontology
+        return build_t8_ontology(config), [], config
     from ..tracks import load_track
     from ..tracks.common import SyntheticConcept
     from .track_corpus import add_synthetic
@@ -490,6 +509,18 @@ def track_lexicon(spec: TrackSpec, ontology: dict[str, Any] | None = None) -> Tr
             elif kind in {"top", "tag"}:
                 texts[atom] = value.replace("_", " ")
         templates = T1C_TEMPLATES
+    elif spec.name == "t8":
+        # Filler names are the Wikidata English labels; the filler type is its most-linked P31 class, so an edit keeps a
+        # country a country and a city a city.
+        from ..ontologies.wikidata import ARTICLE_RELATIONS, relation_templates
+        frame_ontology, _, _ = track_frame_ontology(spec)
+        meta = frame_ontology.metadata
+        for atom in atoms:
+            kind, _, value = atom.partition(":")
+            if kind == "wd" and value in meta["filler_headings"]:
+                texts[atom] = meta["filler_headings"][value]
+                types[atom] = f"wd:{meta['filler_types'].get(value) or 'other'}"
+        templates, article = relation_templates(), ARTICLE_RELATIONS
     else:
         raise ValueError("WordNet uses e9_ontology_edit.WordNetLexicon")
     return TrackLexicon(spec.name, templates, texts, types, category_relations=spec.category_relations,

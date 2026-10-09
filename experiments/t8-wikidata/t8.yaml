@@ -1,0 +1,93 @@
+# T8 — Wikidata-framed natural track (decision 63, WP TK-B2; methodology M1 + M5): the entities of the general relation
+# benchmarks (Entity Inferences, LRE relations, BEAR, PopQA, TwoHopFact) and their frames' filler entities, with frames from
+# Wikidata (CC0) truthy statements of a fixed property list, linked in FineWeb-Edu documents that mention them and mixed
+# 50/50 by tokens with FineWeb-Edu documents that mention none. Holdout per M1 ("ROOD"): node- and alias-disjoint held-out
+# entities, and every training document that mentions a held-out entity under any of its Wikidata names is excluded.
+#   1. PYTHONPATH=src python -m vsa_embed.experiments.t8_benchmarks fetch
+#   2. PYTHONPATH=src python -m vsa_embed.experiments.t8_benchmarks entities --config experiments/t8-wikidata/t8.yaml
+#   3. PYTHONPATH=src python -m vsa_embed.experiments.t8_wikidata_corpus --config experiments/t8-wikidata/t8.yaml --stage wikidata
+#        # then pin wikidata.records_sha256
+#   4. PYTHONPATH=src python -m vsa_embed.experiments.t8_wikidata_corpus --config experiments/t8-wikidata/t8.yaml --stage screen \
+#        --output experiments/t8-wikidata/screen               # then pin ontology.selection_sha256
+#   5. PYTHONPATH=src python -m vsa_embed.experiments.t8_wikidata_corpus --config experiments/t8-wikidata/t8.yaml \
+#        --output experiments/t8-wikidata/runs/v1              # then pin data.expected_holdout_sha256
+#   6. PYTHONPATH=src python -m vsa_embed.experiments.t8_benchmarks items --config experiments/t8-wikidata/t8.yaml \
+#        --run experiments/t8-wikidata/runs/v1
+experiment: t8-wikidata
+track_label: Wikidata entities (Wikidata + FineWeb-Edu)
+seed: 20261008
+tokenizer: HuggingFaceTB/SmolLM2-360M
+workers: 6
+paths:
+  data_root: ~/data/vsa-llm/tracks/t8-wikidata/v1
+  general_config: experiments/c3-general-corpus/c3.yaml
+benchmarks:
+  root: ~/data/vsa-llm/benchmarks
+  items: ~/data/vsa-llm/benchmarks/t8-items
+wikidata:
+  cache: ~/data/vsa-llm/wikidata/cache          # raw SPARQL / API responses (gzip JSON) and per-entity stores
+  dir: ~/data/vsa-llm/wikidata/t8               # entity resolution, the frozen records snapshot
+  min_interval: 1.0                             # seconds between SPARQL queries (one at a time)
+  api_interval: 0.1                             # seconds between wbsearchentities calls (one at a time)
+  search_limit: 5
+  filler_rounds: 1                              # statements for the fillers of the benchmark entities' statements …
+  min_filler_sitelinks: 10                      # … that have ≥ 10 sitelinks (the others keep their label: frame fillers only)
+  records_sha256: 7ad8fa653105fbf6a4802ec99cc90c426d9782aa65ebe60a6fdfb32b6856d7a8   # frozen 2026-10-08 (records.json: 341,772 records, 1,378,033 statements)
+ontology:
+  adapter: wikidata                             # ontologies/wikidata.py, through t8_wikidata_corpus.wikidata_adapter
+  selection: experiments/t8-wikidata/screen/selection.tsv
+  selection_sha256: 4916a8c539b92aea57981f124c087fed56a7cbca05258698813edda9a5c9be77   # frozen 2026-10-08 (screen/screen.json: 20,000 entities, 29,993 names)
+  counts_sha256: d07328835cdce772e0233f3d31370c43bdcdfe77875f7e7f13ab33e5a066c480   # screen_counts.tsv.gz (the holdout's exclusion cost)
+  max_concepts: 20000                           # T7: 8,184 records / 11,141 names; T1-open: 30k descriptors
+  min_entity_mentions: 5                        # training-side FineWeb occurrences of the kept names; such entities first
+  source_order: [entity_inferences, ecbd, lre, bear, popqa, twohopfact, filler]
+  max_atomics: 8192
+  max_degree: 16
+  max_values: 3                                 # values per property (most-linked first)
+  max_values_by_property: {P31: 2}
+  aliases:
+    min_chars: 4
+    max_lowercase_share: 0.10                   # the case-insensitive linker: names written in lowercase are words, not names
+    min_case_evidence: 5
+    min_domain_mentions: 1
+    max_aliases: 8
+screen:
+  workers: 6
+  docs: null                                    # every document after C3's evaluation documents (≈ 1.45M)
+mix:
+  domain_share: 0.5
+  calibration_docs: 2000
+data:
+  eval_buckets: 1000                            # documents whose id's sha256 bucket is < 1,000 / 10,000 are evaluation-only
+  presample_tokens: 20000000                    # provenance and source shares; the holdout is stratified by the screen counts
+  holdout_counts: screen                        # whole-pool training-side counts of the selected names (a 20M-token
+                                                # pre-sample names only entities too frequent to exclude their documents)
+  holdout_fraction: 0.20                        # of the ROOD-eligible entries (simulation from the screen: ≈ 8,300 eligible
+                                                # with ≥ 20 mentions; ≈ 10% of training-side documents excluded)
+  holdout_min_count: 20                         # screen occurrences (whole pool, training side)
+  holdout_min_subtokens: 2
+  holdout_max_containing: 5
+  rood_min_chars: 3                             # every Wikidata name of ≥ 3 characters excludes a training document
+  rood_max_documents: 300                       # exclusion cost: training-side screen documents naming the entity
+  expected_holdout_sha256: 99312697ee24fd8b6d5abb5ff8ee4f8b34ed32622061b8153e78349dfb14291d   # frozen 2026-10-08 by the first full build (runs/v1), before any training
+  min_subtokens: 2
+  train_tokens: 100000000
+  train_min_subtokens: 1
+  eval_domain_docs: 5000                        # evaluation-side documents that mention a selected name (seen / rare strata)
+  eval_rood_docs: 8000                          # documents naming a held-out entity (the held-out stratum)
+  eval_general_docs: 5000
+  eval_mix_tokens: null
+  cardinality_docs: 2000
+hosts:
+  - name: qwen3                                 # Qwen3-0.6B/1.7B/4B-Base share this tokenizer
+    tokenizer: Qwen/Qwen3-0.6B-Base
+    train_tokens: 100000000
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-360M, Qwen/Qwen3-0.6B-Base]
+feasibility:
+  split: eval-entities
+  heldout_min_entries_5plus: 300
+  heldout_min_occurrences: 2000
+  rare_min_entries: 300
+  rare_min_occurrences: 2000
+  trainer_windows: 8192                         # the fewest that meet the held-out and rare criteria at ℓ_min 2 (runs/v1)
+  window_length: 1024
