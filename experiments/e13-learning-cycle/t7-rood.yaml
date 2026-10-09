@@ -103,7 +103,7 @@ estimate_hours:                      # [scaled by host size, fixed] GPU hours of
   write: [0.45, 0.0]
   reason: [0.4, 0.0]
 
-priority:                            # four levels: stage 0 (+ preparation, learn, write), stage 4, stage 5 + reason, report
-  base: 54.4996
-  step: 0.0001
-  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 2, report: 3}
+priority:                            # 54.4996 stage 0 (+ preparation, learn, write), 54.49965 stage 4, 54.4997 stage 5,
+  base: 54.4996                      # 54.49975 reason, 54.49979 report (54.4998–54.49984: T1c-ROOD; 54.4995–54.49959: E10.L)
+  step: 0.00005
+  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 3, report: 3.8}

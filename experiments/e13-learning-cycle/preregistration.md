@@ -228,8 +228,11 @@ SmolLM2-360M ≈ 24.7, Qwen3-1.7B ≈ 21.0, preparation 0.3.
 | Priority | Jobs | GPU-h |
 |---|---|---:|
 | 54.4996 | preparation, stage 0, learn (TK-L and rule closure), write | 14.3 |
-| 54.4997 | stage 4 | 13.5 |
-| 54.4998 | stage 5 and reason | 18.3 |
-| 54.4999 | `e13-t7-rood-report` (CPU lane) | — |
+| 54.49965 | stage 4 | 13.5 |
+| 54.4997 | stage 5 | 14.8 |
+| 54.49975 | reason | 3.5 |
+| 54.49979 | `e13-t7-rood-report` (CPU lane) | — |
+
+The levels sit inside 54.4996–54.49979 because E10.L holds 54.4995–54.49959 and T1c-ROOD holds 54.4998–54.49984.
 
 The hours come from the same measured per-step costs, scaled to `eval-round2`'s 2,359 windows.

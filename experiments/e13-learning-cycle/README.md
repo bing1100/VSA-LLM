@@ -14,7 +14,7 @@ Pre-registration (binding): [`preregistration.md`](preregistration.md). Nothing 
 | `t5.yaml` | the T5 configuration (round split, seed ontology, texts, hosts / seeds / arms, learn / write / round-2 settings, statistics, queue levels) |
 | `t7-rood.yaml` | T7-ROOD on TK-H1's rounds build (`experiments/t7-new-vocabulary/ROOD.md` §5); pre-registration amendment 1 |
 | `preregistration.md` | stages, arms, endpoints L1–L5 with kill criteria, statistics, deviations policy; §12 amendment 1 (T7-ROOD) |
-| `queue-commands.sh` | `jobqueue add` lines with GPU-h: T5 at 54.4985–54.4989 (queued 2026-10-08), T7-ROOD at 54.4996–54.4999 |
+| `queue-commands.sh` | `jobqueue add` lines with GPU-h: T5 at 54.4985–54.4989 (queued 2026-10-08), T7-ROOD at 54.4996 / 54.49965 / 54.4997 / 54.49975 / 54.49979 (stage 0 + learn + write, stage 4, stage 5, reason, report) |
 | `configs/t5/`, `configs/t7-rood/` | the trainer configs `plan` writes (stage 0 and every round-2 arm) |
 | `items/understanding-t7rounds-{smollm2,qwen3}-v1` | relation / reverse / paraphrase items of T7-ROOD's 2,470 round-2 anchors (`e13_cycle items`; E9's understanding builders on the rounds ontology) |
 | `smoke/`, `smoke-t7-rood/` | the CPU smokes (SMOKE; SmolLM2-135M, a few steps) — pipeline checks, not results |

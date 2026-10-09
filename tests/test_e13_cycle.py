@@ -173,11 +173,12 @@ def test_t7_rood_configs_and_plan() -> None:
     jobs = e13.plan(config, write_configs=False)
     names = [j["name"] for j in jobs]
     assert len(names) == len(set(names)) and [n for n in names if "-report" in n] == ["e13-t7-rood-report"]
-    assert {j["priority"] for j in jobs} <= {54.4996, 54.4997, 54.4998, 54.4999}
+    assert {j["priority"] for j in jobs} == {54.4996, 54.49965, 54.4997, 54.49975, 54.49979}
     by = {j["name"]: j for j in jobs}
     assert by["e13-t7-rood-SmolLM2-360M-s1-learn"]["priority"] == 54.4996 and "--method" not in by["e13-t7-rood-SmolLM2-360M-s1-learn"]["command"]
     assert by["e13-t7-rood-SmolLM2-360M-s1-learn-rule_closure"]["command"][-3:-1] == ["rule_closure", "--output"]
-    assert by["e13-t7-rood-SmolLM2-360M-q4-read-rtn-s1"]["priority"] == 54.4998 == by["e13-t7-rood-SmolLM2-360M-s1-reason"]["priority"]
+    assert by["e13-t7-rood-SmolLM2-360M-read-s1"]["priority"] == 54.49965 and by["e13-t7-rood-SmolLM2-360M-q4-read-rtn-s1"]["priority"] == 54.4997
+    assert by["e13-t7-rood-SmolLM2-360M-s1-reason"]["priority"] == 54.49975 and by["e13-t7-rood-report"]["priority"] == 54.49979
     assert not any("C0p" in n or "C2" in n for n in names) and 25 < sum(j["hours"] for j in jobs) < 80
     t5 = e13.load_config(e13.ROOT / "t5.yaml")
     assert not any("learn-" in j["name"] for j in e13.plan(t5, write_configs=False))
