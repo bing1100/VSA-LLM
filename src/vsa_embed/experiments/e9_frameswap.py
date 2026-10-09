@@ -178,9 +178,9 @@ def variant_context(model: Any, variant: str, plan: dict[str, Any]) -> contextli
         return contextlib.nullcontext()
     if variant in ("other", "other-any"):
         return remapped(model, plan[variant])
-    if variant in ("empty", "mean"):
+    if variant in ("empty", "mean"):                  # only the target entries the windows link need an overriding row
         row = torch.zeros(model.channel.gate.in_features // 2) if variant == "empty" else plan["mean"]
-        return override_rows(model.channel, {int(e): row for e in plan["targets"]})
+        return override_rows(model.channel, {int(e): row for e in plan.get("present", plan["targets"])})
     raise ValueError(f"unknown variant {variant!r}; choose from {VARIANTS}")
 
 
@@ -191,9 +191,10 @@ def usable_entries(channel: Any) -> np.ndarray:
     return np.ones(int(channel.entry_count), dtype=bool)
 
 
-def swap_plan(channel: Any, ontology: dict[str, Any], kind: str, variants: Sequence[str], *, seed: int,
-              run_seed: int) -> dict[str, Any]:
-    """Target entries and each variant's mapping / row for one target set (entry ids stay in memory, never in outputs)."""
+def swap_plan(channel: Any, ontology: dict[str, Any], kind: str, variants: Sequence[str], *, seed: int, run_seed: int,
+              linked: np.ndarray | None = None) -> dict[str, Any]:
+    """Target entries and each variant's mapping / row for one target set (entry ids stay in memory, never in outputs);
+    `linked`: the entries the evaluation windows link (`present` = the targets among them)."""
     usable = usable_entries(channel)
     found = target_entries(ontology, kind)
     found = found[found < usable.size]
@@ -204,6 +205,9 @@ def swap_plan(channel: Any, ontology: dict[str, Any], kind: str, variants: Seque
     rng = np.random.default_rng([int(seed), int(run_seed), SET_INDEX[kind]])
     plan: dict[str, Any] = {"targets": targets, "record": {"entries": int(targets.size), "dropped_empty_frames": int(found.size - targets.size),
                                                            "pool": int(pool.size), "stratum": ENTRY_SETS[kind]}}
+    if linked is not None:
+        plan["present"] = np.intersect1d(targets, linked)
+        plan["record"]["entries_in_windows"] = int(plan["present"].size)
     if "other" in variants:
         plan["other"] = derangement(targets, rng)
     if "other-any" in variants:
@@ -391,8 +395,9 @@ def score_run(run_dir: Path, output: Path | None = None, *, entries: Sequence[st
         save()
         log(json.dumps({"run": summary["id"], "variant": "own", "seconds": summary["seconds"]["own"]}))
     window_entries = [corpus.window(int(s), length, min_subtokens=min_subtokens)[1]["entry"] for s in starts]
+    linked = np.unique(np.concatenate([np.zeros(0, dtype=np.int64), *window_entries]).astype(np.int64))
     for kind in entries:
-        plan = swap_plan(channel, ontology, kind, variants, seed=seed, run_seed=run_seed)
+        plan = swap_plan(channel, ontology, kind, variants, seed=seed, run_seed=run_seed, linked=linked)
         hit = np.asarray([bool(np.isin(e, plan["targets"]).any()) for e in window_entries], dtype=bool)
         touched[kind] = hit
         record = {**plan["record"], "windows_touched": int(hit.sum()),
@@ -659,7 +664,7 @@ def queue_lines(root: Path = ROOT, *, check_root: Path | None = None) -> list[st
     for stage, (priority, report_priority) in PENDING.items():
         spec, body, total = TRACKS[stage], [], 0.0
         reference = next((r for r in sorted((check / "runs" / stage).glob("*")) if (r / "eval_windows.npz").exists()), None) \
-            if (check / "runs" / stage).is_dir() else None
+            if (check / "runs" / stage).is_dir() and not spec.licensed else None      # a licensed track's files are never read here
         shares = touched_shares(reference) if reference is not None else None
         for model in PENDING_MODELS:
             for s in PENDING_SEEDS:

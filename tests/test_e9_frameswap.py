@@ -18,6 +18,7 @@ from vsa_embed.authoring import replace_frames
 from vsa_embed.data.corpus import TokenCorpus, build_corpus, eval_windows
 from vsa_embed.experiments import e9_frameswap as fs
 from vsa_embed.experiments import e9_rescore, e9_rowsource
+from vsa_embed.readout import readout_disabled
 from vsa_embed.span_channel import AliasTable
 from vsa_embed.statistics import holm_adjust, paired_ratio_bootstrap
 import vsa_embed.training.lm as lm
@@ -99,7 +100,8 @@ def world(tmp_path_factory) -> dict:
     source = root / "subtoken_mean.pt"
     e9_rowsource.build_table("subtoken_mean", ontology=ontology, output=source, table=full, model=fake_host(), tokenizer=tokenizer)
     runs = {}
-    for name, channel in {"C5": {"mode": "compose", "composition": "attentive", "context_window": 4},
+    compose = {"mode": "compose", "composition": "attentive", "context_window": 4}
+    for name, channel in {"C5": compose, "U5": {**compose, "readout": {"layer": "third", "window": 8, "gate_bias": 0.0}},
                           "C6m": {"mode": "source", "source_kind": "subtoken_mean", "source_table": str(source), "source_hidden": 0},
                           "C2": {"mode": "free"}, "C0p": {"mode": "none"}}.items():
         runs[name] = root / "toy" / f"Fake-lora-{name}-s1"
@@ -186,8 +188,9 @@ def test_score_own_replays_the_run_and_variants_touch_only_target_windows(world,
         np.testing.assert_allclose(again["sums"][f"{variant}@heldout"], found["sums"][f"{variant}@heldout"], rtol=0, atol=1e-4)
     # No entry id or name in the outputs: target sets are counts.
     text = (out / "summary.json").read_text()
-    assert set(summary["targets"]["heldout"]) == {"entries", "dropped_empty_frames", "pool", "stratum", "windows_touched",
-                                                  "stratum_tokens", "skipped", "other_any_with_replacement"}
+    assert set(summary["targets"]["heldout"]) == {"entries", "entries_in_windows", "dropped_empty_frames", "pool", "stratum",
+                                                  "windows_touched", "stratum_tokens", "skipped", "other_any_with_replacement"}
+    assert 1 <= summary["targets"]["heldout"]["entries_in_windows"] <= 3
     assert not any(name in text for name in TERMS)
     with pytest.raises(FileExistsError):
         fs.score_run(run, out, entries=["heldout"], fillers=world["fillers"], device="cpu", log=lambda _: None)
@@ -196,8 +199,9 @@ def test_score_own_replays_the_run_and_variants_touch_only_target_windows(world,
     assert resumed["seconds"] == summary["seconds"] and (out / "manifest.json").exists() and (out / "resolved_config.yaml").exists()
 
 
-def test_empty_is_the_channel_off_on_target_spans_only(world, tmp_path) -> None:
-    run = world["runs"]["C5"]
+@pytest.mark.parametrize("name", ["C5", "U5"])
+def test_empty_is_the_channel_off_on_target_spans_only(world, tmp_path, name) -> None:
+    run = world["runs"][name]                    # U5: the readout reads nothing for a target span either
     fs.score_run(run, tmp_path / "e", entries=["heldout"], variants=["empty"], fillers=None, device="cpu", log=lambda _: None)
     found = fs.load_frameswap(tmp_path / "e")
     model = lm.load_final(run / "final.pt")
@@ -216,7 +220,7 @@ def test_remap_is_a_frame_swap_and_a_source_row_swap(world) -> None:
     targets = fs.target_entries(onto, "heldout")
     mapping = fs.derangement(targets, np.random.default_rng(3))
     starts = None
-    for name in ("C5", "C6m"):
+    for name in ("C5", "U5", "C6m"):            # U5: the remap moves the readout's frame store with the row
         run = world["runs"][name]
         model = lm.load_final(run / "final.pt")
         config = lm.resolve_config(torch.load(run / "final.pt", weights_only=False)["config"])
@@ -224,7 +228,7 @@ def test_remap_is_a_frame_swap_and_a_source_row_swap(world) -> None:
         with fs.remapped(model, mapping):
             swapped = _evaluate(model, config, onto, starts)[1]
         channel = model.channel
-        if name == "C5":                         # the other entry's frame written into the target's slot of the schedule
+        if name != "C6m":                        # the other entry's frame written into the target's slot of the schedule
             schedule = channel.composer.schedule
             frame = lambda e: list(zip(schedule.relations[schedule.offsets[e]:schedule.offsets[e + 1]].tolist(),
                                        schedule.fillers[schedule.offsets[e]:schedule.offsets[e + 1]].tolist()))
@@ -237,7 +241,11 @@ def test_remap_is_a_frame_swap_and_a_source_row_swap(world) -> None:
             direct = _evaluate(model, config, onto, starts)[1]
             channel.source_rows.copy_(original)
         np.testing.assert_allclose(swapped, direct, rtol=0, atol=1e-5)
-        assert not np.allclose(swapped, _evaluate(model, config, onto, starts)[1])
+        own = _evaluate(model, config, onto, starts)[1]
+        assert not np.allclose(swapped, own)
+        if name == "U5":                         # the readout contributes, so the equality above covers its store too
+            with readout_disabled(model):
+                assert not np.allclose(_evaluate(model, config, onto, starts)[1], own)
 
 
 def test_source_arm_scores_c2_warns_and_runs_without_rows_are_refused(world, tmp_path) -> None:
