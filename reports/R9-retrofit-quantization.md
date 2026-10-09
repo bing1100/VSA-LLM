@@ -1,6 +1,15 @@
 # R9 — Retrofit × quantization × ontology editing (E9)
 
-**Status (2026-10-04):** T5 synthetic enterprise glossary, SmolLM2-360M and SmolLM2-135M, **3 seeds** (1–3; P0 has no training randomness). Qwen3 hosts: seeds 1–2 (section "Qwen3 on T5 at 2 seeds"). T4 chemistry (natural text) seed 1 is in (section "T4 chemistry" below: same direction, much smaller); T1-open seed 1 is in (null); the cross-track section shows the gain following the novelty of the vocabulary. The WordNet negative control is null, as predicted. Full generated report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (job `t5-report-s2-3`). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
+**Status (2026-10-09).**
+
+- **T5 synthetic enterprise glossary:** SmolLM2-360M and SmolLM2-135M at **3 seeds** (1–3; P0 has no training randomness). The PQ1 controls are at 360M, 3 seeds (section "T5 controls"). Qwen3 hosts are at seeds 1–2 (section "Qwen3 on T5 at 2 seeds"); seed 3 is queued.
+- **T4 chemistry (natural text):**
+  - 360M dimension 1 and the PQ1 controls at 3 seeds (section "T4 chemistry — seeds 1–3"; preliminary report `report/t4-arms-prelim`).
+  - T4 quantization, dimension 3 and 135M are still seed 1. The official 3-seed report is queued.
+- **T1-open and the WordNet negative control:** seed 1, both null. The cross-track section shows the gain following the novelty of the vocabulary.
+- **T7** (new MeSH 2026 vocabulary, natural text) is training.
+
+Full generated T5 report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (frozen at commit `dd612dc`; later arm batches write their own folders). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
 
 **Question (author request 2026-10-02).** (1) Does a VSA ontology channel trained jointly with a pretrained model improve it on long-token, rare and out-of-distribution words? (2) Is the gap larger after weight quantization? (3) After training, can the model learn new or changed words zero-shot by editing the ontology alone?
 
@@ -73,16 +82,40 @@ Same against C2 (360M property +0.063*, paraphrase +0.068*). Controls inside C5:
 
 Editing works on seen terms at both sizes; on held-out terms it works at 135M but not at 360M. Absolute edit success stays low (ES ≈ 0.40 → 0.46 on seen terms at 360M seed 1); the ROME/MEMIT/AlphaEdit/IKE baselines on the same items are queued (dimension-3 baselines, priority 60–61).
 
-## Findings and implications (3 seeds)
+## Findings and implications (updated 2026-10-09)
 
-1. **Retrofitting works for genuinely new vocabulary, and it replicates.** A jointly trained VSA channel lowers a pretrained model's loss after new and held-out domain terms by 3–13% (held-out: −13.3% at 360M, −9.2% at 135M, SD across seeds ≤ 1.7 points) with no locality cost. The capacity-matched free table does not help held-out terms at all, so the gain comes from composition. It grows with model size and is larger on Qwen3 with LoRA (−17 to −20%, seed 1).
-2. **Quantization: the channel's advantage survives INT4, but the gap does not grow on the target terms.** Held-out-term advantage retained 0.58× (360M) and 1.14× (135M), Qwen3 1.00× (seed 1). The consistent INT4 effect is extra robustness on ordinary domain text (overall advantage 1.26–1.32×), whose cause is untested. Paper wording: "the gain is preserved under 4-bit weight quantization", not "the gap grows". The narrow claim B stays pending the PQ1 controls.
-3. **Zero-shot learning by ontology editing is real but modest, and replicates.** Adding a frame for an unseen word improves property selection by 4–7 points and paraphrase consistency by up to 8 points (12 points on the generator's own zero-shot items), attributable to the frame content and kept at INT4. Editing an existing fact moves seen terms reliably and held-out terms only at 135M.
-4. **Caveats:** T5 text is generated from the ontology the channel reads, so these are upper bounds; T4 and T1-open (natural text) are the test of that, results due 2026-10-05. Absolute zero-shot accuracies are low (0.26 vs chance 0.20 for new-word properties at 360M).
+1. **On vocabulary that is genuinely new to the host, retrofitting works and replicates.**
+   - **T5:** a jointly trained, ontology-composed embedding lowers a pretrained model's loss after new and held-out glossary terms by 3–13%, with no locality cost. Held-out terms: −13.3% at 360M, −9.2% at 135M (3 seeds; SD across seeds ≤ 1.7 points). On Qwen3 with LoRA the gain is larger: −17.7% and −20.2% (2 seeds).
+   - **Natural text:** on T4 chemistry (360M, 3 seeds) the same direction holds, much smaller: held-out −0.40%, unseen −2.29%, rare −0.91%, 3+-subtoken −1.09%. On T1-open and WordNet, whose terms the host already models, there is no gain.
+   - **Scope:** the gain follows how new the vocabulary is to the host. T5's sizes are a synthetic upper bound.
+2. **The mechanism is compositional parameter sharing, not the binding operator.**
+   - **T5:** untyped composition equals HRR, translation x + r beats it (−17.2% vs C0′), and a fixed random binding costs 5.2%.
+   - **T4:** all four operators tie.
+   - **Consequence:** by rule 7, E9 is not evidence that HRR binding is the source.
+3. **What the composed vector adds beyond a generic domain vector differs between the tracks.**
+   - **T5:** the term's own frame is necessary (shuffled frames are worse than no channel). Composing it beats subtoken-mean, definition-encoder and TransE rows at the same site by 10.8–15.3% on held-out terms.
+   - **T4, held-out terms:** a shuffled frame keeps the whole gain, and the definition encoder is ahead (claim A's refutation reading is triggered).
+   - **T4, seen, rare and unseen terms:** the own frame matters, but a frozen TransE row ties composition on every stratum, and only the subtoken mean is clearly beaten.
+   - **Open question:** does composition-specific zero-shot behaviour exist outside synthetic text? T7 and the decision-64 controls (C5sh, C6d on T7, T7-ROOD and T8) and the held-out frame swap (`e9_frameswap`) decide it.
+4. **Copying explains part of T5, little of T4.**
+   - **T5:** 86–90% of the rare- and unseen-term gain is on frame-filler tokens, but two thirds of the held-out gain is on other tokens.
+   - **T4 (135M, seed 1):** 42% of the unseen-term gain and 2% of the held-out gain are on filler tokens. The 360M rescoring at 3 seeds is queued.
+5. **Quantization: the advantage is largely preserved under INT4 and does not grow on the target terms.**
+   - **T5 retention (held-out):** 0.58× at 360M and 1.14× at 135M. GPTQ keeps it fully (DiD −0.001).
+   - **Channel off at both precisions:** the held-out DiD vanishes. So the RTN loss comes from the quantized host reading the channel less well.
+   - **All-token robustness (1.26–1.32×):** a property of the C5-trained host weights, not of the channel.
+   - **T4 (seed 1):** INT4 shrinks the gain on every term stratum, so "preserved" is a T5 result until the 3-seed T4 report says otherwise.
+   - **Paper wording:** "largely preserved, fully under GPTQ", never "the gap grows".
+6. **Zero-shot learning by ontology editing is real but modest on T5, and null on T4 (seed 1).**
+   - **New words:** adding a frame for an unseen word improves property selection by 4–7 points on SmolLM2 and 9–16 points on Qwen3. It also improves paraphrase consistency by up to 8 points.
+   - **Fact edits:** editing an existing fact moves seen terms reliably, and held-out terms only at 135M.
+   - **Absolute accuracies stay low:** 0.26 vs chance 0.20 for new-word properties at 360M.
 
 ## Next
 
-T4 chemistry and T1-open (natural text with rare multi-token terms; running now), the WordNet negative control, Qwen3 seed 2, the PQ1 controls (channel off at INT4, GPTQ/AWQ/HQQ/NF4, quantized embeddings, the C5 arm variants, 3 seeds on T5 and T4), the Qwen3.5 block, and the dimension-3 knowledge-editing baselines.
+- **Official T4 report** (priority 54): quantization and dimension 3 at 3 seeds, and the 360M filler split.
+- **T7, then the decision-64 controls** (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD), and the held-out frame swap (`e9_frameswap`).
+- **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
 ## T5 controls (WP-PQ1; SmolLM2-360M, 3 seeds, 2026-10-07)
 
@@ -120,7 +153,7 @@ The composed vector beats all three by wide margins (claim A's refutation readin
 | 3+-subtoken terms (≈ all linked) | −7.6% | −12.5%* | −3.5%* | 0.75 |
 
 - For rare and unseen terms **most of the gain (86–90%) is predicting the frame's filler words**: the copy effect the novelty check warned about. For held-out terms, whose rows come only from composition, two thirds of the gain is on other tokens (−19.4%), consistent with the composed row telling the model what kind of term follows (in T5's templated text, the type-specific continuation) rather than which filler word comes next.
-- Filler shares on T4 (first 256 windows; execution.md, WP-PQ1): 3.7% after any term, 0.8% after held-out, 10.3% after rare and 28.9% after unseen terms, against 18.6–23.9% on T5. T4's largest gain is after unseen terms (−2.3 / −3.7%), its stratum with the most filler continuations, The T4 rescoring at 135M (seed 1; `experiments/e9-retrofit/report/t4-arms-prelim/`, "filler vs non-filler") puts 42% of the gain after unseen terms on filler tokens (−4.5%* on fillers, −3.3%* on other tokens), 22% after rare terms, 10% after 3+-subtoken terms and 2% after held-out terms: on natural text most of the gain is **not** filler copying. The 360M rescoring at seeds 1–3 is queued (priority 52).
+- Filler shares on T4 (first 256 windows; execution.md, WP-PQ1): 3.7% after any term, 0.8% after held-out, 10.3% after rare and 28.9% after unseen terms, against 18.6–23.9% on T5. T4's largest gain is after unseen terms (−2.3 / −3.7%), its stratum with the most filler continuations. The T4 rescoring at 135M (seed 1; `experiments/e9-retrofit/report/t4-arms-prelim/`, "filler vs non-filler") puts 42% of the gain after unseen terms on filler tokens (−4.5%* on fillers, −3.3%* on other tokens), 22% after rare terms, 10% after 3+-subtoken terms and 2% after held-out terms: on natural text most of the gain is **not** filler copying. The 360M rescoring at seeds 1–3 is queued (priority 52).
 
 **Claim-B controls (360M, C5 vs C0′; DiD = change of the C5 − C0′ gap from bf16 to 4-bit, positive = the advantage shrinks):**
 
@@ -163,8 +196,14 @@ C5 − C2 is negative on every term stratum (−0.22% after held-out to −2.06%
 
 - **The binding operator does not matter on natural text either**: fixed random binding and untyped composition tie learned HRR on every stratum; translation is within ±0.14%.
 - **After held-out terms the gain is not frame-specific.** In C5sh every entry, held-out entries included, reads another entry's frame (`training/lm.py`, a derangement over all entries), and C5sh keeps C5's whole held-out gain. On seen terms the own frame matters (after unseen −0.82%*, rare −0.37%*, 3+-subtoken −0.20%*), as on T5. The held-out gain on T4 therefore reflects a generic domain vector at the term position, not the term's relations. The held-out frame swap (`e9_frameswap`, decision 64) tests this within each trained model.
-- **Claim A's refutation reading is triggered after held-out terms on T4**: the definition encoder (the host encoding the same frame as text) beats C5 there (+0.17%*), and subtoken mean and TransE tie it. C5 keeps an edge over subtoken mean after seen, rare and unseen terms, and over the definition encoder inside and after long terms.
-- On T5 the same controls go the other way (C5sh +4.6% worse than no channel; C5 ahead of every same-site vector by 10.8–15.3%). "The frame's content is necessary" and "composition beats same-site vectors" are therefore T5 results; on natural text they hold for seen, rare and unseen terms only.
+- **Claim A's refutation reading is triggered after held-out terms on T4**: the definition encoder (the host encoding the same frame as text) beats C5 there (+0.17%*), and subtoken mean and TransE tie it.
+- **Beyond held-out terms, composition beats only the subtoken mean.**
+  - **Subtoken mean (C6m):** C5 is ahead after unseen (−0.48%*), rare (−0.21%*) and 3+-subtoken terms (−0.20%*).
+  - **Definition encoder (C6d):** C5 is ahead only inside and after long terms (−0.50%* inside, −0.20%* after 3+-subtoken terms). It ties after rare (−0.00%) and unseen terms (+0.19%, n.s.).
+  - **TransE row (C6g):** ties C5 on every stratum, and is slightly ahead after 3+-subtoken terms (+0.05%*). A frozen KG embedding of the entry, through a trained projector, does as well as composing the entry's frame.
+- **T5 versus T4.** On T5 the same controls go the other way: C5sh is 4.6% worse than no channel, and C5 is ahead of every same-site vector by 10.8–15.3%.
+  - "The frame's content is necessary" holds on T5, and on T4 after seen, rare and unseen terms.
+  - "Composition beats same-site vectors" is a T5 result. On T4 it holds only against the subtoken mean, plus the definition encoder on long terms.
 
 ## T4 chemistry — natural text (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
@@ -219,7 +258,7 @@ A simple novelty index is how much plain continued training (C0′) lowers the l
 
 - **Ordering:** the gain is largest where the vocabulary is newest to the host (T5), smaller on T4, and zero where the host already models the terms (T1, WordNet). Within T4 the unseen stratum is both the most novel (−56%) and the most improved (−2.3%).
 - **Implication for the paper:** the channel is a tool for vocabulary that is genuinely new to the host (invented, private or fast-changing terms), not for terms already well represented in pretraining. That is the defensible scope of claim A, and it matches the host learning to ignore the channel on known vocabulary (engagement check).
-- **Caveat:** three tracks and one synthetic track are not a dose–response curve. T5's sizes also contain filler copying (75–90% of the gain after rare, unseen and multi-subtoken terms) and templated, type-specific continuations (most of the held-out gain; section "T5 controls"). T4 seeds 2–3 sharpen this, and T7 (MeSH 2026 supplementary-concept names new to the host; queued, decision 55; prediction recorded before running: a gain at least T4's and below T5's) tests the ordering directly.
+- **Caveat:** three tracks and one synthetic track are not a dose–response curve. T5's sizes also contain filler copying (75–90% of the gain after rare, unseen and multi-subtoken terms) and templated, type-specific continuations (most of the held-out gain; section "T5 controls"). T4 seeds 1–3 reproduce the seed-1 sizes at 360M (−0.40 / −2.29 / −0.91 / −1.09%). T7 (MeSH 2026 supplementary-concept names new to the host; queued, decision 55; prediction recorded before running: a gain at least T4's and below T5's) tests the ordering directly.
 
 ## Qwen3 on T5 at 2 seeds (2026-10-06)
 
