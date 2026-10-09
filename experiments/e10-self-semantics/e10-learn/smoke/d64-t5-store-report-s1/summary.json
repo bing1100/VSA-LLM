@@ -1,0 +1,141 @@
+{
+  "schema": "e10-learn/1",
+  "mode": "store-report",
+  "rule": "holm+decoy",
+  "family": [
+    "c2"
+  ],
+  "arms": {
+    "c2": {
+      "seeds": [
+        1
+      ],
+      "family": true,
+      "stores": {
+        "learned": {
+          "runs": [
+            "/tmp/claude-1000/-home-bhux-workplace-VSA-LLM/95cd3acd-b338-46c8-8df8-f781d6fdf776/scratchpad/smoke-e10l/t5-c2-s1"
+          ],
+          "operators": [
+            "hrr"
+          ],
+          "L4a": {
+            "precision": null,
+            "precision_ci": null,
+            "recall": 0.0,
+            "recall_ci": [
+              0.0,
+              0.0
+            ],
+            "tp": 0,
+            "fp": 0,
+            "fn": 110,
+            "accepted": 0,
+            "threshold": 0.8,
+            "p_precision": 1.0,
+            "rule": "holm+decoy",
+            "null_rates": {
+              "complete": 0.0,
+              "relabel": null,
+              "swap": 0.0,
+              "permute": 0.0
+            },
+            "null_counts": {
+              "complete": {
+                "accepted": 0,
+                "tested": 87
+              },
+              "relabel": {
+                "accepted": 0,
+                "tested": 0
+              },
+              "swap": {
+                "accepted": 0,
+                "tested": 103
+              },
+              "permute": {
+                "accepted": 0,
+                "tested": 82
+              }
+            },
+            "calibrated": false,
+            "enough": false,
+            "point_met": false
+          },
+          "pool_auc_mean": 0.5100826446280992
+        },
+        "fixed": {
+          "runs": [
+            "/tmp/claude-1000/-home-bhux-workplace-VSA-LLM/95cd3acd-b338-46c8-8df8-f781d6fdf776/scratchpad/smoke-e10l/t5-c2-c5rf-s1"
+          ],
+          "operators": [
+            "random_fixed:unitary_hrr"
+          ],
+          "L4a": {
+            "precision": null,
+            "precision_ci": null,
+            "recall": 0.0,
+            "recall_ci": [
+              0.0,
+              0.0
+            ],
+            "tp": 0,
+            "fp": 0,
+            "fn": 110,
+            "accepted": 0,
+            "threshold": 0.8,
+            "p_precision": 1.0,
+            "rule": "holm+decoy",
+            "null_rates": {
+              "complete": 0.0,
+              "relabel": null,
+              "swap": 0.0,
+              "permute": 0.0
+            },
+            "null_counts": {
+              "complete": {
+                "accepted": 0,
+                "tested": 87
+              },
+              "relabel": {
+                "accepted": 0,
+                "tested": 0
+              },
+              "swap": {
+                "accepted": 0,
+                "tested": 103
+              },
+              "permute": {
+                "accepted": 0,
+                "tested": 82
+              }
+            },
+            "calibrated": false,
+            "enough": false,
+            "point_met": false
+          },
+          "pool_auc_mean": 0.5308264462809917
+        }
+      },
+      "contrast": {
+        "available": true,
+        "measure": "decompose recall at precision 0.8, learned \u2212 fixed",
+        "mean": -0.027272727272727268,
+        "ci_low": -0.09833333333333333,
+        "ci_high": 0.0,
+        "p_value": 0.3473053892215569,
+        "resamples": 500,
+        "p_holm": 0.3473053892215569,
+        "reading": "no difference detected"
+      }
+    }
+  },
+  "positive_control_met": null,
+  "readings": {
+    "c2": "no difference detected"
+  },
+  "overall": "no difference detected",
+  "labels": [
+    "SMOKE"
+  ]
+}

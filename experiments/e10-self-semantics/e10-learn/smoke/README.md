@@ -12,6 +12,8 @@ not evidence for or against L4a / L4b. These are the final-code reruns. The smok
 | `t5-c5full-s1` | positive control (trained C5 store of the full frame) | proposals cover 0.79 of erased edges; 7 accepted at precision 1.0 |
 | `t5-features-s1` | C0′ hidden-state passive vector | 29 probes; 58 proposals; 0 accepted |
 | `place-t5-heldout-fixture-s1` | placement evaluator on a 40-item fixture (T5 held-out terms, `is_a` / `owned_by`) | MRR: store 0.39, text 0.49, KGE 0.17–0.22 |
+| `d64-t5-c2-s1`, `d64-t5-c2-c5rf-s1` | amendment 2 (2026-10-09): T5 seed 1, C2 rows, the learned C5 store and the fixed-operator C5rf store; evidence = 96 evaluation windows (1,949 occurrences, 714.8 s to extract on the loaded CPU); KGE 5 epochs | same erasure and probes under both stores (70 probes, 110 erased edges, 140 proposals each); 0 accepted under either |
+| `d64-t5-store-report-s1` | `store-report` on the two runs above | pools identical row by row, so the pair is formed; recall@0.8 learned − fixed −0.027 [−0.098, 0.000]; pool AUC 0.51 / 0.53 |
 
 `extraction-cost.json` holds the cost of each extraction.
 

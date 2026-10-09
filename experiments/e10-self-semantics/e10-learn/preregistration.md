@@ -300,3 +300,68 @@ seeds 1–3.
   The `features` erased jobs drop their reduced baseline list.
 - New totals: **78 jobs, ≈ 1.85 GPU-h, ≈ 8.6 CPU-h**. They replace §9's 81 jobs and ≈ 7.6 CPU-h.
 - Tests updated: `tests/test_e10_learn.py::test_run_synthetic_writes_outputs_and_report_pools_runs`.
+
+## 12. Amendment 2 (2026-10-09, before any real run): a fixed-random-operator store (S9)
+
+**Source:** decision 64 (author, 2026-10-09).
+
+**Timing.** Every job of §9 / amendment 1 is still pending (54.4995–54.49959); no real E10.L run exists. The C5rf
+checkpoints used below finished in E9's WP-PQ1 (T5 on 2026-10-06, T4 on 2026-10-08). Nothing here changes §1–§11.
+
+**Why.**
+- In E12 a fixed random binding (C5rf) decodes its store as well as a learned one.
+- On T4 the operator arms tie (C5 − C5rf and C5 − C5ut n.s. at 3 seeds).
+- Decompose-then-verify reads the store through its operator (OMP over the bound atoms `T_r(a)`, the control heads and the
+  utility test), so it may not need the operator to be learned either.
+
+**S9 (new secondary, T4 and T5).**
+- **Runs.** The erased runs of §3 are repeated with **C5rf's store** (`store=` the C5rf run of the same seed). That store
+  has its trained atomics and its **fixed random unitary operator** (`random_fixed:unitary_hrr`, never trained), and
+  stands in for C5's learned HRR.
+  - Arms `c2`, `features`, `c5full` × seeds 1–3.
+  - Everything else is identical: the erasure (seed 0), the probes, the C2 passive rows, the C0′ evidence (the same
+    `extract` files), the decoders (refitted to this store's static stores), the rule `holm+decoy`, the nulls, the pool and
+    its baselines.
+- **Endpoint.** Per co-primary arm (`c2`, `features`): **learned − fixed** in decompose's recall at precision 0.8 on the
+  shared pool.
+  - The rows are identical under both stores; `store-report` checks this row by row and refuses to pair otherwise.
+  - Pigeonhole bootstrap over concepts × seeds (2,000 resamples), as L4b.
+  - Holm over the two arms within each track.
+  - Reported beside it, for each store: L4a's ingredients (accepted decompose edges, pooled precision and its one-sided
+    test, every null's false-acceptance rate) and the decompose pool AUC.
+  - `c5full` under each store is that store's positive control (descriptive).
+- **Readings (per track).**
+  - Learned − fixed > 0, CI excluding 0, Holm p ≤ 0.05 for an arm: **the learned operator matters** for
+    decompose-then-verify.
+  - No arm significant: **a fixed random binding serves decompose-then-verify as well as a learned one** (E12's decoding
+    result, extended to decomposition and verification).
+  - Learned − fixed < 0 (significant): the fixed operator decomposes better; reported as such.
+  - A store whose `c5full` positive control misses precision 0.8 makes that track's comparison **inconclusive
+    (machinery)**.
+  - Whether the C5rf store meets L4a's conditions where C5's does not (or the reverse) is descriptive.
+- **Unchanged:** L4a, L4b, the T7 primary, S1–S8 and every decision of §8 / amendment 1. S9 enters no Holm family of
+  theirs.
+
+**Jobs** (`e10_learn queue --rf-store`; commands in `experiments/e9-retrofit/queue-commands-decision64-rest.sh`, part 4).
+All are on the CPU lane in the band's free slots: 22 jobs, ≈ 3.7 CPU-h, 0 GPU-h.
+- 54.49957: 18 erased runs, `e10l-{t4,t5}-erased-{c2,features,c5full}-c5rf-s{1,2,3}`, writing `runs/<track>-<arm>-c5rf-s<seed>`.
+  They run after the C5-store runs at 54.49955.
+- 54.49958: per track, `e10l-<track>-erased-c5rf-report` (`report` over the C5rf runs: L4a / L4b as for C5's store,
+  descriptive here) and `e10l-<track>-erased-store-report` (`store-report`: S9).
+
+**Code and tests.**
+- Code (`e10_learn`): `rf_store_plan` and `queue --rf-store`; `run_store_report` and the `store-report` command; `run_seed`
+  (the checkpoint seed from the store's run folder); `arm_acceptance` (L4a's per-arm ingredients, extracted from
+  `run_report` unchanged).
+- Tests (`tests/test_e10_learn.py`):
+  - the pool does not depend on the store;
+  - runs are paired by arm and seed, Holm runs over the two co-primary arms and c5full stays descriptive;
+  - a differing pool is never paired, and duplicate runs are refused;
+  - the plan reuses the evidence, changes only `store=` and the output, and sits in the free slots.
+
+**CPU smoke (label SMOKE; a pipeline check, not a result; `smoke/d64-*`, `smoke/README.md`).** T5 seed 1, C2 rows, 96
+evaluation windows of evidence.
+- The C5 and C5rf stores give the same erasure and probes (70 probes, 110 erased edges) and identical pools, so
+  `store-report` pairs them.
+- 0 edges are accepted under either store.
+- Like every earlier T5 smoke, this one is near chance, so it says nothing about S9.
