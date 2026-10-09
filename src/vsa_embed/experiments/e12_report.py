@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import math
 import re
 import time
 from collections import defaultdict
@@ -154,6 +155,51 @@ def _holm(results: dict[str, dict[str, Any]]) -> None:
     names = [n for n, r in results.items() if r.get("available")]
     for name, adjusted in zip(names, holm_adjust([results[n]["model"]["p_value"] for n in names]) if names else []):
         results[name]["p_holm"] = adjusted
+
+
+def margin_test(result: dict[str, Any], margin: float, *, kind: str) -> dict[str, Any]:
+    """A margin reading of one crossed-model contrast (amendment 16.5), from its mean, SE and Satterthwaite df:
+    `equivalence` — two one-sided t tests at α = 0.05 (the 90% CI inside ±margin); `noninferiority` — the one-sided t test
+    of mean > −margin at α = 0.025 (the 95% CI's lower bound above −margin). Adds `margin` = {kind, margin, p, shown,
+    ci90_low, ci90_high} to `result` (in place) and returns it; an unavailable contrast is left unchanged."""
+    from scipy import stats
+    if not result.get("available"):
+        return result
+    m = result["model"]
+    mean, se, df = float(m["mean"]), float(m.get("se") or 0.0), float(m.get("df") or float("inf"))
+    t = (lambda q: float(stats.t.ppf(q, df))) if math.isfinite(df) else (lambda q: float(stats.norm.ppf(q)))
+    sf = (lambda x: float(stats.t.sf(x, df))) if math.isfinite(df) else (lambda x: float(stats.norm.sf(x)))
+    if kind == "equivalence":
+        p = max(sf((mean + margin) / se), sf((margin - mean) / se)) if se > 0 else float(abs(mean) >= margin)
+        shown, alpha = p < 0.05, 0.05
+    elif kind == "noninferiority":
+        p = sf((mean + margin) / se) if se > 0 else float(mean <= -margin)
+        shown, alpha = p < 0.025, 0.025
+    else:
+        raise ValueError(f"unknown margin test {kind!r}")
+    half = t(0.95) * se
+    result["margin"] = {"kind": kind, "margin": margin, "alpha": alpha, "p": p, "shown": bool(shown), "ci90_low": mean - half,
+                        "ci90_high": mean + half}
+    return result
+
+
+def margin_reading(result: dict[str, Any] | None) -> str:
+    """`≈` (equivalent within the margin), `non-inferior`, `differs` (95% CI excludes 0) or `inconclusive`."""
+    if not result or not result.get("available"):
+        return "not available"
+    m, test = result["model"], result.get("margin") or {}
+    excludes = m["ci_low"] > 0 or m["ci_high"] < 0
+    if test.get("kind") == "equivalence":
+        if test["shown"]:
+            return f"≈ (90% CI within ±{test['margin']:g})"
+        return "differs (95% CI excludes 0)" if excludes else f"inconclusive (neither within ±{test['margin']:g} nor different from 0)"
+    if test.get("kind") == "noninferiority":
+        if test["shown"]:
+            return f"non-inferior at −{test['margin']:g}" + (" and superior (95% CI above 0)" if m["ci_low"] > 0 else "")
+        if m["ci_high"] < -test["margin"]:
+            return f"inferior by more than the margin (95% CI below −{test['margin']:g})"
+        return f"non-inferiority not shown (95% CI lower bound ≤ −{test['margin']:g})"
+    return "differs (95% CI excludes 0)" if excludes else "no difference shown"
 
 
 def _mean_by_seed(values: dict[int, dict[str, float]]) -> float | None:

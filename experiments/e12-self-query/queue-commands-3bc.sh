@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # E12 3b (learning from tool-using traces, pre-registration §12) and 3c (calibrated self-critique, §13) — queue commands.
-# NOT QUEUED. Written 2026-10-08 with the harnesses (`e12_traces`, `e12_critique`) and amendment 16.3, before any 3b / 3c run.
-# Run from the main checkout after merging this branch (the jobqueue CLI takes fractional priorities since e586bd7).
+# QUEUED 2026-10-08 (amendment 16.4, `10c4fa3`); do not run again (`jobqueue add` refuses an existing name). Written the same
+# day with the harnesses (`e12_traces`, `e12_critique`) and amendment 16.3, before any 3b / 3c run.
+# Queue state 2026-10-09 (main checkout `.jobs`): all 30 jobs pending, none started — 3b 18 GPU jobs at 54.4497, 3c 10 GPU
+# jobs at 54.4498 (the base-host model loop of 16.4 included), reports t5-report-e12-3b / -3c at 54.44985.
+# Decision 64 (amendment 16.5, 2026-10-09) adds 3b's C0′-host and C5rf-store arms and 3c's text competitors without changing
+# any command line below: see `queue-commands-decision64.sh`.
 #
 # Priorities (author): 3b GPU jobs 54.4497, 3c GPU jobs 54.4498, both reports 54.44985 (CPU lane; names contain "-report",
 # so a report starts only after every job ahead of it in priority order is done).
-# GPU-h (upper bounds; amendment 16.3): 3b ≈ 5.2 (18 jobs: training ≈ 1.6, tests ≈ 2.1, agentic episodes ≈ 1.5),
-# 3c ≈ 3.0 (8 jobs: C5 × 3 ≈ 1.25, C5ut × 3 ≈ 0.7, model loop × 2 ≈ 1.0); reports 0.
+# GPU-h (upper bounds; amendments 16.3 and 16.4): 3b ≈ 5.2 (18 jobs: training ≈ 1.6, tests ≈ 2.1, agentic episodes ≈ 1.5),
+# 3c ≈ 4.0 (10 jobs: C5 × 3 ≈ 1.25, C5ut × 3 ≈ 0.7, model loop × 2 ≈ 1.0, base-host model loop × 2 ≈ 1.0); reports 0.
+# Amendment 16.5 adds ≈ 0.8 GPU-h to the three C5 critique jobs (the text competitors, `--competitors auto`).
 # Jobs are idempotent by name; each passes --overwrite and --no-resume (a retried job rewrites its partial output).
 set -euo pipefail
 PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python

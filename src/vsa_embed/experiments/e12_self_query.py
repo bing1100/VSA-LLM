@@ -642,6 +642,22 @@ def check_lengths(tokenizer: Any, prefixes: Sequence[str], continuations: Sequen
     return longest
 
 
+def context_tokens(tokenizer: Any, prompts: Sequence[Prompt], contexts: dict[str, str]) -> dict[str, int]:
+    """Per item with a context: the prompt tokens the context adds (amendment 16.5's token accounting) — the tokens of the
+    item's first prompt with the context minus without it (the context is added once to each of the item's prompts)."""
+    rows = [p for p in prompts if contexts.get(p.id)]
+    if not rows:
+        return {}
+    plain = [_render(p.templates[0], p.fills) for p in rows]
+    full = [_render(_guard(contexts[p.id]) + "\n" + p.templates[0], p.fills) for p in rows]
+    out = {}
+    for start in range(0, len(rows), 2048):
+        a = tokenizer(full[start:start + 2048], add_special_tokens=False)["input_ids"]
+        b = tokenizer(plain[start:start + 2048], add_special_tokens=False)["input_ids"]
+        out.update({p.id: len(x) - len(y) for p, x, y in zip(rows[start:start + 2048], a, b)})
+    return out
+
+
 def score_prompts(adapter: Any, prompts: Sequence[Prompt], contexts: dict[str, str],
                   null_cache: dict[tuple[str, str], tuple[float, float]] | None = None, *, check: bool = True
                   ) -> tuple[list[dict[str, Any]], dict[tuple[str, str], tuple[float, float]], int]:

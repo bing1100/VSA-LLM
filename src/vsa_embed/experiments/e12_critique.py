@@ -33,6 +33,15 @@ context) and, on held-out terms, `evidence`; it records every item's beliefs in 
 when p ≥ θ and else with the behaviour, flagging the items whose available signals disagree (flagged items are the first
 abstained), each method abstaining on its own lowest-confidence 20%.
 
+**Text competitors (decision 64, amendment 16.5).** On the new words and the held-out terms (K1's pool) the job also scores
+phase A's `symbolic` (the gold relations as text) and `definition` (the E11 prose definition) contexts — on a run whose store
+carries roles (`--competitors auto`; the C5ut job, the null world's role-blind control, skips them) — and records the prompt
+tokens every context adds to each item (`tokens`). `report` runs **the same rule loop with each text in the prompt instead
+of the store decode** (`text_loop`: the belief is the host's answer with the text in context, its confidence the softmax
+calibrated on the dev half, θ chosen on the dev half by the same rule; `loop_recall_text` = the store's decode as text, read
+by the host) and tests **K1b = loop(store) − loop(definition)** for non-inferiority at −0.05 (accuracy at 80% coverage),
+read with the prompt tokens each loop adds (the store's rule loop: none). K2 is unchanged.
+
 **Model loop** (`loop`, secondary; Qwen3-1.7B-Base C5, seeds 1–2): a few-shot critique prompt (the question, the model's own
 answer, the recall with p, the evidence sentence or "none") scored by forced choice over the decisions (Keep, Revise,
 Unsure) and, after `Revise to`, over the other options.
@@ -91,6 +100,11 @@ SPLIT_SEED = 0
 NULL_SEED = 0
 MIN_EDGES = 50                 # a relation with fewer decoded seen edges (or < 5 of a class) uses the pooled calibrator
 L2 = 1.0
+# Decision 64 (amendment 16.5).
+COMPETITORS = ("symbolic", "definition")       # phase A's text conditions, on K1's pool (new words, held-out terms)
+COMPETITOR_SETS = ("new", "heldout")
+TEXT_LOOPS = {"loop_recall_text": "recall:own", "loop_symbolic": "symbolic", "loop_definition": "definition"}
+K1B_MARGIN = 0.05              # K1b's non-inferiority margin (accuracy at 80% coverage)
 
 
 # ---------------------------------------------------------------- calibration
@@ -548,8 +562,9 @@ def split_of(item_set: sqx.ItemSet, *, seed: int = SPLIT_SEED) -> dict[str, str]
 
 
 def evaluate_set(critique: Critique, item_set: sqx.ItemSet, *, evidence: dict[str, dict[str, Any]] | None,
-                 log: Callable[[str], None] = print) -> dict[str, Any]:
-    """Score one item set under `none`, `recall:own`, `null` (and `evidence`); beliefs in both worlds; calibration edges."""
+                 competitors: Sequence[str] = (), log: Callable[[str], None] = print) -> dict[str, Any]:
+    """Score one item set under `none`, `recall:own`, `null` (and `evidence`, and the text `competitors`: phase A's
+    `symbolic` / `definition`); beliefs in both worlds; calibration edges; per item the prompt tokens each context adds."""
     run = critique.run
     real, null = critique.frames(item_set)
     real_vectors = critique.vectors(real, item_set, real=True)
@@ -561,7 +576,19 @@ def evaluate_set(critique: Critique, item_set: sqx.ItemSet, *, evidence: dict[st
                 "null": critique.null_contexts(item_set, null, null_vectors)}
     if evidence is not None:
         contexts["evidence"] = {p.id: evidence[p.id]["sentence"] for p in item_set.prompts if (evidence.get(p.id) or {}).get("sentence")}
+    used, skipped = [], []
+    for kind in competitors:                           # decision 64: the text competitors (phase A's conditions, reused)
+        try:
+            contexts[kind] = builder.build(sqx.Condition(kind))[0]
+        except ValueError as error:                    # a track without a definition writer (T5 and T4 have one): skipped
+            if kind != "definition" or "no definition writer" not in str(error):
+                raise
+            skipped.append(kind)
+            log(f"  critique ({item_set.kind}): {error}: the definition competitor is skipped")
+            continue
+        used.append(kind)
     scores: dict[str, dict[str, list[float]]] = {}
+    tokens: dict[str, dict[str, int]] = {}
     timings, longest = {}, {}
     started = time.monotonic()
     with sqx.host_view(run, item_set) as (adapter, ids):
@@ -574,6 +601,7 @@ def evaluate_set(critique: Critique, item_set: sqx.ItemSet, *, evidence: dict[st
             with sqx.smaller_batches(adapter, 2 if context else 1):
                 rows, cache, longest[name] = sqx.score_prompts(adapter, prompts, context, cache)
             scores[name] = {r["id"]: _mean_pmi(r) for r in rows}
+            tokens[name] = sqx.context_tokens(adapter.tokenizer, prompts, context) if context else {}
             timings[name] = round(time.monotonic() - t0, 1)
     split = split_of(item_set)
     linked = {c for c, r in resolved.items() if r.get("status") in ("linked", "no entry")}
@@ -584,12 +612,15 @@ def evaluate_set(critique: Critique, item_set: sqx.ItemSet, *, evidence: dict[st
         ev = (evidence or {}).get(p.id) or {}
         items.append({"id": p.id, "set": item_set.kind, "split": split.get(p.concept, "test"), "concept": p.concept, "relation": p.row["relation"],
                       "gold": int(p.gold), "options": len(p.candidates), "scores": {k: v[p.id] for k, v in scores.items() if p.id in v},
+                      "tokens": {k: tokens[k].get(p.id, 0) for k, v in scores.items() if p.id in v},
                       "belief": {"real": beliefs["real"].get(p.id), "null": beliefs["null"].get(p.id)},
                       "evidence": {"present": bool(ev.get("sentence")), "option": ev.get("option")} if evidence is not None else None,
                       "null_option": _null_option(critique, p, null)})
     calibration = {"real": critique.edges(item_set, real, real_vectors, real), "null": critique.edges(item_set, null, null_vectors, real)}
-    return {"items": items, "calibration_edges": calibration, "timings": timings, "longest_tokens": longest,
-            "seconds": time.monotonic() - started, "linked": len(linked), "concepts": len(item_set.concepts),
+    added = {k: float(np.mean(list(v.values()))) for k, v in tokens.items() if v}
+    return {"items": items, "calibration_edges": calibration, "timings": timings, "longest_tokens": longest, "tokens_added": added,
+            "competitors": used, "competitors_skipped": skipped, "seconds": time.monotonic() - started, "linked": len(linked),
+            "concepts": len(item_set.concepts),
             "null_frames": {cid: [[critique.ontology["relation_names"][r], critique.ontology["atomic_names"][f]] for r, f in frame]
                             for cid, frame in null.items()}}
 
@@ -602,6 +633,14 @@ def _null_option(critique: Critique, prompt: sqx.Prompt, null: dict[str, list[tu
     atoms = critique.options.atoms(prompt.row["relation"], prompt.candidates)
     first = next((f for q, f in null[prompt.concept] if q == r), None)
     return next((k for k, a in enumerate(atoms) if a is not None and a == first), None)
+
+
+def competitors_enabled(store: sqx.LoadedStore, setting: str = "auto") -> bool:
+    """Decision 64: score the text competitors on K1's pool — `on`, `off`, or `auto`: when the store carries roles (the K1
+    host, C5); the C5ut job (the null world's role-blind control) skips them, the texts not depending on the store."""
+    if setting not in {"auto", "on", "off"}:
+        raise ValueError(f"--competitors must be auto, on or off, not {setting!r}")
+    return setting == "on" or (setting == "auto" and not store.store.role_blind)
 
 
 def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
@@ -619,13 +658,14 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     config = {"experiment": "e12-critique", "run": str(run_dir), "sets": sets, "paths": {k: str(v) for k, v in paths.items()},
               "evidence": str(args.evidence), "limits": {"twins": args.twin_limit, "new": args.new_limit, "heldout": args.heldout_limit},
               "seen_cap": args.seen_cap, "null_seed": NULL_SEED, "split_seed": SPLIT_SEED, "batch_size": args.batch_size,
-              "max_length": args.max_length, "label": args.label}
+              "max_length": args.max_length, "competitors": args.competitors, "label": args.label}
     if args.overwrite:
         for name in RESULT_FILES:
             if (output / name).is_file():
                 (output / name).unlink()
     git_at_start = start_output(output, config)
     store = sqx.load_store(Path(args.store or run_dir), "own")
+    use_competitors = competitors_enabled(store, args.competitors)
     calibrator, seen = fit_calibrator(store, cap=args.seen_cap)
     run = open_run(run_dir, device=args.device, batch_size=args.batch_size, max_length=args.max_length, alias_table=alias_table)
     lexicon = sqx.lexicon_for_track(track, family, run.ontology)
@@ -647,7 +687,8 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 item_set.concepts = [c for c in item_set.concepts if c["concept"] in keep]
                 item_set.prompts = [p for p in item_set.prompts if p.concept in keep]
             evidence = load_evidence(args.evidence)
-        results[name] = evaluate_set(critique, item_set, evidence=evidence)
+        results[name] = evaluate_set(critique, item_set, evidence=evidence,
+                                     competitors=COMPETITORS if use_competitors and name in COMPETITOR_SETS else ())
     seconds = time.monotonic() - started
     header = {"source": run.describe(), "store": store.describe(), "label": args.label}
     items = [i for r in results.values() for i in r["items"]]
@@ -670,8 +711,10 @@ def render_run(summary: dict[str, Any], items: Sequence[dict[str, Any]]) -> str:
     lines = [f"# E12 3c — critique inputs, {source['condition']} seed {source['seed']} ({source['size']}){label}", "",
              f"Calibrator: {summary['calibrator']['info']}. Seen-entry calibration: ECE {_f(summary['seen']['ece'])}, Brier "
              f"{_f(summary['seen']['brier'])}, AUROC {_f(summary['seen']['auroc'])}.", "",
-             "| set | items | none | recall:own | null | evidence | belief (real) correct | belief (null) = null option |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|"]
+             "| set | items | none | recall:own | null | evidence | symbolic | definition | belief (real) correct | belief (null) = null option |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    contexts = ("recall:own", "null", "evidence", *COMPETITORS)
+    usage = []
     for name in SETS:
         sub = [i for i in items if i["set"] == ("new" if name == "new" else name)]
         if not sub:
@@ -680,10 +723,14 @@ def render_run(summary: dict[str, Any], items: Sequence[dict[str, Any]]) -> str:
             if any(key in i["scores"] for i in sub) else "—"
         real = [i["belief"]["real"] for i in sub if i["belief"]["real"] and i["belief"]["real"]["answer"] is not None]
         false = [i for i in sub if i["belief"]["null"] and i["belief"]["null"]["answer"] is not None and i["null_option"] is not None]
-        lines.append(f"| {name} | {len(sub)} | {acc('none')} | {acc('recall:own')} | {acc('null')} | {acc('evidence')} | "
-                     f"{_f(np.mean([b['correct_world'] for b in real])) if real else '—'} | "
+        lines.append(f"| {name} | {len(sub)} | {acc('none')} | {acc('recall:own')} | {acc('null')} | {acc('evidence')} | {acc('symbolic')} | "
+                     f"{acc('definition')} | {_f(np.mean([b['correct_world'] for b in real])) if real else '—'} | "
                      f"{_f(np.mean([i['belief']['null']['answer'] == i['null_option'] for i in false])) if false else '—'} |")
-    return "\n".join(lines) + "\n"
+        spent = {k: [i["tokens"][k] for i in sub if k in (i.get("tokens") or {})] for k in contexts}
+        usage.append(f"| {name} | " + " | ".join(f"{np.mean(v):.1f}" if v else "—" for v in spent.values()) + " |")
+    lines += ["", "Prompt tokens each context adds per item (mean; added once to each of the item's prompts; the store's rule loop "
+              "reads the decode without the host: none):", "", "| set | " + " | ".join(contexts) + " |", "|---|" + "---:|" * len(contexts)]
+    return "\n".join(lines + usage) + "\n"
 
 
 def _f(value: Any) -> str:
@@ -757,6 +804,43 @@ def methods(items: Sequence[dict[str, Any]], *, world: str, theta: float, behavi
     return out
 
 
+def text_loop(items: Sequence[dict[str, Any]], key: str, *, theta: float, behaviour_cal: dict[str, list[float]] | None,
+              context_cal: dict[str, list[float]] | None) -> dict[str, list]:
+    """The rule loop with a text in the prompt instead of the store decode (decision 64, amendment 16.5): the belief is the
+    host's answer with the `key` context (`symbolic`: the gold relations as text; `definition`: the prose definition;
+    `recall:own`: the store's decode as text), its confidence that answer's softmax calibrated on the dev half
+    (`context_cal`); the loop answers with it when that confidence is ≥ θ, else with the behaviour (calibrated as the store
+    loop's), and flags the item when the available signals (this belief, the behaviour, the evidence answer) disagree.
+    `tokens`: the prompt tokens the text adds to the item (0 without the context)."""
+    out: dict[str, list] = {"answer": [], "confidence": [], "flagged": [], "tokens": []}
+    for item in items:
+        none = softmax(item["scores"]["none"])
+        h, q = int(np.argmax(none)), float(none.max())
+        ch = float(isotonic_predict(behaviour_cal, np.asarray([q]))[0]) if behaviour_cal else q
+        v = None
+        if item.get("evidence") and item["evidence"].get("present") and "evidence" in item["scores"]:
+            v = int(np.argmax(item["scores"]["evidence"]))
+        context = item["scores"].get(key)
+        b = p = None
+        if context is not None:
+            s = softmax(context)
+            b = int(np.argmax(s))
+            p = float(isotonic_predict(context_cal, np.asarray([s.max()]))[0]) if context_cal else float(s.max())
+        disagree = len({x for x in (b, h, v) if x is not None}) > 1
+        a, c = (b, p) if b is not None and p >= theta else (h, ch)
+        out["answer"].append(a); out["confidence"].append(c); out["flagged"].append(disagree)
+        out["tokens"].append(int((item.get("tokens") or {}).get(key, 0)) if context is not None else 0)
+    return out
+
+
+def context_calibration(dev: Sequence[dict[str, Any]], key: str) -> dict[str, list[float]] | None:
+    """Isotonic calibration, on the dev half, of the softmax confidence of the host's answer with the `key` context."""
+    rows = [i for i in dev if key in i["scores"]]
+    conf = np.asarray([softmax(i["scores"][key]).max() for i in rows])
+    correct = np.asarray([float(np.argmax(i["scores"][key]) == i["gold"]) for i in rows])
+    return isotonic_from(conf, correct)
+
+
 def scored(items: Sequence[dict[str, Any]], method: dict[str, list], *, coverage: float = COVERAGE, world: str = "real") -> dict[str, Any]:
     """Per item at `coverage`: answered, correct, adopted (the null world's false option), and the K units
     `1(answered ∧ correct) / coverage` (their mean is the accuracy at that coverage) and `1(answered ∧ adopted) / coverage`."""
@@ -781,11 +865,15 @@ def coverage_curve(items: Sequence[dict[str, Any]], method: dict[str, list], *, 
     return out
 
 
-def choose_theta(dev: Sequence[dict[str, Any]], behaviour_cal: dict[str, list[float]] | None) -> tuple[float, list[dict[str, float]]]:
-    """θ maximizing the rule loop's accuracy at 80% coverage on the dev half (real world); ties: the smallest θ."""
+def choose_theta(dev: Sequence[dict[str, Any]], behaviour_cal: dict[str, list[float]] | None,
+                 build: Callable[[float], dict[str, list]] | None = None) -> tuple[float, list[dict[str, float]]]:
+    """θ maximizing the rule loop's accuracy at 80% coverage on the dev half (real world); ties: the smallest θ. `build`
+    (θ → the method; default the store's rule loop) chooses a text loop's θ by the same rule (amendment 16.5)."""
+    if build is None:
+        build = lambda theta: methods(dev, world="real", theta=theta, behaviour_cal=behaviour_cal)["loop"]
     table = []
     for theta in THETAS:
-        s = scored(dev, methods(dev, world="real", theta=theta, behaviour_cal=behaviour_cal)["loop"])
+        s = scored(dev, build(theta))
         table.append({"theta": theta, "accuracy": s["accuracy_at"]})
     best = max(table, key=lambda r: (round(r["accuracy"], 12), -r["theta"]))
     return float(best["theta"]), table
@@ -805,22 +893,40 @@ def analyse_run(items: Sequence[dict[str, Any]], *, test_sets: Sequence[str] = (
     dev = [i for i in items if i["set"] == "new" and i["split"] == "dev"]
     cal = behaviour_calibration(dev) if dev else None
     theta, table = choose_theta(dev, cal) if dev else (0.5, [])
-    out: dict[str, Any] = {"theta": theta, "theta_table": table, "dev_items": len(dev), "behaviour_calibration": cal, "pools": {}}
+    out: dict[str, Any] = {"theta": theta, "theta_table": table, "dev_items": len(dev), "behaviour_calibration": cal, "pools": {},
+                           "text_loops": {}}
+    # decision 64: the same rule loop with a text in the prompt instead of the store decode; θ and the text answer's
+    # calibration on the dev half, by the store loop's rule
+    for name, key in TEXT_LOOPS.items():
+        if not any(key in i["scores"] for i in items):
+            continue
+        context_cal = context_calibration(dev, key) if dev else None
+        build = lambda t, key=key, context_cal=context_cal: text_loop(dev, key, theta=t, behaviour_cal=cal, context_cal=context_cal)
+        loop_theta, loop_table = choose_theta(dev, cal, build=build) if any(key in i["scores"] for i in dev) else (0.5, [])
+        out["text_loops"][name] = {"context": key, "theta": loop_theta, "theta_table": loop_table, "context_calibration": context_cal}
     pools = {"pooled": [i for i in items if i["set"] in test_sets and i["split"] == "test"]}
     for name in ("new", "heldout", "twins"):
         pools[name] = [i for i in items if i["set"] == name and i["split"] == "test"]
     for pool, sub in pools.items():
         if not sub:
             continue
-        block: dict[str, Any] = {"items": len(sub), "ids": [i["id"] for i in sub]}
+        block: dict[str, Any] = {"items": len(sub), "ids": [i["id"] for i in sub],
+                                 "tokens_evidence": float(np.mean([(i.get("tokens") or {}).get("evidence", 0) for i in sub]))}
         for world in ("real", "null"):
             ms = methods(sub, world=world, theta=theta, behaviour_cal=cal)
+            context_key = "recall:own" if world == "real" else "null"
+            spent = {m: 0.0 for m in ms} | {"recall_context": float(np.mean([(i.get("tokens") or {}).get(context_key, 0) for i in sub]))}
+            if world == "real":                        # the text sources are uncorrupted: no null-world counterpart (K2 unchanged)
+                for name, spec in out["text_loops"].items():
+                    if any(spec["context"] in i["scores"] for i in sub):
+                        ms[name] = text_loop(sub, spec["context"], theta=spec["theta"], behaviour_cal=cal, context_cal=spec["context_calibration"])
+                        spent[name] = float(np.mean(ms[name]["tokens"]))
             block[world] = {}
             for name, method in ms.items():
                 s = scored(sub, method, world=world)
                 block[world][name] = {"k1": s["k1"].tolist(), "k2": s["k2"].tolist(), "accuracy_at": s["accuracy_at"],
                                       "adoption_at": s["adoption_at"], "accuracy_full": s["accuracy_full"],
-                                      "adoption_full": s["adoption_full"], "flag_rate": s["flag_rate"],
+                                      "adoption_full": s["adoption_full"], "flag_rate": s["flag_rate"], "tokens": spent[name],
                                       "curve": coverage_curve(sub, method)}
         out["pools"][pool] = block
     return out
@@ -873,6 +979,7 @@ def analyse(runs_root: Path, *, hosts: Sequence[str] | None = None, resamples: i
                 primary["K2: rule loop − naive recall (false-belief adoption at 80% coverage, null world)"] = contrast(loop2, naive2, resamples=resamples, seed=seed)
             _holm(primary)
             m_block["primary"] = primary
+            m_block["k1b"] = k1b(per_seed, resamples=resamples, seed=seed)
             sec: dict[str, Any] = {}
             for pool in ("new", "heldout", "twins"):
                 for name, (world, a, b, key) in {"K1": ("real", "loop", "no_tool", "k1"), "K2": ("null", "loop", "naive", "k2"),
@@ -893,13 +1000,69 @@ def analyse(runs_root: Path, *, hosts: Sequence[str] | None = None, resamples: i
     return analysis
 
 
+def k1b(per_seed: dict[int, dict[str, Any]], *, resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
+    """Decision 64 (amendment 16.5): **K1b** = rule loop (store) − rule loop (the prose definition in the prompt instead of
+    the store decode), accuracy at 80% coverage on K1's pool (items × seeds crossed model), non-inferiority at −`K1B_MARGIN`
+    (one-sided α = 0.025: the 95% CI's lower bound above the margin); its own test, outside K1 / K2's Holm family. Read with
+    the prompt tokens each loop adds per item (`tokens`). Secondaries (never promoted): K1b per set, the loop against the
+    gold relations as text, the store decode as text against the definition (both read by the host), the competitors' own
+    K1."""
+    from .e12_report import contrast, margin_reading, margin_test
+    out: dict[str, Any] = {"margin": K1B_MARGIN, "secondaries": {}, "tokens": {}}
+
+    def test(a: str, b: str, pool: str, margin: float | None) -> dict[str, Any] | None:
+        ua, ub = _units(per_seed, pool, "real", a, "k1"), _units(per_seed, pool, "real", b, "k1")
+        if not ua or not ub:
+            return None
+        result = contrast(ua, ub, resamples=resamples, seed=seed)
+        if margin is not None:
+            margin_test(result, margin, kind="noninferiority")
+        result["reading"] = margin_reading(result)
+        return result
+
+    primary = test("loop", "loop_definition", "pooled", K1B_MARGIN)
+    out["K1b"] = primary or {"available": False}
+    rows = {f"K1b ({pool})": ("loop", "loop_definition", pool, K1B_MARGIN) for pool in ("new", "heldout")}
+    for pool in ("pooled", "new", "heldout"):
+        rows[f"loop (store) − loop (gold relations as text) ({pool})"] = ("loop", "loop_symbolic", pool, K1B_MARGIN)
+    rows["loop (store decode as text, host reads) − loop (definition) (pooled)"] = ("loop_recall_text", "loop_definition", "pooled", K1B_MARGIN)
+    for name in ("loop_definition", "loop_symbolic", "loop_recall_text"):
+        rows[f"K1 of {name}: {name} − no tool (pooled)"] = (name, "no_tool", "pooled", None)
+    for label, args in rows.items():
+        result = test(*args)
+        if result is not None:
+            out["secondaries"][label] = result
+    for method in ("no_tool", "loop", "recall_context", *TEXT_LOOPS):
+        values = [a["pools"]["pooled"]["real"][method]["tokens"] for a in per_seed.values()
+                  if "pooled" in a["pools"] and method in a["pools"]["pooled"]["real"] and "tokens" in a["pools"]["pooled"]["real"][method]]
+        accuracy = [a["pools"]["pooled"]["real"][method]["accuracy_at"] for a in per_seed.values()
+                    if "pooled" in a["pools"] and method in a["pools"]["pooled"]["real"]]
+        if values:
+            out["tokens"][method] = {"tokens_per_item": float(np.mean(values)), "accuracy_at": float(np.mean(accuracy))}
+    evidence = [a["pools"]["pooled"].get("tokens_evidence") for a in per_seed.values() if "pooled" in a["pools"]]
+    out["tokens_evidence"] = float(np.mean([e for e in evidence if e is not None])) if any(e is not None for e in evidence) else None
+    out["reading"] = k1b_reading(out)
+    return out
+
+
+def k1b_reading(block: dict[str, Any]) -> str:
+    result = block.get("K1b") or {}
+    if not result.get("available"):
+        return "not available (no definition competitor scored)"
+    tokens = block.get("tokens", {})
+    saved = (tokens.get("loop_definition", {}).get("tokens_per_item", 0.0) - tokens.get("loop", {}).get("tokens_per_item", 0.0)) \
+        if "loop_definition" in tokens else None
+    text = result["reading"]
+    return text + ("" if saved is None else f"; the store's rule loop adds {saved:.0f} fewer prompt tokens per item than the definition loop")
+
+
 def _method_means(per_seed: dict[int, dict[str, Any]]) -> dict[str, Any]:
     out: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     for analysis in per_seed.values():
         for pool, block in analysis["pools"].items():
             for world in ("real", "null"):
                 for method, v in block[world].items():
-                    for key in ("accuracy_at", "adoption_at", "accuracy_full", "adoption_full", "flag_rate"):
+                    for key in ("accuracy_at", "adoption_at", "accuracy_full", "adoption_full", "flag_rate", "tokens"):
                         if v.get(key) is not None:
                             out[f"{pool} {world} {method}"][key].append(v[key])
     return {k: {kk: float(np.mean(vv)) for kk, vv in v.items()} for k, v in out.items()}
@@ -929,7 +1092,7 @@ def reading(primary: dict[str, Any], secondaries: dict[str, Any]) -> dict[str, s
 def render_report(analysis: dict[str, Any], *, title: str, label: str | None = None) -> str:
     from .e12_report import _cell
     lines = [f"# {title}" + (f" — {label}" if label else ""), "",
-             "Pre-registration: `experiments/e12-self-query/preregistration.md` §13 and amendment 16.3. K1 and K2: items × seeds crossed "
+             "Pre-registration: `experiments/e12-self-query/preregistration.md` §13, amendments 16.3 and 16.5. K1 and K2: items × seeds crossed "
              "model of the per-item units `1(answered ∧ correct) / 0.8` and `1(answered ∧ adopted) / 0.8` (their means are the accuracy "
              "and the false-belief adoption at 80% coverage), Holm over the two.", ""]
     if label:
@@ -939,12 +1102,25 @@ def render_report(analysis: dict[str, Any], *, title: str, label: str | None = N
         for model, m in block["models"].items():
             lines += [f"### {model}", "", f"θ per seed (dev half of the new words): {m['theta']}", "", "| endpoint | estimate |", "|---|---|"]
             lines += [f"| {n} | {_cell(r)} |" for n, r in m["primary"].items()]
-            lines += ["", "Reading: " + "; ".join(f"{k}: {v}" for k, v in m["reading"].items()), "",
-                      "| pool / world / method | accuracy at 80% | adoption at 80% | accuracy (all) | adoption (all) | flag rate |",
-                      "|---|---:|---:|---:|---:|---:|"]
+            lines += ["", "Reading: " + "; ".join(f"{k}: {v}" for k, v in m["reading"].items()), ""]
+            kb = m.get("k1b") or {}
+            if kb:
+                lines += [f"**K1b (amendment 16.5)** — rule loop (store) − rule loop (the prose definition in the prompt), accuracy at 80% "
+                          f"coverage, non-inferiority at −{kb['margin']:g} (one-sided α = 0.025; not in K1 / K2's Holm family): "
+                          f"{_cell(kb.get('K1b'))}. Reading: {kb['reading']}.", "",
+                          "| loop (real world, pooled test items; seed means) | accuracy at 80% | prompt tokens added per item |", "|---|---:|---:|"]
+                lines += [f"| {name} | {_f(v['accuracy_at'])} | {v['tokens_per_item']:.1f} |" for name, v in kb.get("tokens", {}).items()]
+                if kb.get("tokens_evidence") is not None:
+                    lines.append(f"| (every loop's flag: the evidence sentence, held-out items) | — | {kb['tokens_evidence']:.1f} |")
+                lines += ["", "| K1b secondary | estimate | reading |", "|---|---|---|"]
+                lines += [f"| {n} | {_cell(r)} | {r.get('reading', '')} |" for n, r in kb.get("secondaries", {}).items()] + [""]
+            lines += [
+                      "| pool / world / method | accuracy at 80% | adoption at 80% | accuracy (all) | adoption (all) | flag rate | prompt tokens added |",
+                      "|---|---:|---:|---:|---:|---:|---:|"]
             for name, v in m["means"].items():
                 lines.append(f"| {name} | {_f(v.get('accuracy_at'))} | {_f(v.get('adoption_at'))} | {_f(v.get('accuracy_full'))} | "
-                             f"{_f(v.get('adoption_full'))} | {_f(v.get('flag_rate'))} |")
+                             f"{_f(v.get('adoption_full'))} | {_f(v.get('flag_rate'))} | "
+                             f"{'—' if v.get('tokens') is None else f'{v['tokens']:.1f}'} |")
             lines += ["", "| calibration of p (seed-averaged) | n | accuracy | mean p | ECE | Brier | AUROC |", "|---|---:|---:|---:|---:|---:|---:|"]
             keys = sorted({k for c in m["calibration"].values() for k in c})
             for key in keys:
@@ -1269,6 +1445,9 @@ def main(argv: list[str] | None = None) -> None:
             p.add_argument("--twin-limit", type=int, default=None, help="smoke tests only: the first N pairs")
             p.add_argument("--new-limit", type=int, default=NEW_WORDS, help="the first N new words (pre-registered: 300)")
             p.add_argument("--heldout-limit", type=int, default=None, help="smoke tests only: the first N held-out terms")
+            p.add_argument("--competitors", default="auto", choices=("auto", "on", "off"),
+                           help="decision 64: score the symbolic / definition competitors on the new words and held-out terms "
+                                "(auto: when the store carries roles)")
         else:
             p.add_argument("--items", type=int, default=300, help="items per set (new-word test half; held-out terms)")
             p.add_argument("--host-dtype", default=None, choices=[None, "bfloat16", "float16"])

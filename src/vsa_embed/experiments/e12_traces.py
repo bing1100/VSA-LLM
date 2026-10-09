@@ -25,6 +25,15 @@ learn to call the tool well?
 - `L` — the control: the same number of sequences and tokens per epoch as T, windows of the T5 training corpus (LM loss);
 - `base` — no training: the untrained run under the same tests (3a's few-shot reference at this host size).
 
+**Decision 64 (amendment 16.5): the hypothesis is "LoRA learns to use the decoded store"**, not "LoRA learns to unbind a
+learned-HRR role" (phase A: the roles live in the store, not the host — a C0′ host reading C5's store ties C5 — and a fixed
+random binding decodes as well as a learned one). Two hosts test it, the same training and tests (`D64_ARMS`):
+- *C0′ host* (`--store`: the tool reads C5's store of the same seed; the host has no channel): arms `T` and `base` —
+  `T@C0p` ≈ `T` with the decoded store (the fixed pipeline, the agentic twins), and ≈ 0.5 without the tool (no channel);
+- *C5rf* (its own fixed-random store): arms `T`, `I`, `L` — B1's contrast I − L and arm T's decoded-store tests ≈ C5's.
+Read as equivalence contrasts (`decision64`; ±0.05 with the decoded store in context, ±0.075 for B1's I − L), reported as
+secondaries; B1 and B2 are unchanged.
+
 **Training** (§12): rank-16 LoRA (`integrations.transformers.add_lora`, its default targets and α = 32) on the host; the
 host's weights and the whole channel (composer, projector, gate, P1 context) frozen; 3 epochs, AdamW lr 2·10⁻⁴, 32
 sequences per optimizer step, 3% warmup, then the trainer's cosine decay to 10% (`training.lm._lr`); weight decay 0.1, betas
@@ -42,9 +51,9 @@ summary), `training.jsonl` (per step loss, tokens, seconds), `episodes.jsonl.gz`
 `adapters.pt` (the LoRA weights; git-ignored under `runs/`), `resolved_config.yaml`, `manifest.json`.
 
     python -m vsa_embed.experiments.e12_traces items --output experiments/e12-self-query/items/traces-t5-smollm2-v1     (CPU)
-    python -m vsa_embed.experiments.e12_traces run --run RUN --arm T [--train-items DIR] [--overwrite]                   (GPU)
+    python -m vsa_embed.experiments.e12_traces run --run RUN --arm T [--store RUN] [--train-items DIR] [--overwrite]     (GPU)
     python -m vsa_embed.experiments.e12_traces report --runs experiments/e9-retrofit/runs/t5 --output DIR                 (CPU)
-    python -m vsa_embed.experiments.e12_traces commands --stage t5 --priority 54.4497                                    (print jobs)
+    python -m vsa_embed.experiments.e12_traces commands --stage t5 --priority 54.4497 [--set decision64]                 (print jobs)
 """
 
 from __future__ import annotations
@@ -100,6 +109,11 @@ MIN_LR_RATIO = 0.1                # cosine decay to 10% after warmup (training.l
 QUESTION_SEED = 0                 # template draw and option order of the training questions
 NEW_WORDS = 300                   # phase A's pre-registered subsets (§3)
 UNDERSTANDING_ANCHORS = 150
+# Decision 64 (amendment 16.5): host model → arms; the tool of a host without a store reads C5's store of its seed.
+D64_ARMS = {"C0p": ("T", "base"), "C5rf": ("T", "I", "L")}
+D64_STORE = {"C0p": "C5"}
+TOOL_MARGIN = 0.05                # equivalence margin: contrasts with the decoded store in context (fixed pipeline, agentic)
+B1_MARGIN = 0.075                 # equivalence margin: the C5rf − C5 difference of B1's contrast I − L (half B1's 0.15 band)
 
 
 # ---------------------------------------------------------------- training questions (CPU, once)
@@ -601,8 +615,9 @@ def run_arm(args: argparse.Namespace) -> dict[str, Any]:
     if arm not in ARMS:
         raise ValueError(f"arm must be one of {ARMS}")
     output = Path(args.output or run_dir / f"{OUTPUT_PREFIX}{arm}")
+    store_dir = Path(args.store) if args.store else run_dir
     config = {"experiment": "e12-traces", "arm": arm, "run": str(run_dir), "model": model_name, "train_items": str(args.train_items),
-              "twins": str(args.twins), "new_words": str(args.new_words) if args.new_words else None,
+              "store": str(store_dir), "twins": str(args.twins), "new_words": str(args.new_words) if args.new_words else None,
               "understanding": str(args.understanding) if args.understanding else None, "seed": args.seed,
               "hyperparameters": {"rank": RANK, "alpha": ALPHA, "epochs": EPOCHS, "lr": LR, "sequences_per_step": SEQUENCES_PER_STEP,
                                   "warmup": WARMUP, "min_lr_ratio": MIN_LR_RATIO, "weight_decay": WEIGHT_DECAY, "betas": list(BETAS),
@@ -610,18 +625,21 @@ def run_arm(args: argparse.Namespace) -> dict[str, Any]:
               "smoke": {"question_limit": args.question_limit, "max_steps": args.max_steps, "twin_limit": args.twin_limit,
                         "new_limit": args.new_limit, "understanding_limit": args.understanding_limit, "agent_pairs": args.agent_pairs},
               "batch_size": args.batch_size, "max_length": args.max_length, "max_lines": args.max_lines, "label": args.label}
+    import yaml
+    run_config = yaml.safe_load((run_dir / "resolved_config.yaml").read_text())
+    if args.store is None and (run_config.get("channel") or {}).get("mode", "none") == "none":
+        raise ValueError(f"{run_dir} has no store (channel mode none): pass --store, the run whose store the tool reads "
+                         "(decision 64: a C0′ host reads C5's store of its seed)")
     if args.overwrite:
         for name in RESULT_FILES:
             if (output / name).is_file():
                 (output / name).unlink()
     git_at_start = start_output(output, config)
     from .e9_tracks import ensure_alias_table, track_spec
-    import yaml
-    run_config = yaml.safe_load((run_dir / "resolved_config.yaml").read_text())
     track, family = run_config.get("e9_track") or "t5", run_config.get("e9_family") or "smollm2"
     alias_table = args.alias_table or ensure_alias_table(track_spec(track, family))
     seed = int(args.seed if args.seed is not None else (int(match["seed"]) if match else 0))
-    store = sqx.load_store(run_dir, "own")
+    store = sqx.load_store(store_dir, "own")              # "own": the store the tool reads (`--store`; default the run's own)
     run = open_run(run_dir, device=args.device, batch_size=args.batch_size, max_length=args.max_length, alias_table=alias_table)
     started = time.monotonic()
     training: dict[str, Any] = {"arm": arm, "trained": arm in TRAINED}
@@ -725,7 +743,8 @@ def render_arm_report(header: dict[str, Any], training: dict[str, Any], tests: d
 
 
 def discover(runs_root: Path, *, hosts: Sequence[str] | None = None) -> dict[str, dict[str, dict[int, dict[str, Any]]]]:
-    """host → arm label (C5: T, I, S, L, base; C5ut: I-ut, …) → seed → summary document."""
+    """host → arm label (C5: T, I, S, L, base; C5ut: I-ut; C5rf: T-rf, I-rf, L-rf; another host model: `<arm>@<model>`, e.g.
+    T@C0p) → seed → summary document."""
     out: dict[str, dict[str, dict[int, dict[str, Any]]]] = defaultdict(lambda: defaultdict(dict))
     for run in sorted(Path(runs_root).iterdir()):
         match = sqx.RUN_NAME.match(run.name)
@@ -801,13 +820,64 @@ def analyse(runs_root: Path, *, hosts: Sequence[str] | None = None, resamples: i
         b2: dict[str, Any] = {"test: T − I (agentic twin contrast)": contrast(units(arms, "T", "agent"), units(arms, "I", "agent"),
                                                                              resamples=resamples, seed=seed)
                               if units(arms, "T", "agent") and units(arms, "I", "agent") else {"available": False}}
-        b2["descriptive"] = {arm: _agent_means(arms, arm) for arm in AGENTIC if arm in arms}
+        b2["descriptive"] = {arm: _agent_means(arms, arm) for arm in (*AGENTIC, "T@C0p", "base@C0p", "T-rf") if arm in arms}
         block["b2"] = b2
         block["secondaries"] = sec
+        block["decision64"] = decision64(arms, resamples=resamples, seed=seed)
         block["means"] = {arm: means(arms, arm) for arm in sorted(arms)}
         block["predictions"] = predictions(block)
         analysis["hosts"][host] = block
     return analysis
+
+
+def _difference(a: dict[int, dict[str, float]], b: dict[int, dict[str, float]]) -> dict[int, dict[str, float]]:
+    """seed → unit → a − b over the seeds and units both have (an arm contrast as unit values: B1's I − L)."""
+    out = {}
+    for s in sorted(set(a) & set(b)):
+        common = set(a[s]) & set(b[s])
+        if common:
+            out[s] = {k: a[s][k] - b[s][k] for k in common}
+    return out
+
+
+def _shift(values: dict[int, dict[str, float]], by: float) -> dict[int, dict[str, float]]:
+    return {s: {k: v - by for k, v in u.items()} for s, u in values.items()}
+
+
+def decision64(arms: dict[str, dict[int, dict[str, Any]]], *, resamples: int = 2000, seed: int = 0) -> dict[str, Any]:
+    """Amendment 16.5's secondaries (decision 64): does what LoRA learns depend on the host's channel training (C0′, reading
+    C5's store) or on a learned binding (C5rf)? `contrasts` — the predicted ≈ 0 contrasts, each with its equivalence test
+    (±`TOOL_MARGIN` with the decoded store in context, ±`B1_MARGIN` for B1's I − L; two one-sided t tests at α = 0.05, no
+    multiplicity adjustment: secondaries, never promoted); `controls` — the checks they are read with."""
+    from .e12_report import contrast, margin_reading, margin_test
+    rows: dict[str, Any] = {}
+    controls: dict[str, Any] = {}
+
+    def add(target: dict[str, Any], name: str, a: dict, b: dict | None, margin: float | None = None) -> None:
+        if not a or (b is not None and not b):
+            return
+        result = contrast(a, b, resamples=resamples, seed=seed)
+        if margin is not None:
+            margin_test(result, margin, kind="equivalence")
+        result["reading"] = margin_reading(result)
+        target[name] = result
+
+    tool = {"twins recall:own": dict(condition="recall:own"), "agentic twins": dict(test="agent")}
+    for label, keys in tool.items():
+        add(rows, f"C0′ − C5 host, arm T, {label} (the tool reads C5's store)", units(arms, "T@C0p", **keys), units(arms, "T", **keys), TOOL_MARGIN)
+    add(rows, "C5rf − C5, B1's contrast I − L (twins, no tool)", _difference(units(arms, "I-rf"), units(arms, "L-rf")),
+        _difference(units(arms, "I"), units(arms, "L")), B1_MARGIN)
+    for label, keys in tool.items():
+        add(rows, f"C5rf − C5, arm T, {label} (each reads its own store)", units(arms, "T-rf", **keys), units(arms, "T", **keys), TOOL_MARGIN)
+    for arm in ("T@C0p", "base@C0p"):
+        add(controls, f"{arm} − 0.5 (twins, no tool; no channel: ≈ 0)", _shift(units(arms, arm), 0.5), None)
+    add(controls, "T@C0p − base@C0p (agentic twin contrast: the traces teach the C0′ host the protocol)", units(arms, "T@C0p", "agent"),
+        units(arms, "base@C0p", "agent"))
+    add(controls, "(T − base) on C0′ − (T − base) on C5 (agentic twin contrast)",
+        _difference(units(arms, "T@C0p", "agent"), units(arms, "base@C0p", "agent")), _difference(units(arms, "T", "agent"), units(arms, "base", "agent")))
+    add(controls, "B1 on C5rf: I-rf − L-rf (twins, no tool)", units(arms, "I-rf"), units(arms, "L-rf"))
+    add(controls, "T-rf − L-rf (twins, no tool)", units(arms, "T-rf"), units(arms, "L-rf"))
+    return {"contrasts": rows, "controls": controls, "margins": {"tool": TOOL_MARGIN, "b1": B1_MARGIN}}
 
 
 def _agent_means(arms: dict[str, dict[int, dict[str, Any]]], arm: str) -> dict[str, Any]:
@@ -863,13 +933,23 @@ def predictions(block: dict[str, Any]) -> dict[str, Any]:
     t = block["b2"]["descriptive"].get("T", {})
     if "format_ok" in t:
         out["T well-formed calls ≥ 0.9"] = t["format_ok"] >= 0.9
+    d64 = block.get("decision64") or {}
+    for prefix, label in (("C0′ − C5 host", "16.5: C0′ host ≈ C5 host with the decoded store (arm T, ±0.05)"),
+                          ("C5rf − C5", "16.5: C5rf ≈ C5 (B1's I − L ±0.075; arm T ±0.05)")):
+        tests = [r for n, r in d64.get("contrasts", {}).items() if n.startswith(prefix) and r.get("margin")]
+        if tests:
+            out[label] = all(r["margin"]["shown"] for r in tests)
+    for arm in ("T@C0p", "base@C0p"):
+        r = d64.get("controls", {}).get(f"{arm} − 0.5 (twins, no tool; no channel: ≈ 0)")
+        if r and r.get("available"):
+            out[f"16.5: {arm} without the tool ≈ 0.5 (CI includes 0.5)"] = r["model"]["ci_low"] <= 0 <= r["model"]["ci_high"]
     return out
 
 
 def render_report(analysis: dict[str, Any], *, title: str, label: str | None = None) -> str:
     from .e12_report import _cell
     lines = [f"# {title}" + (f" — {label}" if label else ""), "",
-             "Pre-registration: `experiments/e12-self-query/preregistration.md` §12 and amendment 16.3. Contrasts: twin pairs (or items) × "
+             "Pre-registration: `experiments/e12-self-query/preregistration.md` §12, amendments 16.3 and 16.5. Contrasts: twin pairs (or items) × "
              "seeds crossed model (Satterthwaite t, 95% CI, two-sided p; one seed: one-sample t), Holm over B1's two contrasts.", ""]
     if label:
         lines += [f"**{label}: these numbers do not count toward the pre-registered endpoints.**", ""]
@@ -888,7 +968,17 @@ def render_report(analysis: dict[str, Any], *, title: str, label: str | None = N
         lines += [f"| {arm} | " + " | ".join(_fmt(v) for v in m.values()) + " |" for arm, m in block["means"].items()]
         lines += ["", "### Secondaries (family SB; reported, never promoted)", "", "| contrast | estimate |", "|---|---|"]
         lines += [f"| {n} | {_cell(r)} |" for n, r in block["secondaries"].items()]
-        lines += ["", "Predictions (§12): " + ", ".join(f"{k}: {'yes' if v else 'no'}" for k, v in block["predictions"].items()), ""]
+        d64 = block.get("decision64") or {}
+        if d64.get("contrasts") or d64.get("controls"):
+            lines += ["", "### Decision 64 (amendment 16.5): does LoRA learn to use the decoded store, whatever the host or binding?", "",
+                      "Equivalence: two one-sided t tests at α = 0.05 (90% CI inside ±margin; ±0.05 with the decoded store in context, ±0.075 "
+                      "for B1's I − L); secondaries, never promoted.", "", "| contrast | estimate | 90% CI | reading |", "|---|---|---|---|"]
+            for n, r in d64.get("contrasts", {}).items():
+                ci = f"[{r['margin']['ci90_low']:+.4f}, {r['margin']['ci90_high']:+.4f}]" if r.get("margin") else "—"
+                lines.append(f"| {n} | {_cell(r)} | {ci} | {r['reading']} |")
+            lines += ["", "| control | estimate | reading |", "|---|---|---|"]
+            lines += [f"| {n} | {_cell(r)} | {r['reading']} |" for n, r in d64.get("controls", {}).items()]
+        lines += ["", "Predictions (§12, 16.5): " + ", ".join(f"{k}: {'yes' if v else 'no'}" for k, v in block["predictions"].items()), ""]
     return "\n".join(lines) + "\n"
 
 
@@ -932,6 +1022,31 @@ def job_commands(stage: str = "t5", *, host: str = "SmolLM2-360M", seeds: Sequen
     return jobs
 
 
+# GPU-h per job (upper bounds; amendment 16.3's measured rates: training 0.031 GPU-h per M tokens with padding, the tests
+# ≈ 7 min, the agentic episodes ≈ 10 min per arm and seed).
+D64_GPU_H = {"T": 0.45, "base": 0.28, "I": 0.17, "L": 0.28}
+
+
+def decision64_jobs(stage: str = "t5", *, host: str = "SmolLM2-360M", seeds: Sequence[int] = (1, 2, 3), priority: float = 54.44971,
+                    python: str = "$PY", root: Path = ROOT) -> list[dict[str, Any]]:
+    """Amendment 16.5's arms (`D64_ARMS`), seeds 1–3: the C0′ host (T, base; the tool reads C5's store of the seed) at
+    `priority`, C5rf (T, I, L; I without agentic episodes — B2 is read on C5) at `priority` + 0.00001."""
+    items = root / "items"
+    jobs = []
+    for k, (model, arms) in enumerate(D64_ARMS.items()):
+        for s in seeds:
+            run = root / "runs" / stage / f"{host}-full-{model}-s{s}"
+            store = [["--store", str(root / "runs" / stage / f"{host}-full-{D64_STORE[model]}-s{s}")]] if model in D64_STORE else []
+            for arm in arms:
+                command = [python, "-m", "vsa_embed.experiments.e12_traces", "run", "--run", str(run), "--arm", arm,
+                           *(x for pair in store for x in pair), "--train-items", str(ITEMS), "--twins", str(items / "role-twins-t5-smollm2-v1"),
+                           "--new-words", str(items / "new-words-t5-smollm2-v2"), "--understanding", str(items / "understanding-t5-smollm2-v1"),
+                           "--batch-size", "24", "--max-length", "1024", *(["--agent-pairs", "0"] if arm == "I" else []), "--overwrite"]
+                jobs.append({"name": f"{stage}-{run.name}-{OUTPUT_PREFIX}{arm}", "priority": round(priority + 0.00001 * k, 5), "lane": "gpu",
+                             "command": command, "gpu_h": D64_GPU_H[arm]})
+    return jobs
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -945,6 +1060,8 @@ def main(argv: list[str] | None = None) -> None:
     ru.add_argument("--train-items", type=Path, default=ITEMS); ru.add_argument("--twins", type=Path, default=ROOT / "items" / "role-twins-t5-smollm2-v1")
     ru.add_argument("--new-words", type=Path, default=None); ru.add_argument("--understanding", type=Path, default=None)
     ru.add_argument("--output", type=Path, default=None); ru.add_argument("--alias-table", type=Path, default=None)
+    ru.add_argument("--store", type=Path, default=None,
+                    help="the run whose store the tool reads (default: the run's own; decision 64: a C0′ host reads C5's store)")
     ru.add_argument("--device", default=None); ru.add_argument("--seed", type=int, default=None, help="default: the run's seed")
     ru.add_argument("--batch-size", type=int, default=24); ru.add_argument("--max-length", type=int, default=1024)
     ru.add_argument("--micro-batch", type=int, default=16, help="sequences per forward (memory only; 32 per optimizer step)")
@@ -963,7 +1080,8 @@ def main(argv: list[str] | None = None) -> None:
     re_.add_argument("--title", default="E12 3b — learning from tool-using traces"); re_.add_argument("--label", default=None)
     re_.add_argument("--overwrite", action="store_true")
     co = sub.add_parser("commands", help="print the GPU jobs (never queues)")
-    co.add_argument("--stage", default="t5"); co.add_argument("--priority", type=float, default=54.4497)
+    co.add_argument("--stage", default="t5"); co.add_argument("--priority", type=float, default=None)
+    co.add_argument("--set", default="3b", choices=("3b", "decision64"), help="3b: §12's jobs; decision64: amendment 16.5's arms")
     args = parser.parse_args(argv)
     if args.command == "items":
         from .e9_tracks import track_spec
@@ -978,8 +1096,10 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "report":
         print(json.dumps(run_report(args)))
     else:
-        print(json.dumps([{"name": j["name"], "priority": j["priority"], "command": " ".join(j["command"])} for j in job_commands(args.stage, priority=args.priority)],
-                         indent=2))
+        jobs = (decision64_jobs(args.stage, priority=args.priority or 54.44971) if args.set == "decision64"
+                else job_commands(args.stage, priority=args.priority or 54.4497))
+        print(json.dumps([{"name": j["name"], "priority": j["priority"], "gpu_h": j.get("gpu_h"), "command": " ".join(j["command"])}
+                          for j in jobs], indent=2))
 
 
 if __name__ == "__main__":

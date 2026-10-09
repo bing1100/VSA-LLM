@@ -410,6 +410,9 @@ them, and they never enter an endpoint.
 
 ## 12. 3b — learning from tool-using traces: concrete design and cost (pre-registered 2026-10-08, before any 3b run)
 
+*Amended 2026-10-09 by 16.5 (decision 64), before any 3b run: the hypothesis is restated as "LoRA learns to use the decoded
+store", and a C0′-host arm and a C5rf-store arm are added as equivalence secondaries. B1 and B2 are unchanged.*
+
 **Question.** If the model practises answering role questions with its own recalled frame in context, does it learn to read
 roles from the channel — telling role-swap twins apart **without the tool** (internalization)? And does a model trained on
 tool-using traces learn to call the tool well?
@@ -469,6 +472,10 @@ question of both twins; ≈ 4 s per question measured on Qwen3-0.6B in the 3a pi
 a trace builder and a LoRA trainer on a finished run (`e12_traces`, ≈ one day with tests on the toy world).
 
 ## 13. 3c — calibrated self-critique: concrete design and cost (pre-registered 2026-10-08, before any 3c run)
+
+*Amended 2026-10-09 by 16.5 (decision 64), before any 3c run: the same loop with the gold relations as text and with the
+prose definition in the prompt, token accounting, and K1b (loop(store) − loop(definition), non-inferiority at −0.05).
+K1 and K2 are unchanged.*
 
 **Question.** Can the model check its decoded beliefs against its behaviour and against held-out evidence, keep the right
 ones, flag or revise the rest, with calibrated confidence — and **reject false structure** in a world where the store holds
@@ -753,3 +760,99 @@ Decided by the owner session under decision 63's delegation. No endpoint, unit, 
   (as 16.2 did for 3a; ≈ +1.0 GPU-h).
 - **Accepted:** the GPU total above the registered estimate (3b ≈ 5.2, 3c ≈ 3.0 + 1.0 GPU-h).
 
+### 16.5 3b and 3c after Q1: what is learned, and text competitors (decision 64; 2026-10-09, before any 3b or 3c run)
+
+Decision 64 (author, 2026-10-09), after Q1 at three seeds and T4's natural items. On 2026-10-09 every 3b / 3c job was still
+pending (`.jobs`: 3b's 18 GPU jobs at 54.4497, 3c's 10 at 54.4498, both reports at 54.44985); none had started. Q1 found:
+the store's decode in context 0.78 against 0.50 without it; a C0′ host reading the HRR store 0.79 (C5 − C0′ −0.01, n.s.) —
+the roles live in the store, not the host; a fixed random binding decodes as well as a learned one (P2, learned − fixed
+−0.006 [−0.016, +0.003]); on T4's natural items (seed 1) the store 0.88, the gold relations as text 0.89 and the prose
+definition 0.91 — on real text the store's advantage is its token cost (no curated definition), not accuracy. An audit of
+§12 / §13 against these results found: 3b's prediction rests on the host learning "unbinding a learned-HRR role", with no
+arm that varies the host or the binding; 3c's K1 beats only the no-tool answer — no text competitor and no token
+accounting. This amendment adds both. **B1, B2, K1 and K2, their units, pools, rules and Holm families are unchanged.**
+
+**3b (§12).**
+1. *The hypothesis, restated.* §12's rationale — "unbinding a learned-HRR role is a linear map of the injected vector, so LoRA
+   can learn it" — is withdrawn as a claim about a *learned* binding. The hypothesis is now: **LoRA learns to use the decoded
+   store** — read in context (arm T: the fixed pipeline and the agentic tests) and, for internalization (B1), from the
+   channel's injection of the same store without the decode. Reading a role out of an injected bundle is a linear map
+   whatever the binding, learned or fixed random, so §12's prediction values stand (B1 > 0 but ≤ 0.65; S ≥ I; I-ut ≈ 0.5;
+   T's calls well-formed ≥ 0.9).
+2. *Two hosts added*, with §12's training items, hyperparameters and tests and 16.3's harness (`e12_traces run`):
+   (a) **C0′ host** — `runs/t5/SmolLM2-360M-full-C0p-s1..3` (no channel). Its tool reads **C5's store** of the same seed
+   (`--store`), as in Q1. Arms **T** and **base**. I, S and L are not run: without a channel nothing can be internalized
+   (twins differ only in the injected frame), so they would repeat I-ut's leak check.
+   (b) **C5rf** — `runs/t5/SmolLM2-360M-full-C5rf-s1..3`, reading its own fixed-random store. Arms **T**, **I** and **L**;
+   I runs without agentic episodes, since B2 is read on C5. S is not run: its curriculum concerns the trace format, not the
+   binding, and B1's I − L carries the binding question.
+3. *Predictions and contrasts* (secondaries, family S64; reported, never promoted). Each is a pairs × seeds crossed-model
+   contrast, read by **equivalence**: two one-sided t tests at α = 0.05 (the 90% CI inside ±δ), no multiplicity adjustment.
+   - **C0′ host ≈ C5 host** with the decoded store: T@C0′ − T@C5 on (i) the twins with the fixed pipeline (`recall:own`, C5's
+     store; 300 pairs) and (ii) the agentic twin contrast (100 pairs); δ = 0.05.
+   - **C5rf ≈ C5**: (iii) B1's contrast, (I − L)@C5rf − (I − L)@C5 (twins, no tool), δ = 0.075; (iv, v) T@C5rf − T@C5 on the
+     same two decoded-store tests, δ = 0.05.
+   - Read with them (controls): T@C0′ and base@C0′ without the tool ≈ 0.5 (CI includes 0.5; no channel); T@C0′ − base@C0′
+     on the agentic twins (do the traces teach the C0′ host the protocol?); (T − base)@C0′ − (T − base)@C5; B1 on C5rf
+     (I − L) and T − L on C5rf, without the tool.
+   - *Margins.* δ = 0.05 with the decoded store in context. This is five times the host and binding differences Q1 measured
+     with the decode in context (−0.01, −0.006) and one sixth of the tool's effect (+0.28): a smaller difference changes no
+     reading of what the tool gives. It is attainable: the pilot's C5 − C0′ interval (±0.015 at one seed) implies a 90%
+     half-width of ≈ 0.02 on 300 pairs × 3 seeds. The agentic contrast has only 100 pairs and is read as inconclusive when
+     its interval is wider than the margin. δ = 0.075 for B1's I − L is half of §12's predicted B1 band (0.5 → ≤ 0.65). A
+     difference in differences of four arms near chance has a 90% half-width of ≈ 0.05–0.06, so a tighter margin could
+     never be shown. The C5rf comparison of B1 is read only if B1 (I − L) is shown on C5; otherwise it is reported as an
+     estimate.
+   - *Why secondaries, not co-primary.* (1) B1 stays as registered; a co-primary would change its Holm adjustment. (2) The
+     predictions are of equivalence, which a superiority family cannot confirm; their margins are set here, not in §12.
+     (3) They qualify *what* B1 and B2 learn, not *whether* it is learned.
+   - *Refutation readings.* T@C0′ below T@C5 beyond the margin: using the decoded store depends on the host's channel
+     training (unlike Q1's fixed pipeline). B1 on C5rf below C5's beyond the margin: internalization needs a learned binding
+     (§12's withdrawn rationale). T@C0′ above 0.5 without the tool: a leak (read as I-ut).
+4. *Cost* (16.3's rates, upper bounds): per seed C0′ T 0.45 and base 0.28; C5rf T 0.45, I 0.17 and L 0.28 GPU-h. That is
+   **≈ 4.9 GPU-h** for 15 jobs, queued at 54.44971 (C0′) and 54.44972 (C5rf), ahead of 3c (`queue-commands-decision64.sh`).
+   The queued report reads them unchanged; arm labels are `T@C0p`, `base@C0p`, `T-rf`, `I-rf` and `L-rf`.
+
+**3c (§13).**
+5. *Text competitors to K1.* The same rule loop runs with a text in the prompt instead of the store decode: (i) **the gold
+   relations as text** (phase A's `symbolic`) and (ii) **the prose definition** (phase A's `definition`, E11's writer). Both
+   reuse `e12_self_query.ContextBuilder`, on K1's pool (the new words and the held-out terms).
+   - The belief is the host's answer with the text in context. Its confidence is that answer's softmax, calibrated by
+     isotonic regression on the new words' dev half, as the behaviour's in 16.3 item 10.
+   - θ is chosen on the dev half by K1's rule. The loop answers with the belief when its confidence is ≥ θ, else with the
+     behaviour. It flags an item when its signals disagree (this belief, the behaviour, the evidence answer).
+   - A third loop puts **the store's own decode** in the prompt (`recall:own`, read by the host). It separates the store's
+     content from the rule loop's reading it without the host.
+   - Real world only: the texts come from the gold frame and have no null-world counterpart. K2 is unchanged.
+6. *Token accounting.* Every scored context records the prompt tokens it adds per item: the host tokenizer's count for the
+   item's first prompt with the context minus without it. The context is added once to each of the item's prompts. This is
+   recorded for `recall:own`, `null`, `evidence`, `symbolic` and `definition`; `none` adds 0.
+   - Per loop: the store's rule loop adds none for its belief (the decode is read without the host). The text loops add
+     their text's tokens.
+   - Every loop's flag adds the evidence sentence on held-out items with one. This cost is the same for every loop and is
+     reported separately.
+7. **K1b** = loop(store) − loop(definition). It uses K1's units and pool (accuracy at 80% coverage; items × seeds crossed
+   model). It is a **non-inferiority test at δ = 0.05**: shown when the 95% CI's lower bound is above −0.05 (one-sided
+   α = 0.025).
+   - K1b is its own test, outside K1 / K2's Holm family. Its null (the store is worse by ≥ δ) differs from theirs, and their
+     family stays as registered.
+   - It is read together with **the tokens saved per item** (the definition loop's minus the store loop's). "Non-inferior,
+     saving N tokens per item" means the store's advantage over a curated definition is its token cost. "Not shown" means
+     the definition is worth its tokens on this pool.
+   - *Margin.* (a) 0.05 is a sixth or less of K1's expected effect (beliefs decoded at ≈ 0.96 against behaviour at ≈ 0.25
+     on new words). A non-inferior store loop thus keeps most of the definition loop's gain over the no-tool answer (the
+     usual rule: a margin well under the active control's effect over no treatment). (b) The measured gaps between the
+     store's decode and the definition, both in context, are smaller: Q1 twins 0.78 against 0.74, the store ahead; T4
+     natural 0.88 against 0.91, the definition ahead by 0.03. 0.05 admits both without admitting a larger loss. (c) The
+     pool holds ≈ 780 new-word and 1,006 held-out test items × 3 seeds, so the 95% half-width is ≈ 0.02. Non-inferiority can
+     be shown when the true difference is above ≈ −0.03.
+   - *Secondaries* (never promoted): K1b per set (new words, held-out terms); loop(store) − loop(gold relations as text), the
+     decode's cost against a perfect text; loop(store decode as text) − loop(definition), content with both read by the
+     host; each text loop − no tool (their own K1); the tokens per loop.
+   - *Prediction:* K1b non-inferior on the pooled items. The beliefs are decoded at ≈ 0.96 and need no reading; the host
+     read the definition at 0.74–0.91 in phase A and on T4.
+8. *Jobs.* The queued 3c critique jobs score the competitors by default (`--competitors auto`: on for a role-carrying store;
+   the C5ut jobs, the null world's role-blind control, skip them). So no queued command line changes. The added cost is two
+   contexts on ≈ 1,550 new-word and 1,006 held-out items at phase A's rate: ≈ +15 min per C5 run, ≈ +0.8 GPU-h in all
+   (an upper bound). A track without a definition writer skips that competitor and records it; T5 has one. A C5 critique job
+   that finished before this code was merged lacks the competitors and is re-run (`jobqueue retry`).
