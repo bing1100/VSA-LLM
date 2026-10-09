@@ -29,8 +29,8 @@ PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t7rood --hosts SmolL
 
 # 2. T7 on Qwen3-1.7B-Base (LoRA r 64, as the T4/T5 Qwen3 configs), seed 1, stage t7-qwen3
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t7 --hosts Qwen3-1.7B-Base --host-mode lora --lora-rank 64 --seeds 1 \
-  --priority 54.4975 --level-step 0.0001 --queue
+  --priority 54.4975 --level-step 0.00001 --queue
 
 # 3. T7-ROOD on Qwen3-1.7B-Base, seed 1, stage t7rood-qwen3
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t7rood --hosts Qwen3-1.7B-Base --host-mode lora --lora-rank 64 --seeds 1 \
-  --priority 54.4977 --level-step 0.0001 --queue
+  --priority 54.4977 --level-step 0.00001 --queue
