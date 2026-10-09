@@ -1,0 +1,360 @@
+{
+  "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+  "ontology": {
+    "source": {
+      "records": "/home/bhux/data/vsa-llm/wikidata/t8/records.jsonl.gz",
+      "records_sha256": "7ad8fa653105fbf6a4802ec99cc90c426d9782aa65ebe60a6fdfb32b6856d7a8",
+      "selection": "experiments/t8-wikidata/screen/selection.tsv",
+      "selection_sha256": "4916a8c539b92aea57981f124c087fed56a7cbca05258698813edda9a5c9be77"
+    },
+    "records": 20000,
+    "max_atomics": 8192,
+    "max_degree": 16,
+    "max_values": 3,
+    "empty_frames": 99,
+    "dropped_edges": {
+      "filler_outside_dictionary": 69628,
+      "over_max_degree": 2139,
+      "filler_without_label": 2884
+    },
+    "edges": 144367,
+    "raw_edges": 216134,
+    "concepts": 20000,
+    "atomics": 8192,
+    "relations": 88,
+    "aliases": 29993,
+    "entries": 20000,
+    "alias_subtokens": {
+      "HuggingFaceTB/SmolLM2-360M": {
+        "aliases": 29993,
+        "aliases_2plus_subtokens": 29986,
+        "histogram_1_2_3_4_5plus": [
+          7,
+          2539,
+          6347,
+          7463,
+          13637
+        ]
+      },
+      "Qwen/Qwen3-0.6B-Base": {
+        "aliases": 29993,
+        "aliases_2plus_subtokens": 29952,
+        "histogram_1_2_3_4_5plus": [
+          41,
+          3621,
+          7460,
+          7882,
+          10989
+        ]
+      }
+    }
+  },
+  "mix": {
+    "domain_share": 0.5,
+    "chars_per_token": {
+      "entities": 4.527416071041802,
+      "general": 4.579549140644206
+    },
+    "calibration_tokenizer": "HuggingFaceTB/SmolLM2-360M",
+    "general_shards": [
+      "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet",
+      "/home/bhux/data/vsa-llm/fineweb-edu/sample/10BT/000_00000.parquet"
+    ],
+    "general_eval_docs_skipped": 5000,
+    "eval_buckets": 1000,
+    "eval_domain_docs": 5000,
+    "eval_rood_docs": 8000
+  },
+  "presample": {
+    "tokens": 20003978,
+    "documents": 23732,
+    "dtype": "uint16",
+    "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+    "tokenizer_revision": null,
+    "alias_table_sha256": "cbd94c1fa741d1b38a7b7a192403098358cccb39a018fc7b2d397d63a05542a6",
+    "boundary": "prefix",
+    "spans": 75031,
+    "eos_id": 0,
+    "skipped_documents": 0,
+    "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+    "max_tokens_requested": 20000000,
+    "stream_signature": "7f06ca17f4c0ee979fcad44d104bc0fa83adb63094b52caf11763a687c1fe5cc",
+    "source_shares": {
+      "exact": true,
+      "documents": {
+        "entities": 7843,
+        "general": 15889
+      },
+      "tokens": {
+        "entities": 10196078,
+        "general": 9807900
+      },
+      "share": {
+        "entities": 0.5097025201687384,
+        "general": 0.49029747983126154
+      }
+    }
+  },
+  "holdout": {
+    "concepts": 1680,
+    "chosen_entries": 1645,
+    "closure_entries": 35,
+    "heldout_entries": 1680,
+    "eligible_entries": 8217,
+    "excluded_hub_entries": 0,
+    "rood": {
+      "eligible_entries": 13590,
+      "eligible_with_count": 13590,
+      "excluded": {
+        "frame_filler": 3585,
+        "exclusion_cost": 2739,
+        "closure_not_eligible": 86
+      }
+    },
+    "exclusion_keys": 5305,
+    "counts": "screen",
+    "min_count": 20,
+    "screen_training_documents": 1303465,
+    "exclusion_cost_documents_screen": 127761,
+    "sha256": "99312697ee24fd8b6d5abb5ff8ee4f8b34ed32622061b8153e78349dfb14291d"
+  },
+  "corpora": {
+    "HuggingFaceTB/SmolLM2-360M": {
+      "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+      "corpora": {
+        "eval": {
+          "tokens": 10186948,
+          "documents": 7453,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+          "boundary": "prefix",
+          "spans": 76243,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "85d2b654bdb299a70bb570123ca7d44d988e5429869f88ef945cb972f192a9d7"
+        },
+        "eval-entities": {
+          "tokens": 28777699,
+          "documents": 13000,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+          "boundary": "prefix",
+          "spans": 264024,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "8f781ec9ca8cd9522de8e5d1952c7254b869ac05f8c3a811bf4159b73a6e1859"
+        },
+        "eval-general": {
+          "tokens": 4998786,
+          "documents": 5000,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+          "boundary": "prefix",
+          "spans": 27098,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "204726a9aa5406a0098f5ac8b97eed31c241cd3d3711128e84f91631e46b66ce"
+        },
+        "train": {
+          "tokens": 100000285,
+          "documents": 126809,
+          "dtype": "uint16",
+          "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1b429669986f1aa8dc3fab1ad6d322cafed23e8d3d378a5b3ea0d1b40ff9d666",
+          "boundary": "prefix",
+          "spans": 332677,
+          "eos_id": 0,
+          "skipped_documents": 0,
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 100000000,
+          "stream_signature": "c506c24f02fb33f16e88785f125d81897a684b43811054050dd2fc3b28a42164"
+        }
+      },
+      "source_shares": {
+        "eval": {
+          "exact": true,
+          "documents": {
+            "entities": 2453,
+            "general": 5000
+          },
+          "tokens": {
+            "entities": 5188162,
+            "general": 4998786
+          },
+          "share": {
+            "entities": 0.5092950312497914,
+            "general": 0.4907049687502086
+          }
+        },
+        "train": {
+          "exact": true,
+          "documents": {
+            "entities": 46500,
+            "general": 80309
+          },
+          "tokens": {
+            "entities": 50560063,
+            "general": 49440222
+          },
+          "share": {
+            "entities": 0.5055991890423113,
+            "general": 0.4944008109576888
+          }
+        }
+      },
+      "linked_entries_in_train_at_min_subtokens": 11754,
+      "ontology_sha256": "ab69bb5f765808a270e82fdbc6a9dbf07be576dd94eacec9cbc8c4498065bf03"
+    },
+    "Qwen/Qwen3-0.6B-Base": {
+      "tokenizer": "Qwen/Qwen3-0.6B-Base",
+      "corpora": {
+        "eval": {
+          "tokens": 9983993,
+          "documents": 7453,
+          "dtype": "uint32",
+          "tokenizer": "Qwen/Qwen3-0.6B-Base",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+          "boundary": "prefix",
+          "spans": 76282,
+          "eos_id": 151643,
+          "skipped_documents": 0,
+          "normalization": "NFC",
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "85d2b654bdb299a70bb570123ca7d44d988e5429869f88ef945cb972f192a9d7",
+          "tokenizer_sha256": "a63080b4b30dc861fe1b0e420c53a241304dc81aff3d9bb315e6e33e2a1ab794"
+        },
+        "eval-entities": {
+          "tokens": 28204793,
+          "documents": 13000,
+          "dtype": "uint32",
+          "tokenizer": "Qwen/Qwen3-0.6B-Base",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+          "boundary": "prefix",
+          "spans": 264027,
+          "eos_id": 151643,
+          "skipped_documents": 0,
+          "normalization": "NFC",
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "8f781ec9ca8cd9522de8e5d1952c7254b869ac05f8c3a811bf4159b73a6e1859",
+          "tokenizer_sha256": "a63080b4b30dc861fe1b0e420c53a241304dc81aff3d9bb315e6e33e2a1ab794"
+        },
+        "eval-general": {
+          "tokens": 4895335,
+          "documents": 5000,
+          "dtype": "uint32",
+          "tokenizer": "Qwen/Qwen3-0.6B-Base",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+          "boundary": "prefix",
+          "spans": 27058,
+          "eos_id": 151643,
+          "skipped_documents": 0,
+          "normalization": "NFC",
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 1000000000000,
+          "stream_signature": "204726a9aa5406a0098f5ac8b97eed31c241cd3d3711128e84f91631e46b66ce",
+          "tokenizer_sha256": "a63080b4b30dc861fe1b0e420c53a241304dc81aff3d9bb315e6e33e2a1ab794"
+        },
+        "train": {
+          "tokens": 100000477,
+          "documents": 129325,
+          "dtype": "uint32",
+          "tokenizer": "Qwen/Qwen3-0.6B-Base",
+          "tokenizer_revision": null,
+          "alias_table_sha256": "1b429669986f1aa8dc3fab1ad6d322cafed23e8d3d378a5b3ea0d1b40ff9d666",
+          "boundary": "prefix",
+          "spans": 339763,
+          "eos_id": 151643,
+          "skipped_documents": 0,
+          "normalization": "NFC",
+          "track": "Wikidata entities (Wikidata + FineWeb-Edu)",
+          "max_tokens_requested": 100000000,
+          "stream_signature": "c506c24f02fb33f16e88785f125d81897a684b43811054050dd2fc3b28a42164",
+          "tokenizer_sha256": "a63080b4b30dc861fe1b0e420c53a241304dc81aff3d9bb315e6e33e2a1ab794"
+        }
+      },
+      "source_shares": {
+        "eval": {
+          "exact": true,
+          "documents": {
+            "entities": 2453,
+            "general": 5000
+          },
+          "tokens": {
+            "entities": 5088658,
+            "general": 4895335
+          },
+          "share": {
+            "entities": 0.509681647413014,
+            "general": 0.490318352586986
+          }
+        },
+        "train": {
+          "exact": true,
+          "documents": {
+            "entities": 47652,
+            "general": 81673
+          },
+          "tokens": {
+            "entities": 50570923,
+            "general": 49429554
+          },
+          "share": {
+            "entities": 0.5057068177784791,
+            "general": 0.4942931822215208
+          }
+        }
+      },
+      "linked_entries_in_train_at_min_subtokens": 11829,
+      "ontology_sha256": "71a202d97183bf5651d4b1cd2c8d1a970ec0c3bdf0bdf51e10ae17a7d7d06447"
+    }
+  },
+  "hosts": {
+    "Qwen/Qwen3-0.6B-Base": "/home/bhux/data/vsa-llm/tracks/t8-wikidata/v1/hosts/qwen3"
+  },
+  "audit": {
+    "training_documents_read": 129325,
+    "eval_entities_documents": 13000,
+    "heldout_names_in_training": 0,
+    "training_ids_in_eval_entities": 0,
+    "heldout_mentions_full_table": 0,
+    "heldout_in_word_matches_full_table": 402,
+    "heldout_shifted_matches_full_table": 1,
+    "in_word_examples": {
+      "Javan|ese": 43,
+      "Tajik|istan": 32,
+      "Matthew 2|4": 21,
+      "glaucon|ite": 18,
+      "Hebe|i": 14,
+      "javan|ica": 14,
+      "Matthew 2|8": 12,
+      "Hellen|ized": 11,
+      "Matthew 2|1": 10,
+      "Matthew 2|6": 9,
+      "Hellen|ian": 9,
+      "Matthew 2|2": 8
+    },
+    "full_table_linked_tokens": 102058105,
+    "full_table_spans": 341009,
+    "passed": true
+  },
+  "alias_table_sha256": "1af77b5101707f4ec0e8d0c46391e6760a0207e0ab01d3599cf36c5ece5c9023",
+  "data_root": "/home/bhux/data/vsa-llm/tracks/t8-wikidata/v1"
+}
