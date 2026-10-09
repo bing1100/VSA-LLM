@@ -34,6 +34,13 @@ Outputs (`OUTPUT/`): `summary.json`, `proposals.jsonl.gz` (every proposal and de
     python -m vsa_embed.experiments.e10_learn erased --config CFG --output DIR [--set key=value ...]
     python -m vsa_embed.experiments.e10_learn placement --config CFG --output DIR
     python -m vsa_embed.experiments.e10_learn report --runs DIR [DIR ...] --output DIR
+    python -m vsa_embed.experiments.e10_learn store-report --runs DIR [DIR ...] --reference-runs DIR [DIR ...] --output DIR
+    python -m vsa_embed.experiments.e10_learn queue [--rf-store] [--dry-run]
+
+**Fixed-operator store** (amendment 2, decision 64; secondary S9): the T4 / T5 erased runs repeated with C5rf's store (E9's
+fixed random unitary operator, `random_fixed:unitary_hrr`, its atomics trained around it) — `store=` the C5rf run, every
+other input identical — and `store-report` pairs them with the learned store's runs (same pool, row by row): learned −
+fixed in decompose's recall at precision 0.8, Holm over the co-primary arms (`rf_store_plan`, `queue --rf-store`).
 """
 
 from __future__ import annotations
@@ -43,6 +50,7 @@ import copy
 import gzip
 import json
 import math
+import re
 import sys
 import time
 from collections import Counter, defaultdict
@@ -1244,6 +1252,24 @@ def run_arm(summary: Mapping[str, Any]) -> str:
     return str(((summary["runs"][0].get("meta") or {}).get("passive") or {}).get("kind", "default"))
 
 
+def arm_acceptance(runs: Sequence[Path], summaries: Sequence[Mapping[str, Any]], rule: str, *, precision: float,
+                   min_accepted: int, far_ceiling: float, resamples: int) -> dict[str, Any]:
+    """L4a's ingredients for one arm's runs (seeds): pooled precision / recall of accepted decompose edges with the
+    one-sided bootstrap test of H0 "precision ≤ `precision`", every null's pooled false-acceptance rate (`calibrated`:
+    all ≤ `far_ceiling`), `enough` (≥ `min_accepted` accepted) and the point criterion; no Holm (the caller's family)."""
+    per_concept = [json.loads((Path(r) / "per_concept.json").read_text())[rule] for r in runs]
+    counts: dict[str, dict[str, int]] = defaultdict(lambda: {"accepted": 0, "tested": 0})
+    for summary in summaries:
+        for kind, by_rule in summary["runs"][0]["nulls"].items():
+            counts[kind]["accepted"] += int(by_rule[rule]["accepted"]); counts[kind]["tested"] += int(by_rule[rule]["tested"])
+    rates = {k: (v["accepted"] / v["tested"] if v["tested"] else float("nan")) for k, v in counts.items()}
+    l4a = precision_bootstrap(per_concept, threshold=precision, resamples=resamples)
+    l4a.update(rule=rule, null_rates=rates, null_counts=dict(counts),
+               calibrated=bool(rates) and all(math.isfinite(r) and r <= far_ceiling for r in rates.values()),
+               enough=l4a["accepted"] >= min_accepted, point_met=math.isfinite(l4a["precision"]) and l4a["precision"] >= precision)
+    return l4a
+
+
 def run_report(runs: Sequence[Path], output: Path, *, precision: float = 0.8, min_accepted: int = 30,
                far_ceiling: float = 0.05, resamples: int = 2000, alpha: float = 0.05) -> dict[str, Any]:
     """Pool the `erased` runs of one track over checkpoint seeds into the pre-registered endpoints (preregistration §4 and
@@ -1270,16 +1296,8 @@ def run_report(runs: Sequence[Path], output: Path, *, precision: float = 0.8, mi
     arms: dict[str, dict[str, Any]] = {}
     for arm, index in sorted(by_arm.items()):
         pools = [dict(np.load(Path(runs[i]) / "pool.npz")) for i in index]
-        per_concept = [json.loads((Path(runs[i]) / "per_concept.json").read_text())[rule] for i in index]
-        counts: dict[str, dict[str, int]] = defaultdict(lambda: {"accepted": 0, "tested": 0})
-        for i in index:
-            for kind, by_rule in summaries[i]["runs"][0]["nulls"].items():
-                counts[kind]["accepted"] += int(by_rule[rule]["accepted"]); counts[kind]["tested"] += int(by_rule[rule]["tested"])
-        rates = {k: (v["accepted"] / v["tested"] if v["tested"] else float("nan")) for k, v in counts.items()}
-        l4a = precision_bootstrap(per_concept, threshold=precision, resamples=resamples)
-        l4a.update(rule=rule, null_rates=rates, null_counts=dict(counts),
-                   calibrated=bool(rates) and all(math.isfinite(r) and r <= far_ceiling for r in rates.values()),
-                   enough=l4a["accepted"] >= min_accepted, point_met=math.isfinite(l4a["precision"]) and l4a["precision"] >= precision)
+        l4a = arm_acceptance([runs[i] for i in index], [summaries[i] for i in index], rule, precision=precision,
+                             min_accepted=min_accepted, far_ceiling=far_ceiling, resamples=resamples)
         comparisons = {b: pool_bootstrap(pools, "decompose", b, precision=precision, resamples=resamples)
                        for b in ("amie", *KGE_METHODS) if all(f"score_{b}" in p for p in pools)}
         arms[arm] = {"runs": [str(runs[i]) for i in index], "family": arm in family, "L4a": l4a, "L4b": {"comparisons": comparisons}}
@@ -1322,6 +1340,111 @@ def run_report(runs: Sequence[Path], output: Path, *, precision: float = 0.8, mi
     return report
 
 
+def run_seed(summary: Mapping[str, Any], fallback: int) -> int:
+    """The checkpoint seed of an `erased` run: the `-s<N>` suffix of its store run folder (`meta.store`), else `fallback`."""
+    store = str(((summary["runs"][0].get("meta") or {}).get("store")) or "")
+    found = re.search(r"-s(\d+)/?$", store)
+    return int(found.group(1)) if found else int(fallback)
+
+
+def run_store_report(runs: Sequence[Path], reference_runs: Sequence[Path], output: Path, *, precision: float = 0.8,
+                     min_accepted: int = 30, far_ceiling: float = 0.05, resamples: int = 2000, alpha: float = 0.05
+                     ) -> dict[str, Any]:
+    """Amendment 2 (decision 64; secondary S9): does the **learned** operator matter for decompose-then-verify? `runs`
+    decompose over the learned C5 store, `reference_runs` over a fixed-random-operator store (C5rf: the same recipe with
+    `random_fixed:unitary_hrr`, never trained), with the same erasure, probes, passive vectors, evidence and candidate
+    pool (checked row by row). Runs are paired by passive arm and checkpoint seed.
+
+    Per arm: each store's L4a ingredients (`arm_acceptance`) and pool readouts, and **learned − fixed** in decompose's
+    recall at precision 0.8 on the shared pool (pigeonhole bootstrap over concepts × seeds, as L4b); Holm over the
+    co-primary arms (`c2`, `features`); `c5full` (each store's positive control) descriptive. Reading per family arm:
+    `learned operator better` / `fixed operator better` (difference > 0 / < 0, 95% CI excluding 0, Holm p ≤ α) or `no
+    difference detected`; `inconclusive (machinery)` when a store's c5full positive control misses precision 0.8."""
+    from ..statistics import holm_adjust
+
+    def load(paths: Sequence[Path]) -> dict[tuple[str, int], tuple[Path, dict[str, Any]]]:
+        table: dict[tuple[str, int], tuple[Path, dict[str, Any]]] = {}
+        for k, path in enumerate(paths):
+            summary = json.loads((Path(path) / "summary.json").read_text())
+            key = (run_arm(summary), run_seed(summary, k + 1))
+            if key in table:
+                raise ValueError(f"two runs for arm {key[0]!r} seed {key[1]}")
+            table[key] = (Path(path), summary)
+        return table
+
+    stores = {"learned": load(runs), "fixed": load(reference_runs)}
+    rules = {s["runs"][0]["rule"] for table in stores.values() for _, s in table.values()}
+    if len(rules) != 1:
+        raise ValueError(f"runs disagree on the primary rule: {sorted(rules)}")
+    rule = rules.pop()
+    present = sorted({a for a, _ in stores["learned"]} & {a for a, _ in stores["fixed"]})
+    family = [a for a in PRIMARY_ARMS if a in present] or present
+    arms: dict[str, dict[str, Any]] = {}
+    for arm in present:
+        seeds = sorted({s for a, s in stores["learned"] if a == arm} & {s for a, s in stores["fixed"] if a == arm})
+        block: dict[str, Any] = {"seeds": seeds, "family": arm in family, "stores": {}}
+        for name, table in stores.items():
+            picked = [table[(arm, s)] for s in seeds]
+            methods = [p[1]["runs"][0]["pool"]["methods"].get("decompose", {}) for p in picked]
+            block["stores"][name] = {
+                "runs": [str(p[0]) for p in picked],
+                "operators": sorted({str((p[1]["runs"][0].get("meta") or {}).get("operator")) for p in picked}),
+                "L4a": arm_acceptance([p[0] for p in picked], [p[1] for p in picked], rule, precision=precision,
+                                      min_accepted=min_accepted, far_ceiling=far_ceiling, resamples=resamples),
+                "pool_auc_mean": float(np.mean([m.get("auc", float("nan")) for m in methods])) if methods else None}
+        merged, unpaired = [], []
+        for s in seeds:
+            a = np.load(stores["learned"][(arm, s)][0] / "pool.npz")
+            b = np.load(stores["fixed"][(arm, s)][0] / "pool.npz")
+            if not all(k in a.files and k in b.files and np.array_equal(a[k], b[k]) for k in ("concept", "relation", "filler", "label")):
+                unpaired.append(s)
+                continue
+            merged.append({"concept": a["concept"], "label": a["label"], "score_learned": a["score_decompose"],
+                           "score_fixed": b["score_decompose"]})
+        if merged and not unpaired:
+            block["contrast"] = {"available": True, "measure": f"decompose recall at precision {precision:g}, learned − fixed",
+                                 **pool_bootstrap(merged, "learned", "fixed", precision=precision, resamples=resamples)}
+        else:
+            block["contrast"] = {"available": False, "unpaired_seeds": unpaired,
+                                 "detail": "the two stores' pools differ (erasure, probes or candidates): no paired contrast"}
+        arms[arm] = block
+    tested = [a for a in family if arms[a]["contrast"].get("available")]
+    for arm, adjusted in zip(tested, holm_adjust([arms[a]["contrast"]["p_value"] for a in tested]) if tested else []):
+        c = arms[arm]["contrast"]
+        c["p_holm"] = adjusted
+        significant = adjusted <= alpha and c["ci_low"] is not None and c["ci_high"] is not None
+        c["reading"] = ("learned operator better" if significant and c["mean"] > 0 and c["ci_low"] > 0 else
+                        "fixed operator better" if significant and c["mean"] < 0 and c["ci_high"] < 0 else "no difference detected")
+    control = arms.get("c5full")
+    machinery = ({name: bool(control["stores"][name]["L4a"]["point_met"]) for name in ("learned", "fixed")} if control else None)
+    readings = {a: arms[a]["contrast"].get("reading", "unavailable") for a in family}
+    overall = ("inconclusive (machinery)" if machinery is not None and not all(machinery.values()) else
+               "learned operator better" if "learned operator better" in readings.values() else
+               "fixed operator better" if "fixed operator better" in readings.values() else
+               "no difference detected" if readings and all(r == "no difference detected" for r in readings.values()) else
+               "unavailable")
+    report = {"schema": SCHEMA, "mode": "store-report", "rule": rule, "family": family, "arms": arms,
+              "positive_control_met": machinery, "readings": readings, "overall": overall,
+              "labels": sorted({str(s.get("label")) for table in stores.values() for _, s in table.values()})}
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "summary.json", report)
+    lines = ["# E10.L — learned vs fixed-operator store (amendment 2, decision 64; secondary S9)", "",
+             f"Rule `{rule}`; Holm family {family}; labels {report['labels']}. Positive difference = the learned operator "
+             "decomposes better.", "",
+             "| arm | seeds | learned: accepted / precision | fixed: accepted / precision | pool AUC learned / fixed | "
+             "recall@0.8 learned − fixed | Holm p | reading |", "|---|---|---|---|---|---|---|---|"]
+    for arm, block in arms.items():
+        ls, fs, c = block["stores"]["learned"], block["stores"]["fixed"], block["contrast"]
+        diff = (f"{_fmt(c['mean'])} [{_fmt(c['ci_low'])}, {_fmt(c['ci_high'])}]" if c.get("available") else "n/a")
+        lines.append(f"| {arm}{'' if block['family'] else ' (descriptive)'} | {block['seeds']} | {ls['L4a']['accepted']} / "
+                     f"{_fmt(ls['L4a']['precision'])} | {fs['L4a']['accepted']} / {_fmt(fs['L4a']['precision'])} | "
+                     f"{_fmt(ls['pool_auc_mean'])} / {_fmt(fs['pool_auc_mean'])} | {diff} | {_fmt(c.get('p_holm'), 4)} | "
+                     f"{c.get('reading', '—')} |")
+    lines += ["", f"Positive controls (c5full point precision ≥ {precision}): {machinery}. **Overall:** {overall}."]
+    (output / "report.md").write_text("\n".join(lines) + "\n")
+    return report
+
+
 # ---------------------------------------------------------------- queue plan
 
 
@@ -1331,7 +1454,10 @@ HOST = "SmolLM2-360M"
 # Evaluation-only jobs on existing checkpoints, decisive first, inside the 54.4995 slot (author: --priority 54.4995,
 # sub-levels 54.4995x); T7 trains at 51–54, so its jobs sit behind its checkpoints in priority order.
 PRIORITY = {"t7-features": 54.4995, "t7-erased": 54.49951, "t7-placement": 54.49952, "t1-placement": 54.49953,
-            "t4t5-features": 54.49954, "t4t5-erased": 54.49955, "wordnet-placement": 54.49956, "report": 54.49959}
+            "t4t5-features": 54.49954, "t4t5-erased": 54.49955, "wordnet-placement": 54.49956, "report": 54.49959,
+            # amendment 2 (decision 64): the fixed-random-operator store (C5rf) on T4 / T5, in the band's free slots
+            "t4t5-erased-c5rf": 54.49957, "report-c5rf": 54.49958}
+RF_STORE = "C5rf"                          # amendment 2: E9's fixed random unitary operator arm (`random_fixed:unitary_hrr`)
 ERASED_ARMS = {"c2": {}, "features": {"passive.kind": "features"},          # co-primary (amendment 1): full baselines
                "c5full": {"passive.kind": "c5full", "baselines": "[prior,correlate]"}}
 # idle-GPU / CPU hour estimates from the CPU smoke (preregistration §9): 360M forward ≈ 500 tokens/s on 4 CPU threads,
@@ -1443,6 +1569,40 @@ def queue_plan(python: str = "python", *, seeds: Sequence[int] = (1, 2, 3)) -> l
     return jobs
 
 
+def rf_store_plan(python: str = "python", *, seeds: Sequence[int] = (1, 2, 3)) -> list[dict[str, Any]]:
+    """Amendment 2 (decision 64; secondary S9): every arm of the T4 / T5 erased runs again with C5rf's store (its trained
+    atomics and its fixed random operator) in place of C5's — same erasure, passive runs (C2), extracted evidence (the
+    C0′ `extract` files of `queue_plan`, reused, so no GPU job) and settings — then one pooled report of the C5rf runs
+    (`report`) and one paired learned-vs-fixed comparison (`store-report`) per track. CPU only."""
+    root = ROOT
+    m = ["-m", "vsa_embed.experiments.e10_learn"]
+    jobs: list[dict[str, Any]] = []
+
+    def job(name: str, stage: str, hours: float, args: list[str], reads: Sequence[Path]) -> None:
+        jobs.append({"name": name, "priority": PRIORITY[stage], "lane": "cpu", "hours": round(hours, 2),
+                     "command": [python, *m, *args], "reads": [str(p) for p in reads]})
+
+    for track in ("t4", "t5"):
+        for seed in seeds:
+            features = FEATURES / track / f"{HOST}-full-C0p-s{seed}" / "occurrences.npz"
+            for arm, sets in ERASED_ARMS.items():
+                args = ["erased", "--config", str(root / "configs" / f"erased-{track}.yaml"),
+                        "--output", str(root / "runs" / f"{track}-{arm}-c5rf-s{seed}"),
+                        "--set", f"store={run_folder(track, RF_STORE, seed)}", "--set", f"passive.run={run_folder(track, 'C2', seed)}",
+                        "--set", f"evidence.features={features}", "--set", f"passive.features={features}"]
+                for k, v in sets.items():
+                    args += ["--set", f"{k}={v}"]
+                job(f"e10l-{track}-erased-{arm}-c5rf-s{seed}", "t4t5-erased-c5rf", ERASED_CPU_H[arm][track], args,
+                    [run_folder(track, RF_STORE, seed) / "final.pt", run_folder(track, "C2", seed) / "final.pt", features])
+        rf_runs = [str(root / "runs" / f"{track}-{arm}-c5rf-s{s}") for arm in ERASED_ARMS for s in seeds]
+        c5_runs = [str(root / "runs" / f"{track}-{arm}-s{s}") for arm in ERASED_ARMS for s in seeds]
+        job(f"e10l-{track}-erased-c5rf-report", "report-c5rf", 0.05,
+            ["report", "--runs", *rf_runs, "--output", str(root / "runs" / f"{track}-c5rf-report")], [])
+        job(f"e10l-{track}-erased-store-report", "report-c5rf", 0.1,
+            ["store-report", "--runs", *c5_runs, "--reference-runs", *rf_runs, "--output", str(root / "runs" / f"{track}-store-report")], [])
+    return jobs
+
+
 def queue_jobs(jobs: Sequence[Mapping[str, Any]], queue_dir: Path | None = None) -> list[str]:
     """Add the jobs to the GPU queue (idempotent: an existing job name is skipped). Run from the repository root."""
     from vsa_embed.jobqueue import DEFAULT_DIR, add
@@ -1492,9 +1652,15 @@ def main(argv: list[str] | None = None) -> None:
     pr.add_argument("--group", default="primary"); pr.add_argument("--resamples", type=int, default=2000)
     qu = sub.add_parser("queue", help="add every E10.L job to the GPU queue (preregistration §9); --dry-run prints them")
     qu.add_argument("--dry-run", action="store_true"); qu.add_argument("--python", default=sys.executable)
+    qu.add_argument("--rf-store", action="store_true",
+                    help="only amendment 2's jobs: T4 / T5 erased runs on C5rf's fixed-random-operator store and their reports")
     rp = sub.add_parser("report", help="pool erased runs over seeds into the pre-registered endpoints")
     rp.add_argument("--runs", type=Path, nargs="+", required=True); rp.add_argument("--output", type=Path, required=True)
     rp.add_argument("--resamples", type=int, default=2000)
+    sr = sub.add_parser("store-report", help="amendment 2: learned (C5) vs fixed-operator (C5rf) store on paired erased runs")
+    sr.add_argument("--runs", type=Path, nargs="+", required=True, help="erased runs on the learned store")
+    sr.add_argument("--reference-runs", type=Path, nargs="+", required=True, help="the same runs on the fixed-operator store")
+    sr.add_argument("--output", type=Path, required=True); sr.add_argument("--resamples", type=int, default=2000)
     args = parser.parse_args(argv)
     if args.command == "synthetic":
         summary = run_synthetic(load_config(args.config, args.set), args.output)
@@ -1538,7 +1704,7 @@ def main(argv: list[str] | None = None) -> None:
         np.savez(target, **data)
         print(json.dumps(meta, indent=2))
     elif args.command == "queue":
-        jobs = queue_plan(args.python)
+        jobs = rf_store_plan(args.python) if args.rf_store else queue_plan(args.python)
         if args.dry_run:
             for j in jobs:
                 print(f"{j['name']}  priority {j['priority']}  lane {j['lane']}  ≈ {j['hours']} {j['lane'].upper()}-h")
@@ -1549,6 +1715,9 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(queue_jobs(jobs), indent=2))
     elif args.command == "placement-report":
         run_placement_report(args.runs, args.output, group=args.group, resamples=args.resamples)
+        print((args.output / "report.md").read_text())
+    elif args.command == "store-report":
+        run_store_report(args.runs, args.reference_runs, args.output, resamples=args.resamples)
         print((args.output / "report.md").read_text())
     else:
         run_report(args.runs, args.output, resamples=args.resamples)

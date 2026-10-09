@@ -133,4 +133,37 @@ TK-B1; T8 provides their items mapped onto its concepts (`~/data/vsa-llm/benchma
 
 ## 8. Changes
 
-None.
+**8.1 (2026-10-09, decision 64, author; before any T8 training or evaluation).**
+
+- **Timing.** Every T8 job is pending: SmolLM2-360M training at 54.499, evaluations at 54.4991, reports at 54.4993. No T8
+  number exists.
+- **Why.** On T4 (real chemistry, SmolLM2-360M, 3 seeds), C5 − C0′ on `after_heldout` is −0.40% [−0.54, −0.24], but
+  shuffled frames keep that gain (C5 − C5sh +0.01% [−0.08, +0.10]) and the definition encoder beats C5 there (C5 − C6d
+  +0.17% [+0.05, +0.29]). The operator arms tie on T4 (C5 − C5rf and C5 − C5ut n.s.), on T5 (untyped ties learned HRR,
+  translation is better) and in decision 54's operator screen.
+- **Arms added** (SmolLM2-360M, seeds 1–3, the §4 recipe; configs in `experiments/e9-retrofit/configs/t8/`; queued by the
+  coordinator at 54.499, `pq` chain at 54.4991; row-source table job `t8-rowsource-definition-SmolLM2-360M` at 54.499):
+  - **C5sh**: shuffled frames (every entry reads another entry's frame, a derangement);
+  - **C6d**: the definition encoder (the frozen host's mean-pooled hidden state of the entry's verbalized frame, through a
+    trained projector at C5's site; held-out entities get their rows from the same source).
+- **Two reading rules** for the primary endpoint (C5 − C0′ on `after_heldout`), read in the arm batch report
+  `report/t8-pq` (`e9_report`'s arm table: C5 − arm on the 8,192 final-evaluation windows, pooled over common seeds,
+  paired window bootstrap):
+  - **(a) Ontology specificity.** A held-out gain counts as **ontology-specific** only if C5 − C5sh < 0 on
+    `after_heldout`, with the Holm-adjusted p < 0.05 and the CI excluding 0. On T8 the operator-arm family within the
+    stratum holds C5sh, C5ut and C5tr (the last two at seed 1), so Holm runs over three. Otherwise §5's first reading
+    becomes "the store helps on held-out entities; the frame's content is not shown to be the source".
+  - **(b) Against standard new-word vectors.** "Better than standard new-word vectors" is claimed only if C5 − C6d < 0
+    on `after_heldout`, with Holm p < 0.05 (the row-source family: C6d alone) and the CI excluding 0.
+- **C5ut / C5tr seeds 2–3 withdrawn.** The coordinator moved the jobs `t8-SmolLM2-360M-full-C5ut-s2`, `-C5ut-s3`,
+  `-C5tr-s2` and `-C5tr-s3` to `.jobs/cancelled`. Seed 1 of each is kept as a replication.
+  - Rule 7's binding claim on T8 is **no longer sought**: the operator is null on T5, on T4 and in the operator screen.
+  - The secondary contrasts C5 − C5ut and C5 − C5tr on `after_heldout` remain, as **descriptive single-seed
+    replications**: their CIs cover evaluation windows only.
+  - §5's reading "C5 not better than C5ut and C5tr: compositional parameter sharing, not binding" stays the default. If
+    both seed-1 contrasts favour C5, that is reported as a single-seed observation, not as a binding claim.
+- **Within-model specificity.** The held-out frame-swap rescore (`e9_frameswap`, pre-registered separately in
+  `experiments/e9-retrofit/preregistration-frameswap.md`, being built) swaps held-out entities' frames at evaluation on
+  the trained C5 itself. It is the within-model test that complements C5sh. Its rules are its own.
+- **Unchanged:** the primary endpoint and its test, the other secondaries, the Qwen3 block (P0, C0′, C5 at seed 1, no
+  controls), the benchmark endpoints and §6.

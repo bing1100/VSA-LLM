@@ -11,8 +11,9 @@ and computes:
   primary unbinding, MRR per concept): C5 − the frequency baseline, and C5 − C5rf; concepts × seeds crossed model;
 - secondaries: every arm against C5 on the twins, the natural role items, probe A by condition, frame size (the
   capacity curve) and role ambiguity, role recovery, probe B (LRE) against probe A, the hidden-state probes;
-- step 2 (§13; the readout arms, `RUN/readout`): **R1** U5 − U5ut and U5 − U5tr on the twins (Holm), **R2** U5 − C5 relative
-  loss on `after_heldout` (paired window bootstrap), the gate-off losses and the readout diagnostics;
+- step 2 (§13; the readout arms, `RUN/readout`): **R1** U5 − U5ut and U5 − U5tr on the twins (Holm), R1's secondary U5 −
+  U5rf (§13.1, a fixed random operator; its own family), **R2** U5 − C5 relative loss on `after_heldout` (paired window
+  bootstrap), the gate-off losses and the readout diagnostics;
 - step 3 (§14; `RUN/binding-chain`): **C1** C5's chained two-hop through local stores − through one global memory, **C2**
   chained two-hop on the WP-UB items C5 − C5ut / C5tr (Holm), **C3** reverse lookup on ambiguous fillers C5 − C5ut / C5tr
   (Holm), item-level agreement of the algebra with the models' behaviour on the same items (`--understanding`), and the
@@ -328,6 +329,9 @@ def _average_blocks(blocks: dict[int, dict[str, Any]]) -> dict[str, Any]:
 READOUT_CANDIDATE = "U5"
 R1_REFERENCES = ("U5ut", "U5tr")
 READOUT_FAMILIES = ("U5u", "U5sb", "U5bu", "U5sl")
+# §13.1 (decision 64): R1's secondary, U5 − U5rf (a fixed random unitary operator) on the twins — does learning the operator
+# matter for the readout? Its own family (one contrast), outside R1's Holm and S2.1.
+R1_OPERATOR_REFERENCE = "U5rf"
 R2_STRATUM = "after_heldout"
 
 
@@ -402,6 +406,9 @@ def step2(models: dict[str, dict[int, dict[str, Any]]], *, resamples: int = 2000
     for (name, _), adjusted in zip(rows, holm_adjust([p for _, p in rows]) if rows else []):
         contrasts[name]["p_holm"] = adjusted
     out["R1"] = {"contrasts": contrasts, "means": {m: _seed_mean(v) for m, v in twins.items() if v}}
+    if twins.get(READOUT_CANDIDATE) and twins.get(R1_OPERATOR_REFERENCE):      # §13.1: unadjusted, a family of one
+        out["R1_operator"] = {f"{READOUT_CANDIDATE} − {R1_OPERATOR_REFERENCE}":
+                              contrast(twins[READOUT_CANDIDATE], twins[R1_OPERATOR_REFERENCE], resamples=resamples, seed=seed)}
     out["R2"] = loss_contrast(_losses(models, READOUT_CANDIDATE), _losses(models, CANDIDATE), R2_STRATUM, seed=seed)
     families = {}
     for model in (*READOUT_FAMILIES, CANDIDATE):
@@ -627,6 +634,7 @@ def render(analysis: dict[str, Any], *, title: str) -> str:
         if step.get("available"):
             lines += ["### Step 2 — readout arms (pre-registration §13)", "", "| endpoint | contrast | estimate |", "|---|---|---|"]
             lines += [f"| R1 | {k} | {_cell(v)} |" for k, v in step["R1"]["contrasts"].items()]
+            lines += [f"| R1 secondary (§13.1) | {k} | {_cell(v)} |" for k, v in (step.get("R1_operator") or {}).items()]
             r2 = step.get("R2", {})
             if r2.get("available"):
                 lines.append(f"| R2 | U5 − C5, {r2['stratum']} (relative) | {r2['relative']:+.4f} [{r2['relative_ci_low']:+.4f}, "

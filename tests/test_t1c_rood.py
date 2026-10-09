@@ -353,7 +353,10 @@ def test_existing_t1c_and_t1cf_configs_do_not_use_the_new_keys() -> None:
     rood = yaml.safe_load(Path("experiments/t1c-clinical/rood/rood.yaml").read_text())
     for key in ("text", "encode", "composer", "gram", "kge"):
         assert rood[key] == t1cf[key] or key == "text"                          # text.workers differs (≤ 6 on the shared CPU)
-    assert {k: v for k, v in rood["head"].items() if k != "free_fallbacks"} == t1cf["head"]
+    # T1c-F's head unchanged; ROOD's list also has the secondary untyped condition (amendment 15.3), appended last
+    assert {k: v for k, v in rood["head"].items() if k not in ("free_fallbacks", "conditions")} == \
+        {k: v for k, v in t1cf["head"].items() if k != "conditions"}
+    assert rood["head"]["conditions"] == [*t1cf["head"]["conditions"], "composed_head_untyped"]
     assert rood["holdout"] == t1cf["holdout"] and rood["seed"] == t1cf["seed"]
     assert rood["rood"]["expected_sha256"] and rood["rood"]["expected_concept_holdout_sha256"]
 
@@ -571,6 +574,91 @@ def test_end_to_end_synthetic_rood_run_writes_only_aggregates(tmp_path: Path) ->
     assert not leaked, leaked[:5]
     assert not list((tmp_path / "runs").rglob("*.npy")) and not list((tmp_path / "runs").rglob("*.npz"))
     assert list((tmp_path / "data" / "analysis").rglob("per_code_auc.npz"))
+
+
+# -- amendment 15.3 (decision 64): the untyped composed head, a secondary specificity condition --------------------
+
+def _sources(config: dict, labels: dict, conditions: list[str], seed: int = 1) -> dict:
+    return tf.build_sources(conditions, labels, config=config, seed=seed, title_vectors=None, transe_vectors=None)
+
+
+def test_untyped_composed_head_bundles_fillers_without_binding_and_is_seeded_by_name() -> None:
+    labels = {"frames": [[(0, 3)], [(1, 3)], [(0, 1), (2, 4)], [(1, 1), (2, 4)]], "atomic_count": 6, "relation_count": 3,
+              "n_trained": 4, "codes": ["QA", "QB", "QC", "QD"]}
+    config = {"head": {"source_dim": 16, "free_std": 0.02},
+              "composer": {"operator": "hrr", "dimension": 16, "composition": "attentive", "concept_factor": "induced",
+                           "key_dimension": 4}}
+    joint = _sources(config, labels, ["free", "composed_head", "composed_head_untyped"])
+    alone = _sources(config, labels, ["composed_head_untyped"])
+    untyped, typed = joint["composed_head_untyped"].composer, joint["composed_head"].composer
+    assert untyped.operator == "untyped" and typed.operator == "hrr"
+    assert (untyped.mode, untyped.concept_factor, untyped.key_dimension) == (typed.mode, typed.concept_factor, typed.key_dimension)
+    # the same filler under two relations: one vector without binding (a one-edge frame has weight 1), two with HRR
+    ids = torch.arange(4)
+    with torch.no_grad():
+        u, h = joint["composed_head_untyped"](ids), joint["composed_head"](ids)
+    assert torch.allclose(u[0], u[1], atol=1e-6) and not torch.allclose(h[0], h[1], atol=1e-3)
+    assert torch.allclose(u[0], torch.nn.functional.normalize(untyped.atomic_vectors()[3], dim=-1), atol=1e-6)
+    # seeded by name: trained alone or with the others, the condition starts from the same parameters
+    for (k, a), b in zip(joint["composed_head_untyped"].state_dict().items(), alone["composed_head_untyped"].state_dict().values()):
+        assert torch.equal(a, b), k
+    # every pre-registered condition keeps its positional seed (offsets of earlier runs unchanged)
+    assert [tf.condition_offset(c, i) for i, c in enumerate(["free", "composed_head", "transe"])] == [0, 1, 2]
+    assert tf.condition_offset("composed_head_untyped", 7) == tf.condition_offset("composed_head_untyped", 0) == 58
+
+
+def test_untyped_head_is_a_secondary_outside_the_preregistered_families(tmp_path: Path) -> None:
+    config = _synthetic_rood_experiment(tmp_path)
+    config["head"]["conditions"] = ["free", "composed_head", "random", "composed_head_untyped"]
+    tf.run_encode(config, "stub", pretrained="stub/host", device="cpu", reuse_base=True)
+    for seed in (1, 2):
+        tf.run_train(config, "stub", seed, conditions=config["head"]["conditions"], device="cpu")
+    with_untyped = tr.run_analyze(config, "stub", [1, 2], device="cpu", bootstrap=40)
+    without = tr.run_analyze(config, "stub", [1, 2], device="cpu", bootstrap=40, label="-pre",
+                             conditions=["free", "composed_head", "random", "free_mean", "free_zero"])
+    assert "composed_head_untyped" in with_untyped["endpoints"] and "binding" not in without
+    # the pre-registered primary, specificity and vs-control families are unchanged by the secondary condition
+    assert with_untyped["primary_contrast"] == without["primary_contrast"]
+    assert with_untyped["specificity"] == without["specificity"]
+    assert "composed_head_untyped" not in with_untyped["specificity"]["R1"]
+    for metric, rows in without["vs_control"].items():
+        assert {c: r for c, r in with_untyped["vs_control"][metric].items() if c != "composed_head_untyped"} == rows
+    secondary = with_untyped["vs_control"]["R1"]["composed_head_untyped"]
+    assert secondary["secondary"] and "p_holm" not in secondary
+    # its own family: composed_head − composed_head_untyped on R1 and MRR (ROOD-any), Holm over the two
+    binding = with_untyped["binding"]
+    assert binding["contrast"] == "composed_head − composed_head_untyped" and set(binding["metrics"]) == {"R1", "MRR_rood_any"}
+    for row in binding["metrics"].values():
+        assert row["ci95"][0] <= row["delta_primary_minus_untyped"] <= row["ci95"][1] and row["p_two_sided"] <= row["p_holm"]
+    report = (tmp_path / "runs" / "analysis-rood-stub" / "report.md").read_text()
+    assert "Secondary: binding (composed_head − composed_head_untyped" in report
+    # T1c-F's analysis on the ROOD heads: the same rules (E1 / E2 binding family; Holm and Dunnett without it)
+    t1cf = tf.run_analyze(config, "stub", [1, 2], device="cpu", bootstrap=10)
+    assert set(t1cf["binding"]["metrics"]) <= {"E1", "E2"} and t1cf["binding"]["metrics"]
+    assert t1cf["comparisons"]["E1"]["vs_control"]["composed_head_untyped"]["secondary"]
+    # a job that trains the condition alone (the fallback when a head job already ran) reproduces it: same seed, same batches
+    solo = tf.run_train(config, "stub", 1, conditions=["composed_head_untyped"], device="cpu", tag="-solo")
+    assert set(solo["metrics"]) == {"composed_head_untyped"}
+    heads = tmp_path / "data" / "heads"
+    a = torch.load(heads / "stub" / "s1" / "composed_head_untyped" / "vectors.pt", weights_only=False)
+    b = torch.load(heads / "stub-solo" / "s1" / "composed_head_untyped" / "vectors.pt", weights_only=False)
+    assert torch.equal(a["source_init"], b["source_init"]) and torch.allclose(a["source"], b["source"], atol=1e-5)
+    assert np.allclose(np.load(heads / "stub" / "s1" / "composed_head_untyped" / "scores_eval.npy"),
+                       np.load(heads / "stub-solo" / "s1" / "composed_head_untyped" / "scores_eval.npy"), atol=1e-4)
+    # licence guard as in the end-to-end test
+    written = "".join(p.read_text() for p in (tmp_path / "runs").rglob("*") if p.is_file())
+    assert not __import__("re").findall(r"\bQ80\d\dX\b|\b1000\d\d\b", written)
+
+
+def test_rood_config_and_plan_carry_the_untyped_condition() -> None:
+    config = yaml.safe_load(Path("experiments/t1c-clinical/rood/rood.yaml").read_text())
+    assert config["head"]["conditions"][-1] == "composed_head_untyped" and config["rood"]["primary"] == "composed_head"
+    t1cf = yaml.safe_load(Path("experiments/t1c-clinical/icd-frequency/icd-frequency.yaml").read_text())
+    assert "composed_head_untyped" not in t1cf["head"]["conditions"]                 # T1c-F unchanged
+    text = tr.plan_commands()
+    trains = [line for line in text.splitlines() if "--name t1crood-train-" in line and "c5dict" not in line]
+    assert len(trains) == 9
+    assert all("composed_head_untyped" in line for line in trains if "--conditions" in line)
 
 
 def test_lm_endpoint_pairs_windows_and_pools_seeds(tmp_path: Path) -> None:

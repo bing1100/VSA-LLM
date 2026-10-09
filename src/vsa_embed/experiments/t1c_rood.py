@@ -934,22 +934,30 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
                 "p_two_sided": ic.bootstrap_pvalue(delta)}
     primary_result = contrast(primary, control, "R1") if primary in boot else None
     vs_control = {}
+    # The secondary conditions (`tf.SECONDARY_CONDITIONS`: composed_head_untyped, amendment 15.3) stay out of the
+    # pre-registered families: their vs-control row is unadjusted and flagged; binding has its own family below.
     for metric in ("R1", *[f"MRR_{s}" for s in SUBSETS]):
         rows = {c: contrast(c, control, metric) for c in boot if c != control}
         rows = {c: v for c, v in rows.items() if v}
-        adjusted = ic.holm({c: v["p_two_sided"] for c, v in rows.items()})
+        adjusted = ic.holm({c: v["p_two_sided"] for c, v in rows.items() if c not in tf.SECONDARY_CONDITIONS})
         for c in rows:
-            rows[c]["p_holm"] = adjusted[c]
+            if c in tf.SECONDARY_CONDITIONS:
+                rows[c]["secondary"] = True
+            else:
+                rows[c]["p_holm"] = adjusted[c]
         vs_control[metric] = rows
     specificity = {}
     for metric in ("R1", "MRR_rood_any"):
-        rows = {c: contrast(primary, c, metric) for c in boot if c not in (primary,)}
+        rows = {c: contrast(primary, c, metric) for c in boot if c not in (primary, *tf.SECONDARY_CONDITIONS)}
         rows = {c: v for c, v in rows.items() if v}
         adjusted = ic.holm({c: v["p_two_sided"] for c, v in rows.items()})
         for c in rows:
             rows[c]["p_holm"] = adjusted[c]
         specificity[metric] = rows
     decision = decide(primary_result, specificity.get("R1", {}))
+    # secondary (amendment 15.3): composed_head − composed_head_untyped (frame content without binding), Holm over R1 and
+    # MRR on ROOD-any
+    binding = tf.binding_contrasts(boot, ("R1", "MRR_rood_any"), primary=primary)
 
     # per-code AUCs (per item) stay in the data root
     analysis_dir = tf.private_dir(root / "analysis" / f"rood-{encoder}{tag}{label}")
@@ -962,6 +970,8 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
                        **{f"{s}_admissions": int(subsets[s].sum()) for s in SUBSETS}},
               "endpoints": endpoints, "primary_contrast": primary_result, "vs_control": vs_control,
               "specificity": specificity, "decision": decision, "seconds": round(time.monotonic() - started, 1)}
+    if binding:
+        result["binding"] = binding
     folder = tf.run_folder(config, f"analysis-rood-{encoder}{tag}{label}")
     tf.write_json(folder / "endpoints.json", result)
     (folder / "report.md").write_text(render_analysis_report(result))
@@ -1017,6 +1027,7 @@ def render_analysis_report(result: dict[str, Any]) -> str:
         for c, row in rows.items():
             lines.append(f"- {metric}: {result['primary']} − {c}: Δ = {_f(row['delta_bootstrap_mean'], 4)} "
                          f"[{_f(row['ci95'][0], 4)}, {_f(row['ci95'][1], 4)}], Holm p = {_f(row['p_holm'], 4)}")
+    lines += tf.render_binding(result.get("binding") or {})
     return "\n".join(lines) + "\n"
 
 
@@ -1071,6 +1082,8 @@ def run_report(config: dict[str, Any], *, encoders: Sequence[str], quant_dirs: S
             result = json.loads(path.read_text())
             coding[encoder] = {k: result[k] for k in ("primary_contrast", "decision", "pool")}
             coding[encoder]["R1"] = {c: e["R1_rood_macro_auc"] for c, e in result["endpoints"].items()}
+            if result.get("binding"):                  # secondary (amendment 15.3)
+                coding[encoder]["binding"] = result["binding"]
     lm = {str(q): lm_endpoint(Path(q)) for q in quant_dirs if (Path(q) / "runs").exists()}
     result = {"coding": coding, "lm": lm}
     folder = tf.run_folder(config, f"report-{config['version']}{label}")
@@ -1082,6 +1095,10 @@ def run_report(config: dict[str, Any], *, encoders: Sequence[str], quant_dirs: S
         lines.append(f"- {encoder}: R1 {json.dumps({c: round(v, 4) for c, v in row['R1'].items() if v == v})}; "
                      f"Δ = {_f(p.get('delta_bootstrap_mean'), 4)} [{_f((p.get('ci95') or [None, None])[0], 4)}, "
                      f"{_f((p.get('ci95') or [None, None])[1], 4)}]; decision `{json.dumps(row['decision'])}`")
+        b = (row.get("binding") or {}).get("metrics", {}).get("R1")
+        if b:
+            lines.append(f"  - secondary, binding (composed_head − composed_head_untyped), R1: Δ = {_f(b['delta_primary_minus_untyped'], 4)} "
+                         f"[{_f(b['ci95'][0], 4)}, {_f(b['ci95'][1], 4)}], Holm p = {_f(b['p_holm'], 4)}")
     lines += ["", f"## LM (L1: loss after ROOD-concept mentions in eval-rood, `{LM_STRATUM}`)", ""]
     for q, row in lm.items():
         for key, value in row.items():
@@ -1126,7 +1143,8 @@ def plan_commands(*, levels: Sequence[float] = LEVELS, hours: dict[str, float] |
     frozen-host coding and its R1 analysis, then E9, then the ROOD-trained encoders and the rescoring, then the other
     analyses, then the reports. GPU-h from T1c / T1c-F's measured costs."""
     windows = windows or whole_split_windows()
-    h = {"e9_train": 1.16, "e9_p0": 0.03, "encode_p0": 1.5, "encode_run": 1.7, "train_seed": 0.75, "train_seed_c5": 0.85,
+    # head training per seed: 0.75 / 0.85 GPU-h for 7 / 8 conditions (decision 63) + ≈ 0.12 for composed_head_untyped (15.3)
+    h = {"e9_train": 1.16, "e9_p0": 0.03, "encode_p0": 1.5, "encode_run": 1.7, "train_seed": 0.87, "train_seed_c5": 0.97,
          "train_c5_only": 0.15, "analyze": 0.1, "report": 0.4, **(hours or {})}
     quant_rood = 2 * (windows or 21827) * QUANT_HOURS_PER_WINDOW_PASS
     quant_general = 2 * 2048 * QUANT_HOURS_PER_WINDOW_PASS
@@ -1136,7 +1154,9 @@ def plan_commands(*, levels: Sequence[float] = LEVELS, hours: dict[str, float] |
     r = "$PY -m vsa_embed.experiments.t1c_rood"
     c5 = E9_RUNS / "SmolLM2-360M-full-C5-s1"
     c0 = E9_RUNS / "SmolLM2-360M-full-C0p-s1"
-    eight = "free composed_head composed_c5 transe title random gram composed_free"
+    # amendment 15.3 (decision 64): composed_head_untyped, a secondary specificity condition, joins every head job (the P0
+    # jobs through rood.yaml's condition list)
+    nine = "free composed_head composed_c5 transe title random gram composed_free composed_head_untyped"
     p0_hours = h["encode_p0"] + 3 * h["train_seed"] + h["analyze"]
     lm_hours = 9 * h["e9_train"] + h["e9_p0"]
     run_hours = 2 * h["encode_run"] + 6 * h["train_seed_c5"] + 3 * h["train_c5_only"]
@@ -1168,7 +1188,7 @@ def plan_commands(*, levels: Sequence[float] = LEVELS, hours: dict[str, float] |
              f"--encoder P0-360M --pretrained HuggingFaceTB/SmolLM2-360M --reuse-base   # 0 on reuse, else ≈ {h['encode_p0']:.1f} GPU-h (resumable)"]
     for seed in (1, 2, 3):
         lines.append(f"{q} --name t1crood-train-P0-360M-s{seed} --priority {decisive} --min-free-gb 10 --no-resume -- {m} train "
-                     f"{ROOD_CONFIG_ARG} --encoder P0-360M --seed {seed}   # 7 conditions + free_mean / free_zero ≈ {h['train_seed']:.2f} GPU-h")
+                     f"{ROOD_CONFIG_ARG} --encoder P0-360M --seed {seed}   # 8 conditions + free_mean / free_zero ≈ {h['train_seed']:.2f} GPU-h")
     lines.append(f"{q} --name t1crood-analyze-P0-360M --priority {decisive} --min-free-gb 2 --no-resume -- {r} analyze "
                  f"{ROOD_CONFIG_ARG} --encoder P0-360M --seeds 1 2 3 --device cuda   # R1 (primary) ≈ {h['analyze']:.2f} GPU-h")
     lines += ["", f"# --- 2. at {training}: E9 on the ROOD corpus (track t1c-rood): SmolLM2-360M P0 / C0' / C2 / C5 × seeds 1–3, training",
@@ -1176,7 +1196,7 @@ def plan_commands(*, levels: Sequence[float] = LEVELS, hours: dict[str, float] |
               f"PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t1c-rood --stage {E9_STAGE} --hosts SmolLM2-360M "
               f"--models P0 C0p C2 C5 --seeds 1 2 3 --no-evals --priority {training} --level-step 0.00001 --queue", "",
               f"# --- 3. at {evaluations}: coding on the ROOD-trained encoders (E9 seed 1: {c0.name}, {c5.name}): their encodes,",
-              "# 8 conditions (composed_c5 = the C5-ROOD composer; ROOD concepts never linked in its training) and composed_c5 on",
+              "# 9 conditions (composed_c5 = the C5-ROOD composer; ROOD concepts never linked in its training) and composed_c5 on",
               f"# P0 (≈ {run_hours:.1f} GPU-h); L1 on the whole eval-rood split ({whole} windows; e4_quant ref + INT8-A; P0, C0', C2, C5",
               f"# × 3 seeds) and the locality check on eval-general (C3's documents, the runs' 2,048 windows) (≈ {eval_hours:.1f} GPU-h) ---"]
     for enc, run, extra in (("C0p-ROOD-360M", c0, ""), ("C5-ROOD-360M", c5, " --channel on")):
@@ -1184,7 +1204,7 @@ def plan_commands(*, levels: Sequence[float] = LEVELS, hours: dict[str, float] |
                      f"--encoder {enc} --run {run}{extra}   # ≈ {h['encode_run']:.1f} GPU-h (resumable)")
         for seed in (1, 2, 3):
             lines.append(f"{q} --name t1crood-train-{enc}-s{seed} --priority {evaluations} --min-free-gb 10 --no-resume -- {m} train "
-                         f"{ROOD_CONFIG_ARG} --encoder {enc} --seed {seed} --conditions {eight} --c5-run {c5}   # ≈ {h['train_seed_c5']:.2f} GPU-h")
+                         f"{ROOD_CONFIG_ARG} --encoder {enc} --seed {seed} --conditions {nine} --c5-run {c5}   # ≈ {h['train_seed_c5']:.2f} GPU-h")
     for seed in (1, 2, 3):
         lines.append(f"{q} --name t1crood-train-P0-360M-c5dict-s{seed} --priority {evaluations} --min-free-gb 10 --no-resume -- {m} train "
                      f"{ROOD_CONFIG_ARG} --encoder P0-360M --seed {seed} --conditions composed_c5 --c5-run {c5}   # ≈ {h['train_c5_only']:.2f} GPU-h")

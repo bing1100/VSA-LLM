@@ -82,7 +82,7 @@ REVERSE_K = 5
 SYMBOLIC_HOLDERS = 5
 DEFINITION_STYLE = {"t5": "prose", "t4": "prose"}
 SLOT_IN_TEXT = re.compile(r"\{(x|y|c)\}")
-COMPOSING = ("C5", "C5rf", "C5ut", "C5tr", "C5sh", "U5", "U5u", "U5sb", "U5bu", "U5sl", "U5tr", "U5ut")
+COMPOSING = ("C5", "C5rf", "C5ut", "C5tr", "C5sh", "U5", "U5u", "U5sb", "U5bu", "U5sl", "U5tr", "U5ut", "U5rf")
 
 
 # ---------------------------------------------------------------- conditions and stores

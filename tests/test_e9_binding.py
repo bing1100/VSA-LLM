@@ -133,7 +133,9 @@ READOUT = {"layer": "third", "window": 8, "gate_bias": 0.0, "beta": 16.0}
 READOUT_SPECS = {"U5": ({**COMPOSE, "operator": "hrr", "readout": READOUT}, "lora"),
                  "U5ut": ({**COMPOSE, "operator": "untyped", "readout": READOUT}, "lora"),
                  "U5sl": ({**COMPOSE, "operator": "slotted_unitary", "slots": 3, "readout": READOUT}, "lora"),
-                 "U5bu": ({**COMPOSE, "operator": "block_unitary", "readout": READOUT}, "lora")}
+                 "U5bu": ({**COMPOSE, "operator": "block_unitary", "readout": READOUT}, "lora"),
+                 # decision 64 (§13.1): a fixed random unitary operator under the readout, as C5rf
+                 "U5rf": ({**COMPOSE, "operator": "random_fixed:unitary_hrr", "readout": READOUT}, "lora")}
 
 
 @pytest.fixture(scope="module")
@@ -427,8 +429,17 @@ def test_readout_runs_train_save_and_reload(world) -> None:
         model = lm.load_final(world["runs"][name] / "final.pt", "cpu")
         readout = model.channel.readout
         assert isinstance(readout, UnbindingReadout) and model._readout_hook is not None and readout.layer == 1
-        assert readout.method == {"U5": "correlation", "U5ut": "bundle", "U5sl": "conjugate", "U5bu": "transpose"}[name]
+        assert readout.method == {"U5": "correlation", "U5ut": "bundle", "U5sl": "conjugate", "U5bu": "transpose",
+                                  "U5rf": "conjugate"}[name]
         torch.testing.assert_close(readout.query.weight, final["model"]["channel.readout.query.weight"])
+    # U5rf: the operator is saved, reloaded frozen, and equals C5rf's (same seed; the readout draws from its own generator,
+    # and training never moves a fixed operator)
+    phases = [k for k in torch.load(world["runs"]["U5rf"] / "final.pt", weights_only=False)["model"] if k.endswith("transform.phases")]
+    assert phases
+    fixed = {name: torch.load(world["runs"][name] / "final.pt", weights_only=False)["model"][phases[0]] for name in ("U5rf", "C5rf")}
+    assert torch.equal(fixed["U5rf"], fixed["C5rf"])
+    reloaded = lm.load_final(world["runs"]["U5rf"] / "final.pt", "cpu")
+    assert not any(p.requires_grad for p in reloaded.channel.composer.transform.parameters())
     slots = json.loads((world["runs"]["U5sl"] / "slots.json").read_text())
     assert slots["groups"] == 3 and sum(slots["load"]) == int(world["ontology"]["offsets"][-1])
     assert sorted(r for group in slots["relations"].values() for r in group) == sorted(RELATIONS)
@@ -495,7 +506,8 @@ def test_plan_wires_the_readout_arms() -> None:
     from vsa_embed.experiments import e9_plan
     from vsa_embed.experiments.e9_tracks import track_spec
     for model, operator in (("U5", "hrr"), ("U5u", "unitary_hrr"), ("U5sb", "spectral_bounded"), ("U5bu", "block_unitary"),
-                            ("U5sl", "slotted_unitary"), ("U5tr", "translation"), ("U5ut", "untyped")):
+                            ("U5sl", "slotted_unitary"), ("U5tr", "translation"), ("U5ut", "untyped"),
+                            ("U5rf", "random_fixed:unitary_hrr")):
         spec = e9_plan.model_spec(model, free_dimension=8, gate_bias=0.0)["channel"]
         assert spec["mode"] == "compose" and spec["operator"] == operator and spec["readout"] == e9_plan.READOUT
         assert spec["composition"] == "attentive" and spec["context_window"] == 8 and spec["gate_bias"] == 0.0
@@ -511,7 +523,7 @@ def test_plan_wires_the_readout_arms() -> None:
 
 def test_step2_analysis_reads_the_readout_arms(world, item_dirs, tmp_path) -> None:
     from vsa_embed.experiments import e9_binding_readout as ro
-    for name in ("U5", "U5ut", "C5"):
+    for name in ("U5", "U5ut", "C5", "U5rf"):
         bi.main(["evaluate", "--run", str(world["runs"][name]), "--items", str(item_dirs["twins"]), "--alias-table", str(world["alias"]),
                  "--device", "cpu", "--batch-size", "8", "--resamples", "50", "--overwrite"])
     for name in ("U5", "U5ut"):
@@ -526,8 +538,11 @@ def test_step2_analysis_reads_the_readout_arms(world, item_dirs, tmp_path) -> No
     assert set(step["off_minus_on"]) == {"U5", "U5ut"} and step["off_minus_on"]["U5"]["after"]["available"]
     assert "U5 − C5" in step["twins_secondary"] and {"U5", "U5ut"} <= set(step["diagnostics"])
     assert step["reading"]["R1"] == "incomplete" and "R2" in step["reading"]
+    # §13.1 (decision 64): R1's secondary U5 − U5rf, its own family (R1's Holm and S2.1 unchanged)
+    rf = step["R1_operator"]["U5 − U5rf"]
+    assert rf["available"] and "p_holm" not in rf and "U5 − U5rf" not in step["twins_secondary"]
     text = br.render(analysis, title="toy")
-    assert "Step 2 — readout arms" in text and "| R2 | U5 − C5" in text
+    assert "Step 2 — readout arms" in text and "| R2 | U5 − C5" in text and "| R1 secondary (§13.1) | U5 − U5rf |" in text
 
 
 # -- step 3: chained two-hop, reverse lookup, capacity, path order ------------------------------------------------------------

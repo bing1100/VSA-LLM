@@ -80,7 +80,8 @@ The arms get the `pq` evaluations (`evaluation_jobs`: track zero-shot and editin
 Unbinding readout arms (decisions 60 step 2 and 61; `READOUT_ARMS`, opt-in through `--models`; pre-registration
 `experiments/e9-retrofit/preregistration-binding.md` §13): C5's channel plus `channel.readout` (`readout.UnbindingReadout`)
 with one operator each — `U5` learned HRR, `U5u` learned unitary, `U5sb` bounded-magnitude spectral, `U5bu` block-diagonal
-unitary, `U5sl` slotted unitary (3 load-balanced slots), `U5tr` translation and `U5ut` untyped (controls). Besides the `pq`
+unitary, `U5sl` slotted unitary (3 load-balanced slots), `U5tr` translation and `U5ut` untyped (controls), and `U5rf` a fixed
+random unitary operator (`random_fixed:unitary_hrr`, as C5rf; decision 64: R1's secondary U5 − U5rf). Besides the `pq`
 chain and the rescoring they get `readout_jobs`: the v2 dimension-3 items, the WP-UB understanding items, the role-swap
 twins, the strict / filler strata (`e9_freqbias score`), the readout evaluation (losses with the readout gate on and off,
 role prediction, filler recovery; `e9_binding_readout`) and the binding probe; their batch report is the job
@@ -168,6 +169,9 @@ READOUT_ARMS: dict[str, dict[str, Any]] = {
     "U5sl": {"operator": "slotted_unitary", "slots": 3},  # unitary within 3 load-balanced slots (decision 61c)
     "U5tr": {"operator": "translation"},                  # control: unbinding by subtraction
     "U5ut": {"operator": "untyped"},                      # control: the bundle readout (no role)
+    # decision 64 (pre-registration-binding §13.1): a fixed random unitary operator, as C5rf — R1's secondary U5 − U5rf
+    # (does learning the operator matter for the readout?); unbinding by the conjugate, the readout trains around it
+    "U5rf": {"operator": "random_fixed:unitary_hrr"},
 }
 ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS)
 # Every arm planned and evaluated like the WP-PQ1 arms (the `pq` chain, rescoring, no `e4_quant`): those and the readout arms.

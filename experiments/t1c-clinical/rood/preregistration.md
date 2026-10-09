@@ -337,7 +337,61 @@ The P0 block needs no E9 run, so R1 is read after about 2.4–3.9 GPU-h.
 - **15.2 (same day, before any run) — the bootstrap's seed draws.** Seeds are drawn per condition from a generator
   keyed by the condition's name, so a contrast does not depend on which other conditions are present. The later P0
   analysis with `composed_c5` (`-pass2`) then reproduces the primary contrast exactly. The estimator is unchanged.
-- **Confirmed by the author (2026-10-08), as pre-registered:**
+- **15.3 (2026-10-09, decision 64, author; before any T1c-ROOD run) — E9 control arms, two reading rules for L1, and a
+  secondary untyped coding head.**
+  - **Timing.** Every T1c-ROOD job is pending (54.4998–54.49984): no encode, head, analysis, E9 run or report has run.
+  - **Why.** On T4 (real chemistry, SmolLM2-360M, 3 seeds), C5 − C0′ on `after_heldout` is −0.40% [−0.54, −0.24], but
+    shuffled frames keep that gain (C5 − C5sh +0.01% [−0.08, +0.10]) and the definition encoder beats C5 there (C5 − C6d
+    +0.17% [+0.05, +0.29]). On T5, C5sh is 4.6% worse and C5 beats C6d by more than 10%. In E12, a fixed random binding
+    (C5rf) decodes as well as a learned one. Whether binding matters for the composed coding head is therefore open too.
+  - **E9 arms added** (track `t1c-rood`, SmolLM2-360M, seeds 1–3, the §9 recipe; configs in
+    `experiments/e9-retrofit/configs/t1c-rood/`; queued by the coordinator at 54.49981 with `--no-evals`, with the
+    row-source table job `t1c-rood-rowsource-definition-SmolLM2-360M`):
+    - **C5sh**: shuffled frames (every entry reads another entry's frame);
+    - **C6d**: the definition encoder (the frozen host's mean-pooled hidden state of the entry's verbalized frame,
+      through a trained projector at C5's site).
+  - **Where they are read.** The stage's E9 report (`t1crood-e9-report`, 54.49984) reads every run of the stage. Its arm
+    table gives C5 − arm on `after_heldout` of the runs' final evaluation: 2,048 windows of `eval-rood`, where the held-out
+    stratum is exactly the ROOD closure. The whole-split rescoring jobs (`t1crood-quant-rood`, `-general`) list P0, C0′, C2
+    and C5 only, so the whole-split L1 has no control. The controls are read on the 2,048 windows.
+  - **Reading rules for L1** (exploratory, like L1 itself):
+    - **(a)** §7's statement "C5 lowers the loss after never-seen clinical concepts" may be called
+      **ontology-specific** only if C5 − C5sh < 0 on `after_heldout`, with the Holm-adjusted p < 0.05 and the CI
+      excluding 0.
+    - **(b)** It may be called "better than standard new-word vectors" only if C5 − C6d < 0 there, with the same test.
+    - Otherwise L1 is reported without either qualifier.
+  - **Within-model specificity.** The held-out frame-swap rescore (`e9_frameswap`, pre-registered separately in
+    `experiments/e9-retrofit/preregistration-frameswap.md`, being built) swaps held-out entries' frames at evaluation on the
+    trained C5 itself. Its rules are its own.
+  - **Coding head: `composed_head_untyped` (a secondary specificity condition).**
+    - **Definition.** `composed_head`'s composer with no binding (`operator: untyped`, `v_e = a_e`): the attention-weighted
+      bundle of the frame's filler atomics. The relation still enters the attention keys, as in E9's C5ut. Dimension,
+      attentive composition, induced concept factor, key 8, head, batches and stopping are otherwise identical. It
+      separates frame content (which fillers) from binding (which role each filler plays).
+    - **Seeding.** It is seeded by its name (`NAME_SEED_BASE` + its index in `CONDITIONS`), not by its position in the
+      job's list, so it is the same whether trained with the other conditions or alone (same seed, same batch order:
+      tested). Every pre-registered condition keeps its positional seed.
+  - **Statistics (outside every pre-registered family).**
+    - It is **not** in R1's primary contrast, the specificity family or the vs-control families (its vs-control row is
+      unadjusted and flagged `secondary`). The pre-registered contrasts are identical with and without it (tested).
+    - **Its own family:** `composed_head − composed_head_untyped` on R1 and on the ROOD-any MRR, with Holm over the two
+      (the `binding` block of each `analysis-rood-<encoder>` report and of the final report).
+    - The same contrast on E1 and E2 enters T1c-F's descriptive endpoints under ROOD.
+  - **Readings, per encoder:**
+    - Δ > 0 with Holm p < 0.05 and the CI excluding 0: binding contributes beyond the frame's content.
+    - CI including 0: the composed head's result is carried by which fillers a code has; binding is not shown to matter.
+    - Δ < 0 (significant): bundling without roles codes better.
+    - R1, its decision rules and §7's specificity readings are unchanged.
+  - **Jobs.** `rood.yaml` lists the condition after the seven of §6, and the head jobs of every encoder gain it.
+    - The nine pending head-training jobs are replaced: P0-360M at 54.4998, and C0p-ROOD and C5-ROOD at 54.49982.
+    - The `composed_c5`-only jobs (`-c5dict`) are unchanged. The analyses pick the condition up without a command change.
+    - Commands: `experiments/e9-retrofit/queue-commands-decision64-rest.sh`, part 2. They add ≈ 0.12 GPU-h per head job,
+      ≈ 1.1 GPU-h in all.
+  - **Code and tests.**
+    - Code: `t1c_icd_frequency` (`SECONDARY_CONDITIONS`, `condition_offset`, `binding_contrasts`) and `t1c_rood`
+      (families, `binding`, report, plan).
+    - Tests: `tests/test_t1c_rood.py`, on synthetic fixtures only. No stage ran on MIMIC, SNOMED CT or UMLS data for this
+      amendment.
   - the mean-row fallback is the primary control, with the initial (random) and zero rows secondary;
   - training documents mentioning a ROOD name are dropped;
   - `eval-rood` is selected by mention;

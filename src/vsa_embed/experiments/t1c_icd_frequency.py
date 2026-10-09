@@ -55,9 +55,27 @@ from vsa_embed import icd_coding as ic
 SCTID = re.compile(r"^\d{6,18}$")
 SPLITS = ("train", "dev", "eval")
 DEFAULT_CONFIG = Path("experiments/t1c-clinical/icd-frequency/icd-frequency.yaml")
-CONDITIONS = ("free", "composed_head", "composed_c5", "transe", "title", "random", "gram", "composed_free")
+CONDITIONS = ("free", "composed_head", "composed_c5", "transe", "title", "random", "gram", "composed_free",
+              "composed_head_untyped")
 CONTROL = "free"
 PRIMARY = "composed_head"
+# Secondary specificity conditions added after the pre-registrations (opt-in through the condition list; T1c-ROOD
+# amendment 15.3, decision 64): `composed_head_untyped` is `composed_head` without binding (the attention-weighted bundle
+# of the frame's filler atomics), so frame content and binding separate. They stay out of every pre-registered Holm family
+# (vs control, specificity); `binding_contrasts` reports `composed_head − composed_head_untyped` as its own family.
+SECONDARY_CONDITIONS = ("composed_head_untyped",)
+UNTYPED = "composed_head_untyped"
+# A secondary condition is seeded by its index in CONDITIONS (+ 50), not by its position in the job's list, so it is the
+# same whether trained with the other conditions or alone (`--conditions composed_head_untyped`, same batch order). Every
+# pre-registered condition keeps its positional seed.
+NAME_SEED_BASE = 50
+
+
+def condition_offset(name: str, position: int) -> int:
+    """Seed offset of a condition in a job: its position in the job's condition list, or, for a secondary condition,
+    `NAME_SEED_BASE` + its index in `CONDITIONS` (positions are < 10 and `composed_free`'s residual uses offset + 500,
+    so the offsets never collide)."""
+    return NAME_SEED_BASE + CONDITIONS.index(name) if name in SECONDARY_CONDITIONS else position
 
 
 # -- configuration and paths ------------------------------------------------------------------------------------
@@ -944,13 +962,15 @@ def build_sources(conditions: Sequence[str], labels: dict[str, Any], *, config: 
     trained_ids = np.arange(n_trained)
     sources: dict[str, ic.LabelSource] = {}
     for offset, name in enumerate(conditions):
-        local = seed * 1000 + offset
+        local = seed * 1000 + condition_offset(name, offset)
         if name == "free":
             sources[name] = ic.FreeSource(n, dim, std=float(config["head"]["free_std"]), seed=local)
-        elif name == "composed_head":
+        elif name in ("composed_head", UNTYPED):
+            # composed_head_untyped (secondary): the same composer with no binding (`untyped`: v_e = a_e; the relation
+            # still enters the attention keys, as E9's C5ut), every other setting identical
             sources[name] = ic.ComposedSource(labels["frames"], atomic_count=int(labels["atomic_count"]),
                                               relation_count=int(labels["relation_count"]), dimension=int(comp["dimension"]),
-                                              operator=comp["operator"], mode=comp["composition"],
+                                              operator="untyped" if name == UNTYPED else comp["operator"], mode=comp["composition"],
                                               concept_factor=comp["concept_factor"], key_dimension=int(comp["key_dimension"]),
                                               seed=local)
         elif name == "composed_free":
@@ -1067,7 +1087,7 @@ def run_train(config: dict[str, Any], encoder: str, seed: int, *, conditions: Se
                             c5_composer=composer)
     heads = {}
     for offset, (name, source) in enumerate(sources.items()):
-        torch.manual_seed(seed * 1000 + 100 + offset)
+        torch.manual_seed(seed * 1000 + 100 + condition_offset(name, offset))
         heads[name] = ic.LabelAttentionHead(source, store.width, attention_dim=int(head_cfg["attention_dim"]),
                                             hidden=int(head_cfg["label_hidden"]), prior=prior)
     with torch.no_grad():                         # code vectors before any gradient step (the init probe, §15)
@@ -1291,7 +1311,8 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
         for k in ks:
             vals = {c: [float(np.nanmean(v["topk"][k][seen_cols][in_bin])) if in_bin.any() else float("nan")
                         for v in per[c].values()] for c in per}
-            row["dunnett"][f"top{k}"] = ic.dunnett(vals[CONTROL], {c: v for c, v in vals.items() if c != CONTROL})
+            row["dunnett"][f"top{k}"] = ic.dunnett(vals[CONTROL], {c: v for c, v in vals.items()
+                                                                   if c != CONTROL and c not in SECONDARY_CONDITIONS})
         bin_table[name] = row
 
     phase("point estimates")
@@ -1349,9 +1370,13 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
             rows[c] = {"delta_bootstrap_mean": finite(np.nanmean(delta)), "ci95": [finite(np.nanpercentile(delta, 2.5)),
                                                                                    finite(np.nanpercentile(delta, 97.5))],
                        "p_two_sided": ic.bootstrap_pvalue(delta)}
-        adjusted = ic.holm({c: v["p_two_sided"] for c, v in rows.items()})
+        # secondary conditions stay out of the pre-registered family (their row is unadjusted, flagged `secondary`)
+        adjusted = ic.holm({c: v["p_two_sided"] for c, v in rows.items() if c not in SECONDARY_CONDITIONS})
         for c in rows:
-            rows[c]["p_holm_vs_control"] = adjusted[c]
+            if c in SECONDARY_CONDITIONS:
+                rows[c]["secondary"] = True
+            else:
+                rows[c]["p_holm_vs_control"] = adjusted[c]
         comparisons[metric] = {"direction_of_benefit": direction, "vs_control": rows}
     # Specificity: the primary arm against each structured competitor (E1, E2), Holm over competitors.
     specificity = {}
@@ -1367,6 +1392,7 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
         for c in rows:
             rows[c]["p_holm"] = adjusted[c]
         specificity[metric] = rows
+    binding = binding_contrasts(boot, ("E1", "E2"))
     primary = {}
     if PRIMARY in boot:
         p = {m: comparisons[m]["vs_control"].get(PRIMARY, {}).get("p_two_sided", float("nan")) for m in ("E1", "E2")}
@@ -1417,11 +1443,44 @@ def run_analyze(config: dict[str, Any], encoder: str, seeds: Sequence[int], *, c
                         "frequent_seen": int(frequent.sum())},
               "endpoints": endpoints, "primary": primary, "comparisons": comparisons, "specificity": specificity,
               "bins": bin_table, "probes": probes, "decision": decide(endpoints, primary, comparisons, specificity)}
+    if binding:
+        result["binding"] = binding
     folder = run_folder(config, f"analysis-{encoder}{tag}{label}")
     write_json(folder / "endpoints.json", result)
     (folder / "report.md").write_text(render_report(result, edges))
     record_run(folder, config, git_at_start=git_at_start, device=device, stage="analyze")
     return result
+
+
+def binding_contrasts(boot: dict[str, dict[str, np.ndarray]], metrics: Sequence[str], *, primary: str = PRIMARY,
+                      untyped: str = UNTYPED) -> dict[str, Any]:
+    """The secondary binding family (decision 64): `primary − untyped` per metric on the shared bootstrap replicates
+    (paired: one draw of admissions and codes per replicate), Holm over the metrics present; {} unless both conditions
+    were trained. Positive E1 / R1 / MRR = binding helps; for a slope (E2) negative = binding flattens it."""
+    if primary not in boot or untyped not in boot:
+        return {}
+    rows: dict[str, dict[str, Any]] = {}
+    for metric in metrics:
+        if metric in boot[primary] and metric in boot[untyped]:
+            delta = boot[primary][metric] - boot[untyped][metric]
+            rows[metric] = {"delta_primary_minus_untyped": finite(np.nanmean(delta)),
+                            "ci95": [finite(np.nanpercentile(delta, 2.5)), finite(np.nanpercentile(delta, 97.5))],
+                            "p_two_sided": ic.bootstrap_pvalue(delta)}
+    adjusted = ic.holm({m: v["p_two_sided"] for m, v in rows.items()})
+    for m in rows:
+        rows[m]["p_holm"] = adjusted[m]
+    return {"contrast": f"{primary} − {untyped}", "metrics": rows} if rows else {}
+
+
+def render_binding(binding: dict[str, Any]) -> list[str]:
+    """Report lines of the secondary binding family (empty when it was not computed)."""
+    if not binding:
+        return []
+    lines = ["", f"## Secondary: binding ({binding['contrast']}; Holm over the metrics, outside every pre-registered family)", ""]
+    for metric, row in binding["metrics"].items():
+        lines.append(f"- {metric}: Δ = {_fmt(row['delta_primary_minus_untyped'], 4)} [{_fmt(row['ci95'][0], 4)}, "
+                     f"{_fmt(row['ci95'][1], 4)}], p = {_fmt(row['p_two_sided'], 4)}, Holm p = {_fmt(row['p_holm'], 4)}")
+    return lines
 
 
 def decide(endpoints: dict[str, Any], primary: dict[str, Any], comparisons: dict[str, Any],
@@ -1501,7 +1560,8 @@ def render_report(result: dict[str, Any], edges: Sequence[float]) -> str:
     for m, row in result["primary"].items():
         lines.append(f"- {m}: Δ = {_fmt(row['delta_bootstrap_mean'], 4)} [{_fmt(row['ci95'][0], 4)}, {_fmt(row['ci95'][1], 4)}], "
                      f"p = {_fmt(row['p_two_sided'], 4)}, Holm p = {_fmt(row['p_holm_primary'], 4)}")
-    lines += ["", f"Decision: `{json.dumps(result['decision'])}`", "", "## Per bin (seen codes on evaluation admissions)", ""]
+    lines += ["", f"Decision: `{json.dumps(result['decision'])}`"] + render_binding(result.get("binding") or {})
+    lines += ["", "## Per bin (seen codes on evaluation admissions)", ""]
     conds = list(result["endpoints"])
     lines.append("| bin | seen / held-out codes | " + " | ".join(f"{c} AUC / top-10 / top-100" for c in conds) + " |")
     lines.append("|---|---|" + "---|" * len(conds))

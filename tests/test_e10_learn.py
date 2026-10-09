@@ -122,6 +122,85 @@ def test_run_synthetic_writes_outputs_and_report_pools_runs(tmp_path):
     assert (tmp_path / "report" / "report.md").read_text().startswith("# E10.L pooled endpoints")
 
 
+def _write_erased(folder: Path, out: dict, meta: dict) -> Path:
+    folder.mkdir(parents=True)
+    summary = dict(out["summary"], meta=meta)
+    E.write_json(folder / "summary.json", {"schema": E.SCHEMA, "mode": "erased", "label": "TEST", "runs": [summary]})
+    np.savez_compressed(folder / "pool.npz", **out["pool"])
+    E.write_json(folder / "per_concept.json", {rule: {str(k): v for k, v in t.items()} for rule, t in out["per_concept"].items()})
+    return folder
+
+
+def test_store_report_pairs_the_learned_and_the_fixed_operator_store(tmp_path):
+    """Amendment 2 (decision 64): the same erasure, probes, evidence and pool under two stores (here the synthetic world's
+    oracle and noisy-prior dictionaries stand for the learned C5 and the fixed C5rf store), paired by arm and seed."""
+    learned, fixed = [], []
+    for seed in (5, 6):
+        outs = {}
+        for name, dictionary in (("learned", "truth"), ("fixed", "prior")):
+            cfg = small_config(seed=seed, baselines=["prior", "correlate"], synthetic={**E.DEFAULTS["synthetic"], "seeds": [seed],
+                               "dictionary": dictionary, "world": SMALL_WORLD})
+            outs[name] = E.run_erasure(E.synthetic_inputs(seed, cfg["synthetic"]), cfg)
+        for k in ("concept", "relation", "filler", "label"):                     # the pool does not depend on the store
+            assert np.array_equal(outs["learned"]["pool"][k], outs["fixed"]["pool"][k])
+        for arm in ("c2", "features", "c5full"):
+            learned.append(_write_erased(tmp_path / f"{arm}-s{seed}", outs["learned"],
+                                         {"passive": {"kind": arm}, "store": f"runs/t5/SmolLM2-360M-full-C5-s{seed}", "operator": "hrr"}))
+            fixed.append(_write_erased(tmp_path / f"{arm}-c5rf-s{seed}", outs["fixed"],
+                                       {"passive": {"kind": arm}, "store": f"runs/t5/SmolLM2-360M-full-C5rf-s{seed}",
+                                        "operator": "random_fixed:unitary_hrr"}))
+    report = E.run_store_report(learned, fixed[::-1], tmp_path / "store", resamples=200)     # pairing by arm and seed, not order
+    assert report["family"] == ["c2", "features"] and set(report["arms"]) == {"c2", "features", "c5full"}
+    for arm in ("c2", "features"):
+        block = report["arms"][arm]
+        c = block["contrast"]
+        assert block["seeds"] == [5, 6] and c["available"] and c["ci_low"] <= c["mean"] <= c["ci_high"]
+        assert c["p_value"] <= c["p_holm"] <= min(1.0, 2 * c["p_value"]) + 1e-12
+        assert c["reading"] in {"learned operator better", "fixed operator better", "no difference detected"}
+        assert block["stores"]["fixed"]["operators"] == ["random_fixed:unitary_hrr"] and block["stores"]["learned"]["operators"] == ["hrr"]
+    assert "p_holm" not in report["arms"]["c5full"]["contrast"] and set(report["positive_control_met"]) == {"learned", "fixed"}
+    assert report["overall"] in {"learned operator better", "fixed operator better", "no difference detected", "inconclusive (machinery)"}
+    assert (tmp_path / "store" / "report.md").read_text().startswith("# E10.L — learned vs fixed-operator store")
+    # a reference pool that differs (another erasure) is never paired
+    pool = dict(np.load(fixed[0] / "pool.npz"))
+    pool["filler"] = pool["filler"][::-1].copy()
+    np.savez_compressed(fixed[0] / "pool.npz", **pool)
+    broken = E.run_store_report(learned, fixed, tmp_path / "store2", resamples=50)
+    arm_of_first = fixed[0].name.split("-")[0]
+    assert not broken["arms"][arm_of_first]["contrast"]["available"] and broken["arms"][arm_of_first]["contrast"]["unpaired_seeds"]
+    with pytest.raises(ValueError, match="two runs"):
+        E.run_store_report(learned + learned[:1], fixed, tmp_path / "store3", resamples=10)
+
+
+def test_rf_store_plan_reuses_the_evidence_and_sits_in_the_free_slots():
+    main = E.queue_plan("python")
+    rf = E.rf_store_plan("python")
+    assert len(rf) == 2 * 3 * 3 + 2 * 2 and not {j["name"] for j in rf} & {j["name"] for j in main}
+    assert {j["priority"] for j in rf} == {54.49957, 54.49958} and all(j["lane"] == "cpu" for j in rf)
+    assert not {54.49957, 54.49958} & {j["priority"] for j in main}
+    erased = [j for j in rf if "-erased-" in j["name"] and not j["name"].endswith("-report")]
+    assert all(j["priority"] == 54.49957 for j in erased)
+    main_by_name = {j["name"]: j for j in main}
+    for j in erased:
+        twin = main_by_name[j["name"].replace("-c5rf", "")]               # the learned-store run of the same arm and seed
+        a, b = list(j["command"]), list(twin["command"])
+        assert "SmolLM2-360M-full-C5rf-s" in next(x for x in a if x.startswith("store="))
+        assert a[a.index("--output") + 1].endswith(b[b.index("--output") + 1].rsplit("-s", 1)[0] + "-c5rf-s" + b[b.index("--output") + 1].rsplit("-s", 1)[1])
+        for cmd in (a, b):                                                 # every other input identical
+            del cmd[cmd.index("--output"):cmd.index("--output") + 2]
+        assert [x for x in a if not x.startswith("store=")] == [x for x in b if not x.startswith("store=")]
+    store_reports = [j for j in rf if j["name"].endswith("-store-report")]
+    assert len(store_reports) == 2
+    for j in store_reports:
+        cmd = j["command"]
+        runs = cmd[cmd.index("--runs") + 1:cmd.index("--reference-runs")]
+        refs = cmd[cmd.index("--reference-runs") + 1:cmd.index("--output")]
+        track = j["name"].split("-")[1]
+        assert set(runs) == {main_by_name[n]["command"][main_by_name[n]["command"].index("--output") + 1]
+                             for n in main_by_name if n.startswith(f"e10l-{track}-erased-") and not n.endswith("-report")}
+        assert len(refs) == len(runs) == 9 and all("-c5rf-s" in r for r in refs)
+
+
 def test_weighted_recall_matches_unweighted():
     rng = np.random.default_rng(0)
     scores, labels = rng.random(50), rng.random(50) < 0.4
