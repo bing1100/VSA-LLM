@@ -1,0 +1,95 @@
+{
+  "label": "SMOKE (not a result)",
+  "steps": [
+    {
+      "command": [
+        "vsa_embed.training.lm",
+        "--config",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/configs/t7rood/SmolLM2-135M-frozen-P0-s1.yaml",
+        "--output"
+      ],
+      "seconds": 7.0
+    },
+    {
+      "command": [
+        "vsa_embed.training.lm",
+        "--config",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/configs/t7rood/SmolLM2-135M-lora-C0p-s1.yaml",
+        "--output"
+      ],
+      "seconds": 24.3
+    },
+    {
+      "command": [
+        "vsa_embed.training.lm",
+        "--config",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/configs/t7rood/SmolLM2-135M-lora-C5-s1.yaml",
+        "--output"
+      ],
+      "seconds": 25.7
+    },
+    {
+      "command": [
+        "vsa_embed.experiments.e11_read_to_learn",
+        "evaluate",
+        "--run",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood/SmolLM2-135M-lora-C5-s1"
+      ],
+      "seconds": 72.2
+    },
+    {
+      "command": [
+        "vsa_embed.experiments.e11_read_to_learn",
+        "evaluate",
+        "--run",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood/SmolLM2-135M-lora-C0p-s1"
+      ],
+      "seconds": 50.9
+    },
+    {
+      "command": [
+        "vsa_embed.experiments.e11_read_to_learn",
+        "report",
+        "--runs",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood/SmolLM2-135M-lora-C5-s1/e11-t7rood-heldout"
+      ],
+      "seconds": 2.8
+    },
+    {
+      "command": [
+        "vsa_embed.experiments.e12_self_query",
+        "evaluate",
+        "--run",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood/SmolLM2-135M-lora-C5-s1"
+      ],
+      "seconds": 102.1
+    },
+    {
+      "command": [
+        "vsa_embed.experiments.e12_self_query",
+        "evaluate",
+        "--run",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood/SmolLM2-135M-lora-C0p-s1"
+      ],
+      "seconds": 131.7
+    },
+    {
+      "command": [
+        "vsa_embed.experiments.e12_report",
+        "--runs",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood",
+        "--output"
+      ],
+      "seconds": 3.2
+    },
+    {
+      "command": [
+        "vsa_embed.experiments.t7_rood_compare",
+        "--rood",
+        "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood",
+        "--reference"
+      ],
+      "seconds": 3.2
+    }
+  ]
+}

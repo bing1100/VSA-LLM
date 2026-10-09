@@ -388,7 +388,7 @@ def understanding_table(models: dict[str, dict[int, dict[str, Any]]], set_name: 
                     per[(condition, group)].append(m)
         for (condition, group), ms in sorted(per.items()):
             row = {"model": model, "condition": condition, "group": group, "seeds": len(ms)}
-            for key in ("accuracy", "score", "hop1_correct", "bridge_correct", "hop2_correct", "pair_correct", "anchor_in_top", "n"):
+            for key in ("accuracy", "score", "hop1_correct", "bridge_correct", "hop2_correct", "pair_correct", "anchor_in_top", "slot_correct", "n"):
                 vals = [m[key] for m in ms if key in m]
                 if vals:
                     row[key] = float(np.mean(vals))
@@ -452,7 +452,10 @@ def render(analysis: dict[str, Any], *, title: str, label: str | None = None) ->
                     lines += [f"| {r['model']} | {r['condition']} | {_f(r.get('contrast'))} | {_f(r.get('item'))} | {_f(r.get('decode'))} | {r['seeds']} |" for r in rows]
                     lines.append("")
         if block.get("understanding"):
-            lines += ["### WP-UB two-hop and reverse items", "", "| host model | condition | family / subset | accuracy | − chance | hop 1 | bridge | hop 2 | pair | seeds |",
+            families = sorted({r["group"].split("/")[0] for r in block["understanding"]})
+            heading = ("WP-UB two-hop and reverse items" if set(families) <= {"two_hop", "reverse"}       # opt-in relation families
+                       else "WP-UB items (" + ", ".join(families) + ")")
+            lines += [f"### {heading}", "", "| host model | condition | family / subset | accuracy | − chance | hop 1 | bridge | hop 2 | pair | seeds |",
                       "|---|---|---|---:|---:|---:|---:|---:|---:|---:|"]
             lines += [f"| {r['model']} | {r['condition']} | {r['group']} | {_f(r.get('accuracy'))} | {_f(r.get('score'), signed=True)} | "
                       f"{_f(r.get('hop1_correct'))} | {_f(r.get('bridge_correct'))} | {_f(r.get('hop2_correct'))} | {_f(r.get('pair_correct'))} | {r['seeds']} |"

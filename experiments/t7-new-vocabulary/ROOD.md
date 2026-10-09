@@ -217,10 +217,48 @@ Trainer configs (`training.lm`, the E9 recipe):
   `train`, `eval`, `eval-pubmed`, `eval-general`, and `ontology.pt` byte for byte. (`spans.npz` is a zip whose member
   timestamps differ between any two builds, so its arrays are compared.) The scratch copy was deleted.
 
-## 7. Open points for the author
+## 7. Follow-ups (2026-10-08, after the merge; nothing queued)
 
-- **Rounds and H1.** The round build holds out round 2 only; the H1 records (T7-ROOD's 908) are ordinary round-1 or
-  round-2 records there. Excluding them from both rounds as well would give E13 a never-read control set. It would cost a
-  further ≈ 20% of the abstracts.
-- **Refill text.** The refill abstracts mention no selected name. A refill from general text instead would keep every
-  domain document mention-bearing, but would change the domain share.
+Queue commands: `queue-commands-rood-followups.sh`, printed by `python -m vsa_embed.experiments.t7_rood_queue`.
+
+| Block | Priority | Jobs | GPU-h (idle) | What |
+|---|---|---:|---:|---|
+| paired comparison | 54.4974 | 1 | CPU | `t7rood-vs-t7-report`: `t7_rood_compare` on `runs/t7rood` vs `runs/t7` (SmolLM2-360M, seeds 1–3) → `e9-retrofit/report/t7rood-vs-t7` |
+| paired comparison, Qwen3 | 54.4978 | 1 | CPU | `t7rood-vs-t7-qwen3-report`: the same on `t7rood-qwen3` vs `t7-qwen3` (seed 1; flagged single seed) |
+| E11 read-to-learn | 54.4979 | 8 | ≈ 3.0 | the T7-ROOD held-out records read from their SCR notes by C5 (every reader; frames, gradient, windows, locality) and C0′ (gradient, windows), seeds 1–3; its own gradient-lr job on the T5 dev words (`dev-t7rood/`, so it does not wait for E11's dev job at 62); the E11 report `report-t7rood` |
+| E12 recall | 54.49795 | 11 | ≈ 2.7 | every T7-ROOD SmolLM2-360M run on `understanding-t7rood-smollm2-v1`: the reverse family and the relation families (paraphrase, negation, affordance), core conditions `none` / recall / `symbolic`; the E12 report `e12-self-query/report/t7rood-understanding` |
+
+- **Paired comparison** (`src/vsa_embed/experiments/t7_rood_compare.py`): the pre-registered P2 and P3. It computes each
+  track's relative difference Σ (candidate − reference) / Σ reference over the final-evaluation windows, pooled over
+  seeds, and Δ = T7-ROOD − T7 v1. The windows are the same on both tracks, and the script refuses windows that do not
+  pair. One 95% cluster bootstrap over windows (10,000 resamples) uses the same resampled windows for both tracks. The
+  readings are the pre-registered ones.
+- **E11** (`e11_read_to_learn`: the `t7rood` track): `experiments/e11-read-to-learn/items/t7rood-heldout-smollm2-v1`, built
+  by `e11_read_to_learn items --kind heldout --track t7rood`. It has the same 487 records, definitions and evaluation
+  occurrences as T7's `t7-heldout-smollm2-v1`; only the concept ids differ (`t7roodh-…`). The held-out set and the
+  evaluation corpus are the same.
+- **E12** (`e12_self_query`). T7 has no role-swap twins and no two-hop items (MeSH heading fillers have no frames). The
+  Q1-style test therefore reads:
+  - the **reverse** family (reverse lookup over every store, as for T5);
+  - the opt-in **relation families** `RELATION_FAMILIES` = paraphrase, negation, affordance (new; `--families`). They ask
+    about one relation of the anchor's own frame, so the anchor's whole-frame recall (slot-aware, as for new words) goes in
+    context. `slot_correct` records whether that recall stated the gold filler of the item's relation.
+
+  Without `--families` E12 scores two-hop and reverse items as before. The `definition` condition is left out: there is
+  no definition writer for MeSH frames.
+- **Understanding items** (`e9_understanding`: `t7rood` uses T7's spec): `understanding-t7rood-smollm2-v1` (16,697 items)
+  and `understanding-t7rood-qwen3-v1` (16,730 items). Each has 300 seen, 300 rare, 908 held-out and 300 new anchors. The
+  seen and rare anchors are sampled by T7-ROOD's training frequencies. Exclusion tables:
+  `~/data/vsa-llm/e9/exclusion-tables/t7rood-{smollm2,qwen3}.pt`.
+- **SMOKE** (not a result; `smoke-followups/`, `smoke_cpu.py`). A T7-ROOD stage was trained on CPU (SmolLM2-135M LoRA,
+  P0 / C0′ / C5, 4,096 tokens on the real `rood-v1` corpora, 16 evaluation windows). Every follow-up then ran on it with
+  small limits: E11 on C5 and C0′, the E11 report, E12 on C5 and C0′ with the relation families, the E12 report, and the
+  comparison against a copy of the stage (Δ = 0 exactly). The outputs are in `smoke-followups/outputs/`.
+
+## 8. Decisions (author, 2026-10-08)
+
+- **Rounds and H1.** The rounds stay as built. Round 2 is the only held-out set there; the 908 T7-ROOD held-out records
+  are ordinary round-1 or round-2 records and are not excluded a second time.
+- **Refill text.** The PubMed refill stays: abstracts that mention no selected name. `execution.md` discloses that seen
+  terms lose 6.7% of their training spans. T7-ROOD vs T7 v1 is a secondary comparison; C5 − C0′ within T7-ROOD is the
+  primary.

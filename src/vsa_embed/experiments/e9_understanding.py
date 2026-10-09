@@ -302,7 +302,8 @@ T7_SPEC: dict[str, Any] = {
         "pharmacological_action": {"affirm": ["The pharmacological action of {x} is", "{x} is classed among the"],
                                    "negate": ["The pharmacological action of {x} is not", "{x} is not classed among the"]}},
 }
-TRACK_SPECS = {"t5": T5_SPEC, "t4": T4_SPEC, "t7": T7_SPEC}
+# T7-ROOD (decision 63, H1; `e9_tracks.TRACKS["t7rood"]`): T7's ontology and lexicon, so T7's spec.
+TRACK_SPECS = {"t5": T5_SPEC, "t4": T4_SPEC, "t7": T7_SPEC, "t7rood": T7_SPEC}
 
 
 # ---------------------------------------------------------------- build context

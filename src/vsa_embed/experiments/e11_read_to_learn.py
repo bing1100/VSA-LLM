@@ -23,7 +23,7 @@ restored after every term), `windows` (loss after the read terms in the evaluati
 `swap` sets), `locality` (rows of other entries unchanged; unlinked-token loss in the read terms' windows).
 
     python -m vsa_embed.experiments.e11_read_to_learn items --kind new --track t5 --new-items DIR --output DIR
-    python -m vsa_embed.experiments.e11_read_to_learn items --kind heldout --track t5|t4|t1 --output DIR [--limit N]
+    python -m vsa_embed.experiments.e11_read_to_learn items --kind heldout --track t5|t4|t1|t7|t7rood --output DIR [--limit N]
     python -m vsa_embed.experiments.e11_read_to_learn fetch-openstax --output ~/data/vsa-llm/e11/raw/openstax-chemistry-2e
     python -m vsa_embed.experiments.e11_read_to_learn items --kind swap --track t4 --glossary GLOSSARY.jsonl --output DIR
     python -m vsa_embed.experiments.e11_read_to_learn teacher --items DIR [--dry-run]          (optional; claude -p)
@@ -74,6 +74,8 @@ METHODS = ("frames", "persistence", "context", "gradient", "windows", "locality"
 PRIMARY_STYLE = {"t5": "prose", "t4": "chebi", "t1": "scope", "t7": "scr", "wordnet": "prose"}
 EXCLUDED_KINDS = {"t4": ("element", "charge", "branch"), "t1": ("branch",), "t7": ("branch",), "wordnet": ("lexname", "pos"),
                   "t5": ()}
+# T7-ROOD (decision 63, H1; `e9_tracks.TRACKS["t7rood"]`) reads as T7: the same records, notes and lexicon.
+PRIMARY_STYLE["t7rood"], EXCLUDED_KINDS["t7rood"] = PRIMARY_STYLE["t7"], EXCLUDED_KINDS["t7"]
 # MeSH SCR notes are partly bibliographic ("structure given in first source", "RN given refers to parent cpd"): those
 # `;`-separated parts are dropped; a note is read only if ≥ 3 words remain (§15).
 SCR_BOILERPLATE = re.compile(r"^(rn given|structure|mf given|in first source|for .* see|see also|no structure|mixture of|"
@@ -338,7 +340,7 @@ def heldout_definitions(track: str, ctx: TrackContext, entries: Sequence[int], s
                     names[e] = headings.get(cid, cid)
                     texts[e] = (note, f"MeSH 2026 scope note ({cid})", LICENCES["mesh"], "scope")
             info["source"] = "MeSH 2026 ScopeNote of the preferred concept, read as '<headword>: <note>'"
-        elif track == "t7":
+        elif track in ("t7", "t7rood"):
             from ..ontologies.mesh_novel import parse_supplementary
             config = tracks._load_config(spec)["ontology"]
             records = {r["ui"]: r for r in parse_supplementary(Path(config["supplementary_path"]).expanduser())}
@@ -2004,7 +2006,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     items = sub.add_parser("items", help="build a read-to-learn item set")
     items.add_argument("--kind", required=True, choices=["new", "heldout", "swap"])
-    items.add_argument("--track", required=True, choices=["t5", "t4", "t1", "t7"])
+    items.add_argument("--track", required=True, choices=["t5", "t4", "t1", "t7", "t7rood"])
     items.add_argument("--output", type=Path, required=True); items.add_argument("--new-items", type=Path, default=None)
     items.add_argument("--glossary", type=Path, default=None); items.add_argument("--styles", nargs="*", default=None)
     items.add_argument("--seed", type=int, default=0); items.add_argument("--limit", type=int, default=None)
