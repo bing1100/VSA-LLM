@@ -124,7 +124,7 @@ def heldout_names(config: dict[str, Any], ontology: Any, table: AliasTable, sett
     held = table.heldout_entries()
     linked = sorted(alias for alias, entry in table.alias_to_entry.items() if entry in held)
     if settings.names == "linked":
-        return linked, {"linked_aliases": len(linked), "names": len(linked)}
+        return linked, {"linked_aliases": len(linked), "candidate_names": 0, "names": len(linked), "records": len(table.holdout)}
     from vsa_embed.ontologies.mesh_novel import NovelVocabularyPolicy, candidate_aliases
     spec = config["ontology"]
     if spec.get("adapter") != "mesh_novel":
@@ -566,7 +566,7 @@ class Rood:
         leaks = {label: a["leaked_documents"] for label, a in audits.items() if a["leaked_documents"]}
         summary: dict[str, Any] = {
             "settings": {f.name: getattr(self.settings, f.name) for f in fields(self.settings)},
-            "names": self.name_counts, "names_sha256": self.matcher.digest(),
+            "names": {**self.name_counts, "matcher_keys": len(self.matcher.keys)}, "names_sha256": self.matcher.digest(),
             "matcher": "mesh_novel.MentionCounter: case-insensitive whole alphanumeric tokens (word boundaries)",
             "stream": {k: v for k, v in self.budget.items() if k != "log"},
             "audit": audits, "reference_comparison": comparisons or None,
@@ -612,8 +612,9 @@ class Rood:
         s, budget = summary["settings"], summary["stream"]
         tally = budget["tally"]
         lines = ["", "## Held-out documents excluded from training (T7-ROOD, decision 63 H1)", "",
-                 f"Split `{s['split']}`; names: `{s['names']}` ({summary['names'].get('names', 0):,} names, "
-                 f"{summary['names'].get('linked_aliases', 0):,} of them linked aliases; sha256 `{summary['names_sha256'][:16]}…`). "
+                 f"Split `{s['split']}`; names: `{s['names']}` ({summary['names'].get('candidate_names', 0):,} candidate names "
+                 f"and {summary['names'].get('linked_aliases', 0):,} linked aliases of {summary['names'].get('records', 0):,} records: "
+                 f"{summary['names'].get('matcher_keys', 0):,} matcher keys, sha256 `{summary['names_sha256'][:16]}…`). "
                  f"Matcher: {summary['matcher']}.", "",
                  f"Training stream: {budget['train_documents']:,} documents, {budget['tokens']:,} reference tokens "
                  f"(target {budget['target_tokens'] or 'none'}; reached: {budget['reached_target']}). "
@@ -633,7 +634,7 @@ class Rood:
                          f"{ref.get('shared', {}).get('documents', 0):,} | {only.get('documents', 0):,} ({only.get('flagged', 0):,}) | "
                          f"{ref.get('this_only', {}).get('documents', 0):,} |")
         if summary.get("reference_comparison"):
-            lines += ["", "Evaluation corpora against the reference build (byte-identical `tokens.bin` / `spans.npz`): "
+            lines += ["", "Evaluation corpora against the reference build (identical `tokens.bin` bytes, span arrays and manifests): "
                       + "; ".join(f"{label}: " + ", ".join(f"{name} {'yes' if v and all(v.values()) else 'no'}" for name, v in comp.items())
                                   for label, comp in summary["reference_comparison"].items()) + "."]
         lines += ["", f"**Leakage audit:** {summary['leakage']['training_documents_with_a_heldout_name']} training documents "

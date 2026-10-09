@@ -1,0 +1,41 @@
+{
+  "schema": "e9-edits/1",
+  "scenario": "e9_edits",
+  "description": "one relation-filler edge of existing concepts replaced by a same-type filler (knowledge editing through the ontology)",
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t7-newvocab/rood-v1/ontology.pt",
+  "ontology_alias_sha256": "5df732510c4027f3da448522b16763b4abe10f55cc283e6586391ae6fe011d86",
+  "alias_table": {
+    "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t7rood.json",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 11141,
+    "sha256": "5df732510c4027f3da448522b16763b4abe10f55cc283e6586391ae6fe011d86"
+  },
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "min_subtokens": 2,
+  "seed": 0,
+  "count": 200,
+  "heldout_fraction": 0.5,
+  "neighbours": 2,
+  "edited_status": {
+    "frequent": 2,
+    "heldout": 100,
+    "mid": 34,
+    "rare": 64
+  },
+  "selection": "single-concept entries (synthetic entries excluded) with exactly one templated edge of the first of ['pharmacological_action', 'mapped_to', 'parent'] they have, whose canonical alias has \u2265 \u2113_min subtokens; seeded sample of held-out and seen (training frequency \u2265 1) entries",
+  "rule": "edited relation: the first of ['pharmacological_action', 'mapped_to', 'parent'] with exactly one templated edge; new filler: same relation, same filler type, not already in the frame, another name (frequency-weighted); control: another filler drawn by the same rule",
+  "candidates": "efficacy/paraphrase [old, new]; neighbourhood [true, edited concept's new]; gold = index 0",
+  "lexicon": "t7rood",
+  "counts": {
+    "concepts": 580,
+    "items": 800,
+    "efficacy": 200,
+    "neighbourhood": 400,
+    "paraphrase": 200
+  }
+}

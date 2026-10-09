@@ -221,6 +221,30 @@ def test_audit_counts_leaks_composition_and_overlap(tmp_path: Path) -> None:
     assert same["clean"] == {"tokens.bin": True, "spans": True, "manifest": True}
 
 
+def test_report_section_renders_both_splits() -> None:
+    audit = {"pieces": 3, "tokens": 30, "leaked_documents": 0,
+             "composition": {"mention_tokens": 10, "refill_tokens": 5, "general_tokens": 15},
+             "reference": {"shared": {"documents": 2}, "reference_only": {"documents": 1, "flagged": 1}, "this_only": {"documents": 1}}}
+    summary = {"settings": {"split": "date", "names": "candidates", "top_up": "domain"},
+               "names": {"candidate_names": 5, "linked_aliases": 2, "records": 2, "matcher_keys": 5}, "names_sha256": "ab" * 32,
+               "matcher": "whole tokens", "audit": {"tok": audit},
+               "stream": {"train_documents": 3, "tokens": 30, "target_tokens": 29, "reached_target": True,
+                          "tally": {"pubmed_dropped": 1, "refill_kept": 1}, "dropped_tokens": {"pubmed": 7}},
+               "reference_comparison": {"tok": {"eval": {"tokens.bin": True, "spans": True, "manifest": True}}},
+               "leakage": {"training_documents_with_a_heldout_name": 0, "passed": True},
+               "rounds": {"split": {"cut_date": "2013-01-26", "date_sources": {"DateIntroduced": 4}},
+                          "entries": {"round1": 3, "round2": 1, "round2_by_date": 1, "round2_by_closure": 0},
+                          "corpora": {"tok": {"corpora": {"eval-round2": {"tokens": 9, "documents": 1, "spans": 2}},
+                                              "source_shares": {},
+                                              "feasibility_eval_round2": [{"min_subtokens": 2, "verdict": "infeasible",
+                                                                           "windows_for_whole_split": 1,
+                                                                           "split": {"heldout_occurrences": 2, "heldout_entries_5plus": 0}}]}}}}
+    text = rood.Rood.report(None, summary)
+    assert "0 training documents contain a held-out name" in text and "2013-01-26" in text and "| tok | eval-round2 | 9 |" in text
+    del summary["rounds"]
+    assert "E13 rounds" not in rood.Rood.report(None, summary)
+
+
 # -- the E9 track ----------------------------------------------------------------------------------------------------------
 
 

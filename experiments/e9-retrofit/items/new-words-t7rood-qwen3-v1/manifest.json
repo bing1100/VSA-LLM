@@ -1,0 +1,84 @@
+{
+  "schema": "e9-new-words/1",
+  "scenario": "e9_new_words",
+  "contamination_free": true,
+  "lexicon": "t7rood",
+  "description": "new concepts with invented names and frames that are new combinations of existing atomics and relations (zero-shot insertion by ontology editing)",
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t7-newvocab/rood-v1/hosts/qwen3/ontology.pt",
+  "ontology_alias_sha256": "5df732510c4027f3da448522b16763b4abe10f55cc283e6586391ae6fe011d86",
+  "alias_table": {
+    "source": "/home/bhux/data/vsa-llm/e9/alias-tables/t7rood.json",
+    "holdout_known": true,
+    "checks": {
+      "entry_concepts": true,
+      "digest": true,
+      "heldout_entries": true
+    },
+    "aliases": 11141,
+    "sha256": "5df732510c4027f3da448522b16763b4abe10f55cc283e6586391ae6fe011d86"
+  },
+  "tokenizer": "Qwen/Qwen3-0.6B-Base",
+  "min_subtokens": 2,
+  "seed": 0,
+  "name_seed": 11,
+  "count": 300,
+  "distractors": 4,
+  "null_surface": "this",
+  "checks": {
+    "names": 364,
+    "rejected_candidates": 0,
+    "checked_against": [
+      "wordnet lemmas",
+      "alias table words",
+      "tokenizer vocabulary",
+      "contamination texts"
+    ],
+    "contamination_chars": 91540349,
+    "reserved_names": 0,
+    "reserved_clashes": 0
+  },
+  "construction": {
+    "donors_eligible": 916,
+    "donors_tried": 313,
+    "rejected": {
+      "combination exists": 13
+    },
+    "kept_relations": [
+      "branch_second",
+      "branch_top",
+      "mapped_to",
+      "parent",
+      "record_class"
+    ],
+    "rule": "category edges of a real donor kept; every other filler resampled (frequency-weighted, same relation) so that no existing entry has the category edge together with all resampled edges and no entry has the same frame; donors are neither held out nor synthetic",
+    "degree_histogram": {
+      "5": 114,
+      "6": 60,
+      "7": 67,
+      "8": 30,
+      "9": 20,
+      "10": 6,
+      "11": 2,
+      "12": 1
+    },
+    "eligible_donor_degree_histogram": {
+      "5": 329,
+      "6": 224,
+      "7": 196,
+      "8": 79,
+      "9": 58,
+      "10": 23,
+      "11": 6,
+      "12": 1
+    }
+  },
+  "statement_templates": "the track's held-out wording (third paraphrase or statement; never a property template)",
+  "entailment": "true vs corrupted frame statement (the ontology has no hierarchy the items use)",
+  "counts": {
+    "concepts": 300,
+    "items": 1800,
+    "entailment": 600,
+    "property": 600,
+    "statement": 600
+  }
+}
