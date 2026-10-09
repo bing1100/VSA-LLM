@@ -68,6 +68,24 @@ change the option scores but not yet the argmax), `reason` (4 anchors, 33 items,
 stays frozen, `qlora` saves only its adapters), and `report` (L1–L5 with Holm; every verdict False, as expected after a
 few steps on 8 windows). Read − no-read after round-2 terms at step 0: −0.009 nats (4 windows).
 
+## Smoke after amendment 2 (SMOKE — a pipeline check, not a result)
+
+`smoke-amendment2/{t5,t7-rood}/` (2026-10-09; CPU, 4 threads, SmolLM2-135M, `smoke_config`; ≈ 1.5 h each because the
+machine's load was ≈ 45 on 12 cores — the unloaded smoke takes ≈ 4 min). Every stage ran end to end, plus the new parts:
+- the `random` arm;
+- `context` on the noread arm's step-0 model: T5 4 windows, 99 definition tokens per window; T7-ROOD 3 windows, 2 of them
+  with an SCR note, 19 tokens;
+- stage-3 token accounting: per item, T5 `recall:own` 45 / `definition` 140 / `symbolic` 158 tokens; T7-ROOD 60 / 14 / 116.
+  T7-ROOD's `definition` scored 2 items, the one sampled anchor with a note;
+- the report: the six-test Holm family, L1's gate, `read − definition`, `recall:own − definition` and the cost criterion.
+  Every verdict is False, as expected after a few steps.
+
+The report stage was re-run after a fix: `report`'s L3 block reused the variable name `margin` and had overwritten L5's δ.
+`tests/test_e13_amendment2.py` covers it now.
+
+At smoke scale, T7-ROOD's SCR notes cost fewer tokens than the recall text, so the token criterion may favour the
+definition there.
+
 ## T7-ROOD (amendment 1)
 
 - **Data.** TK-H1's `rounds-v1` (cut 2013-01-26; 2,470 round-2 entries; 0 round-1 training documents name one): `train`

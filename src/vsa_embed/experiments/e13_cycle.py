@@ -1561,7 +1561,7 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
     (secondary) and L5's cost criterion (`summary.json`, `report.md`)."""
     stats_cfg = config.get("statistics") or {}
     resamples = int(stats_cfg.get("resamples", 2000))
-    margin = float(stats_cfg.get("l5_noninferiority_margin", L5_MARGIN))
+    l5_margin = float(stats_cfg.get("l5_noninferiority_margin", L5_MARGIN))   # (L3 below has its own `margin`)
     result: dict[str, Any] = {"track": config["track"], "label": config.get("label"), "hosts": {}}
     for host, spec in config["hosts"].items():
         seeds = [int(s) for s in spec["seeds"]]
@@ -1643,7 +1643,7 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
         reasons = [json.loads((cycle_dir(config, host, s) / "reason" / "summary.json").read_text()) for s in seeds
                    if (cycle_dir(config, host, s) / "reason" / "summary.json").exists()]
         if reasons and all("recall:own" in r["units"] and "none" in r["units"] for r in reasons):
-            block["L5"] = _l5(reasons, resamples, margin=margin)
+            block["L5"] = _l5(reasons, resamples, margin=l5_margin)
         result["hosts"][host] = block
     primary_host = next(iter(config["hosts"]))
     p = result["hosts"].get(primary_host, {})

@@ -118,6 +118,54 @@ def test_l5_definition_comparator_token_accounting_and_cost_criterion() -> None:
     assert "tokens" not in e13._l5(old, 100) and "tokens_recall_minus_definition" not in e13._l5(old, 100)["vs_definition"]
 
 
+def _window_file(path: Path, levels: tuple[float, float], counts: np.ndarray, starts: np.ndarray) -> None:
+    """A run's `eval_windows.npz` with `ref_round2` / `ref_round1` per-window losses at tokens 0 and 100 (constant levels)."""
+    from vsa_embed.training.lm import save_window_losses
+    path.mkdir(parents=True, exist_ok=True)
+    for tokens, level in zip((0, 100), levels):
+        save_window_losses(path / "eval_windows.npz", tokens, starts.tolist(),
+                           {"ref_round2": ([level * counts], [counts]), "ref_round1": ([3.0 * counts], [counts])})
+
+
+def test_report_gates_l1_and_keeps_l5s_margin_apart_from_l3s(tmp_path: Path) -> None:
+    """End to end on synthetic run files: L1 needs read − random too; L5's δ is the configured one (the L3 block of
+    `report` has its own relative margin); the definition comparators and the cost criterion reach the report."""
+    rng = np.random.default_rng(3)
+    starts, counts = np.arange(0, 64 * 30, 64), rng.integers(1, 9, 30).astype(np.int32)
+    config = {"track": "toy", "runs_root": str(tmp_path), "round2": {},
+              "hosts": {"H": {"seeds": [1, 2], "round2_arms": ["read", "noread", "random"], "frozen_arms": {"rtn": ["q4-read", "q4-noread", "qlora"]}}},
+              "statistics": {"resamples": 400, "l5_noninferiority_margin": 0.05, "noninferiority_relative": 0.01}}
+    levels = {"read": (2.0, 1.8), "noread": (2.5, 1.9), "random": (2.2, 1.85),
+              "q4-read-rtn": (2.0, 1.9), "q4-noread-rtn": (2.5, 2.0), "qlora-rtn": (2.5, 1.95)}
+    for seed in (1, 2):
+        for arm, level in levels.items():
+            _window_file(tmp_path / "round2" / f"H-{arm}-s{seed}", level, counts, starts)
+        cycle = e13.cycle_dir(config, "H", seed)
+        (cycle / "write").mkdir(parents=True)
+        (cycle / "write" / "summary.json").write_text(json.dumps({"reading_cost": {"forward_tokens": 900, "training_token_equivalent": 300},
+                                                                  "definitions_read": 9}))
+        (cycle / "reason").mkdir()
+        (cycle / "reason" / "summary.json").write_text(json.dumps(_reasons(0.9, 0.9, 12, 40, seeds=2)[seed - 1]))
+        (cycle / "context").mkdir()
+        np.savez(cycle / "context" / "definition_context.npz", starts=starts, none=np.stack([2.5 * counts, counts]).astype(float),
+                 definition=np.stack([2.3 * counts, counts]).astype(float), added_tokens=np.full(30, 25), defined_terms=np.ones(30, dtype=int))
+    result = e13.report(config, tmp_path / "report", log=lambda *_: None)
+    block, verdicts = result["hosts"]["H"], result["verdicts"]
+    assert block["L1"]["mean"] == pytest.approx(-0.5) and block["L1_random"]["mean"] == pytest.approx(-0.2)
+    assert verdicts["L1_vs_noread"] and verdicts["L1_vs_random"] and verdicts["L1"] is True
+    assert result["holm_family"]["tests"] == list(e13.HOLM_FAMILY) and result["holm_family"]["not_evaluable"] == ["L4"]
+    assert block["L1_definition"]["read_minus_definition"]["mean"] == pytest.approx(-0.3)        # −0.5 − (2.3 − 2.5)
+    assert block["L1_definition"]["tokens"]["read_one_off_forward_tokens_per_term"] == 100
+    assert block["L3"]["rtn"]["vs_qlora_end"]["margin"] == pytest.approx(0.01 * 1.95)
+    assert block["L5"]["vs_definition"]["margin"] == 0.05 and verdicts["L5_store_advantage"] is True
+    text = (tmp_path / "report" / "report.md").read_text()
+    assert "L1 read − random (gate)" in text and "δ 0.05" in text and "L5 cost criterion (store advantage over the definition): True" in text
+    for seed in (1, 2):                                                              # without the wrong-frame runs: not evaluable
+        (tmp_path / "round2" / f"H-random-s{seed}" / "eval_windows.npz").unlink()
+    again = e13.report(config, tmp_path / "report2", log=lambda *_: None)
+    assert again["verdicts"]["L1"] is None and "L1_random" in again["holm_family"]["not_evaluable"]
+
+
 # -- stage 3: the read set's definitions and the prompt tokens ---------------------------------------------------------------
 
 transformers = pytest.importorskip("transformers")
