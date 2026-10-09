@@ -362,6 +362,11 @@ its report to `report/<stage>-<tag>`; only a base batch (P0 / C0′ / C2 / C5) w
 (`tests/test_e9_binding.py::test_no_arm_batch_writes_the_stage_report_folder`). Job names are unchanged. Everything this
 program queues follows the same rule: the stage analyses write `report/<stage>-binding`, never `report/<stage>`.
 
+### 12.5 Arm U5rf (2026-10-09, decision 64; before any step-2 run)
+
+A fixed-random-operator readout arm, U5rf, and R1's secondary contrast U5 − U5rf: see §13.1. Steps 1 and 3 and §13's
+endpoints are unchanged.
+
 ## 13. Step 2 — the unbinding readout arm (pre-registered 2026-10-08, before any step-2 run)
 
 This section is committed with the step-2 code, before any step-2 training run and before its GPU smoke. It folds in
@@ -467,6 +472,57 @@ with a training job (100% utilization), so throughputs are noisy upper bounds on
 - **Cost** (`e9_plan --dry-run`): 21 trainings × 67 min × 1.15 (the readout overhead assumed for every arm; the slotted arm may
   be ≈ 1.3) ≈ 27.0 GPU-h, 189 chained evaluations ≈ 7.1 GPU-h, the R9 batch report 0.4: **≈ 34.5 GPU-h**. The optional
   Qwen3-1.7B pair (U5, U5ut, seed 1) ≈ 3.2 GPU-h per run by the memory probe (+ evaluations).
+
+### §13.1 amendment — arm U5rf and R1's secondary U5 − U5rf (2026-10-09, decision 64; before any step-2 run)
+
+- **Timing.** None of the 21 readout-arm trainings has run (pending at 54.491; evaluations at 54.492, the step-2 report
+  at 54.493). No step-2 number exists.
+- **Why.**
+  - The operator arms tie on T4 at 3 seeds (C5 − C5rf and C5 − C5ut n.s.) and in decision 54's screen.
+  - In E12 a fixed random binding (C5rf) decodes its store as well as a learned one.
+  - On T5, C5rf loses 5.2% on held-out terms (§12.1).
+  - Step 2's R1 asks whether binding matters once a role is read out. It does not ask whether *learning* the operator
+    matters.
+- **Arm U5rf** (`e9_plan.READOUT_ARMS`; T5, SmolLM2-360M × seeds 1–3, the §13 recipe).
+  - It is C5's channel plus the readout, with a **fixed random unitary operator** (`random_fixed:unitary_hrr`, as C5rf):
+    unit-magnitude roles with random phases, never trained. Unbinding is by the conjugate, which is exact.
+  - The atomics, attention, readout, gate and host train as in U5.
+  - The operator is saved and reloaded frozen and equals C5rf's of the same seed; the readout draws its initialization
+    from its own generator (tested).
+- **R1 secondary (new): U5 − U5rf** on the twins (contrast accuracy, `choice`, `own`), with the units × seeds crossed
+  model as R1.
+  - It is a family of one: **not** in R1's Holm over U5ut and U5tr, and not in S2.1. The report lists it as "R1
+    secondary (§13.1)" (`step2.R1_operator`).
+  - R1, R2, their decision rules and the predictions above are unchanged.
+- **Readings.**
+  - U5 − U5rf > 0 with p < 0.05: learning the operator matters once a role is read out.
+  - CI including 0: a fixed random binding serves the readout as well as a learned one (E12's decoding result, extended
+    to a trained readout).
+  - U5 − U5rf < 0 with p < 0.05: the fixed operator reads out better (its exact unitary inverse).
+- **Descriptive.** U5rf also enters, unchanged:
+  - S2.2 (diagnostics);
+  - S2.3 (gate off / on);
+  - S2.4 (strata against C5);
+  - S2.6, the probe's fidelity: U5rf against U5u, both unitary, one fixed and one learned.
+- **Runs.** These go in the readout arms' band, found in `.jobs` (not the 54.4 / 55 / 57 of an earlier audit):
+  - training at 54.491;
+  - the readout chain (`readout_jobs`: `pq`, rescoring, v2 items, WP-UB, twins, strict strata, readout evaluation and
+    binding probe) at 54.492.
+  - The already-queued step-2 report (54.493) and R9 readout batch report (54.4935) read every run of the stage, so they
+    take U5rf without a new job.
+  - Cost: 3 trainings ≈ 3.85 GPU-h and 27 evaluations ≈ 1.0 GPU-h, ≈ 4.8 GPU-h in all (`e9_plan --dry-run`). The
+    commands are in `queue-commands-decision64-rest.sh`, part 3; optional E12 / step-3 lines are commented there.
+- **Code.**
+  - `e9_plan.READOUT_ARMS["U5rf"]`.
+  - `e9_binding_report.R1_OPERATOR_REFERENCE`.
+  - `e12_self_query.COMPOSING` gains U5rf, so U5rf reads its own store.
+  - The readout itself needed no change: a frozen operator unbinds through `FrameComposer.unbind`.
+- **Tests (CPU).**
+  - `tests/test_unbinding.py`: the readout over a fixed operator. It unbinds exactly, and optimizer steps move the
+    readout and the atomics, never the operator.
+  - `tests/test_e9_binding.py`: a toy U5rf trains through the real trainer, saves, reloads frozen and equals C5rf's
+    operator; the plan wires it; the step-2 analysis reports `U5 − U5rf` outside R1's Holm.
+  - No GPU smoke: the GPU belongs to the queue. The arm differs from U5u only in `requires_grad` on the phases.
 
 ## 14. Step 3 — chained two-hop, reverse lookup and capacity (pre-registered 2026-10-08, before any step-3 run)
 

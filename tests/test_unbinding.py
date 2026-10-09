@@ -310,3 +310,33 @@ def test_every_family_moves_and_casts_like_a_module(family: str) -> None:
     composer = FrameComposer(FrameSchedule.from_frames([[(0, 1), (1, 2)], [(2, 3)]]), 4, 3, 33, operator="slotted_unitary")
     composer.to("cpu").float()
     assert composer.compose(torch.tensor([0, 1])).shape == (2, 33)
+
+
+def test_the_readout_unbinds_a_fixed_random_operator_and_trains_around_it() -> None:
+    """Decision 64 (pre-registration-binding §13.1, arm U5rf): the readout over a fixed random unitary operator
+    (`random_fixed:unitary_hrr`, as C5rf) unbinds by the conjugate, recovers a filler exactly, and optimizer steps on the
+    trainable parameters move the readout and the atomics but never the operator."""
+    from vsa_embed.readout import UnbindingReadout
+    torch.manual_seed(0)
+    frames = [[(0, 1), (1, 2)], [(2, 3), (0, 4)], [(1, 5)]]
+    composer = FrameComposer(FrameSchedule.from_frames(frames), 6, 3, 32, operator="random_fixed:unitary_hrr",
+                             mode="attentive", key_dimension=4)
+    assert not any(p.requires_grad for p in composer.transform.parameters())
+    readout = UnbindingReadout(composer, 16, layer=1, window=4)
+    assert readout.method == "conjugate"
+    one = composer.raw_bundle(torch.tensor([2]), uniform=True)[0]                  # a one-edge store: exact recovery
+    torch.testing.assert_close(composer.unbind(torch.tensor([1]), one)[0], composer.atomic_vectors()[5], atol=1e-5, rtol=1e-5)
+    readout.current = {"batch": torch.tensor([0, 1]), "inject": torch.tensor([1, 0]), "entry": torch.tensor([0, 1])}
+    hidden = torch.randn(2, 6, 16)
+    phases, atomics, query = (composer.transform.phases.detach().clone(), composer.atomics.detach().clone(),
+                              readout.query.weight.detach().clone())
+    trainable = [p for p in [*composer.parameters(), *readout.parameters()] if p.requires_grad]
+    optimizer = torch.optim.SGD(trainable, lr=0.5)
+    for _ in range(2):                                     # the gate starts with w = 0: the second step reaches the query
+        optimizer.zero_grad()
+        addition = readout(hidden)
+        assert addition is not None and addition.shape == hidden.shape
+        (addition.square().sum() + (addition * hidden).sum()).backward()
+        optimizer.step()
+    assert torch.equal(composer.transform.phases, phases)                                 # the operator stays fixed
+    assert not torch.equal(composer.atomics, atomics) and not torch.equal(readout.query.weight, query)

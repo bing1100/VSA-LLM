@@ -10,7 +10,8 @@ residual stream. At every position t of a sequence:
    pre-hook) predicts a distribution over the R relations plus "no query".
 3. **Unbind and clean up.** Every relation r is unbound from e_t's frame store with the composer's own operator
    (`FrameComposer.unbind`: learned HRR → correlation, unitary → conjugate, translation → subtraction, untyped → the
-   bundle readout, which ignores the role) and cleaned up softly against the shared atomic dictionary
+   bundle readout, which ignores the role; a fixed operator `random_fixed:<family>` — arm U5rf, decision 64 — unbinds
+   by its family's method and stays frozen while the readout and atomics train) and cleaned up softly against the shared atomic dictionary
    (`cleanup.SoftCleanup`, a modern-Hopfield step with a learned inverse temperature; `typed`: restricted to the atomics
    observed under r in the frames). The store is the static frame bundle `Σ_e T_{r_e}(a_e)` (`source="static"`, every
    edge weight 1; `"attentive"`: the composer's attention weights without context).
