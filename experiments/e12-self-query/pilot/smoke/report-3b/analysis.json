@@ -3,6 +3,9 @@
   "hosts": {
     "SmolLM2-135M": {
       "arms": {
+        "T@C0p": [
+          1
+        ],
         "I": [
           1
         ],
@@ -119,6 +122,17 @@
             "seeds": 1
           },
           "base": {
+            "seeds": 1
+          },
+          "T@C0p": {
+            "format_ok": 0.5,
+            "relevant": 0.5,
+            "answered": 1.0,
+            "called": 1.0,
+            "swapped": 0.0,
+            "twin contrast agent": 1.0,
+            "twin contrast no_tool": 1.0,
+            "twin contrast fixed": 0.0,
             "seeds": 1
           }
         }
@@ -948,6 +962,110 @@
           }
         }
       },
+      "decision64": {
+        "contrasts": {
+          "C0\u2032 \u2212 C5 host, arm T, twins recall:own (the tool reads C5's store)": {
+            "available": true,
+            "units": 3,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.0,
+              "clusters": 3,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.0,
+              "ms_cluster": 0.0,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.0,
+              "seed_means": [
+                0.0
+              ],
+              "se": 0.0,
+              "df": null,
+              "ci_low": 0.0,
+              "ci_high": 0.0,
+              "p_value": 1.0
+            },
+            "bootstrap": {
+              "mean": 0.0,
+              "ci_low": 0.0,
+              "ci_high": 0.0,
+              "p_value": 1.0,
+              "clusters": 3,
+              "seeds": 1,
+              "resamples": 200
+            },
+            "margin": {
+              "kind": "equivalence",
+              "margin": 0.05,
+              "alpha": 0.05,
+              "p": 0.0,
+              "shown": true,
+              "ci90_low": 0.0,
+              "ci90_high": 0.0
+            },
+            "reading": "\u2248 (90% CI within \u00b10.05)"
+          },
+          "C0\u2032 \u2212 C5 host, arm T, agentic twins (the tool reads C5's store)": {
+            "available": false,
+            "units": 1,
+            "seeds": [
+              1
+            ],
+            "reading": "not available"
+          }
+        },
+        "controls": {
+          "T@C0p \u2212 0.5 (twins, no tool; no channel: \u2248 0)": {
+            "available": true,
+            "units": 3,
+            "seeds": [
+              1
+            ],
+            "model": {
+              "mean": 0.08333333333333333,
+              "clusters": 3,
+              "seeds": 1,
+              "var_cluster": null,
+              "var_seed": null,
+              "var_residual": null,
+              "var_total": 0.020833333333333336,
+              "ms_cluster": 0.020833333333333336,
+              "ms_seed": null,
+              "ms_residual": null,
+              "sd_cluster_mean": 0.14433756729740646,
+              "seed_means": [
+                0.08333333333333333
+              ],
+              "se": 0.08333333333333334,
+              "df": 2.0,
+              "t": 0.9999999999999999,
+              "ci_low": -0.27522106081245523,
+              "ci_high": 0.44188772747912186,
+              "p_value": 0.4226497308103743
+            },
+            "bootstrap": {
+              "mean": 0.08333333333333333,
+              "ci_low": 0.0,
+              "ci_high": 0.25,
+              "p_value": 0.47761194029850745,
+              "clusters": 3,
+              "seeds": 1,
+              "resamples": 200
+            },
+            "reading": "no difference shown"
+          }
+        },
+        "margins": {
+          "tool": 0.05,
+          "b1": 0.075
+        }
+      },
       "means": {
         "I": {
           "twins none choice": 0.3333333333333333,
@@ -989,6 +1107,16 @@
           "two-hop recall:own": 0.9473684210526315,
           "agent twin contrast": 1.0
         },
+        "T@C0p": {
+          "twins none choice": 0.5833333333333334,
+          "twins none cloze": 0.3333333333333333,
+          "twins recall:own choice": 0.9166666666666666,
+          "twins question format": 0.6666666666666666,
+          "new words none": 0.16666666666666666,
+          "two-hop none": 0.0,
+          "two-hop recall:own": 0.8125,
+          "agent twin contrast": 1.0
+        },
         "base": {
           "twins none choice": 0.3333333333333333,
           "twins none cloze": 0.3333333333333333,
@@ -1004,8 +1132,59 @@
         "I twins none \u2264 0.65": true,
         "S twins none \u2264 0.65": true,
         "S \u2265 I": true,
-        "T well-formed calls \u2265 0.9": false
+        "T well-formed calls \u2265 0.9": false,
+        "16.5: C0\u2032 host \u2248 C5 host with the decoded store (arm T, \u00b10.05)": true,
+        "16.5: T@C0p without the tool \u2248 0.5 (CI includes 0.5)": true
       }
+    },
+    "SmolLM2-360M": {
+      "arms": {
+        "T-rf": [
+          1
+        ]
+      },
+      "b1": {},
+      "b1_reading": "not available",
+      "b2": {
+        "test: T \u2212 I (agentic twin contrast)": {
+          "available": false
+        },
+        "descriptive": {
+          "T-rf": {
+            "format_ok": 1.0,
+            "relevant": 0.5,
+            "answered": 0.0,
+            "called": 1.0,
+            "swapped": 0.0,
+            "twin contrast agent": 1.0,
+            "twin contrast no_tool": 0.0,
+            "twin contrast fixed": 1.0,
+            "seeds": 1
+          }
+        }
+      },
+      "secondaries": {},
+      "decision64": {
+        "contrasts": {},
+        "controls": {},
+        "margins": {
+          "tool": 0.05,
+          "b1": 0.075
+        }
+      },
+      "means": {
+        "T-rf": {
+          "twins none choice": 0.5,
+          "twins none cloze": 0.25,
+          "twins recall:own choice": 0.875,
+          "twins question format": 0.5,
+          "new words none": null,
+          "two-hop none": null,
+          "two-hop recall:own": null,
+          "agent twin contrast": 1.0
+        }
+      },
+      "predictions": {}
     }
   }
 }

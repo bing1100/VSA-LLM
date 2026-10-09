@@ -856,3 +856,17 @@ accounting. This amendment adds both. **B1, B2, K1 and K2, their units, pools, r
    contexts on ≈ 1,550 new-word and 1,006 held-out items at phase A's rate: ≈ +15 min per C5 run, ≈ +0.8 GPU-h in all
    (an upper bound). A track without a definition writer skips that competitor and records it; T5 has one. A C5 critique job
    that finished before this code was merged lacks the competitors and is re-run (`jobqueue retry`).
+9. *CPU SMOKE* (labelled; pipeline checks only, never an endpoint; outputs in `pilot/smoke/`, run on 2026-10-09 on the shared
+   CPU at load ≈ 40, real checkpoints read-only, no GPU):
+   - 3b, C0′ host: SmolLM2-135M C0p seed 1, its tool reading the 135M C5 seed-1 store; arm T, 16 training questions, one step,
+     3 twin pairs, 2 new words, 1 two-hop anchor per subset, 1 agentic pair. The traces' recall named the gold in 14 of 16
+     questions. Every test ran on the channel-less host, the agentic episodes included (96 min).
+   - 3b, C5rf: SmolLM2-360M C5rf seed 1, its own fixed-random store; arm T, 8 questions, one step, 2 twin pairs, 1 agentic
+     pair. The traces, the fixed pipeline and the agent read the fixed-random store (33 min).
+   - The C0′ `base` arm and the C5rf `I` / `L` arms ran on the toy world (`tests/test_e12_traces_critique.py`), not here.
+   - 3c: SmolLM2-135M C5 seed 1; 2 twin pairs, 4 new words, 3 held-out terms. This replaces 16.3's smoke folder. The
+     competitors were scored on the new words (19 items) and the held-out terms (9 items); the twins skip them by design.
+   - Prompt tokens added per item (new words / held-out terms): `recall:own` 173 / 156, `symbolic` 173 / 158, `definition`
+     110 / 99, `evidence` 18 (held-out terms). The store's decode **as text** is ≈ 1.6× the definition's length. The store's
+     token saving therefore comes from the rule loop reading the decode without the host, not from a shorter text.
+   - Both smoke reports (`pilot/smoke/report-3b`, `report-3c`) were regenerated with the decision-64 and K1b blocks.
