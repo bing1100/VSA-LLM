@@ -28,7 +28,7 @@ PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t8 --hosts SmolLM2-3
 
 # 3. Qwen3-1.7B-Base (LoRA r64; seeds 2–3 only if seed 1 shows a clear effect, M6)
 PYTHONPATH=src $PY -m vsa_embed.experiments.e9_plan --track t8 --hosts Qwen3-1.7B-Base --host-mode lora --lora-rank 64 \
-  --models P0 C0p C5 --seeds 1 --priority 54.4992 --level-step 0.0001 --queue
+  --models P0 C0p C5 --seeds 1 --priority 54.4994 --level-step 0.00001 --queue
 
 # Optional, not part of the pre-registered block (author decision): WP-UB understanding items on T8
 # (experiments/e9-retrofit/items/understanding-t8-smollm2-v1, built), evaluated on the finished SmolLM2 runs:
