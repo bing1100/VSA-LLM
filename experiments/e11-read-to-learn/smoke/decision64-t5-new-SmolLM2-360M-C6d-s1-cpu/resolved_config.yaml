@@ -1,0 +1,26 @@
+experiment: e11-read-to-learn
+run: /home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C6d-s1
+items: experiments/e11-read-to-learn/items/t5-new-smollm2-v1
+limit: 5
+methods:
+- encoder
+readers:
+- none
+styles:
+- prose
+primary_style: prose
+gradient_lr: null
+gradient_factors:
+- 1.0
+- 4.0
+gradient_optimizer: adam
+gradient_backup: gpu
+max_windows: null
+window_gradient: false
+encoder_fit: 256
+window_context_budget: 1024
+seed: 0
+resamples: 200
+alias_table: /home/bhux/data/vsa-llm/e9/alias-tables/t5.json
+teacher_frames: null
+smoke: true

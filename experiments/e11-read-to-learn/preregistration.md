@@ -993,3 +993,48 @@ and the encoder statistics pass as ≈ 90 s on T4 and ≈ 10 s on T5 and T7.
 
 **Not queued, and printed with the new readers by `plan`:** the tier-2/3 jobs of `queue-commands.sh` (T5-H, T4-N, T1-H,
 135M). Their lines in that file predate this amendment; re-print them with `plan` before queuing them.
+
+### 16.6 CPU smoke test (2026-10-09; SMOKE, not a result)
+
+**Setup.**
+- **Hardware:** CPU only (`CUDA_VISIBLE_DEVICES=""`), on real SmolLM2-360M seed-1 checkpoints. Outputs are in
+  `smoke/decision64-*` and are labelled SMOKE.
+- **Runs:**
+
+  | Run | Set | Methods | Readers / options | Wall time |
+  |---|---|---|---|---|
+  | T4 C5 | First 8 T4-H terms, windows capped at 12 | `frames,context,windows,locality` | `oracle,typeprior,linker,random,linker-random,none` | 191 s |
+  | T4 C6d | Same terms and windows | `encoder,windows` | `--encoder-fit 512` | 6,280 s* |
+  | T5 C6d | First 5 T5-N words, `prose` | `encoder` | `--encoder-fit 256` | 177 s |
+
+- **Pooled report:** over the three runs, in `smoke/decision64-report`.
+- **T4 C5 item tests:** this run read an item-free copy of the set (a scratch directory), so its item tests did not run.
+  The persistence and item-context paths are generic and covered by the CPU tests.
+- **\* Load:** the T4 C6d run shared the CPU with other jobs (load average ≈ 45 on 12 cores); its three item conditions
+  took 88 of its 105 min.
+
+**Checks passed:**
+- **Shape-matched control:** `linker-random` frames have exactly the linker's shape (2.75 edges per term on average) and
+  precision 0 (no gold or linker filler).
+- **Encoder fidelity:** re-encoded table rows against the stored rows, cosine mean / min 0.9985 / 0.9945 (T4) and
+  0.9968 / 0.9943 (T5). These used float32 on the CPU and 512 / 256 reference entries, while the table was built in bf16
+  on the GPU from all entries; the full runs use both settings of the table.
+- **Write cost:** the encoder's write cost was one pass of 65 (T4) / 77 (T5) tokens per term, against the linker's 34.8
+  passes and 3,513 tokens on T4.
+- **Windows in context:** 98.8 definition tokens per window (1.0 definitions), 70.6 per occurrence; every occurrence had
+  its own definition in context.
+- **Row locality:** 0.0.
+- **Pooled report:** P2's intersection–union decision, the specificity table, the C6d-against-C5 competitor (paired by
+  seed on the same 5 windows) and the cost table were all computed from these real outputs.
+
+**Smoke numbers.** One seed, 7 occurrences: not evidence for anything.
+
+| Contrast (loss after the term) | Smoke value |
+|---|---|
+| `linker − none` | +1.17% |
+| `linker − random` | +0.11% |
+| `linker − linker-random` | +1.27% |
+| `context − none` | −2.13% |
+| `C6d encoder − C5 linker` | −1.13% |
+
+**GPU-h.** No GPU timing was taken; the decision-64 GPU-h in §16.5 are estimates.

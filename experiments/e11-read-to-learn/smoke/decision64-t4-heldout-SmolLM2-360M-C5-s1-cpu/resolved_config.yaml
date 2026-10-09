@@ -1,0 +1,34 @@
+experiment: e11-read-to-learn
+run: /home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s1
+items: /tmp/claude-1000/-home-bhux-workplace-VSA-LLM/95cd3acd-b338-46c8-8df8-f781d6fdf776/scratchpad/t4h-noitems
+limit: 8
+methods:
+- frames
+- context
+- windows
+- locality
+readers:
+- oracle
+- typeprior
+- linker
+- random
+- linker-random
+- none
+styles:
+- chebi
+primary_style: chebi
+gradient_lr: null
+gradient_factors:
+- 1.0
+- 4.0
+gradient_optimizer: adam
+gradient_backup: gpu
+max_windows: 12
+window_gradient: false
+encoder_fit: null
+window_context_budget: 1024
+seed: 0
+resamples: 200
+alias_table: /home/bhux/data/vsa-llm/e9/alias-tables/t4.json
+teacher_frames: null
+smoke: true
