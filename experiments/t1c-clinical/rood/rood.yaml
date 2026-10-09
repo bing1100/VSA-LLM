@@ -58,7 +58,10 @@ head:
   max_epochs: 12
   patience: 2
   free_std: 0.02
-  conditions: [free, composed_head, transe, title, random, gram, composed_free]   # composed_c5 added with the C5-ROOD run
+  conditions: [free, composed_head, transe, title, random, gram, composed_free, composed_head_untyped]   # composed_c5 added with the C5-ROOD run
+  # composed_head_untyped (preregistration §15.3, decision 64, 2026-10-09, before any head run): a secondary specificity
+  # condition — composed_head's composer with no binding (the attention-weighted bundle of the filler atomics, `untyped`),
+  # everything else identical; outside every pre-registered Holm family (binding contrast composed_head − untyped apart)
   free_fallbacks: [mean, zero]   # opt-in: the trained `free` head also scored with never-trained rows = mean / zero (free_mean, free_zero)
 composer:
   operator: hrr

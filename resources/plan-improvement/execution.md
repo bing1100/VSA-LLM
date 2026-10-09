@@ -854,6 +854,28 @@ gain should therefore be at least T4's on the term strata: after unseen terms �
 (360M, seed 1). It should not reach T5's. A null T7 would break the novelty ordering. A T4-sized gain would replicate it
 on a second natural track whose text holds no curated definitions.
 
+**Amendment to the T7 prediction (2026-10-09, decision 64, author; before any T7 C5 result).**
+- **Timing.** P0 s1 and C0′ s1–2 have finished, C0′ s3 is running, and C5, C5sh and C6d (seeds 1–3, priority 51) are
+  pending. No T7 report exists.
+- **Why.** On T4 at 3 seeds, the held-out gain (C5 − C0′ on `after_heldout` −0.40% [−0.54, −0.24]) survives shuffled
+  frames (C5 − C5sh +0.01% [−0.08, +0.10]), and the definition encoder beats C5 there (C5 − C6d +0.17% [+0.05, +0.29]).
+  On T5, C5sh is 4.6% worse and C5 beats C6d by more than 10%.
+- **Arms.** The coordinator queued **C5sh** (shuffled frames) and **C6d** (definition encoder) × seeds 1–3 on stage `t7`
+  (configs in `experiments/e9-retrofit/configs/t7/`, commit `0cd0c1c`). They are read in `report/t7-pq` (`e9_report`'s
+  arm table: C5 − arm per stratum on the 4,096 final-evaluation windows, pooled over common seeds; Holm within the
+  operator arms and within the row-source arms of a stratum).
+- **Rules (fixed now):**
+  - **(a)** A T7 held-out gain counts as **ontology-specific** only if C5 − C5sh < 0 on `after_heldout`, with the
+    Holm-adjusted p < 0.05 and the CI excluding 0.
+  - **(b)** T7's C5 is "better than standard new-word vectors" only if C5 − C6d < 0 on `after_heldout` under the same
+    test.
+  - Without (a), a T7 gain replicates T4's *channel* gain, not a frame-specific one. Without (b), no ordering against a
+    definition-encoder row is claimed.
+- **Unchanged.** The proxy prediction above: a gain at least T4's on the unseen and 3+-subtoken strata, below T5's.
+- **Within-model specificity.** The held-out frame-swap rescore (`e9_frameswap`, pre-registered separately in
+  `experiments/e9-retrofit/preregistration-frameswap.md`) is the test on the trained C5 itself. The same two rules apply
+  to T7-ROOD, T8 and T1c-ROOD (their pre-registrations, 2026-10-09).
+
 ## E9 frequency bias and understanding beyond copying (author request 2026-10-07; WP-UB)
 
 Pre-registration: `experiments/e9-retrofit/preregistration-understanding.md`, committed before any evaluation of these

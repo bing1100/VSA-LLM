@@ -101,3 +101,35 @@ above the E9 criterion of 2,000 occurrences and 300 entries.
   written: windows pooled over seeds 1–3, P0 standing for every seed, 10,000 resamples. Its queue job is
   `t7rood-vs-t7-report` at 54.4974 (`queue-commands-rood-followups.sh`). A Qwen3 seed-1 run of the same script,
   `t7rood-vs-t7-qwen3-report`, gives the §6 secondary. Nothing in §§1–7 changes.
+- **2026-10-09 (decision 64, author; before any T7-ROOD run and before any T7 v1 C5 result): two control arms and two
+  reading rules.**
+  - **Timing.** Every T7-ROOD job is pending (training at 54.497, evaluations at 54.4971). On T7 v1, P0 s1 and C0′ s1–2
+    have finished and C0′ s3 is running; no C5, C5sh or C6d run and no T7 report exists. The rules below are written blind
+    to both tracks' C5 results.
+  - **Why.** On T4 (real chemistry, SmolLM2-360M, 3 seeds), C5 − C0′ on `after_heldout` is −0.40% [−0.54, −0.24], but
+    the shuffled-frame arm keeps that gain (C5 − C5sh +0.01% [−0.08, +0.10]) and loses it only on the seen, rare and unseen
+    strata, and the definition encoder beats C5 there (C5 − C6d +0.17% [+0.05, +0.29]). On T5 (synthetic), C5sh is 4.6%
+    worse after held-out terms and C5 beats C6d by more than 10%. The real-text tracks had neither control.
+  - **Arms added** (SmolLM2-360M, seeds 1–3, the §2 recipe; configs in `experiments/e9-retrofit/configs/t7rood/`; queued
+    by the coordinator at 54.497, their `pq` chain at 54.4971; the row-source table job
+    `t7rood-rowsource-definition-SmolLM2-360M` at 54.497):
+    - **C5sh**: C5 with shuffled frames (`frames: shuffled`): every entry reads another entry's frame, a derangement.
+    - **C6d**: the definition encoder. The frozen host's mean-pooled hidden state of the entry's verbalized frame is read
+      through a trained MLP projector at C5's site and gate; held-out terms get their rows from the same source.
+  - **Where they are read.** The arm batch report `report/t7rood-pq` (`t7rood-report-s1-2-3-pq-SmolLM2-360M`, 54.4973):
+    `e9_report`'s arm table gives C5 − arm on the final-evaluation windows (4,096 on `eval-pubmed`), pooled over common
+    seeds, with a paired window bootstrap. Holm runs over the operator arms present within a stratum (here C5sh alone) and
+    over the row-source arms (here C6d alone).
+  - **Rule (a): ontology specificity.** A held-out gain (P1) counts as **ontology-specific** only if C5 − C5sh < 0 on
+    `after_heldout`, with the Holm-adjusted p < 0.05 and the CI excluding 0. Otherwise P1 is reported as "a channel gain
+    not shown to depend on the term's own frame". The §5 readings that say the channel *transfers knowledge* then become
+    "the channel helps on words the host never read; the frame's content is not shown to be the source".
+  - **Rule (b): against standard new-word vectors.** "Better than standard new-word vectors" is claimed only if
+    C5 − C6d < 0 on `after_heldout`, again with Holm p < 0.05 and the CI excluding 0. Otherwise the claim is limited to "a
+    vector composed from the frame helps", with no ordering against a definition-encoder row.
+  - **Unchanged:** P1's test, P2 and P3 (C5 − C0′ only; the controls do not enter the paired T7-ROOD vs T7 v1
+    comparison) and the Qwen3 secondary (seed 1, no controls).
+  - **Within-model specificity.** The held-out frame-swap rescore (`e9_frameswap`, pre-registered separately in
+    `experiments/e9-retrofit/preregistration-frameswap.md`, being built) swaps held-out entries' frames at evaluation
+    on the trained C5 itself. It is the within-model test that complements C5sh, which trains with the wrong frames.
+    Its rules are its own; nothing above depends on it.
