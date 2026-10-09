@@ -144,6 +144,13 @@ def verbalizations(ontology: dict[str, Any], lexicon: Any) -> list[str]:
     return [verbalize_frame(frame, ontology, lexicon) for frame in entry_frames(ontology)]
 
 
+def read_verbalizations(path: Path) -> list[str]:
+    """The texts of a verbalization table (`write_verbalizations`), in entry order."""
+    with gzip.open(Path(path).expanduser(), "rt") as handle:
+        rows = [json.loads(line) for line in handle if line.strip()]
+    return [row["text"] for row in sorted(rows, key=lambda r: int(r["entry"]))]
+
+
 def write_verbalizations(path: Path, texts: Sequence[str], surfaces: Sequence[Sequence[str]], heldout: set[int]) -> str:
     """The verbalization table (`entry`, `name`, `heldout`, `text`), gzipped JSONL with mtime 0; returns its sha256."""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -322,6 +329,13 @@ def build_table(kind: str, *, ontology: dict[str, Any], output: Path, table: Ali
     return save_source_table(output, rows, kind=kind, ontology=ontology, meta=record)
 
 
+def frozen_host(pretrained: str, weights: torch.dtype = torch.float32) -> nn.Module:
+    """The pretrained host (Hugging Face cache only) that encodes texts for the host-derived tables, in `weights`."""
+    from transformers import AutoModelForCausalLM
+    from ..training.lm import dtype_kwargs
+    return AutoModelForCausalLM.from_pretrained(pretrained, local_files_only=True, **dtype_kwargs(weights)).eval()
+
+
 def build_for_track(track: str, kind: str, *, host: str | None = None, family: str | None = None, output: Path | None = None,
                     device: str = "cpu", overwrite: bool = False, **kge: Any) -> dict[str, Any]:
     """Build a track's table for a host (the host's pretrained weights from the Hugging Face cache)."""
@@ -347,13 +361,12 @@ def build_for_track(track: str, kind: str, *, host: str | None = None, family: s
                             "alias_table": str(alias_path) if alias_path else None}
     model = tokenizer = None
     if kind != "kge":
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoTokenizer
         pretrained = HOSTS[host]["pretrained"]
-        from ..training.lm import dtype_kwargs
         # The definition encoder runs the frozen host in bf16 on CUDA (inference only; half the memory); FVT rows read the
         # float32 embedding table.
         weights = torch.bfloat16 if kind == "definition" and torch.device(device).type == "cuda" else torch.float32
-        model = AutoModelForCausalLM.from_pretrained(pretrained, local_files_only=True, **dtype_kwargs(weights))
+        model = frozen_host(pretrained, weights)
         tokenizer = AutoTokenizer.from_pretrained(FAMILY_TOKENIZERS[family], local_files_only=True)
         meta.update(pretrained=pretrained, tokenizer=FAMILY_TOKENIZERS[family], host_weights=str(weights).replace("torch.", ""))
     lexicon = lexicon_for(spec, ontology) if kind == "definition" else None

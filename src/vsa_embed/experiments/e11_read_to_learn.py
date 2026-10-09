@@ -18,9 +18,14 @@ Item sets (`experiments/e11-read-to-learn/items/<name>/`, schema `e11-read/1`):
 
 Methods of `evaluate` (`--methods`): `frames` (readers → frames, precision / recall, cost; always), `persistence`
 (item tests with each reader's frame, no definition in context), `context` (the definition prepended: IKE-style
-in-context reading), `gradient` (a one-shot, compute-matched gradient update of the host on the definition, weights
-restored after every term), `windows` (loss after the read terms in the evaluation corpus, per reader; `heldout` and
-`swap` sets), `locality` (rows of other entries unchanged; unlinked-token loss in the read terms' windows).
+in-context reading; with `windows`, also before each evaluation window that holds a read term — decision 64),
+`gradient` (a one-shot, compute-matched gradient update of the host on the definition, weights restored after every
+term), `windows` (loss after the read terms in the evaluation corpus, per reader; `heldout` and `swap` sets),
+`locality` (rows of other entries unchanged; unlinked-token loss in the read terms' windows), `encoder` (decision 64,
+C6d runs only: the definition-encoder competitor — each read term gets C6d's source vector of the definition it read,
+the frozen host's mean-pooled encoding; scored on the items and windows with `none` and C6d's gold-frame `oracle`).
+The reader `linker-random` (decision 64) is the linker's frame shape with wrong fillers: the shape-matched content
+control of P2's specificity rule (preregistration §16.1).
 
     python -m vsa_embed.experiments.e11_read_to_learn items --kind new --track t5 --new-items DIR --output DIR
     python -m vsa_embed.experiments.e11_read_to_learn items --kind heldout --track t5|t4|t1|t7|t7rood --output DIR [--limit N]
@@ -32,6 +37,7 @@ restored after every term), `windows` (loss after the read terms in the evaluati
     python -m vsa_embed.experiments.e11_read_to_learn gradient-dev --run RUN --items DEV_DIR --output OUT
     python -m vsa_embed.experiments.e11_read_to_learn report --runs RUN_E11_DIR ... --output DIR
     python -m vsa_embed.experiments.e11_read_to_learn plan [--tracks t5 t4] [--seeds 1 2 3]     (prints queue commands)
+    python -m vsa_embed.experiments.e11_read_to_learn plan-decision64   (prints the decision-64 cancel / add script, §16)
 """
 
 from __future__ import annotations
@@ -70,7 +76,7 @@ ROOT = Path("experiments/e11-read-to-learn")
 ITEMS = ROOT / "items"
 DATA = Path("~/data/vsa-llm/e11").expanduser()
 FOLDER = "e11"                                     # per-run output folder name (RUN/e11-<set>)
-METHODS = ("frames", "persistence", "context", "gradient", "windows", "locality")
+METHODS = ("frames", "persistence", "context", "gradient", "windows", "locality", "encoder")
 PRIMARY_STYLE = {"t5": "prose", "t4": "chebi", "t1": "scope", "t7": "scr", "wordnet": "prose"}
 EXCLUDED_KINDS = {"t4": ("element", "charge", "branch"), "t1": ("branch",), "t7": ("branch",), "wordnet": ("lexname", "pos"),
                   "t5": ()}
@@ -751,7 +757,7 @@ def run_readers(run: E5Run | None, read_set: ReadSet, ctx: TrackContext, readers
     mentions = {(t.concept, t.style): rtl.mentions_of(t, ctx.fillers) for t in tasks}
     results: list[rtl.ReadResult] = []
     for name in readers:
-        if name in {"linker-all"}:
+        if name in {"linker-all", "linker-random"}:
             continue
         log(f"  reader {name}")
         if name == "oracle":
@@ -792,6 +798,17 @@ def run_readers(run: E5Run | None, read_set: ReadSet, ctx: TrackContext, readers
                                                   row.get("details", {})))
         else:
             raise ValueError(f"unknown reader {name!r}")
+    if "linker-random" in readers:
+        # Decision 64: the shape-matched content control — each linker frame's relations and edge count, wrong fillers.
+        linker = {(r.concept, r.style): r for r in results if r.reader == "linker"}
+        if linker:
+            from . import e9_tracks as tracks
+            log("  reader linker-random")
+            pools = tracks.relation_pools(ctx.ontology)
+            for t in tasks:
+                base = linker.get((t.concept, t.style))
+                if base is not None:
+                    results.append(rtl.read_shape_random(t, base, pools, random.Random(f"0|{t.concept}|{t.style}|linker-random")))
     return results, mentions
 
 
@@ -865,6 +882,25 @@ def swapped_frames(channel: Any, frames: dict[int, rtl.Frame | None]) -> Iterato
         channel.skip_empty_frames = skip
 
 
+@contextlib.contextmanager
+def swapped_sources(channel: Any, vectors: dict[int, torch.Tensor]) -> Iterator[bool]:
+    """Within the block the given entries of a row-source channel (`mode: source`, the C6 arms) read these source
+    vectors (the trained projector maps them to rows; a zero vector is no row); the table is restored on exit."""
+    if channel is None or channel.mode != "source" or not vectors:
+        yield False
+        return
+    original = channel.source_rows
+    table = original.clone()
+    ids = sorted(vectors)
+    table[torch.as_tensor(ids, dtype=torch.long, device=table.device)] = torch.stack(
+        [torch.as_tensor(vectors[e], dtype=table.dtype) for e in ids]).to(table.device)
+    channel.source_rows = table
+    try:
+        yield True
+    finally:
+        channel.source_rows = original
+
+
 class ItemScorer:
     """Scores a read set's items under a condition: per concept a frame (or None) and an optional context prepended to
     every prompt. New words are inserted as fresh entries (`inserted_entries`, rows of `None` concepts zeroed); held-out
@@ -890,28 +926,38 @@ class ItemScorer:
         return tuple(sorted(frame)) if frame else ()
 
     @contextlib.contextmanager
-    def condition(self, frames: dict[str, rtl.Frame | None]) -> Iterator[None]:
+    def condition(self, frames: dict[str, rtl.Frame | None], sources: dict[str, torch.Tensor] | None = None) -> Iterator[None]:
+        """Within the block the read terms carry `frames` (compose channels) or, on a row-source channel (C6d), the given
+        source vectors `sources` (`swapped_sources`); a term with neither has no row."""
         channel = self.run.channel
         compose = channel is not None and channel.mode == "compose"
+        sources = sources or {}
         with contextlib.ExitStack() as stack:
             if self.read_set.kind == "new":
                 inserted = [frames.get(c) or self.gold[c] for c in self.concepts]
                 stack.enter_context(edit.inserted_entries(channel, len(self.concepts), inserted))
-                zero = [self.entry_of[c] for c in self.concepts if not frames.get(c)]
+                zero = [self.entry_of[c] for c in self.concepts if not frames.get(c) and c not in sources]
                 if channel is not None and zero:
                     width = channel.gate.in_features // 2
                     stack.enter_context(override_rows(channel, {e: torch.zeros(width) for e in zero}))
             elif compose:
                 stack.enter_context(swapped_frames(channel, {self.entry_of[c]: frames.get(c) for c in self.concepts}))
+            elif channel is not None and channel.mode == "source":
+                # No row on a row-source channel is a zero source vector (its projector has no bias: a zero row).
+                width = int(channel.source_rows.shape[1])
+                sources = {**{c: torch.zeros(width) for c in self.concepts if not frames.get(c)}, **sources}
+            if sources and channel is not None and channel.mode == "source":
+                stack.enter_context(swapped_sources(channel, {self.entry_of[c]: v for c, v in sources.items()}))
             yield
 
     def score(self, frames: dict[str, rtl.Frame | None], contexts: dict[str, str] | None = None,
-              concepts: Sequence[str] | None = None, *, prefix: "PrefixCache | str | None" = None, tag: str | None = None
-              ) -> dict[str, list[dict[str, Any]]]:
+              concepts: Sequence[str] | None = None, *, prefix: "PrefixCache | str | None" = None, tag: str | None = None,
+              sources: dict[str, torch.Tensor] | None = None) -> dict[str, list[dict[str, Any]]]:
         """Per concept: result rows of its items (prompts: PMI correctness, paraphrase consistency; statements). With a
-        cached `prefix` every prompt (and its null) is read after it; `tag` names the prefix in the result cache."""
+        cached `prefix` every prompt (and its null) is read after it; `tag` names the prefix (or the `sources` condition)
+        in the result cache."""
         concepts = list(concepts or self.concepts)
-        cacheable = self.read_set.kind == "new" and (prefix is None or tag is not None)
+        cacheable = self.read_set.kind == "new" and (prefix is None or tag is not None) and (sources is None or tag is not None)
         key_of = {c: (c, self._key(frames.get(c)), (contexts or {}).get(c), tag) for c in concepts}
         todo = [c for c in concepts if not (cacheable and key_of[c] in self.cache)]
         if todo:
@@ -922,7 +968,7 @@ class ItemScorer:
             prompt_items = [i for i in items if i["test"] in {"property", "entailment"}]
             statement_items = [i for i in items if i["test"] == "statement"]
             # Prompts with a definition in front are ≈ 3–5× longer: half the batch keeps the peak memory of a plain pass.
-            with self.condition(frames), _smaller(self.adapter, 2 if contexts or prefix is not None else 1):
+            with self.condition(frames, sources), _smaller(self.adapter, 2 if contexts or prefix is not None else 1):
                 # A prefix given as text is read here, inside the condition: its new names link to inserted entries.
                 cache = PrefixCache(self.run, self.adapter, prefix) if isinstance(prefix, str) else prefix
                 with prefixed_continuations(cache) if cache is not None else fast_continuations():
@@ -1360,6 +1406,187 @@ def row_locality(run: E5Run, read_set: ReadSet, frames: dict[str, rtl.Frame | No
     return {"applicable": True, "entries": int(others.numel()), "max_abs_row_change": float((after - before).abs().max())}
 
 
+def term_condition(run: E5Run, entry_of: dict[str, int], frames: dict[str, rtl.Frame | None] | None = None,
+                   sources: dict[str, torch.Tensor] | None = None) -> contextlib.AbstractContextManager:
+    """The read terms' rows for a window pass: their `frames` on a compose channel; on a row-source channel (C6d) the given
+    source vectors, and a zero vector (no row) for a term with no frame and no vector; nothing to change otherwise."""
+    channel = run.channel
+    if channel is not None and channel.mode == "compose":
+        return swapped_frames(channel, {entry_of[c]: f for c, f in (frames or {}).items()})
+    if channel is not None and channel.mode == "source":
+        width = int(channel.source_rows.shape[1])
+        vectors = {entry_of[c]: torch.zeros(width) for c, f in (frames or {}).items() if not f}
+        vectors.update({entry_of[c]: v for c, v in (sources or {}).items()})
+        return swapped_sources(channel, vectors)
+    return contextlib.nullcontext()
+
+
+# -- the definition-encoder competitor (decision 64; preregistration §16.2) -----------------------------------------------------
+
+def encoder_text(text: str, headword: str) -> str:
+    """The definition as the definition encoder reads it. C6d encodes a frame with the subject 'It' and no name (the name's
+    subtokens reach the model at every use anyway), so a leading '<headword>:' is dropped and every other occurrence of
+    the headword becomes 'It'."""
+    from .e9_rowsource import SUBJECT
+    body = text.strip()
+    if headword:
+        lead = re.match(rf"{re.escape(headword)}\s*:\s*", body, re.I)
+        body = body[lead.end():] if lead else body
+        body = re.sub(rf"(?<![\w]){re.escape(headword)}(?![\w])", SUBJECT, body, flags=re.I)
+    return body.strip() or text
+
+
+def encoder_host(run: E5Run, record: dict[str, Any]) -> torch.nn.Module:
+    """The frozen pretrained host that built the run's source table (`e9_rowsource.frozen_host`): bf16 on CUDA when the
+    table was built in bf16, float32 otherwise."""
+    from .e9_rowsource import frozen_host
+    meta = record.get("meta") or {}
+    bf16 = run.device.type == "cuda" and meta.get("host_weights") == "bfloat16"
+    return frozen_host(meta.get("pretrained") or run.config["model"]["pretrained"], torch.bfloat16 if bf16 else torch.float32)
+
+
+class DefinitionEncoder:
+    """The C6d arm's source vector for any text: the frozen pretrained host's mean-pooled last hidden state
+    (`e9_rowsource.definition_rows`), standardized with the run's table statistics — the per-dimension mean and standard
+    deviation of the raw encodings of the non-held-out entries' verbalized frames (the table's stored texts, re-encoded;
+    `fit` subsamples them, for smoke tests) — then unit L2 (`row_sources.apply_standardization`). `check` compares the
+    re-encoded reference rows with the stored table rows (cosine ≈ 1 when host, texts and weights match)."""
+
+    def __init__(self, run: E5Run, ctx: TrackContext, *, fit: int | None = None, seed: int = 0, batch_size: int = 32) -> None:
+        from ..row_sources import load_source_table, standardization_stats
+        from . import e9_rowsource
+        settings = run.config.get("channel") or {}
+        if run.channel is None or run.channel.mode != "source" or settings.get("source_kind") != "definition":
+            raise ValueError("the encoder route needs a definition row-source run (C6d: channel mode `source`, kind `definition`)")
+        started = time.monotonic()
+        _, self.record = load_source_table(settings["source_table"], run.ontology)
+        self.run, self.batch_size, self.tokenizer = run, batch_size, run.tokenizer
+        self.model = encoder_host(run, self.record)
+        self.parameters = int(sum(p.numel() for p in self.model.parameters()))
+        stored = (self.record.get("meta") or {}).get("verbalizations")
+        stored = Path(stored).expanduser() if stored else None
+        texts = (e9_rowsource.read_verbalizations(stored) if stored is not None and stored.exists()
+                 else e9_rowsource.verbalizations(run.ontology, ctx.lexicon))
+        heldout = {int(e) for e in run.ontology["heldout_entries"]}
+        reference = [e for e in range(int(run.ontology["entry_count"])) if e not in heldout]
+        if fit and fit < len(reference):
+            reference = sorted(np.random.default_rng(seed).choice(reference, size=fit, replace=False).tolist())
+        raw = self._raw([texts[e] for e in reference])
+        self.stats = standardization_stats(raw)
+        table = run.channel.source_rows[torch.as_tensor(reference, device=run.channel.source_rows.device)].float().cpu()
+        cosine = torch.nn.functional.cosine_similarity(self._standardize(raw), table, dim=-1)
+        self.check = {"reference_entries": len(reference), "fit": "all non-held-out entries" if not fit else f"sample of {fit}",
+                      "texts": "the table's stored verbalizations" if stored is not None and stored.exists() else "re-verbalized frames",
+                      "host": (self.record.get("meta") or {}).get("pretrained") or run.config["model"]["pretrained"],
+                      "host_weights": str(next(self.model.parameters()).dtype).replace("torch.", ""),
+                      "cosine_to_table_mean": float(cosine.mean()), "cosine_to_table_min": float(cosine.min()),
+                      "seconds": time.monotonic() - started}
+
+    def _raw(self, texts: Sequence[str]) -> torch.Tensor:
+        from .e9_rowsource import definition_rows
+        return definition_rows(self.model, self.tokenizer, list(texts), device=self.run.device, batch_size=self.batch_size)
+
+    def _standardize(self, raw: torch.Tensor) -> torch.Tensor:
+        from ..row_sources import apply_standardization
+        return apply_standardization(raw, self.stats)
+
+    def __call__(self, texts: Sequence[str]) -> torch.Tensor:
+        return self._standardize(self._raw(texts)) if texts else torch.zeros(0, int(self.stats["mean"].numel()))
+
+    def token_count(self, text: str) -> int:
+        return len(self.tokenizer.encode(text, add_special_tokens=False))
+
+    def close(self) -> None:
+        """Free the frozen host (it is needed only to write the vectors)."""
+        self.model = None
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+def source_conditions(run: E5Run, read_set: ReadSet, ctx: TrackContext, styles: Sequence[str], encoder: DefinitionEncoder
+                      ) -> tuple[dict[tuple[str, str], dict[str, torch.Tensor]], dict[str, Any]]:
+    """(style, condition) → concept → source vector of the encoder route on a C6d run: `none` (a zero vector: no row),
+    `oracle` (the gold frame's vector — a held-out term's own table row, a new word's encoded verbalized gold frame: C6d's
+    reading of the gold frame) and `encoder` (the read definition, `encoder_text`); plus the write cost per term."""
+    from .e9_rowsource import verbalize_frame
+    concepts = [c["concept"] for c in read_set.concepts]
+    entry_of = link_entry_of(read_set, run)
+    width = int(run.channel.source_rows.shape[1])
+    if read_set.kind == "new":
+        gold = encoder([verbalize_frame(ctx.ids(c["frame"]), run.ontology, ctx.lexicon) for c in read_set.concepts])
+        oracle = dict(zip(concepts, gold))
+    else:
+        oracle = {c: run.channel.source_rows[entry_of[c]].float().cpu().clone() for c in concepts}
+    zero = {c: torch.zeros(width) for c in concepts}
+    definitions = {(d["concept"], d["style"]): d for d in read_set.definitions}
+    out: dict[tuple[str, str], dict[str, torch.Tensor]] = {}
+    costs: dict[str, Any] = {}
+    for style in styles:
+        keys = [c for c in concepts if (c, style) in definitions]
+        texts = [encoder_text(definitions[(c, style)]["text"], definitions[(c, style)]["headword"]) for c in keys]
+        started = time.monotonic()
+        vectors = encoder(texts)
+        seconds = time.monotonic() - started
+        tokens = [encoder.token_count(t) for t in texts]
+        out[(style, "none")], out[(style, "oracle")], out[(style, "encoder")] = zero, oracle, dict(zip(keys, vectors))
+        mean_tokens = float(np.mean(tokens)) if tokens else 0.0
+        costs[style] = {"terms": len(keys), "forward_passes": 1.0, "forward_tokens": mean_tokens,
+                        "forward_flops": 2.0 * encoder.parameters * mean_tokens, "seconds": seconds / max(1, len(keys)),
+                        "context_tokens_per_use": 0.0, "example": texts[0][:200] if texts else None}
+    return out, costs
+
+
+# -- the in-context route on natural text (decision 64; preregistration §16.3) ---------------------------------------------------
+
+def max_positions(run: E5Run) -> int | None:
+    config = getattr(getattr(run.model, "model", None), "config", None)
+    for key in ("max_position_embeddings", "n_positions"):
+        value = getattr(config, key, None)
+        if value:
+            return int(value)
+    return None
+
+
+def window_context_losses(run: E5Run, corpus_path: Path, wset: WindowSet, definitions: Sequence[str | None], *,
+                          budget: int = 1024) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    """Loss after the read terms with their definitions in context (IKE-style reading on natural text): per window, the
+    definitions (`definitions[term index]`) of the read terms it holds, in order of first occurrence, whole, one per
+    line, up to `budget` tokens (and the host's position limit), read once as a cached prefix (`PrefixCache`, E11-M's
+    `window_losses`). Whatever rows the channel currently gives the read terms apply (in the prefix too). Returns the
+    losses and the token accounting."""
+    from .e11_many import window_losses
+    tokenizer = run.tokenizer
+    limit = max_positions(run)
+    budget = int(min(budget, limit - wset.length)) if limit else int(budget)
+    count = lambda text: len(tokenizer(text, add_special_tokens=False)["input_ids"])  # noqa: E731
+    plans: list[tuple[str, set[int], int]] = []
+    for spans in wset.spans:
+        order: list[int] = []
+        for _, _, t, _ in sorted(spans):
+            if t not in order:
+                order.append(t)
+        text, kept, used = "", set(), 0
+        for t in order:
+            if not definitions[t]:
+                continue
+            longer = text + definitions[t] + "\n"
+            n = count(longer)
+            if n <= budget:
+                text, used = longer, n
+                kept.add(t)
+        plans.append((text, kept, used))
+    losses = window_losses(run, corpus_path, wset, prefix_of=lambda w: PrefixCache(run, run.adapter, plans[w][0]))
+    losses["unlinked"] = np.full((len(wset.starts), 2), np.nan)
+    occurrences = sum(len(s) for s in wset.spans)
+    covered = sum(1 for w, s in enumerate(wset.spans) for _, _, t, _ in s if t in plans[w][1])
+    used = [u for _, _, u in plans]
+    tokens = {"budget": budget, "windows": len(plans), "prefix_tokens_mean": float(np.mean(used)) if used else 0.0,
+              "prefix_tokens_total": int(sum(used)), "definitions_per_window": float(np.mean([len(k) for _, k, _ in plans])) if plans else 0.0,
+              "occurrences": occurrences, "prefix_tokens_per_occurrence": float(sum(used) / occurrences) if occurrences else None,
+              "occurrences_with_definition": covered / occurrences if occurrences else None}
+    return losses, tokens
+
+
 # -- evaluate ----------------------------------------------------------------------------------------------------------------
 
 def frames_by_condition(results: Sequence[rtl.ReadResult]) -> dict[tuple[str, str], dict[str, rtl.Frame | None]]:
@@ -1373,6 +1600,7 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
              primary_style: str, gradient_lr: float | None = None, gradient_factors: Sequence[float] = (1.0, 4.0),
              gradient_optimizer: str = "adam", gradient_backup: str = "gpu", teacher_frames: Path | None = None,
              max_windows: int | None = None, window_gradient: bool = False, resamples: int = 2000, seed: int = 0,
+             encoder_fit: int | None = None, window_context_budget: int = 1024,
              log: Callable[[str], None] = print) -> dict[str, Any]:
     started = time.monotonic()
     ctx = run_context(run)
@@ -1398,8 +1626,22 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
                                 "definition_forward_tokens": scorer.forward_tokens if scorer else 0,
                                 "definition_rows": {"scored": scorer.rows, "headword_unlinked": scorer.unlinked_rows} if scorer else None}
     conditions = frames_by_condition(results)
+    sources: dict[tuple[str, str], dict[str, torch.Tensor]] = {}       # the encoder route's source vectors (C6d runs)
+    if "encoder" in methods:
+        if run.channel is not None and run.channel.mode == "source" and (run.config.get("channel") or {}).get("source_kind") == "definition":
+            t0 = time.monotonic()
+            log("  encoder: the frozen host's encoding of each read definition (C6d)")
+            encoder = DefinitionEncoder(run, ctx, fit=encoder_fit, seed=seed)
+            sources, costs = source_conditions(run, read_set, ctx, styles, encoder)
+            document["encoder"] = {"applicable": True, "check": encoder.check, "cost_per_word": costs, "parameters": encoder.parameters,
+                                   "text": "the read definition with its headword removed (`encoder_text`)"}
+            encoder.close()
+            timings["encoder"] = time.monotonic() - t0
+        else:
+            document["encoder"] = {"applicable": False, "reason": "needs a definition row-source run (C6d)"}
     item_rows: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    item_scorer = ItemScorer(run, read_set, ctx) if read_set.items and {"persistence", "context", "gradient"} & set(methods) else None
+    item_scorer = (ItemScorer(run, read_set, ctx) if read_set.items and {"persistence", "context", "gradient", "encoder"} & set(methods)
+                   else None)
     if item_scorer is not None and "persistence" in methods:
         t0 = time.monotonic()
         for (style, reader), by_concept in sorted(conditions.items()):
@@ -1408,6 +1650,15 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
             log(f"  persistence: {style} / {reader}")
             item_rows[f"{style}|{reader}"] = item_scorer.score(by_concept)
         timings["persistence"] = time.monotonic() - t0
+    if item_scorer is not None and sources:
+        t0 = time.monotonic()
+        for (style, name), vectors in sorted(sources.items()):
+            if f"{style}|{name}" not in item_rows:
+                log(f"  encoder route: {style} / {name}")
+                # `none` and `oracle` do not depend on the style (cached across styles for new words); `encoder` does.
+                tag = f"source:{style}:{name}" if name == "encoder" else f"source:{name}"
+                item_rows[f"{style}|{name}"] = item_scorer.score({c: None for c in item_scorer.concepts}, sources=vectors, tag=tag)
+        timings["encoder_items"] = time.monotonic() - t0
     if item_scorer is not None and "context" in methods:
         t0 = time.monotonic()
         definitions = {(d["concept"], d["style"]): d["text"] for d in read_set.definitions}
@@ -1455,9 +1706,26 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
         for style, reader in window_conditions:
             if reader != "none" and not compose:
                 continue
-            concept_frames = conditions[(style, reader)]
-            with swapped_frames(run.channel, {entry_of[c]: concept_frames.get(c) for c in concept_frames}) if compose else contextlib.nullcontext():
+            with term_condition(run, entry_of, conditions[(style, reader)]):
                 per_condition[f"{style}|{reader}"] = window_term_losses(run, corpus_path, wset)
+        for (style, name), vectors in sorted(sources.items()):          # the encoder route (C6d)
+            if style == primary_style and f"{style}|{name}" not in per_condition:
+                with term_condition(run, entry_of, sources=vectors):
+                    per_condition[f"{style}|{name}"] = window_term_losses(run, corpus_path, wset)
+        context_tokens = None
+        if "context" in methods:
+            # The in-context route on natural text (§16.3): the read terms' definitions before each window; no row (`context`)
+            # and, on compose channels, the linker's frames as well (`context+linker`).
+            texts = {(d["concept"], d["style"]): d["text"] for d in read_set.definitions}
+            by_term = [texts.get((c["concept"], primary_style)) for c in read_set.concepts]
+            routes = [("context", {c["concept"]: None for c in read_set.concepts})]
+            if compose and (primary_style, "linker") in conditions:
+                routes.append(("context+linker", conditions[(primary_style, "linker")]))
+            for name, concept_frames in routes:
+                log(f"  windows in context: {name}")
+                with term_condition(run, entry_of, concept_frames):
+                    per_condition[f"{primary_style}|{name}"], context_tokens = window_context_losses(
+                        run, corpus_path, wset, by_term, budget=window_context_budget)
         if window_gradient and "gradient" in methods and gradient_lr is not None and read_set.kind == "heldout":
             per_condition[f"{primary_style}|gradient×1.0"] = window_gradient_losses(run, read_set, ctx, wset, corpus_path, style=primary_style,
                                                                               lr=gradient_lr, optimizer=gradient_optimizer,
@@ -1467,6 +1735,8 @@ def evaluate(run: E5Run, read_set: ReadSet, *, methods: Sequence[str], readers: 
                        "conditions": per_condition}
         document["windows"] = summarize_windows(per_condition, primary_style, resamples=resamples, seed=seed)
         document["windows"].update({k: v for k, v in windows_out.items() if k != "conditions"})
+        if context_tokens is not None:
+            document["windows"]["context_tokens"] = context_tokens
         timings["windows"] = time.monotonic() - t0
     if "locality" in methods and compose:
         key = (primary_style, "linker") if (primary_style, "linker") in conditions else (primary_style, "oracle")
@@ -1515,9 +1785,10 @@ def summarize_items(item_rows: dict[str, dict[str, list[dict[str, Any]]]], kind:
     styles = sorted({c.split("|")[0] for c in values})
     for style in styles:
         pairs = [("linker", "none"), ("oracle", "none"), ("linker", "oracle"), ("linker", "typeprior"), ("linker", "random"),
-                 ("linker", "pattern"), ("linker", "host"), ("linker", "linker-all"), ("teacher", "none"), ("stated", "none"),
-                 ("linker-joint", "none"), ("linker-joint", "typeprior"), ("linker-joint", "oracle"), ("linker-joint", "linker"),
-                 ("context", "linker"), ("context+linker", "context"), ("context", "none")]
+                 ("linker", "linker-random"), ("linker", "pattern"), ("linker", "host"), ("linker", "linker-all"), ("teacher", "none"),
+                 ("stated", "none"), ("linker-joint", "none"), ("linker-joint", "typeprior"), ("linker-joint", "oracle"),
+                 ("linker-joint", "linker"), ("context", "linker"), ("context+linker", "context"), ("context", "none"),
+                 ("encoder", "none"), ("encoder", "oracle")]
         pairs += [(f"gradient×{f}", "linker") for f in ("1.0", "4.0")] + [(f"gradient×{f}", "none") for f in ("1.0", "4.0")]
         for a, b in pairs:
             ka, kb = f"{style}|{a}", f"{style}|{b}"
@@ -1532,6 +1803,10 @@ def summarize_items(item_rows: dict[str, dict[str, list[dict[str, Any]]]], kind:
                 row["p_holm"] = p
             contrasts += block
     return {"means": means, "contrasts": contrasts, "primary_style": primary_style}
+
+
+WINDOW_PAIRS = (("linker", "random"), ("linker", "linker-random"), ("linker-joint", "random"), ("context", "linker"),
+                ("context+linker", "context"), ("encoder", "oracle"))
 
 
 def summarize_windows(per_condition: dict[str, dict[str, np.ndarray]], primary_style: str, *, resamples: int, seed: int) -> dict[str, Any]:
@@ -1552,6 +1827,14 @@ def summarize_windows(per_condition: dict[str, dict[str, np.ndarray]], primary_s
                 result = relative_change(data, ref, part=part, resamples=resamples, seed=seed)
                 if result is not None:
                     out["contrasts"].append({"condition": cond, "reference": "none", "part": part, **result})
+    # Decision 64: content specificity (a read frame against frames of wrong content: the gold's shape and the linker's own
+    # shape), the in-context route against the frame route, and the encoder route against C6d's gold-frame vector.
+    for a, b in WINDOW_PAIRS:
+        ka, kb = f"{primary_style}|{a}", f"{primary_style}|{b}"
+        if ka in per_condition and kb in per_condition:
+            result = relative_change(per_condition[ka], per_condition[kb], part="other", resamples=resamples, seed=seed)
+            if result is not None:
+                out["contrasts"].append({"condition": ka, "reference": b, "part": "other", **result})
         oracle = per_condition.get(f"{primary_style}|oracle")
         linker = per_condition.get(f"{primary_style}|linker")
         if oracle is not None and linker is not None:
@@ -1606,12 +1889,33 @@ def render(header: dict[str, Any], document: dict[str, Any]) -> str:
             lines.append(f"| {cond} | {fmt(parts['other']['loss'], 4)} | {parts['other']['targets']} | {fmt(parts['own']['loss'], 4)} | "
                          f"{fmt(parts.get('unlinked'), 4)} |")
         if windows.get("contrasts"):
-            lines += ["", "| condition − none | part | relative change [95% CI] | Δ nats/token | p |", "|---|---|---|---:|---:|"]
+            lines += ["", "| condition − reference | part | relative change [95% CI] | Δ nats/token | p |", "|---|---|---|---:|---:|"]
             for c in windows["contrasts"]:
-                lines.append(f"| {c['condition']} | {c['part']} | {100 * c['relative']:+.2f}% [{100 * c['relative_ci_low']:+.2f}, "
-                             f"{100 * c['relative_ci_high']:+.2f}] | {c['mean']:+.4f} | {fmt(c['p_value'], 4)} |")
+                lines.append(f"| {c['condition']} − {c.get('reference', 'none')} | {c['part']} | {100 * c['relative']:+.2f}% "
+                             f"[{100 * c['relative_ci_low']:+.2f}, {100 * c['relative_ci_high']:+.2f}] | {c['mean']:+.4f} | "
+                             f"{fmt(c['p_value'], 4)} |")
         if windows.get("recovered_share") is not None:
             lines.append(f"\nShare of the oracle frame's loss gain recovered by the linker reader: {windows['recovered_share']:.3f}.")
+        if windows.get("context_tokens"):
+            t = windows["context_tokens"]
+            lines.append(f"\nIn context (§16.3): {fmt(t['prefix_tokens_mean'], 1)} definition tokens per window "
+                         f"({fmt(t['definitions_per_window'], 2)} definitions; budget {t['budget']}), "
+                         f"{fmt(t['prefix_tokens_per_occurrence'], 1)} per occurrence; {fmt(t['occurrences_with_definition'], 3)} of the "
+                         "occurrences had their own definition in context.")
+        lines.append("")
+    if document.get("encoder"):
+        e = document["encoder"]
+        lines += ["## Definition-encoder route (C6d; §16.2)", ""]
+        if not e.get("applicable"):
+            lines.append(f"Not applicable: {e.get('reason')}.")
+        else:
+            c = e["check"]
+            lines.append(f"Frozen host `{c['host']}` ({c['host_weights']}), statistics from {c['reference_entries']} reference entries "
+                         f"({c['fit']}, {c['texts']}); re-encoded rows against the stored table: cosine mean "
+                         f"{c['cosine_to_table_mean']:.4f}, min {c['cosine_to_table_min']:.4f}.")
+            for style, cost in e["cost_per_word"].items():
+                lines.append(f"- {style}: {cost['terms']} terms, one pass of {cost['forward_tokens']:.1f} tokens per term "
+                             f"(≈ {cost['forward_flops']:.2e} FLOPs), 0 context tokens per use.")
         lines.append("")
     if document.get("gradient"):
         g = document["gradient"]
@@ -1641,7 +1945,7 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
               "methods": methods, "readers": readers, "styles": styles, "primary_style": primary, "gradient_lr": lr,
               "gradient_factors": args.gradient_factors, "gradient_optimizer": args.gradient_optimizer,
               "gradient_backup": args.gradient_backup, "max_windows": args.max_windows, "window_gradient": args.window_gradient,
-              "seed": args.seed,
+              "encoder_fit": args.encoder_fit, "window_context_budget": args.window_context_budget, "seed": args.seed,
               "resamples": args.resamples, "alias_table": str(args.alias_table) if args.alias_table else None,
               "teacher_frames": str(args.teacher_frames) if args.teacher_frames else None, "smoke": bool(args.smoke)}
     if args.overwrite:
@@ -1654,7 +1958,8 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     result = evaluate(run, read_set, methods=methods, readers=readers, styles=styles, primary_style=primary, gradient_lr=lr,
                       gradient_factors=args.gradient_factors, gradient_optimizer=args.gradient_optimizer,
                       gradient_backup=args.gradient_backup, teacher_frames=teacher, max_windows=args.max_windows,
-                      window_gradient=args.window_gradient, resamples=args.resamples, seed=args.seed)
+                      window_gradient=args.window_gradient, resamples=args.resamples, seed=args.seed, encoder_fit=args.encoder_fit,
+                      window_context_budget=args.window_context_budget)
     header = {"source": run.describe(), "smoke": bool(args.smoke)}
     document = {**header, **result["document"]}
     _write_jsonl(args.output / "frames.jsonl", result["frames"])
@@ -1784,9 +2089,109 @@ def pooled_window_contrast(folders: Sequence[Path], a: str, b: str, *, part: str
     return {**paired_ratio_bootstrap(d, n, base, resamples=resamples, seed=seed), "seeds": len(folders)}
 
 
+def seed_pairs(groups: dict[tuple[str, str, str, str], list[Path]], track: str, kind: str, size: str, model_a: str, model_b: str
+               ) -> list[tuple[Path, Path]]:
+    """(folder of model A, folder of model B) for every seed both have on the same set and host."""
+    def by_seed(folders: Sequence[Path]) -> dict[int, Path]:
+        return {int(json.loads((Path(f) / "summary.json").read_text())["source"]["seed"]): Path(f) for f in folders}
+    a, b = by_seed(groups.get((track, kind, size, model_a), [])), by_seed(groups.get((track, kind, size, model_b), []))
+    return [(a[s], b[s]) for s in sorted(set(a) & set(b))]
+
+
+def cross_item_contrast(pairs: Sequence[tuple[Path, Path]], a: str, b: str, test: str, *, a_ref: str | None = None,
+                        b_ref: str | None = None, resamples: int = 2000, seed: int = 0) -> dict[str, Any] | None:
+    """Model A's condition `a` − model B's condition `b` on one test (the same items), paired over items within a seed and
+    pooled over seeds; with references, the difference of the gains over each model's own reference: (a − a_ref) − (b − b_ref)."""
+    diffs: list[float] = []
+    for fa, fb in pairs:
+        va, vb = _load_predictions(fa), _load_predictions(fb)
+        parts = [(va, a, 1.0), (vb, b, -1.0)] + ([(va, a_ref, -1.0)] if a_ref else []) + ([(vb, b_ref, 1.0)] if b_ref else [])
+        values = [(v.get(cond, {}).get(test, {}), sign) for v, cond, sign in parts]
+        ids = set.intersection(*(set(x) for x, _ in values))
+        diffs += [sum(sign * x[i] for x, sign in values) for i in sorted(ids)]
+    if not diffs:
+        return None
+    return {**zs.paired_difference(np.asarray(diffs), np.zeros(len(diffs)), resamples=resamples, seed=seed), "seeds": len(pairs)}
+
+
+def cross_window_contrast(pairs: Sequence[tuple[Path, Path]], a: str, b: str, *, a_ref: str | None = None, b_ref: str | None = None,
+                          part: str = "other", resamples: int = 2000, seed: int = 0) -> dict[str, Any] | None:
+    """`cross_item_contrast` for the loss after the read terms (clusters = terms, every seed's sums added per term), relative
+    to model B's `b_ref` (else `b`). Both models must have read the same windows (equal target counts; else the seed is
+    skipped)."""
+    d = n = base = None
+    used = 0
+    for fa, fb in pairs:
+        wa, wb = _load_windows(fa), _load_windows(fb)
+        needed = [(wa, a), (wb, b)] + ([(wa, a_ref)] if a_ref else []) + ([(wb, b_ref)] if b_ref else [])
+        if any(cond not in w for w, cond in needed) or not np.array_equal(wa[a][f"count_{part}"], wb[b][f"count_{part}"]):
+            continue
+        dd = wa[a][f"sum_{part}"] - wb[b][f"sum_{part}"]
+        dd = dd - wa[a_ref][f"sum_{part}"] if a_ref else dd
+        dd = dd + wb[b_ref][f"sum_{part}"] if b_ref else dd
+        nn, bb = wb[b][f"count_{part}"], wb[b_ref or b][f"sum_{part}"]
+        d, n, base = (dd, nn, bb) if d is None else (d + dd, n + nn, base + bb)
+        used += 1
+    if d is None or n.sum() <= 0:
+        return None
+    return {**paired_ratio_bootstrap(d, n, base, resamples=resamples, seed=seed), "seeds": used}
+
+
+SPECIFICITY = ("none", "random", "linker-random")     # P2 as amended (§16.1): linker − each of these, all on the loss after the term
+
+
+def specificity_test(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Decision 64's conjunction on one held-out set (§16.1): `linker − none`, `linker − random` (a random frame of the
+    gold's shape) and `linker − linker-random` (a random frame of the linker's own shape) must all be loss reductions; the
+    intersection–union p is the largest component p (each component tested at the family's level)."""
+    got = {r["b"]: r for r in rows if r["a"] == "linker"}
+    present = [got[b] for b in SPECIFICITY if b in got]
+    return {"components": {b: {k: got[b].get(k) for k in ("relative", "relative_ci_low", "relative_ci_high", "p_value", "seeds")}
+                           for b in SPECIFICITY if b in got},
+            "missing": [b for b in SPECIFICITY if b not in got], "complete": len(present) == len(SPECIFICITY),
+            "reductions": bool(present) and all(r["relative"] < 0 for r in present),
+            "p_iut": max(r["p_value"] for r in present) if present else None}
+
+
+def route_costs(groups: dict[tuple[str, str, str, str], list[Path]]) -> list[dict[str, Any]]:
+    """Per set, host and model (seed means; primary style): the write cost per learned word (forward tokens of the linker
+    and of the definition encoder; training tokens of the ×1 gradient update) and the use cost (context tokens per item
+    query and per window occurrence of the in-context route; the frame and encoder routes use none)."""
+    rows = []
+    for (track, kind, size, condition), folders in sorted(groups.items()):
+        primary = PRIMARY_STYLE.get(track, "prose")
+        summaries = [json.loads((Path(f) / "summary.json").read_text()) for f in folders]
+
+        def mean_of(get: Callable[[dict[str, Any]], Any]) -> float | None:
+            values = [v for s in summaries if (v := get(s)) is not None]
+            return float(np.mean(values)) if values else None
+        linker = lambda s: (((s.get("frames") or {}).get(primary) or {}).get("linker") or {}).get("cost_per_word") or {}  # noqa: E731
+        row = {"track": track, "kind": kind, "size": size, "model": condition,
+               "linker_forward_tokens": mean_of(lambda s: linker(s).get("forward_tokens")),
+               "linker_forward_passes": mean_of(lambda s: linker(s).get("forward_passes")),
+               "encoder_forward_tokens": mean_of(lambda s: ((((s.get("encoder") or {}).get("cost_per_word") or {}).get(primary)) or {})
+                                                 .get("forward_tokens")),
+               "gradient_train_tokens": mean_of(lambda s: ((s.get("gradient") or {}).get("×1.0") or {}).get("train_tokens_mean")),
+               "context_tokens_per_query": mean_of(lambda s: (s.get("context_tokens") or {}).get(primary)),
+               "context_tokens_per_occurrence": mean_of(lambda s: ((s.get("windows") or {}).get("context_tokens") or {})
+                                                        .get("prefix_tokens_per_occurrence"))}
+        if any(v is not None for k, v in row.items() if k not in {"track", "kind", "size", "model"}):
+            rows.append(row)
+    return rows
+
+
+def _value(r: dict[str, Any]) -> str:
+    return (f"{100 * r['relative']:+.2f}% [{100 * r['relative_ci_low']:+.2f}, {100 * r['relative_ci_high']:+.2f}]" if "relative" in r
+            else f"{r['mean']:+.4f} [{r['ci_low']:+.4f}, {r['ci_high']:+.4f}]")
+
+
 def run_report(args: argparse.Namespace) -> dict[str, Any]:
     """Primary endpoints P1 (T5 new words, prose, property, linker − none) and P2 (T4 held-out ChEBI terms, loss after the
-    term in other documents, linker − none), Holm over both; the key secondaries per set, seeds pooled."""
+    term in other documents) with Holm over both. P2 as amended by decision 64 (§16.1): supported only if the linker's
+    frames beat no frame, a random frame of the gold's shape (`random`) and a random frame of their own shape
+    (`linker-random`) — an intersection–union test whose p is the largest of the three. Also: the key secondaries per set,
+    seeds pooled; the same specificity test on every held-out set (the T7-ROOD analogue; unadjusted); the definition-
+    encoder competitor (C6d + encoder against C5 + linker, §16.2); the in-context route on the windows (§16.3); costs."""
     groups: dict[tuple[str, str, str, str], list[Path]] = defaultdict(list)
     missing = [str(f) for f in args.runs if not (Path(f) / "summary.json").exists()]
     for folder in args.runs:
@@ -1795,52 +2200,145 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
         summary = json.loads((Path(folder) / "summary.json").read_text())
         source = summary["source"]
         groups[(summary["set"]["track"], summary["set"]["kind"], source["size"], source["condition"])].append(Path(folder))
-    endpoints, secondary = [], []
+    endpoints, secondary, specific_rows = [], [], []
+    new_tests = ("property", "entailment", "paraphrase", "statement_accuracy")
     for (track, kind, size, condition), folders in sorted(groups.items()):
         primary = PRIMARY_STYLE.get(track, "prose")
+        base = {"track": track, "kind": kind, "size": size, "model": condition}
+
+        def items(pairs: Sequence[tuple[str, str]], tests: Sequence[str], endpoint: Callable[[str, str, str], bool] = lambda *_: False) -> None:
+            for test in tests:
+                for a, b in pairs:
+                    result = pooled_item_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", test, resamples=args.resamples)
+                    if result:
+                        (endpoints if endpoint(test, a, b) else secondary).append({**base, "a": a, "b": b, "test": test, **result})
+
+        def windows(pairs: Sequence[tuple[str, str]], endpoint: Callable[[str, str], bool] = lambda *_: False) -> None:
+            for a, b in pairs:
+                result = pooled_window_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", resamples=args.resamples)
+                if result:
+                    row = {**base, "a": a, "b": b, "test": "loss after term", **result}
+                    (endpoints if endpoint(a, b) else secondary).append(row)
+                    if a == "linker" and b in SPECIFICITY:
+                        specific_rows.append(row)
         if condition.startswith("C5"):
             if kind == "new":
-                for test in ("property", "entailment", "paraphrase", "statement_accuracy"):
-                    for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"),
-                                 ("linker-joint", "none"), ("linker-joint", "typeprior"),
-                                 ("linker", "oracle"), ("context", "linker"), ("context+linker", "context"), ("gradient×1.0", "linker")):
-                        result = pooled_item_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", test, resamples=args.resamples)
-                        if result:
-                            row = {"track": track, "kind": kind, "size": size, "model": condition, "a": a, "b": b, "test": test, **result}
-                            (endpoints if (track == "t5" and test == "property" and (a, b) == ("linker", "none") and "360M" in size)
-                             else secondary).append(row)
+                items((("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"), ("linker", "linker-random"),
+                       ("linker-joint", "none"), ("linker-joint", "typeprior"), ("linker", "oracle"), ("context", "linker"),
+                       ("context+linker", "context"), ("gradient×1.0", "linker")), new_tests,
+                      lambda test, a, b: track == "t5" and test == "property" and (a, b) == ("linker", "none") and "360M" in size)
             if kind == "heldout":
-                for test in HELDOUT_TESTS:
-                    for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("context", "linker"),
-                                 ("linker-joint", "none"), ("linker-joint", "typeprior")):
-                        result = pooled_item_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", test, resamples=args.resamples)
-                        if result:
-                            secondary.append({"track": track, "kind": kind, "size": size, "model": condition, "a": a, "b": b,
-                                              "test": test, **result})
-                for a, b in (("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"), ("gradient×1.0", "none"),
-                             ("linker-joint", "none"), ("linker-joint", "typeprior")):
-                    result = pooled_window_contrast(folders, f"{primary}|{a}", f"{primary}|{b}", resamples=args.resamples)
-                    if result:
-                        row = {"track": track, "kind": kind, "size": size, "model": condition, "a": a, "b": b, "test": "loss after term", **result}
-                        (endpoints if (track == "t4" and (a, b) == ("linker", "none") and "360M" in size) else secondary).append(row)
-    for row, p in zip(endpoints, holm_adjust([r["p_value"] for r in endpoints]) if endpoints else []):
-        row["p_holm"] = p
-    out = {"endpoints": endpoints, "secondary": secondary, "runs": [str(f) for f in args.runs], "missing": missing}
+                items((("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"), ("linker", "linker-random"),
+                       ("context", "linker"), ("linker-joint", "none"), ("linker-joint", "typeprior")), HELDOUT_TESTS)
+                windows((("linker", "none"), ("oracle", "none"), ("linker", "typeprior"), ("linker", "random"), ("linker", "linker-random"),
+                         ("gradient×1.0", "none"), ("linker-joint", "none"), ("linker-joint", "typeprior"), ("context", "none"),
+                         ("context", "linker"), ("context+linker", "context")),
+                        lambda a, b: track == "t4" and (a, b) == ("linker", "none") and "360M" in size)
+        elif condition.startswith("C6"):                    # the encoder route's own contrasts (§16.2)
+            pairs = (("encoder", "none"), ("oracle", "none"), ("encoder", "oracle"))
+            items(pairs, new_tests if kind == "new" else HELDOUT_TESTS)
+            if kind == "heldout":
+                windows(pairs)
+        elif kind == "heldout":                              # text-route models: in context on the windows, the gradient
+            windows((("context", "none"), ("gradient×1.0", "none")))
+
+    # P2 as amended (§16.1) and the same test on every held-out set.
+    by_set: dict[tuple[str, str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in specific_rows:
+        by_set[(row["track"], row["kind"], row["size"], row["model"])].append(row)
+    specificity = [{"track": k[0], "kind": k[1], "size": k[2], "model": k[3], **specificity_test(rows)} for k, rows in sorted(by_set.items())]
+    for block in specificity:
+        block["specific_unadjusted"] = bool(block["complete"] and block["reductions"] and block["p_iut"] is not None
+                                            and block["p_iut"] < 0.05)
+    p1 = next((r for r in endpoints if r["kind"] == "new"), None)
+    p2 = next((r for r in endpoints if r["kind"] == "heldout"), None)
+    p2_block = next((b for b in specificity if p2 is not None and (b["track"], b["kind"], b["size"], b["model"]) ==
+                     (p2["track"], p2["kind"], p2["size"], p2["model"])), None)
+    family = ([("P1", p1["p_value"])] if p1 else []) + ([("P2", p2_block["p_iut"])] if p2_block and p2_block["p_iut"] is not None else [])
+    adjusted = dict(zip([name for name, _ in family], holm_adjust([p for _, p in family]))) if family else {}
+    decision: dict[str, Any] = {"family": "Holm over P1 and P2; P2's p is the intersection–union p of linker − none, − random "
+                                          "and − linker-random (§16.1)"}
+    if p1:
+        p1["p_holm"] = adjusted.get("P1")
+        decision["P1"] = {"mean": p1["mean"], "p_value": p1["p_value"], "p_holm": p1["p_holm"],
+                          "positive": bool(p1["mean"] > 0 and p1["p_holm"] < 0.05)}
+    if p2:
+        p2["p_holm"] = adjusted.get("P2")
+        p2["p_iut"] = p2_block["p_iut"] if p2_block else None
+        decision["P2"] = {**(p2_block or {"complete": False, "missing": list(SPECIFICITY[1:])}), "p_holm": adjusted.get("P2"),
+                          "supported": bool(p2_block and p2_block["complete"] and p2_block["reductions"]
+                                            and adjusted.get("P2") is not None and adjusted["P2"] < 0.05)}
+
+    # The definition-encoder competitor (§16.2): C6d + encoder against C5 + linker, paired by seed on the same items / windows.
+    competitor = []
+    for track, kind, size in sorted({k[:3] for k in groups}):
+        pairs = seed_pairs(groups, track, kind, size, "C6d", "C5")
+        if not pairs:
+            continue
+        primary = PRIMARY_STYLE.get(track, "prose")
+        a, b = f"{primary}|encoder", f"{primary}|linker"
+        none_a, none_b = f"{primary}|none", f"{primary}|none"
+        base = {"track": track, "kind": kind, "size": size}
+        for test in (new_tests if kind == "new" else HELDOUT_TESTS):
+            for label, refs in (("C6d encoder − C5 linker", {}), ("(C6d encoder − C6d none) − (C5 linker − C5 none)",
+                                                                  {"a_ref": none_a, "b_ref": none_b})):
+                result = cross_item_contrast(pairs, a, b, test, resamples=args.resamples, **refs)
+                if result:
+                    competitor.append({**base, "contrast": label, "test": test, **result})
+        if kind == "heldout":
+            for label, refs in (("C6d encoder − C5 linker", {}), ("(C6d encoder − C6d none) − (C5 linker − C5 none)",
+                                                                  {"a_ref": none_a, "b_ref": none_b})):
+                result = cross_window_contrast(pairs, a, b, resamples=args.resamples, **refs)
+                if result:
+                    competitor.append({**base, "contrast": label, "test": "loss after term", **result})
+    costs = route_costs(groups)
+    out = {"endpoints": endpoints, "decision": decision, "specificity": specificity, "competitor": competitor, "costs": costs,
+           "secondary": secondary, "runs": [str(f) for f in args.runs], "missing": missing}
     args.output.mkdir(parents=True, exist_ok=True)
     write_json(args.output / "report.json", out)
-    lines = ["# E11 read-to-learn — pooled report", "", "Primary endpoints (Holm over both):", "",
-             "| set | host | model | contrast | test | difference [95% CI] | seeds | p (Holm) |", "|---|---|---|---|---|---|---:|---:|"]
+    lines = ["# E11 read-to-learn — pooled report", "", "Primary endpoints (Holm over P1 and P2; P2's p is the intersection–union p of "
+             "its specificity components, §16.1):", "",
+             "| set | host | model | contrast | test | difference [95% CI] | seeds | p | p (Holm) |", "|---|---|---|---|---|---|---:|---:|---:|"]
     for r in endpoints:
-        value = (f"{100 * r['relative']:+.2f}% [{100 * r['relative_ci_low']:+.2f}, {100 * r['relative_ci_high']:+.2f}]" if "relative" in r
-                 else f"{r['mean']:+.4f} [{r['ci_low']:+.4f}, {r['ci_high']:+.4f}]")
-        lines.append(f"| {r['track']} {r['kind']} | {r['size']} | {r['model']} | {r['a']} − {r['b']} | {r['test']} | {value} | {r['seeds']} | "
-                     f"{fmt(r.get('p_holm'), 4)} |")
+        lines.append(f"| {r['track']} {r['kind']} | {r['size']} | {r['model']} | {r['a']} − {r['b']} | {r['test']} | {_value(r)} | "
+                     f"{r['seeds']} | {fmt(r.get('p_value'), 4)} | {fmt(r.get('p_holm'), 4)} |")
+    if "P2" in decision:
+        d = decision["P2"]
+        parts = [f"linker − {b} {100 * c['relative']:+.2f}% (p {fmt(c['p_value'], 4)})" for b, c in d.get("components", {}).items()]
+        absent = f"; missing {', '.join(d['missing'])}" if d.get("missing") else ""
+        lines += ["", f"**Reading (b), P2 as amended (§16.1):** {'supported' if d['supported'] else 'not supported'} — "
+                  f"{', '.join(parts)}{absent}; p (IUT) {fmt(d.get('p_iut'), 4)}, p (Holm) {fmt(d.get('p_holm'), 4)}."]
+    if specificity:
+        lines += ["", "Specificity of the loss gain on every held-out set (linker against no frame and against frames of wrong content; "
+                  "§16.1; outside T4-H unadjusted):", "",
+                  "| set | host | model | linker − none | linker − random | linker − linker-random | p (IUT) | specific |",
+                  "|---|---|---|---|---|---|---:|---|"]
+        for s in specificity:
+            cells = [(f"{100 * c['relative']:+.2f}% [{100 * c['relative_ci_low']:+.2f}, {100 * c['relative_ci_high']:+.2f}]"
+                      if (c := s["components"].get(b)) else "—") for b in SPECIFICITY]
+            lines.append(f"| {s['track']} {s['kind']} | {s['size']} | {s['model']} | " + " | ".join(cells) +
+                         f" | {fmt(s['p_iut'], 4)} | {'yes' if s['specific_unadjusted'] else 'no'} |")
+    if competitor:
+        lines += ["", "Definition-encoder competitor (§16.2; C6d with the read definition's encoding against C5 with the linker's frame; "
+                  "paired by seed on the same items and windows; unadjusted):", "",
+                  "| set | host | contrast | test | difference [95% CI] | seeds | p |", "|---|---|---|---|---|---:|---:|"]
+        for r in competitor:
+            lines.append(f"| {r['track']} {r['kind']} | {r['size']} | {r['contrast']} | {r['test']} | {_value(r)} | {r['seeds']} | "
+                         f"{fmt(r.get('p_value'), 4)} |")
+    if costs:
+        lines += ["", "Cost per learned word (seed means, primary style): write = forward tokens of the reading (linker: 1 + candidates "
+                  "passes; encoder: one pass) or training tokens (gradient ×1; one training token ≈ 3 forward tokens); use = context "
+                  "tokens (frames and encoder: 0).", "",
+                  "| set | host | model | linker write | linker passes | encoder write | gradient train | context / query | "
+                  "context / window occurrence |", "|---|---|---|---:|---:|---:|---:|---:|---:|"]
+        for c in costs:
+            lines.append(f"| {c['track']} {c['kind']} | {c['size']} | {c['model']} | {fmt(c['linker_forward_tokens'], 0)} | "
+                         f"{fmt(c['linker_forward_passes'], 1)} | {fmt(c['encoder_forward_tokens'], 1)} | {fmt(c['gradient_train_tokens'], 0)} | "
+                         f"{fmt(c['context_tokens_per_query'], 1)} | {fmt(c['context_tokens_per_occurrence'], 1)} |")
     lines += ["", "Secondary contrasts (unadjusted p):", "", "| set | host | model | contrast | test | difference [95% CI] | seeds | p |",
               "|---|---|---|---|---|---|---:|---:|"]
     for r in secondary:
-        value = (f"{100 * r['relative']:+.2f}% [{100 * r['relative_ci_low']:+.2f}, {100 * r['relative_ci_high']:+.2f}]" if "relative" in r
-                 else f"{r['mean']:+.4f} [{r['ci_low']:+.4f}, {r['ci_high']:+.4f}]")
-        lines.append(f"| {r['track']} {r['kind']} | {r['size']} | {r['model']} | {r['a']} − {r['b']} | {r['test']} | {value} | {r['seeds']} | "
+        lines.append(f"| {r['track']} {r['kind']} | {r['size']} | {r['model']} | {r['a']} − {r['b']} | {r['test']} | {_value(r)} | {r['seeds']} | "
                      f"{fmt(r.get('p_value'), 4)} |")
     (args.output / "report.md").write_text("\n".join(lines) + "\n")
     return out
@@ -1862,14 +2360,22 @@ SMOKE_SECONDS = {
     "t1-heldout": {"reader": 1.3, "persist": 0.0, "context": 0.0, "grad1": 0.0, "grad4": 0.0, "windows": 2048},
 }
 WINDOW_SECONDS = 0.06                 # one 1,024-token window under one condition (smoke)
+# Decision 64 (estimates, not measured on the GPU): a window read after its definitions runs alone (one prefix per window),
+# ≈ 2× a batched window; the encoder route re-encodes the table's reference texts once (T4: 67.5k × 85 tokens ≈ 90 s; T5 and
+# T7: ≤ 5k entries) and scores 3 conditions (none, oracle, encoder).
+WINDOW_CONTEXT_SECONDS = 2 * WINDOW_SECONDS
+ENCODER_FIT_SECONDS = {"t4": 90.0, "t5": 10.0, "t7": 10.0, "t7rood": 10.0}
+ENCODER_CONDITIONS = 3
 CONTENTION, SCALE_135M = 2.0, 0.55
 SETS = {("t5", "new"): ("t5-new-smollm2-v1", 300, ["glossary", "dictionary", "prose"]),
         ("t5", "heldout"): ("t5-heldout-smollm2-v1", 560, ["prose"]),
         ("t4", "heldout"): ("t4-heldout-smollm2-v1", 341, ["chebi"]),
         ("t4", "new"): ("t4-new-smollm2-v1", 300, ["chebi"]),
         ("t1", "heldout"): ("t1-heldout-smollm2-v1", 1972, ["scope"])}
-C5_READERS = "oracle,stated,typeprior,pattern,linker,linker-all,linker-joint,host,teacher,random,none"
-READER_CONDITIONS = 10                # persistence / window conditions of a C5 run (teacher only if its frames exist)
+C5_READERS = "oracle,stated,typeprior,pattern,linker,linker-all,linker-joint,host,teacher,random,linker-random,none"
+READER_CONDITIONS = 11                # persistence / window conditions of a C5 run (teacher only if its frames exist)
+# The definition-encoder competitor (decision 64, §16.2) runs on the trained C6d arm of the sets that carry P1 and P2.
+ENCODER_SETS = {("t5", "new"), ("t4", "heldout")}
 
 
 def job_hours(track: str, kind: str, model: str, host: str, styles: Sequence[str]) -> float:
@@ -1878,21 +2384,25 @@ def job_hours(track: str, kind: str, model: str, host: str, styles: Sequence[str
     c = SMOKE_SECONDS[f"{track}-{kind}"]
     n_styles = len(styles)
     windows = c.get("windows", 0) * WINDOW_SECONDS
+    in_context = c.get("windows", 0) * WINDOW_CONTEXT_SECONDS if kind == "heldout" and track != "t1" else 0.0
     if model == "C5":
         persist_conditions = READER_CONDITIONS * (1 + 0.6 * (n_styles - 1) if kind == "new" else n_styles)
         seconds = concepts * (c["reader"] * n_styles + c["persist"] * persist_conditions + c["context"] * (2 * n_styles + 1)
-                              + c["grad1"] + c["grad4"] + c.get("wgrad", 0.0)) + windows * READER_CONDITIONS
+                              + c["grad1"] + c["grad4"] + c.get("wgrad", 0.0)) + windows * READER_CONDITIONS + 2 * in_context
     elif model == "C0p":
-        seconds = concepts * (c["persist"] + c["context"] + c["grad1"] + c["grad4"] + c.get("wgrad", 0.0)) + windows
+        seconds = concepts * (c["persist"] + c["context"] + c["grad1"] + c["grad4"] + c.get("wgrad", 0.0)) + windows + in_context
+    elif model == "C6d":
+        seconds = ENCODER_FIT_SECONDS.get(track, 10.0) + ENCODER_CONDITIONS * (concepts * c["persist"] * n_styles + windows)
     else:
-        seconds = concepts * (c["persist"] + c["context"]) + windows
+        seconds = concepts * (c["persist"] + c["context"]) + windows + in_context
     return seconds / CONTENTION / 3600 * (1.0 if "360M" in host else SCALE_135M)
 
 
 def tier_of(track: str, kind: str, host: str, model: str, seed: int) -> int:
     """1: the primary endpoints and their key comparators (T5-N 360M C5/C0′ seeds 1–3; T4-H 360M C5/C0′, seeds 2–3 once
-    trained); 2: replications and controls; 3: T5-H and T4-N on 135M. Priority = PLAN_PRIORITY + tier."""
-    if "360M" in host and model in {"C5", "C0p"} and (track, kind) in {("t5", "new"), ("t4", "heldout")}:
+    trained; the C6d encoder competitor on both, decision 64); 2: replications and controls; 3: T5-H and T4-N on 135M.
+    Priority = PLAN_PRIORITY + tier."""
+    if "360M" in host and model in {"C5", "C0p", "C6d"} and (track, kind) in {("t5", "new"), ("t4", "heldout")}:
         return 1
     if (track, kind) in {("t5", "heldout"), ("t4", "new")} and "135M" in host:
         return 3
@@ -1909,7 +2419,9 @@ def plan_jobs(*, tracks: Sequence[str] = ("t5", "t4", "t1"), hosts: Sequence[str
     gradient); C2 and P0 no frame and in context only (the gradient comparator is C0′). T5-N reads all three styles; the
     secondary sets read their primary style. T4 runs past seed 1 wait for their training (`after_training`). T1-H
     (negative control) runs SmolLM2-360M seed 1 (frames and loss after the term; no items exist), windows capped at
-    2,048."""
+    2,048. Decision 64 (§16): C5 also reads `linker-random`; with `windows`, `context` also reads every window after its
+    terms' definitions; the trained C6d arm (SmolLM2-360M, seeds 1–3) runs the encoder route on T5-N and T4-H (primary
+    style)."""
     jobs: list[dict[str, Any]] = []
     for host in hosts:
         jobs.append({"name": f"e11-gradient-dev-{host}", "priority": priority, "min_free_gb": 10, "tier": 0,
@@ -1923,8 +2435,10 @@ def plan_jobs(*, tracks: Sequence[str] = ("t5", "t4", "t1"), hosts: Sequence[str
         for host in hosts:
             if track == "t1" and "360M" not in host:
                 continue
-            for model in ("C5", "C0p", "C2", "P0"):
+            for model in ("C5", "C0p", "C2", "P0", "C6d"):
                 if track == "t1" and model not in {"C5", "C0p"}:
+                    continue
+                if model == "C6d" and ("360M" not in host or (track, kind) not in ENCODER_SETS):
                     continue
                 run_seeds = (1,) if model == "P0" or track == "t1" else tuple(seeds)
                 for seed in run_seeds:
@@ -1934,15 +2448,18 @@ def plan_jobs(*, tracks: Sequence[str] = ("t5", "t4", "t1"), hosts: Sequence[str
                         methods, readers = "frames,persistence,context,gradient,windows,locality", C5_READERS
                     elif model == "C0p":
                         methods, readers = "persistence,context,gradient,windows", "none"
+                    elif model == "C6d":
+                        methods, readers = "encoder,windows", "none"
                     else:
                         methods, readers = "persistence,context,windows", "none"
                     if kind == "new":
                         methods = methods.replace(",windows", "")
                     if track == "t1":
                         methods = ",".join(m for m in methods.split(",") if m in {"frames", "windows", "locality"})
+                    run_styles = [PRIMARY_STYLE[track]] if model == "C6d" else styles
                     command = [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "evaluate", "--run", str(run),
                                "--items", str(ITEMS / folder), "--methods", methods, "--readers", readers,
-                               "--styles", ",".join(styles), "--alias-table",
+                               "--styles", ",".join(run_styles), "--alias-table",
                                str(Path("~/data/vsa-llm/e9/alias-tables").expanduser() / f"{track}.json")]
                     if "gradient" in methods:
                         command += ["--gradient-lr-from", str(ROOT / "dev" / host / "gradient_lr.json")]
@@ -1952,7 +2469,7 @@ def plan_jobs(*, tracks: Sequence[str] = ("t5", "t4", "t1"), hosts: Sequence[str
                         command += ["--max-windows", "2048"]
                     command += ["--output", str(run / f"{FOLDER}-{track}-{kind}")]
                     tier = tier_of(track, kind, host, model, seed)
-                    hours = job_hours(track, kind, model, host, styles) if track != "t1" or model == "C5" else \
+                    hours = job_hours(track, kind, model, host, run_styles) if track != "t1" or model == "C5" else \
                         2048 * WINDOW_SECONDS / CONTENTION / 3600
                     jobs.append({"name": f"e11-{track}-{kind}-{host}-{model}-s{seed}", "priority": priority + tier, "tier": tier,
                                  "min_free_gb": 10, "after_training": track == "t4" and seed > 1, "hours": round(hours, 3),
@@ -1980,6 +2497,93 @@ def run_plan(args: argparse.Namespace) -> list[dict[str, Any]]:
         print(f"# {key}: ≈ {hours:.1f} GPU-h")
     print(f"# total printed ≈ {sum(h for k, h in totals.items() if not k.startswith('pending')):.1f} GPU-h (idle-GPU estimate)")
     return jobs
+
+
+# -- decision 64 (preregistration §16): the queued jobs it replaces and the jobs it adds (printed, never submitted) ------------
+
+HOST_360M = "SmolLM2-360M"
+# The bands the queued E11 jobs sit in (author, 2026-10-07/08): tier 1 at 52, T7-H at 53, the reports at 54, the T7-ROOD block
+# at 54.4979 (`t7_rood_queue`). Replacements keep their job's priority; new jobs take a free fractional slot after the jobs
+# they extend (52.5: after tier 1, before 53).
+DECISION64_PRIORITY = {"tier1": 52, "encoder": 52.5, "t7": 53, "report": 54}
+T7_C5_HOURS = 0.62                    # T7-H C5 (§15 plan: 0.60) + one `linker-random` window pass (2,048 windows)
+
+
+def decision64_jobs(python: str = "$PY") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(jobs to cancel, jobs to add) of decision 64. Replaced (same name, same priority): the C5 jobs of T5-N and T4-H
+    (SmolLM2-360M, seeds 1–3) and of T7-H (seed 1), which gain `linker-random`; the T7-ROOD C5 and C0′ jobs, which gain
+    `context` (and C5 `linker-random`); both reports, which gain the C6d outputs. Added: the C6d encoder route on T5-N
+    and T4-H (52.5) and on T7-ROOD-H (`t7_rood_queue`, 54.49791). Each cancelled entry records why."""
+    from . import t7_rood_queue as rood
+    plan = {j["name"]: j for j in plan_jobs(python=python)}
+    cancel: list[dict[str, Any]] = []
+    adds: list[dict[str, Any]] = []
+    for track, kind in (("t5", "new"), ("t4", "heldout")):
+        for seed in (1, 2, 3):
+            name = f"e11-{track}-{kind}-{HOST_360M}-C5-s{seed}"
+            cancel.append({"name": name, "priority": DECISION64_PRIORITY["tier1"], "why": "adds the reader linker-random"
+                           + (" (and, through `context` + `windows`, the in-context route on the windows)" if kind == "heldout" else "")})
+            adds.append({**plan[name], "priority": DECISION64_PRIORITY["tier1"]})
+    for track, kind in (("t5", "new"), ("t4", "heldout")):
+        for seed in (1, 2, 3):
+            adds.append({**plan[f"e11-{track}-{kind}-{HOST_360M}-C6d-s{seed}"], "priority": DECISION64_PRIORITY["encoder"]})
+    t7_run = E9_RUNS / "t7" / f"{HOST_360M}-full-C5-s1"
+    cancel.append({"name": f"e11-t7-heldout-{HOST_360M}-C5-s1", "priority": DECISION64_PRIORITY["t7"], "why": "adds the reader linker-random"})
+    adds.append({"name": f"e11-t7-heldout-{HOST_360M}-C5-s1", "priority": DECISION64_PRIORITY["t7"], "min_free_gb": 10, "hours": T7_C5_HOURS,
+                 "command": [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "evaluate", "--run", str(t7_run), "--items",
+                             str(ITEMS / "t7-heldout-smollm2-v1"), "--methods", "frames,gradient,windows,locality", "--readers",
+                             rood.E11_C5_READERS, "--styles", "scr", "--alias-table",
+                             str(Path("~/data/vsa-llm/e9/alias-tables").expanduser() / "t7.json"), "--gradient-lr-from",
+                             str(ROOT / "dev" / HOST_360M / "gradient_lr.json"), "--window-gradient", "--max-windows", "2048",
+                             "--output", str(t7_run / f"{FOLDER}-t7-heldout")]})
+    for job in rood.e11_jobs(python):
+        if job["name"].startswith("e11-gradient-dev"):
+            continue
+        model = job["name"].rsplit("-", 2)[-2] if "heldout" in job["name"] else None
+        if model in {"C5", "C0p"} or job["name"] == "e11-t7rood-report":
+            why = {"C5": "adds `context` (windows in context) and the reader linker-random", "C0p": "adds `context` (windows in context)",
+                   None: "adds the C6d outputs; moves after the C6d jobs (54.49792)"}[model]
+            cancel.append({"name": job["name"], "priority": rood.E11_PRIORITY, "why": why})
+        adds.append(job)
+    cancel.append({"name": "e11-report", "priority": DECISION64_PRIORITY["report"], "why": "adds the C6d outputs (T5-N, T4-H)"})
+    adds.append({**plan["e11-report"], "priority": DECISION64_PRIORITY["report"]})
+    return cancel, adds
+
+
+def render_decision64(python: str = "$PY") -> str:
+    from .t7_rood_queue import shell
+    cancel, adds = decision64_jobs(python)
+    names = " ".join(c["name"] for c in cancel)
+    lines = ["#!/usr/bin/env bash",
+             "# E11 decision 64 (author 2026-10-09; preregistration §16): P2 specificity (`linker-random`), the definition-encoder",
+             "# competitor (C6d `encoder` route) and the in-context route on the windows (T7-ROOD `context`).",
+             "# Printed by `python -m vsa_embed.experiments.e11_read_to_learn plan-decision64`; NOT EXECUTED by the agent that wrote it.",
+             "# Run from the repository root of the main checkout after merging this branch:",
+             "#   cd /home/bhux/workplace/VSA-LLM && PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python",
+             "# Step 1 cancels every job listed under CANCEL (its JSON moves to .jobs/cancelled/, as for the T8 withdrawal of",
+             "# 2026-10-09) and refuses to touch anything if any of them is no longer pending (then rescope §16 first). Step 2 adds",
+             "# the replacements (same names, same priorities) and the new C6d jobs (free fractional slots of the bands they extend).",
+             "# Unchanged and still valid (their command lines need no change): e11-gradient-dev-SmolLM2-360M (51) and -t7rood (54.4979);",
+             "# the C0′ jobs of T5-N and T4-H (52; T4-H C0′ now also reads its windows in context, as `context` + `windows` imply,",
+             "# ≈ +0.01 GPU-h each); e11-t7-heldout-SmolLM2-360M-C0p-s1 (53); every e11-many-* job and e11-many-report (53–54).",
+             "# GPU-h are idle-GPU estimates (§12 smoke timings; the decision-64 parts estimated, §16.5).", ""]
+    for c in cancel:
+        lines.append(f"# CANCEL: {c['name']}   (p{c['priority']}; {c['why']})")
+    lines += ["", "set -euo pipefail", ': "${PY:?set PY to the pinned interpreter}"', "", f"CANCEL=({names})",
+              'for name in "${CANCEL[@]}"; do',
+              "  $PY -c 'import json, sys; job = json.load(open(sys.argv[1])); sys.exit(job[\"status\"] != \"pending\")' \".jobs/$name.json\" \\",
+              '    || { echo "$name is not pending: rescope preregistration §16 before replacing it" >&2; exit 1; }',
+              "done", "mkdir -p .jobs/cancelled",
+              'for name in "${CANCEL[@]}"; do mv ".jobs/$name.json" ".jobs/cancelled/$name.json"; done', ""]
+    total = 0.0
+    for job in adds:
+        total += job["hours"]
+        lines.append(f"PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name {job['name']} --priority {job['priority']} "
+                     f"--min-free-gb {job['min_free_gb']} --no-resume -- {shell(job['command'])}   # ≈ {job['hours']:.2f} GPU-h")
+    replaced = sum(j["hours"] for j in adds if any(c["name"] == j["name"] for c in cancel))
+    lines += ["", f"# {len(cancel)} cancelled, {len(adds)} added: ≈ {total:.1f} GPU-h queued by this script, of which ≈ {replaced:.1f} "
+              f"replace cancelled jobs and ≈ {total - replaced:.1f} are new (the 9 C6d jobs)."]
+    return "\n".join(lines) + "\n"
 
 
 # -- CLI ----------------------------------------------------------------------------------------------------------------------
@@ -2032,6 +2636,10 @@ def main(argv: list[str] | None = None) -> None:
             ev.add_argument("--teacher-frames", type=Path, default=None); ev.add_argument("--max-windows", type=int, default=None)
             ev.add_argument("--window-gradient", action="store_true",
                             help="with gradient on a held-out set: also the per-term update's loss after the term (T4-H)")
+            ev.add_argument("--encoder-fit", type=int, default=None,
+                            help="encoder route: estimate the table statistics from this many reference entries (default: all)")
+            ev.add_argument("--window-context-budget", type=int, default=1024,
+                            help="context on windows: at most this many definition tokens before each window")
             ev.add_argument("--seed", type=int, default=0); ev.add_argument("--resamples", type=int, default=2000)
             ev.add_argument("--overwrite", action="store_true"); ev.add_argument("--smoke", action="store_true",
                                                                                    help="label the outputs as a smoke test")
@@ -2044,6 +2652,7 @@ def main(argv: list[str] | None = None) -> None:
     plan.add_argument("--tracks", nargs="*", default=["t5", "t4", "t1"]); plan.add_argument("--hosts", nargs="*", default=["SmolLM2-360M", "SmolLM2-135M"])
     plan.add_argument("--seeds", type=int, nargs="*", default=[1, 2, 3]); plan.add_argument("--priority", type=int, default=PLAN_PRIORITY)
     plan.add_argument("--include-pending", action="store_true", help="also print jobs whose runs are still training (T4 seeds 2–3)")
+    sub.add_parser("plan-decision64", help="print the decision-64 queue script: cancelled and added jobs (nothing is submitted)")
     args = parser.parse_args(argv)
     if args.command == "items":
         print(json.dumps(run_items(args), indent=2, default=str))
@@ -2059,6 +2668,8 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(run_gradient_dev(args), indent=2, default=str))
     elif args.command == "report":
         print(json.dumps(run_report(args)["endpoints"], indent=2, default=str))
+    elif args.command == "plan-decision64":
+        print(render_decision64(), end="")
     else:
         run_plan(args)
 

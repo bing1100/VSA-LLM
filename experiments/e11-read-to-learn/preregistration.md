@@ -282,6 +282,10 @@ Forward passes and tokens (linker), prompt and generated tokens (host), USD (tea
 | **(d) "In-context does it as well; the channel only adds persistence"** | `context − linker` ≥ 0 or its CI includes 0, **and** `context+linker − context` has a CI including 0 or ≤ 0. The defensible claim is then a zero-context-token *persistence* mechanism: the definition is gone, the frame remains for every later context. If `context+linker − context` > 0 (CI excludes 0), the frame adds beyond reading the text in context |
 | **(e) "A gradient step does it as well"** | S6 (gains) has a CI including 0 or favouring gradient at ×1 compute. The channel route then has no accuracy advantage at matched compute. What remains is locality: no weight change, no general-text cost (report the gradient's Δ general loss), and no context tokens |
 
+*Amended 2026-10-09, before any E11 run (§16.1):* reading (b) now also requires the linker's loss gain on T4-H to beat
+frames of wrong content (`random`, `linker-random`); P2's p is then an intersection–union p. Readings (f) and R8 are
+added in §16.2 and §16.1.
+
 **Refutation readings** (pre-written):
 
 | # | Observation | Reading |
@@ -762,3 +766,230 @@ after the tier-1 evaluations (52) and before `e11-report` (54). The T4 seeds 2�
   - So the frame readers will write almost nothing (R7). On T7-H, E11 tests the text routes and the gold frame; the
     reading itself is untestable without a semantic filler matcher, and the Claude teacher is not approved.
 - **Proposed runs** (once T7 trains): the E11 `heldout` evaluation, as T4-H in tier 2.
+
+## 16. Amendment (2026-10-09, decision 64, before any E11 run): P2 specificity, a definition-encoder competitor, in-context reading on natural text
+
+**Status when written.** At 2026-10-09 19:36 UTC every E11 job in the queue was `pending` (the dev lr job at 51, tier 1
+at 52, E11-M and T7-H at 53, the reports at 54, the T7-ROOD block at 54.4979; the running job was an E9 T7 training run).
+No E11 output exists. Nothing below is post hoc, and no part is out of scope because it already ran. The queue script
+(§16.5) refuses to cancel a job that is no longer pending; if one has started by then, its set keeps the pre-amendment
+readers and the report marks the affected test incomplete (`missing`). E11-M (§14) is unchanged.
+
+**Origin.** Three E9 findings of the T4 arm battery (author, 2026-10-09):
+
+1. **Shuffled frames on real text.** The shuffled-frames arm C5sh gives every entry another entry's frame, held-out
+   terms included. On T4 (3 seeds) it keeps C5's after-held-out loss gain: C5 − C5sh +0.01% [−0.08, +0.10]. The own
+   frames matter only on seen, rare and unseen terms (after_unseen −0.82%). On T5 (synthetic) C5sh is 4.6% worse after
+   held-out terms. On real text, a held-out loss gain from a written frame may therefore be non-specific.
+2. **A definition encoder beats C5 on T4 held-out terms.** C6d (the frozen host's mean-pooled last hidden state of the
+   verbalized frame) gives C5 − C6d +0.17% [+0.05, +0.29].
+3. **In context on T4.** A prose definition in context does as well as the decoded store (0.91 vs 0.88).
+
+**Audit of this pre-registration** (each claim checked against §§5–8, the code and the queue JSON):
+
+| Claim | Check |
+|---|---|
+| Rule (b) reads P2 (`linker − none` on T4-H) without requiring linker > random | **Confirmed.** S3 (`linker − random`) enters reading (a) on P1 only. `run_report` did compute `linker − random` on the T4-H windows, but only as a secondary |
+| No definition-encoder (C6d) row | **Confirmed.** E11 had no encoder route |
+| The T7-ROOD runs omit `context` | **Confirmed.** C5 runs `frames,gradient,windows,locality` and C0′ runs `gradient,windows`. Wider than claimed: `context` scored WP-C7 items only, T7-ROOD has none, and no set had an in-context route on the windows |
+| Token cost is recorded for the text routes | **Confirmed** for items: context tokens per query, and the gradient's training tokens per update. There was no window route to record |
+| (found here) The `random` reader is "the same shape" | **Only for the gold frame.** `random` keeps the gold frame's relations and degree (E9 rule). In the T4-H smoke test (§12) random frames had 12.2 edges and linker frames 2.45, so it is not shape-matched to the linker |
+
+### 16.1 P2 specificity
+
+**Reading (b), amended.** P2 counts as supported only if all three hold on T4-H. The setting is unchanged:
+SmolLM2-360M C5, seeds 1–3 pooled, loss after the read terms in other documents, cluster bootstrap over terms, 2,000
+resamples.
+
+1. `linker − none` is a loss reduction (as pre-registered).
+2. `linker − random` is a loss reduction. This is the author's condition: a random frame of the gold's shape.
+3. `linker − linker-random` is a loss reduction. **New reader**, the shape-matched content control:
+   - each linker frame keeps its relations and its edge count;
+   - every filler is redrawn frequency-weighted from the relation's pool, as `random` draws, but never a filler of the
+     linker's or the gold's frame for that relation;
+   - no frame stays no frame, and an edge whose pool holds no other filler is dropped (`read_to_learn.read_shape_random`).
+
+Condition 3 is added in this amendment. The author's wording ("frames of the same shape from wrong content") holds for
+`random` against the oracle, not against the linker, whose frames are about one fifth the size on T4-H (§12). With
+`random` alone, a failure could be a shape effect: more edges may carry more of the non-specific "a known term is here"
+gain that C5sh shows. Condition 3 separates content from shape. Requiring both is stricter than the author's rule, never
+weaker. **Open for the author:** keep condition 3 in the rule, or report it as a secondary only.
+
+**Test and family.**
+- P2's p is the intersection–union p: the largest of the three component p values (each a two-sided cluster-bootstrap p
+  with the effect in the stated direction). A conjunction tested this way needs no further multiplicity adjustment
+  (Berger 1982).
+- **Holm family: {P1, P2}**, α = 0.05, with P2's p = that intersection–union p. The family is unchanged in size, and P1
+  is unchanged.
+- Everything else in this amendment is a secondary, with an unadjusted p and a 95% CI.
+
+**The same test on every held-out set** (reported, not confirmatory): T7-ROOD-H (the T7-ROOD analogue, C5 seeds 1–3),
+T7-H, T5-H and T1-H.
+- A set is labelled "specific" if all three components are reductions and the intersection–union p is < 0.05.
+- On T7-ROOD-H and T7-H the notes name about 2% of the gold fillers (§15), so most linker frames are empty. For those terms
+  `linker` = `linker-random` = `none`: a null there is expected, and it is not evidence of non-specificity.
+
+**Readers.** `random` already ran on every set where the loss after the read terms is read:
+- T4-H, T7-ROOD-H, T7-H, T5-H and T1-H, in their C5 jobs (checked in the queue JSON and the plans);
+- the text-route models (C0′, C2, P0) read no frames.
+
+`linker-random` is added to every C5 job, T5-N included. On T5-N, `linker − linker-random` on P1's property test is
+reported next to S3 as a secondary; reading (a) keeps S3 as written.
+
+**R8** (new refutation reading): `linker` < `none` on the T4-H loss, but `linker` ≈ `random` or `linker` ≈ `linker-random`.
+Reading: the read frame's natural-text gain is non-specific, as C5sh's is on T4. Reading (b) then fails, whatever P2's
+`linker − none` shows.
+
+### 16.2 The definition-encoder competitor (`encoder`, on the trained C6d arm)
+
+**Route.** Each read term's source vector in a trained C6d run is replaced by C6d's encoding of the text it read, and the
+term is then tested with no definition in context and no weight change. The C6d arm (E9 WP-PQ1) works as follows:
+- **Source vector:** the frozen pretrained host's last hidden state, mean-pooled over a text, whitened per dimension over
+  the non-held-out entries, then unit-L2 (`e9_rowsource.definition_rows`, `row_sources.apply_standardization`).
+- **Projector:** a trained MLP reads the vector into the stream at C5's site and gate; its parameters match C5's channel.
+
+**Which text: the definition the linker read, not the verbalized written frame.** Reasons:
+- **Same evidence.** The two routes then read exactly the same input once. They differ only in what they store: an
+  explicit frame over the ontology, composed by C5's trained composer, or a dense encoding, projected by C6d's trained
+  projector. This is Q4's question; the in-context and gradient routes also read the definition.
+- **Not a second decoder.** Verbalizing the linker's frame would make the encoder a second decoder of the linker's output.
+  It would inherit the linker's reading errors (T4-H smoke: precision 0.04, 2.45 edges), and it would compare composer
+  and projector on a fixed frame. E9 already asks that question on gold frames (C6d vs C5).
+- **Matching oracle.** C6d's table rows for held-out terms are encodings of their verbalized gold frames. These are the
+  route's `oracle`, so `encoder − oracle` is the cost of reading on this route, as `linker − oracle` is for frames.
+
+**Text read.** The headword is removed: a leading `<headword>:` is dropped and every other occurrence becomes `It`
+(`encoder_text`). This matches C6d's own construction: its texts use the subject "It" and never contain the name, and the
+name's subtokens reach the model at every use anyway.
+
+**Stated asymmetry.** The C6d projector was trained on encodings of verbalized frames ("It is a …. It has role …"), not on
+natural definitions. The linker's single-edge frames are likewise unlike trained frames (§13.3). Both routes face a
+read-time distribution shift, and that shift is part of the comparison.
+
+**Fidelity check (every job).** The table stores only standardized rows. The job therefore re-encodes the table's stored
+verbalizations of every non-held-out entry with the same frozen host, in bf16 on CUDA as the table was built, to recover
+the whitening statistics. It reports the cosine between re-encoded and stored rows; ≈ 1 is expected (tested > 0.999 on
+the CPU world). `--encoder-fit N` subsamples the reference entries; it is used for smoke tests only.
+
+**Conditions on a C6d run**, in the primary style (T5-N `prose`, T4-H `chebi`, T7-ROOD-H `scr`):
+- `none`: a zero source vector. The projector has no bias, so this is no row.
+- `oracle`: the term's own table row; for new words, the encoded verbalized gold frame.
+- `encoder`: the encoded definition.
+
+They are scored on the same items as C5 (T5-N: E9 dimension 3; T4-H: WP-C7) and on the same windows (T4-H, T7-ROOD-H).
+
+**Contrasts against `frames:linker`.** Key secondaries S8, unadjusted, reported next to P1 and P2. Pairing: C6d seed s
+with C5 seed s, on the same items and the same windows (equal target counts are checked).
+- **Absolute:** `C6d encoder − C5 linker`, on P1's property test (and the other item tests) and on P2's loss after the
+  term.
+- **Gains:** `(C6d encoder − C6d none) − (C5 linker − C5 none)`.
+- **Within C6d:** `encoder − none`, `oracle − none`, `encoder − oracle`.
+
+**Cost per learned word.** Both routes use 0 context tokens per use. Write costs:
+
+| Route | Write cost per word | Also recorded |
+|---|---|---|
+| Linker | 1 + candidates forward passes over the definition (T4-H ≈ 32 passes) | tokens |
+| Encoder | One forward pass of the frozen host over the definition | tokens; FLOPs = 2 · parameters · tokens |
+
+The encoder also needs a one-time statistics pass per run, which is not a per-word cost, and a second (frozen) host in
+memory while it writes.
+
+**Reading (f)** (pre-written): **"A dense encoding of the same definition does as well."**
+- **Condition:** `C6d encoder − C5 linker` is not worse on P1's property test (CI includes 0 or favours the encoder) and
+  not worse on P2's loss.
+- **Then:** the frame route keeps interpretability and editability (explicit edges over a known vocabulary, §6.4
+  locality) but no accuracy advantage.
+- **If the encoder is better with a CI excluding 0** (as C6d on T4 gold frames), the paper says so.
+
+### 16.3 In-context reading on natural text (`context` with `windows`)
+
+**Route.** When `context` and `windows` are both requested on a held-out or swap set, each evaluation window is read
+after the definitions of the read terms it holds:
+- the definitions are in the primary style, in order of first occurrence, one per line, whole;
+- the prefix is capped at 1,024 tokens and at the host's position limit;
+- the prefix is computed once per window (`PrefixCache`, the E11-M machinery).
+
+There are two conditions:
+- `context`: the read terms have no row;
+- `context+linker` (C5 only): the read terms have the linker's frames.
+
+The loss after the term is computed as in §6.3. The other conditions are unchanged.
+
+**Token accounting**, reported with the per-query item cost:
+- definition tokens per window and per occurrence;
+- definitions per window;
+- the share of occurrences whose own definition was in context.
+
+**Where it runs.** Wherever both methods are requested:
+
+| Set and model | Status |
+|---|---|
+| T4-H C5 and C0′ | The queued C0′ command lines are unchanged; C5 is replaced anyway (§16.1) |
+| T5-H | Not queued |
+| T7-ROOD-H C5 and C0′ | Now request `context` (replacement jobs) |
+| T1-H, T7-H | Do not request `context`; unchanged |
+
+**Known difference from joint reading.** C5's causal context query (4 tokens) does not reach into the prefix for an
+injection in a window's first tokens (`PrefixCache`, §14). A test checks that an empty prefix reproduces the plain
+windows (1e-4).
+
+**Contrasts** (secondaries; reading (d) on natural text): `context − none` (C5, C0′), `context − linker`, and
+`context+linker − context`.
+
+### 16.4 Report
+
+`report` computes:
+- P2's three components and its intersection–union p;
+- Holm over {P1, P2};
+- the reading (b) decision;
+- the specificity table of every held-out set;
+- the C6d competitor (paired by seed: absolute and gains);
+- the in-context window contrasts;
+- a cost table per set and model (write: linker and encoder forward tokens, gradient training tokens; use: context
+  tokens per query and per window occurrence).
+
+**Code:**
+- `e11_read_to_learn`: `evaluate`, `DefinitionEncoder`, `source_conditions`, `window_context_losses`, `run_report`,
+  `decision64_jobs`;
+- `read_to_learn.read_shape_random`;
+- `e9_rowsource.frozen_host` / `read_verbalizations`;
+- `row_sources.apply_standardization`;
+- `e9_tracks.relation_pools`.
+
+**Tests:** `tests/test_e11_decision64.py`; `tests/test_t7_rood_followups.py` is updated.
+
+### 16.5 Jobs (`queue-commands-decision64.sh`, printed by `e11_read_to_learn plan-decision64`; not executed here)
+
+Jobs are cancelled by moving their JSON to `.jobs/cancelled/`; the script stops if any of them is no longer pending.
+Replacements keep their names and priorities. New jobs take a free fractional slot after the jobs they extend.
+
+| Cancel → re-add (same name) | Priority | Change | GPU-h (was → now) |
+|---|---|---|---|
+| e11-t5-new-SmolLM2-360M-C5-s1…s3 | 52 | + `linker-random` | 1.63 → 1.68 each |
+| e11-t4-heldout-SmolLM2-360M-C5-s1…s3 | 52 | + `linker-random`; windows in context (implied) | 0.92 → 0.97 each |
+| e11-t7-heldout-SmolLM2-360M-C5-s1 | 53 | + `linker-random` | 0.60 → 0.62 |
+| e11-t7rood-heldout-SmolLM2-360M-C5-s1…s3 | 54.4979 | + `context`, + `linker-random` | 0.60 → 0.66 each |
+| e11-t7rood-heldout-SmolLM2-360M-C0p-s1…s3 | 54.4979 | + `context` | 0.40 → 0.43 each |
+| e11-t7rood-report | 54.4979 → **54.49792** | + C6d outputs; runs after the C6d jobs | — |
+| e11-report | 54 | + C6d outputs (T5-N, T4-H) | — |
+
+| New | Priority | GPU-h |
+|---|---|---|
+| e11-t5-new-SmolLM2-360M-C6d-s1…s3 (`encoder`; runs exist) | 52.5 | 0.07 each |
+| e11-t4-heldout-SmolLM2-360M-C6d-s1…s3 (`encoder,windows`; runs exist) | 52.5 | 0.07 each |
+| e11-t7rood-heldout-SmolLM2-360M-C6d-s1…s3 (`encoder,windows`; after T7-ROOD C6d trains at 54.497) | 54.49791 | 0.06 each |
+
+**Totals.** The script queues ≈ 12.4 GPU-h. The replacements are ≈ 11.8 GPU-h, against ≈ 11.2 GPU-h for the jobs they
+replace, and the 9 C6d jobs add ≈ 0.6 GPU-h. The net cost of decision 64 is ≈ +1.2 GPU-h (idle-GPU estimates). The
+decision-64 parts are estimated, not measured on the GPU: a window read after its prefix is taken as 2 × a batched window,
+and the encoder statistics pass as ≈ 90 s on T4 and ≈ 10 s on T5 and T7.
+
+**Unchanged and still valid** (no command line changes):
+- e11-gradient-dev-SmolLM2-360M (51) and -t7rood (54.4979);
+- the C0′ jobs of T5-N and T4-H (52); T4-H C0′ now also reads its windows in context, ≈ +0.01 GPU-h each;
+- e11-t7-heldout-SmolLM2-360M-C0p-s1 (53);
+- every e11-many-* job and e11-many-report.
+
+**Not queued, and printed with the new readers by `plan`:** the tier-2/3 jobs of `queue-commands.sh` (T5-H, T4-N, T1-H,
+135M). Their lines in that file predate this amendment; re-print them with `plan` before queuing them.
