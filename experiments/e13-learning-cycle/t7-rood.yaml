@@ -44,7 +44,8 @@ hosts:
     frozen_arms: {rtn: [q4-read, q4-noread, qlora, qlora-read], nf4: [q4-read, q4-noread, qlora]}
   Qwen3-1.7B-Base:
     seeds: [1]
-    round2_arms: [read, noread, gold]
+    round2_arms: [read, noread, gold, random]
+    amended_arms: [random]           # amendment 2: L1's wrong-frame control on this host too (queued at the `amended` level)
     frozen_arms: {rtn: [q4-read, q4-noread, qlora]}
 
 measure:
@@ -81,7 +82,8 @@ learn:
 write: {reader: linker, secondary_readers: [linker-joint, typeprior], style: scr}
 
 reason:
-  conditions: none,recall:own,symbolic    # no definition writer for T7 (E12)
+  conditions: none,recall:own,symbolic,definition   # amendment 2: + definition (amendment 1 had none: E12 has no T7 writer)
+  definition_source: read_set        # the read set's SCR notes (the reader's input); anchors without one: not scored under it
   max_anchors: 600                   # a seeded sample of the round-2 anchors
 
 round2:
@@ -96,8 +98,10 @@ round2:
   lora_host_lr: 0.0002
   group_size: null
   calibration_windows: 64
+  definition_context: true           # amendment 2: L1's definition comparator (`context` jobs: the noread arm's step-0 model)
 
-statistics: {resamples: 2000, holm_alpha: 0.05, noninferiority_relative: 0.01, l4_precision: 0.8, l4_far: 0.05}
+statistics: {resamples: 2000, holm_alpha: 0.05, noninferiority_relative: 0.01, l4_precision: 0.8, l4_far: 0.05,
+             l5_noninferiority_margin: 0.05}     # amendment 2: L5's cost criterion (δ, accuracy)
 
 estimate_hours:                      # [scaled by host size, fixed] GPU hours of the evaluation-type jobs
   write: [0.45, 0.0]
@@ -106,4 +110,5 @@ estimate_hours:                      # [scaled by host size, fixed] GPU hours of
 priority:                            # 54.4996 stage 0 (+ preparation, learn, write), 54.49965 stage 4, 54.4997 stage 5,
   base: 54.4996                      # 54.49975 reason, 54.49979 report (54.4998–54.49984: T1c-ROOD; 54.4995–54.49959: E10.L)
   step: 0.00005
-  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 3, report: 3.8}
+  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 3, report: 3.8,
+          amended: 1.4, context: 3.4}  # amendment 2: 54.49967 (Qwen3 random), 54.49977 (context): free levels

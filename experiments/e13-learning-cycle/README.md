@@ -13,12 +13,14 @@ Pre-registration (binding): [`preregistration.md`](preregistration.md). Nothing 
 |---|---|
 | `t5.yaml` | the T5 configuration (round split, seed ontology, texts, hosts / seeds / arms, learn / write / round-2 settings, statistics, queue levels) |
 | `t7-rood.yaml` | T7-ROOD on TK-H1's rounds build (`experiments/t7-new-vocabulary/ROOD.md` §5); pre-registration amendment 1 |
-| `preregistration.md` | stages, arms, endpoints L1–L5 with kill criteria, statistics, deviations policy; §12 amendment 1 (T7-ROOD) |
+| `preregistration.md` | stages, arms, endpoints L1–L5 with kill criteria, statistics, deviations policy; §12 amendment 1 (T7-ROOD), amendment 2 (decision 64: L1's wrong-frame co-primary, definition comparators, L5's token cost) |
 | `queue-commands.sh` | `jobqueue add` lines with GPU-h: T5 at 54.4985–54.4989 (queued 2026-10-08), T7-ROOD at 54.4996 / 54.49965 / 54.4997 / 54.49975 / 54.49979 (stage 0 + learn + write, stage 4, stage 5, reason, report) |
+| `queue-commands-decision64.sh` | amendment 2's 10 new jobs (not queued; ≈ 3.6 GPU-h): Qwen3 `random` at 54.49865 / 54.49967, `context` at 54.49885 / 54.49977; cancels nothing (the queued command lines are unchanged) |
 | `configs/t5/`, `configs/t7-rood/` | the trainer configs `plan` writes (stage 0 and every round-2 arm) |
 | `items/understanding-t7rounds-{smollm2,qwen3}-v1` | relation / reverse / paraphrase items of T7-ROOD's 2,470 round-2 anchors (`e13_cycle items`; E9's understanding builders on the rounds ontology) |
 | `smoke/`, `smoke-t7-rood/` | the CPU smokes (SMOKE; SmolLM2-135M, a few steps) — pipeline checks, not results |
-| `runs/<track>/` | (created by the jobs) `stage0/`, `cycle/<host>-s<seed>/{learn,write,reason}/`, `round2/<host>-<arm>[-<scheme>]-s<seed>/` |
+| `smoke-amendment2/{t5,t7-rood}/` | the CPU smokes after amendment 2 (SMOKE): + the `random` arm, the `context` stage, stage-3 token accounting, the six-test Holm family |
+| `runs/<track>/` | (created by the jobs) `stage0/`, `cycle/<host>-s<seed>/{learn,write,reason,context}/`, `round2/<host>-<arm>[-<scheme>]-s<seed>/` |
 | `report/<track>/` | (created by the report job) `summary.json`, `report.md` |
 
 Large data go to `~/data/vsa-llm/e13/<track>/<family>/`: `seed/ontology.pt` and `seed/erased.json` (the stage-1 gold),
@@ -35,8 +37,11 @@ evaluation windows), `round2/<run>/` (each arm's ontology and entry rows); the g
 - `vsa_embed.experiments.e13_cycle` — `prepare` (round split, corpora, reference strata), `learn`, `write` (frames,
   `fvt` rows, and the round-2 relation / property items scored by the shared TK-B1 harness `benchmarks.ranking` under
   `none` / `store:linker` / `store:oracle` / `store:random` / `definition-in-context`), `reason` (E12's recall-tool
-  scorer: the harness has no recall condition and no PMI), `round2` (materialize an arm, train, locality), `report`,
-  `plan`, `smoke`.
+  scorer: the harness has no recall condition and no PMI; amendment 2: the prompt tokens each condition adds, and on T7-ROOD
+  `definition` = the read set's SCR note), `round2` (materialize an arm, train, locality), `context` (amendment 2: the
+  noread arm's step-0 model without / with the round-2 definitions in context — L1's `read − definition`), `report` (L1's
+  co-primaries read − noread and read − random, Holm over six; the definition comparators with token costs; L5's cost
+  criterion), `plan`, `smoke`.
 - Opt-in trainer keys (`vsa_embed.training.lm`; absent keys change nothing): `train.init_mode: continue` (+
   `init_merge_lora`), `model.host_quantization`, `channel.entry_rows`, `eval.points`.
 
@@ -62,6 +67,24 @@ change the option scores but not yet the argmax), `reason` (4 anchors, 33 items,
 `read` / `noread` / `fvt` and the stage-5 RTN arms `q4-read` / `q4-noread` / `qlora` (the channel trains, the 4-bit host
 stays frozen, `qlora` saves only its adapters), and `report` (L1–L5 with Holm; every verdict False, as expected after a
 few steps on 8 windows). Read − no-read after round-2 terms at step 0: −0.009 nats (4 windows).
+
+## Smoke after amendment 2 (SMOKE — a pipeline check, not a result)
+
+`smoke-amendment2/{t5,t7-rood}/` (2026-10-09; CPU, 4 threads, SmolLM2-135M, `smoke_config`; ≈ 1.5 h each because the
+machine's load was ≈ 45 on 12 cores — the unloaded smoke takes ≈ 4 min). Every stage ran end to end, plus the new parts:
+- the `random` arm;
+- `context` on the noread arm's step-0 model: T5 4 windows, 99 definition tokens per window; T7-ROOD 3 windows, 2 of them
+  with an SCR note, 19 tokens;
+- stage-3 token accounting: per item, T5 `recall:own` 45 / `definition` 140 / `symbolic` 158 tokens; T7-ROOD 60 / 14 / 116.
+  T7-ROOD's `definition` scored 2 items, the one sampled anchor with a note;
+- the report: the six-test Holm family, L1's gate, `read − definition`, `recall:own − definition` and the cost criterion.
+  Every verdict is False, as expected after a few steps.
+
+The report stage was re-run after a fix: `report`'s L3 block reused the variable name `margin` and had overwritten L5's δ.
+`tests/test_e13_amendment2.py` covers it now.
+
+At smoke scale, T7-ROOD's SCR notes cost fewer tokens than the recall text, so the token criterion may favour the
+definition there.
 
 ## T7-ROOD (amendment 1)
 
