@@ -245,6 +245,94 @@ def test_b1_statistics_on_synthetic_units() -> None:
                                  {"gold": 1, "meta": {"pair": 0, "twin": "B"}, "scores": {"k": [-1.0, 0.0]}}], "k") == {"0": 1.0}
 
 
+# -- decision 64 (amendment 16.5): the C0′ host and the C5rf store ------------------------------------------------------------
+
+def test_margin_tests_read_equivalence_and_noninferiority() -> None:
+    from vsa_embed.experiments.e12_report import contrast, margin_reading, margin_test
+    rng = np.random.default_rng(1)
+    units = lambda m, sd=0.05: {s: {str(k): float(m + rng.normal(0, sd)) for k in range(200)} for s in (1, 2, 3)}
+    near = margin_test(contrast(units(0.80), units(0.80)), 0.05, kind="equivalence")
+    assert near["margin"]["shown"] and near["margin"]["ci90_low"] > -0.05 and margin_reading(near).startswith("≈")
+    far = margin_test(contrast(units(0.80), units(0.65)), 0.05, kind="equivalence")
+    assert not far["margin"]["shown"] and margin_reading(far).startswith("differs")
+    ni = margin_test(contrast(units(0.78), units(0.80)), 0.05, kind="noninferiority")
+    assert ni["margin"]["shown"] and ni["margin"]["alpha"] == 0.025 and margin_reading(ni).startswith("non-inferior at −0.05")
+    worse = margin_test(contrast(units(0.60), units(0.80)), 0.05, kind="noninferiority")
+    assert not worse["margin"]["shown"] and margin_reading(worse).startswith("inferior by more than the margin")
+    with pytest.raises(ValueError):
+        margin_test(contrast(units(0.8), units(0.8)), 0.05, kind="superiority")
+
+
+def _d64_doc(none: dict[str, float], recall: dict[str, float], agent: dict[str, float] | None = None) -> dict:
+    block = lambda u: {"units": {k: {"contrast": v} for k, v in u.items()}}
+    tests = {"twins": {"summary": {"conditions": {"none": {"choice": block(none), "cloze": block(none)},
+                                                  "recall:own": {"choice": block(recall)}}}}}
+    if agent is not None:
+        tests["agent"] = {"units": {k: {"contrast": v} for k, v in agent.items()}, "summary": {"all": {"format_ok": 0.95}}}
+    return {"tests": tests}
+
+
+def test_decision64_contrasts_and_predictions_on_synthetic_units() -> None:
+    rng = np.random.default_rng(0)
+    pairs = [str(p) for p in range(150)]
+    noisy = lambda m: {p: float(np.clip(m + rng.normal(0, 0.03), 0, 1)) for p in pairs}
+    arms = {"T": {s: _d64_doc(noisy(0.55), noisy(0.85), noisy(0.9)) for s in (1, 2, 3)},
+            "base": {s: _d64_doc(noisy(0.5), noisy(0.8), noisy(0.6)) for s in (1, 2, 3)},
+            "I": {s: _d64_doc(noisy(0.60), noisy(0.8)) for s in (1, 2, 3)}, "L": {s: _d64_doc(noisy(0.5), noisy(0.8)) for s in (1, 2, 3)},
+            "T@C0p": {s: _d64_doc(noisy(0.5), noisy(0.85), noisy(0.9)) for s in (1, 2, 3)},
+            "base@C0p": {s: _d64_doc(noisy(0.5), noisy(0.8), noisy(0.6)) for s in (1, 2, 3)},
+            "T-rf": {s: _d64_doc(noisy(0.55), noisy(0.85), noisy(0.9)) for s in (1, 2, 3)},
+            "I-rf": {s: _d64_doc(noisy(0.60), noisy(0.8)) for s in (1, 2, 3)}, "L-rf": {s: _d64_doc(noisy(0.5), noisy(0.8)) for s in (1, 2, 3)}}
+    d64 = traces.decision64(arms, resamples=50)
+    rows = d64["contrasts"]
+    assert len(rows) == 5 and all(r["available"] and r["margin"]["kind"] == "equivalence" for r in rows.values())
+    assert all(r["margin"]["shown"] and r["reading"].startswith("≈") for r in rows.values())
+    b1 = rows["C5rf − C5, B1's contrast I − L (twins, no tool)"]
+    assert b1["margin"]["margin"] == traces.B1_MARGIN and abs(b1["model"]["mean"]) < 0.02
+    controls = d64["controls"]
+    assert controls["T@C0p − 0.5 (twins, no tool; no channel: ≈ 0)"]["model"]["ci_low"] <= 0 <= controls["T@C0p − 0.5 (twins, no tool; no channel: ≈ 0)"]["model"]["ci_high"]
+    assert controls["B1 on C5rf: I-rf − L-rf (twins, no tool)"]["model"]["mean"] > 0.08
+    teach = controls["T@C0p − base@C0p (agentic twin contrast: the traces teach the C0′ host the protocol)"]
+    assert teach["model"]["mean"] > 0.25
+    predicted = traces.predictions({"means": {}, "secondaries": {}, "b2": {"descriptive": {}}, "decision64": d64})
+    assert predicted["16.5: C0′ host ≈ C5 host with the decoded store (arm T, ±0.05)"] and predicted["16.5: C5rf ≈ C5 (B1's I − L ±0.075; arm T ±0.05)"]
+    assert predicted["16.5: T@C0p without the tool ≈ 0.5 (CI includes 0.5)"]
+    arms["T-rf"] = {s: _d64_doc(noisy(0.55), noisy(0.70), noisy(0.9)) for s in (1, 2, 3)}             # the fixed binding reads worse
+    worse = traces.decision64(arms, resamples=50)["contrasts"]["C5rf − C5, arm T, twins recall:own (each reads its own store)"]
+    assert not worse["margin"]["shown"] and worse["reading"].startswith("differs")
+
+
+def test_c0p_and_c5rf_arms_on_the_toy_world(world, training_items, item_dirs, new_dir) -> None:
+    with pytest.raises(ValueError, match="--store"):
+        traces.main(_arm_args(world, training_items, item_dirs, new_dir, "C0p", "base"))
+    for model, arm, store in (("C0p", "I", "C5"), ("C0p", "base", "C5"), ("C5rf", "I", None)):
+        traces.main(_arm_args(world, training_items, item_dirs, new_dir, model, arm) + (["--store", str(world["runs"][store])] if store else []))
+        summary = json.loads((world["runs"][model] / f"{traces.OUTPUT_PREFIX}{arm}" / "summary.json").read_text())
+        assert summary["store"]["run"] == str(world["runs"][store or model])
+        assert set(summary["tests"]["twins"]["summary"]["conditions"]) == {"none", "recall:own"}
+        if arm != "base":
+            assert summary["training"]["steps"] == 2 and summary["training"]["merged_run_lora"] > 0
+    assert json.loads((world["runs"]["C5rf"] / f"{traces.OUTPUT_PREFIX}I" / "summary.json").read_text())["store"]["operator"] != \
+        sqx.load_store(world["runs"]["C5"], "own").operator
+    found = traces.discover(world["runs"]["C5"].parent)["fake"]
+    assert {"I@C0p", "base@C0p", "I-rf"} <= set(found)
+
+
+def test_decision64_jobs() -> None:
+    jobs = traces.decision64_jobs()
+    assert len(jobs) == 3 * 2 + 3 * 3 and not {j["name"] for j in jobs} & {j["name"] for j in traces.job_commands()}
+    c0p = [j for j in jobs if "-C0p-" in j["name"]]
+    assert {j["name"].rsplit("-", 1)[-1] for j in c0p} == {"T", "base"} and all(j["priority"] == 54.44971 for j in c0p)
+    for j in c0p:
+        seed = j["name"].split("-C0p-s", 1)[1].split("-", 1)[0]
+        assert j["command"][j["command"].index("--store") + 1].endswith(f"SmolLM2-360M-full-C5-s{seed}")
+    rf = [j for j in jobs if "-C5rf-" in j["name"]]
+    assert {j["name"].rsplit("-", 1)[-1] for j in rf} == {"T", "I", "L"} and all(j["priority"] == 54.44972 for j in rf)
+    assert all("--store" not in j["command"] for j in rf)
+    assert all(("--agent-pairs" in j["command"]) == j["name"].endswith("-I") for j in rf)
+    assert sum(j["gpu_h"] for j in jobs) == pytest.approx(4.89, abs=0.01)
+
+
 def test_job_commands_follow_the_preregistered_design() -> None:
     jobs = traces.job_commands()
     assert len(jobs) == 3 * 5 + 3 and all(j["priority"] == 54.4497 and j["lane"] == "gpu" for j in jobs)
@@ -395,7 +483,7 @@ def test_critique_job_and_report(world, item_dirs, new_dir, heldout_files, tmp_p
         crit.main(["evaluate", "--run", str(world["runs"][model]), "--sets", sets, "--twins", str(item_dirs["twins"]), "--new-words", str(new_dir),
                    "--heldout", str(heldout_files["items"]), "--evidence", str(heldout_files["evidence"]), "--alias-table", str(world["alias"]),
                    "--device", "cpu", "--batch-size", "8", "--max-length", "64", "--max-lines", "1", "--twin-limit", "2", "--seen-cap", "50",
-                   "--overwrite", "--label", "SMOKE"])
+                   "--competitors", "off", "--overwrite", "--label", "SMOKE"])        # (the competitors: test_text_competitors_…)
     folder = world["runs"]["C5"] / crit.OUTPUT
     items = und.read_jsonl(folder / "items.jsonl")
     assert {i["set"] for i in items} == {"twins", "new", "heldout"}
@@ -414,6 +502,81 @@ def test_critique_job_and_report(world, item_dirs, new_dir, heldout_files, tmp_p
     assert "heldout real vs world" in next(iter(c5["calibration"].values()))
     text = crit.render_report(analysis, title="toy", label="SMOKE")
     assert "K1" in text and "ECE" in text
+
+
+# -- 3c, decision 64 (amendment 16.5): text competitors in the same loop, token accounting, K1b -----------------------------
+
+def _text_item(i: int, *, split: str, kind: str, gold: int = 0, none=(0.0, 1.0, 0.0), recall=(3.0, 0.0, 0.0), symbolic=(3.0, 0.0, 0.0),
+               definition=(2.0, 0.0, 0.0), belief=(0, 0.95)) -> dict:
+    item = _item(i, gold=gold, none=list(none), belief=belief, null_belief=(2, 0.95), null_option=2, split=split, kind=kind)
+    item["scores"].update({"recall:own": list(recall), "symbolic": list(symbolic), "definition": list(definition), "null": [0.0, 0.0, 3.0]})
+    item["tokens"] = {"none": 0, "recall:own": 60, "null": 58, "symbolic": 55, "definition": 80}
+    return item
+
+
+def test_text_loop_reads_the_text_in_the_prompt() -> None:
+    items = [_text_item(0, split="test", kind="new"), _text_item(1, split="test", kind="new", definition=(0.0, 0.0, 3.0))]
+    loop = crit.text_loop(items, "definition", theta=0.5, behaviour_cal=None, context_cal=None)
+    assert loop["answer"] == [0, 2] and loop["tokens"] == [80, 80] and loop["flagged"] == [True, True]   # behaviour says 1
+    low = crit.text_loop(items, "definition", theta=1.01, behaviour_cal=None, context_cal=None)
+    assert low["answer"] == [1, 1]                                                     # below θ: the behaviour answers
+    missing = crit.text_loop([_item(5, gold=0, none=[0.0, 1.0], belief=(0, 0.9), null_belief=(1, 0.9), null_option=1)], "definition",
+                             theta=0.0, behaviour_cal=None, context_cal=None)
+    assert missing["answer"] == [1] and missing["tokens"] == [0]
+
+
+def test_k1b_noninferiority_with_token_accounting() -> None:
+    rng = np.random.default_rng(3)
+    per_seed = {}
+    for s in (1, 2, 3):
+        items = []
+        for i in range(240):
+            split, kind = ("dev", "new") if i < 60 else ("test", "new" if i < 150 else "heldout")
+            wrong_def = rng.uniform() < 0.1                                             # the definition reading errs on 10%
+            items.append(_text_item(i, split=split, kind=kind, definition=(0.0, 3.0, 0.0) if wrong_def else (3.0, 0.0, 0.0),
+                                    belief=(0, float(rng.uniform(0.8, 1.0)))))
+        per_seed[s] = crit.analyse_run(items)
+    first = per_seed[1]
+    assert set(first["text_loops"]) == set(crit.TEXT_LOOPS) and all(0.0 <= v["theta"] <= 1.0 for v in first["text_loops"].values())
+    real, null = first["pools"]["pooled"]["real"], first["pools"]["pooled"]["null"]
+    assert {"loop_definition", "loop_symbolic", "loop_recall_text"} <= set(real) and not {"loop_definition", "loop_symbolic"} & set(null)
+    assert real["loop"]["tokens"] == 0.0 and real["loop_definition"]["tokens"] == 80.0 and real["recall_context"]["tokens"] == 60.0
+    assert first["pools"]["pooled"]["tokens_evidence"] == 0.0
+    block = crit.k1b(per_seed, resamples=50)
+    assert block["K1b"]["available"] and block["K1b"]["margin"]["kind"] == "noninferiority" and block["K1b"]["margin"]["shown"]
+    assert block["K1b"]["model"]["mean"] > 0                                            # the store loop is right where the definition errs
+    assert block["tokens"]["loop"]["tokens_per_item"] == 0.0 and block["tokens"]["loop_definition"]["tokens_per_item"] == 80.0
+    assert "80 fewer prompt tokens" in block["reading"] and block["reading"].startswith("non-inferior")
+    assert {"K1b (new)", "K1b (heldout)", "K1 of loop_definition: loop_definition − no tool (pooled)"} <= set(block["secondaries"])
+    assert not crit.k1b({1: crit.analyse_run([_item(i, gold=0, none=[0.0, 1.0], belief=(0, 0.9), null_belief=(1, 0.9), null_option=1,
+                                                    split="test") for i in range(5)])})["K1b"]["available"]
+
+
+def test_text_competitors_in_the_critique_job(world, item_dirs, new_dir, heldout_files, tmp_path, monkeypatch) -> None:
+    store = sqx.load_store(world["runs"]["C5"], "own")
+    assert crit.competitors_enabled(store) and not crit.competitors_enabled(sqx.load_store(world["runs"]["C5ut"], "own"))
+    assert crit.competitors_enabled(store, "off") is False
+    # a short definition: the prose writer's text overflows the toy host's 64 positions
+    monkeypatch.setattr(sqx.ContextBuilder, "_definition", lambda self, concept: f"{self.concepts[concept]['surface']} is a toy term.")
+    output = tmp_path / "runs" / "fake-lora-C5-s1" / crit.OUTPUT
+    crit.main(["evaluate", "--run", str(world["runs"]["C5"]), "--output", str(output), "--sets", "twins,new,heldout", "--twins", str(item_dirs["twins"]),
+               "--new-words", str(new_dir), "--heldout", str(heldout_files["items"]), "--evidence", str(heldout_files["evidence"]),
+               "--alias-table", str(world["alias"]), "--device", "cpu", "--batch-size", "8", "--max-length", "64", "--max-lines", "1",
+               "--twin-limit", "2", "--seen-cap", "50", "--overwrite", "--label", "SMOKE"])
+    items = und.read_jsonl(output / "items.jsonl")
+    for item in items:
+        expected = {"symbolic", "definition"} if item["set"] in crit.COMPETITOR_SETS else set()
+        assert set(item["scores"]) & {"symbolic", "definition"} == expected
+        assert set(item["tokens"]) == set(item["scores"]) and item["tokens"]["none"] == 0
+        assert all(item["tokens"][k] > 0 for k in item["tokens"] if k != "none")
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["sets"]["new"]["competitors"] == ["symbolic", "definition"] and summary["sets"]["twins"]["competitors"] == []
+    assert summary["sets"]["heldout"]["tokens_added"]["definition"] > 0
+    assert "Prompt tokens each context adds" in (output / "report.md").read_text()
+    analysis = crit.analyse(tmp_path / "runs", resamples=20)
+    block = analysis["hosts"]["fake"]["models"]["C5"]
+    assert "k1b" in block and "loop_definition" in block["k1b"]["tokens"]
+    assert "K1b (amendment 16.5)" in crit.render_report(analysis, title="toy", label="SMOKE")
 
 
 def test_model_loop_on_the_toy_world(world, new_dir, heldout_files) -> None:

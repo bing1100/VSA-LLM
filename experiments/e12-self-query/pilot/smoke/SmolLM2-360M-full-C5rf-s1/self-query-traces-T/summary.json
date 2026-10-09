@@ -1,0 +1,262 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5rf-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5rf",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-360M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "random_fixed:unitary_hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-SmolLM2-360M-full-C5rf-s1",
+    "run_git_sha": "99cb64d50b1b80aff9dfc4d5fd02407a584d09f4",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "arm": "T",
+  "model": "C5rf",
+  "label": "SMOKE",
+  "store": {
+    "label": "own",
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5rf-s1",
+    "operator": "random_fixed:unitary_hrr",
+    "method": "conjugate",
+    "role_blind": false,
+    "family": "unitary_hrr"
+  },
+  "training": {
+    "arm": "T",
+    "trained": true,
+    "steps": 1,
+    "planned_steps": 3,
+    "warmup_steps": 1,
+    "tokens": 1054,
+    "loss_tokens": 398,
+    "seconds": 104.32951894099824,
+    "tokens_per_s": 10.10260576966785,
+    "first_loss": 2.5074431896209717,
+    "last_loss": 2.5074431896209717,
+    "parameters": 8683520,
+    "recall_says": {
+      "gold": 8
+    },
+    "examples": [
+      "Question: poubrendnend cannot run without ___? Options: Zerbte Project | Trixvun Dailktrin Rebuild\nThought: I should recall poubrendnend, depends on.\nAction: recall[poubrendnend, depends on]\nObservation: recall(poubrendnend, depends on):\n- poubrendnend depends on Zerbte Project. (0.40)\nThought: The recall says Zerbte Project.\nAnswer: Zerbte Project\n",
+      "Question: poubrendnend was delivered as part of ___? Options: Zerbte Project | Trixvun Dailktrin Rebuild\nThought: I should recall poubrendnend, part of.\nAction: recall[poubrendnend, part of]\nObservation: recall(poubrendnend, part of):\n- poubrendnend is part of Trixvun Dailktrin Rebuild. (0.37)\nThought: The recall says Trixvun Dailktrin Rebuild.\nAnswer: Trixvun Dailktrin Rebuild\n",
+      "Question: poubrendnend cannot run without ___? Options: Zerbte Project | Trixvun Dailktrin Rebuild\nThought: I should recall poubrendnend, depends on.\nAction: recall[poubrendnend, depends on]\nObservation: recall(poubrendnend, depends on):\n- poubrendnend depends on Zerbte Project. (0.40)\nThought: The recall says Zerbte Project.\nAnswer: Zerbte Project\n"
+    ],
+    "sequences_per_epoch": [
+      8,
+      8,
+      8
+    ],
+    "tokens_per_epoch": [
+      1054,
+      1054,
+      1054
+    ],
+    "loss_tokens_per_epoch": [
+      398,
+      398,
+      398
+    ],
+    "questions": 8,
+    "items_manifest_sha256": {
+      "questions.jsonl.gz": "d2aa96dc2e890c3676904dc1efad97d0a251d6b9a7a27cf4be36ebccc3ec5d57"
+    },
+    "merged_run_lora": 0,
+    "final_losses": [
+      2.5074431896209717
+    ]
+  },
+  "tests": {
+    "twins": {
+      "summary": {
+        "kind": "twins",
+        "conditions": {
+          "none": {
+            "choice": {
+              "units": {
+                "0": {
+                  "contrast": 0.5,
+                  "margin": -2.4712625,
+                  "item": 0.375
+                },
+                "1": {
+                  "contrast": 0.5,
+                  "margin": 0.09056499999999978,
+                  "item": 0.5
+                }
+              },
+              "mean": {
+                "contrast": 0.5,
+                "item": 0.4375,
+                "margin": -1.19034875,
+                "n": 2
+              }
+            },
+            "cloze": {
+              "units": {
+                "0": {
+                  "contrast": 0.5,
+                  "margin": 0.4784649999999999,
+                  "item": 0.5
+                },
+                "1": {
+                  "contrast": 0.0,
+                  "margin": -0.20446500000000012,
+                  "item": 0.5
+                }
+              },
+              "mean": {
+                "contrast": 0.25,
+                "item": 0.5,
+                "margin": 0.1369999999999999,
+                "n": 2
+              }
+            }
+          },
+          "recall:own": {
+            "choice": {
+              "units": {
+                "0": {
+                  "contrast": 1.0,
+                  "margin": 2.6482550000000007,
+                  "item": 0.875,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                },
+                "1": {
+                  "contrast": 0.75,
+                  "margin": 2.149895,
+                  "item": 0.75,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                }
+              },
+              "mean": {
+                "contrast": 0.875,
+                "decode": 1.0,
+                "decode_all": 1.0,
+                "item": 0.8125,
+                "margin": 2.3990750000000003,
+                "n": 2
+              }
+            },
+            "cloze": {
+              "units": {
+                "0": {
+                  "contrast": 1.0,
+                  "margin": 0.6502850000000002,
+                  "item": 0.5,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                },
+                "1": {
+                  "contrast": 1.0,
+                  "margin": 0.32458,
+                  "item": 0.75,
+                  "decode": 1.0,
+                  "decode_all": 1.0
+                }
+              },
+              "mean": {
+                "contrast": 1.0,
+                "decode": 1.0,
+                "decode_all": 1.0,
+                "item": 0.625,
+                "margin": 0.4874325000000001,
+                "n": 2
+              }
+            }
+          }
+        },
+        "linked": 4,
+        "concepts": 4
+      },
+      "timings": {
+        "none": 234.8,
+        "recall:own": 417.5
+      },
+      "seconds": 652.4589839479886
+    },
+    "question_format": {
+      "units": {
+        "0": {
+          "contrast": 0.0
+        },
+        "1": {
+          "contrast": 1.0
+        }
+      },
+      "mean": {
+        "contrast": 0.5,
+        "accuracy": 0.5,
+        "n": 2
+      },
+      "seconds": 37.56973195518367
+    },
+    "agent": {
+      "summary": {
+        "all": {
+          "questions": 2,
+          "called": 1.0,
+          "format_ok": 1.0,
+          "swapped": 0.0,
+          "relevant": 0.5,
+          "answered": 0.0,
+          "calls_per_episode": 3.0,
+          "accuracy_agent": 0.5,
+          "accuracy_no_tool": 0.5,
+          "accuracy_fixed": 0.5
+        },
+        "twins": {
+          "questions": 2,
+          "called": 1.0,
+          "format_ok": 1.0,
+          "swapped": 0.0,
+          "relevant": 0.5,
+          "answered": 0.0,
+          "calls_per_episode": 3.0,
+          "accuracy_agent": 0.5,
+          "accuracy_no_tool": 0.5,
+          "accuracy_fixed": 0.5
+        },
+        "twins_contrast": {
+          "agent": 1.0,
+          "no_tool": 0.0,
+          "fixed": 1.0,
+          "pairs": 1
+        }
+      },
+      "units": {
+        "0": {
+          "contrast": 1.0
+        }
+      },
+      "units_no_tool": {
+        "0": {
+          "contrast": 0.0
+        }
+      },
+      "seconds": 1205.8749265649822,
+      "demonstrations": "Question: Bailkzhun Hub depends on ___? Options: Bairktraim Pipeline | Kailkzound Plourb Catalog\nThought: I need what Bailkzhun Hub depends on.\nAction: recall[Bailkzhun Hub, depends on]\nObservation: recall(Bailkzhun Hub, depends on):\n- Bailkzhun Hub depends on Kailkzound Plourb Catalog. (0.43)\nThought: The recall says Kailkzound Plourb Catalog.\nAnswer: Kailkzound Plourb Catalog\n\nQuestion: Bailk Reconciliation is owned by a team that reports to ___? Options: the Kleindstou Office | the Grashsa Division | the Routrum Division\nThought: First I need the team that owns Bailk Reconciliation.\nAction: recall[Bailk Reconciliation, owned by]\nObservation: recall(Bailk Reconciliation, owned by):\n- Bailk Reconciliation is owned by the Plorkplum Pod. (0.35)\nThought: Now I need what Plorkplum Pod reports to.\nAction: recall[Plorkplum Pod, reports to]\nObservation: recall(Plorkplum Pod, reports to):\n- Plorkplum Pod reports to the Routrum Division. (0.57)\nThought: The second recall says the Routrum Division.\nAnswer: the Routrum Division\n\nQuestion: Of Bailk Reconciliation and Dreirkbrax Index, the one owned by the Rainploulk Squad is ___? Options: Bailk Reconciliation | Dreirkbrax Index\nThought: I should look up what the Rainploulk Squad owns.\nAction: lookup[owned by, the Rainploulk Squad]\nObservation: lookup(owned by, the Rainploulk Squad):\n- Flaltgon Rate is owned by the Rainploulk Squad. (0.53)\n- Skishsko Handbook is owned by the Rainploulk Squad. (0.51)\n- Felknaix Geshklem Bot is owned by the Rainploulk Squad. (0.48)\n- Dreirkbrax Index is owned by the Rainploulk Squad. (0.47)\n- Zimgrirb Peskux is owned by the Rainploulk Squad. (0.47)\nThought: Dreirkbrax Index is in the lookup and Bailk Reconciliation is not.\nAnswer: Dreirkbrax Index\n"
+    }
+  },
+  "seconds": 2005.2010085589718,
+  "peak_gb": null
+}
