@@ -12,11 +12,12 @@ Pre-registration (binding): [`preregistration.md`](preregistration.md). Nothing 
 | path | what |
 |---|---|
 | `t5.yaml` | the T5 configuration (round split, seed ontology, texts, hosts / seeds / arms, learn / write / round-2 settings, statistics, queue levels) |
-| `t7-rood.yaml` | T7-ROOD, written against the interface TK-H1 is building (`experiments/t7-new-vocabulary/ROOD.md`); **TODO markers**: `prepare` refuses it until those files exist |
-| `preregistration.md` | stages, arms, endpoints L1–L5 with kill criteria, statistics, deviations policy |
-| `queue-commands.sh` | `jobqueue add` lines (T5: 54.4985–54.4989; T7-ROOD: 54.4996–54.4999 once its files exist) with GPU-h |
-| `configs/t5/` | the trainer configs `plan` writes (stage 0 and every round-2 arm) |
-| `smoke/` | the CPU smoke (SMOKE; SmolLM2-135M, a few steps) — a pipeline check, not a result |
+| `t7-rood.yaml` | T7-ROOD on TK-H1's rounds build (`experiments/t7-new-vocabulary/ROOD.md` §5); pre-registration amendment 1 |
+| `preregistration.md` | stages, arms, endpoints L1–L5 with kill criteria, statistics, deviations policy; §12 amendment 1 (T7-ROOD) |
+| `queue-commands.sh` | `jobqueue add` lines with GPU-h: T5 at 54.4985–54.4989 (queued 2026-10-08), T7-ROOD at 54.4996 / 54.49965 / 54.4997 / 54.49975 / 54.49979 (stage 0 + learn + write, stage 4, stage 5, reason, report) |
+| `configs/t5/`, `configs/t7-rood/` | the trainer configs `plan` writes (stage 0 and every round-2 arm) |
+| `items/understanding-t7rounds-{smollm2,qwen3}-v1` | relation / reverse / paraphrase items of T7-ROOD's 2,470 round-2 anchors (`e13_cycle items`; E9's understanding builders on the rounds ontology) |
+| `smoke/`, `smoke-t7-rood/` | the CPU smokes (SMOKE; SmolLM2-135M, a few steps) — pipeline checks, not results |
 | `runs/<track>/` | (created by the jobs) `stage0/`, `cycle/<host>-s<seed>/{learn,write,reason}/`, `round2/<host>-<arm>[-<scheme>]-s<seed>/` |
 | `report/<track>/` | (created by the report job) `summary.json`, `report.md` |
 
@@ -61,6 +62,21 @@ change the option scores but not yet the argmax), `reason` (4 anchors, 33 items,
 `read` / `noread` / `fvt` and the stage-5 RTN arms `q4-read` / `q4-noread` / `qlora` (the channel trains, the 4-bit host
 stays frozen, `qlora` saves only its adapters), and `report` (L1–L5 with Holm; every verdict False, as expected after a
 few steps on 8 windows). Read − no-read after round-2 terms at step 0: −0.009 nats (4 windows).
+
+## T7-ROOD (amendment 1)
+
+- **Data.** TK-H1's `rounds-v1` (cut 2013-01-26; 2,470 round-2 entries; 0 round-1 training documents name one): `train`
+  (round 1), `train-round2` (round 2's stream, linked as `round2/train`), `eval-round2` (every window: 2,359 / 2,356 for
+  Qwen3), `eval-round1` (forgetting), `eval-general`. `prepare` adds the seed ontology, the rounds alias table (T7's aliases
+  with round 2 held out: digest `90d54b…`, the build's), the `defs` stream and the reference strata.
+- **Learn.** The seed ontology's erasure is E10.L's (`erase_like_tkl`: content relations `mapped_to`,
+  `pharmacological_action`, `branch_second`; 1,966 of 15,594 edges of 2,933 seen entries; one seen set for both
+  tokenizers), so TK-L's pipeline (`learn_tkl` → `e10_learn.run_erasure`, `holm+decoy`) reproduces exactly the edges the
+  stage-0 store never saw (checked at run time). Its passive vectors and evidence are the stage-0 host's hidden states at
+  round-1 terms (`eval-round1`, then round-1 training windows). Rule closure runs as the secondary (`learn-rule_closure`).
+- **Smoke** (`smoke-t7-rood/`, SMOKE): every stage ran end to end on the rounds build; TK-L's run reproduced the 1,966
+  erased edges (2 probes with the tiny smoke extraction, nothing accepted after 3 steps); rule closure proposes nothing on
+  T7's relations.
 
 ## Design notes
 

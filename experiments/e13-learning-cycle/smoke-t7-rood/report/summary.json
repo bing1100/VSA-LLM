@@ -1,0 +1,328 @@
+{
+  "track": "t7-rood",
+  "label": "SMOKE",
+  "hosts": {
+    "SmolLM2-135M": {
+      "L1": {
+        "mean": 0.0010932025810082753,
+        "ci_low": 0.0,
+        "ci_high": 0.003279607743024826,
+        "p_value": 0.7263681592039801,
+        "clusters": 3,
+        "seeds": 1,
+        "resamples": 200
+      },
+      "L2": {
+        "ratio": null,
+        "ci_low": null,
+        "ci_high": null,
+        "p_value": 1.0,
+        "aulc_difference": 0.0006764108315113759,
+        "aulc_ci": [
+          0.0,
+          0.0033820541575551033
+        ],
+        "offset_tokens": 69.33333333333333,
+        "seeds": 1,
+        "windows": 3,
+        "resamples": 200
+      },
+      "L2_without_reading_cost": {
+        "ratio": null,
+        "ci_low": null,
+        "ci_high": null,
+        "p_value": 1.0,
+        "aulc_difference": 0.0006764108315113759,
+        "aulc_ci": [
+          0.0,
+          0.0033820541575551033
+        ],
+        "offset_tokens": 0.0,
+        "seeds": 1,
+        "windows": 3,
+        "resamples": 200
+      },
+      "secondary_vs_noread": {
+        "fvt": {
+          "step0": {
+            "mean": 0.009029986899501333,
+            "ci_low": -0.002119656652212143,
+            "ci_high": 0.019986819264886494,
+            "p_value": 0.7164179104477612,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          },
+          "end": {
+            "mean": 0.00896867381137175,
+            "ci_low": -0.0021624152723234147,
+            "ci_high": 0.019954472285462602,
+            "p_value": 0.7164179104477612,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          },
+          "efficiency": {
+            "ratio": null,
+            "ci_low": null,
+            "ci_high": null,
+            "p_value": 1.0,
+            "aulc_difference": 0.011080905029666965,
+            "aulc_ci": [
+              -0.0021434711015899666,
+              0.030235361788072623
+            ],
+            "offset_tokens": 0.0,
+            "seeds": 1,
+            "windows": 3,
+            "resamples": 200
+          }
+        }
+      },
+      "forgetting": {
+        "read": 0.0050197783857584,
+        "noread": 0.005021007731556892,
+        "fvt": 0.005271347239613533
+      },
+      "locality": {
+        "read": 0.002248638957327742,
+        "noread": 0.002248638957327742,
+        "fvt": 0.002263057190412976
+      },
+      "eval_round1_change": {
+        "read": 0.0028826595635038643,
+        "noread": 0.0028826595635038643,
+        "fvt": 0.0029228597759929364
+      },
+      "curves": {
+        "read": {
+          "tokens": [
+            0,
+            256,
+            512
+          ],
+          "loss": [
+            3.07543450826779,
+            3.0800845283083618,
+            3.085145462397486
+          ]
+        },
+        "noread": {
+          "tokens": [
+            0,
+            256,
+            512
+          ],
+          "loss": [
+            3.074778586719185,
+            3.0794065880589185,
+            3.084451621118933
+          ]
+        },
+        "fvt": {
+          "tokens": [
+            0,
+            256,
+            512
+          ],
+          "loss": [
+            3.0857690438861027,
+            3.090596743102651,
+            3.095404473983217
+          ]
+        }
+      },
+      "L3": {
+        "rtn": {
+          "read_vs_noread_end": {
+            "mean": 0.0017307748397191365,
+            "ci_low": 0.0,
+            "ci_high": 0.00519232451915741,
+            "p_value": 0.7263681592039801,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          },
+          "read_vs_noread_step0": {
+            "mean": 0.001701674113670985,
+            "ci_low": 0.0,
+            "ci_high": 0.005105022341012955,
+            "p_value": 0.7263681592039801,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200
+          },
+          "vs_qlora_end": {
+            "mean": 0.017898464556007337,
+            "ci_low": -0.030150339007377625,
+            "ci_high": 0.052679762405750924,
+            "p_value": 0.5671641791044776,
+            "clusters": 3,
+            "seeds": 1,
+            "resamples": 200,
+            "margin": 0.03308721793885343,
+            "noninferior": false
+          },
+          "bytes": {
+            "q4-read": {
+              "host_bytes": 116413056,
+              "bits_per_weight": 4.5,
+              "adapter_parameters": 0,
+              "trainable_parameters": 998139,
+              "trainable_bytes_fp32": 3992556
+            },
+            "q4-noread": {
+              "host_bytes": 116413056,
+              "bits_per_weight": 4.5,
+              "adapter_parameters": 0,
+              "trainable_parameters": 998139,
+              "trainable_bytes_fp32": 3992556
+            },
+            "qlora": {
+              "host_bytes": 116413056,
+              "bits_per_weight": 4.5,
+              "adapter_parameters": 19537920,
+              "trainable_parameters": 20536059,
+              "trainable_bytes_fp32": 82144236
+            }
+          }
+        }
+      },
+      "L4": {
+        "precision": null,
+        "precision_ci": null,
+        "accepted": 0,
+        "erased_gold": 2,
+        "recall": 0.0,
+        "null_rate": 0.0,
+        "null_ci": [
+          0.0,
+          0.3903430336530645
+        ],
+        "p_value": 1.0,
+        "null_rate_pooled": 0.0,
+        "rule": "holm+decoy"
+      },
+      "write_items": {
+        "accuracy": [
+          {
+            "none": 0.3333333333333333,
+            "store:linker": 0.3333333333333333,
+            "store:oracle": 0.3333333333333333,
+            "store:random": 0.3333333333333333,
+            "definition-in-context": 0.4166666666666667
+          }
+        ],
+        "contrasts_vs_none": [
+          [
+            {
+              "a": "store:linker",
+              "b": "none",
+              "norm": "sum",
+              "mean": 0.0,
+              "ci_low": 0.0,
+              "ci_high": 0.0,
+              "n": 12,
+              "p_value": 1.0
+            },
+            {
+              "a": "store:oracle",
+              "b": "none",
+              "norm": "sum",
+              "mean": 0.0,
+              "ci_low": 0.0,
+              "ci_high": 0.0,
+              "n": 12,
+              "p_value": 1.0
+            },
+            {
+              "a": "store:random",
+              "b": "none",
+              "norm": "sum",
+              "mean": 0.0,
+              "ci_low": 0.0,
+              "ci_high": 0.0,
+              "n": 12,
+              "p_value": 1.0
+            },
+            {
+              "a": "definition-in-context",
+              "b": "none",
+              "norm": "sum",
+              "mean": 0.08333333333333333,
+              "ci_low": 0.0,
+              "ci_high": 0.25,
+              "n": 12,
+              "p_value": 0.736318407960199
+            }
+          ]
+        ]
+      },
+      "L5": {
+        "mean": 0.125,
+        "ci_low": -0.125,
+        "ci_high": 0.25,
+        "p_value": 0.5472636815920398,
+        "clusters": 4,
+        "seeds": 1,
+        "resamples": 200,
+        "by_family": {
+          "recall:own": [
+            {
+              "negation/all": 0.875,
+              "negation/heldout": 0.875,
+              "reverse/all": 0.25,
+              "reverse/heldout": 0.25
+            }
+          ],
+          "none": [
+            {
+              "negation/all": 0.625,
+              "negation/heldout": 0.625,
+              "reverse/all": 0.25,
+              "reverse/heldout": 0.25
+            }
+          ],
+          "symbolic": [
+            {
+              "negation/all": 1.0,
+              "negation/heldout": 1.0,
+              "reverse/all": 0.625,
+              "reverse/heldout": 0.625
+            }
+          ]
+        }
+      }
+    }
+  },
+  "holm": {
+    "L1": {
+      "p": 0.7263681592039801,
+      "p_holm": 1.0
+    },
+    "L2": {
+      "p": 1.0,
+      "p_holm": 1.0
+    },
+    "L3": {
+      "p": 0.7263681592039801,
+      "p_holm": 1.0
+    },
+    "L4": {
+      "p": 1.0,
+      "p_holm": 1.0
+    },
+    "L5": {
+      "p": 0.5472636815920398,
+      "p_holm": 1.0
+    }
+  },
+  "verdicts": {
+    "L1": false,
+    "L2": false,
+    "L3": false,
+    "L3_noninferior_to_qlora": false,
+    "L4": false,
+    "L5": false
+  }
+}

@@ -1,0 +1,78 @@
+model:
+  size: pretrained
+  seq_len: 1024
+  gradient_checkpointing: false
+  pretrained: Qwen/Qwen3-1.7B-Base
+  host_mode: lora
+  vocab_size: 151936
+  lora_rank: 64
+train:
+  lr: 0.001
+  min_lr_ratio: 0.1
+  warmup_tokens: 1000000
+  weight_decay: 0.1
+  log_every: 10
+  checkpoint_minutes: 10
+  micro_batch: 2
+  grad_accum: 32
+  total_tokens: 10000000
+  save_trainable_only: true
+  host_lr: 0.0002
+  init_from: experiments/e13-learning-cycle/runs/t7-rood/stage0/Qwen3-1.7B-Base-lora-C5-s1/final.pt
+  init_mode: continue
+data:
+  min_subtokens: 2
+  seed: 4321
+  train: /home/bhux/data/vsa-llm/e13/t7-rood/qwen3/round2/train
+  eval: /home/bhux/data/vsa-llm/tracks/t7-newvocab/rounds-v1/hosts/qwen3/eval-round2
+  ontology: /home/bhux/data/vsa-llm/e13/t7-rood/qwen3/round2/Qwen3-1.7B-Base-gold-s1/ontology.pt
+  eval_round1: /home/bhux/data/vsa-llm/tracks/t7-newvocab/rounds-v1/hosts/qwen3/eval-round1
+eval:
+  windows: 2356
+  first_tokens: 2500000
+  save_window_losses: true
+  batch: 16
+  reference_strata: /home/bhux/data/vsa-llm/e13/t7-rood/qwen3/reference-2356x1024.npz
+  points:
+  - 250000
+  - 500000
+  - 750000
+  - 1000000
+  - 1500000
+  - 2000000
+  - 3000000
+  - 4000000
+  - 5000000
+  - 6000000
+  - 8000000
+device: cuda
+channel:
+  mode: compose
+  operator: hrr
+  dimension: 256
+  composition: attentive
+  key_dimension: 8
+  context_window: 8
+  gate_bias: 0.0
+  scale_to_host: true
+  skip_empty_frames: true
+seed: 1
+experiment: e13-t7-rood-round2-Qwen3-1.7B-Base-gold-s1
+e9_track: t7
+e9_family: qwen3
+e13:
+  stage: 4
+  arm: gold
+  host: Qwen3-1.7B-Base
+  seed: 1
+  scheme: null
+  family: qwen3
+  arm_root: /home/bhux/data/vsa-llm/e13/t7-rood/qwen3/round2/Qwen3-1.7B-Base-gold-s1
+  seed_ontology: /home/bhux/data/vsa-llm/e13/t7-rood/qwen3/seed/ontology.pt
+  learned: experiments/e13-learning-cycle/runs/t7-rood/cycle/Qwen3-1.7B-Base-s1/learn
+  written: experiments/e13-learning-cycle/runs/t7-rood/cycle/Qwen3-1.7B-Base-s1/write
+  frames: gold
+  general: /home/bhux/data/vsa-llm/tracks/t7-newvocab/rounds-v1/hosts/qwen3/eval-general
+  general_windows: 256
+  extra:
+    eval_round1: /home/bhux/data/vsa-llm/tracks/t7-newvocab/rounds-v1/hosts/qwen3/eval-round1

@@ -65,13 +65,6 @@ ARM_FRAMES = {"read": "read", "noread": None, "fvt": None, "gold": "gold", "defs
               "C2": None, "q4-read": "read", "q4-noread": None, "qlora": None, "qlora-read": "read"}
 FAMILY_OF = {"SmolLM2-360M": "smollm2", "SmolLM2-135M": "smollm2", "Qwen3-1.7B-Base": "qwen3", "Qwen3-0.6B-Base": "qwen3"}
 HOST_MODE_TAG = {"train": "full", "lora": "lora", "frozen": "frozen"}
-# T7-ROOD (TK-H1): the interface this module expects of the round split; TODO(TK-H1) — confirm against
-# experiments/t7-new-vocabulary/ROOD.md once it lands (absent from this worktree on 2026-10-08).
-T7_ROOD_INTERFACE = {
-    "data_root": "~/data/vsa-llm/tracks/t7-rood/v1",
-    "files": ["ontology.pt (C3 keys + round1_entries, round2_entries)", "train (round-1 corpus: round-2 records' documents dropped)",
-              "round2/train-domain (round-2 documents)", "eval-pubmed", "eval-general", "round2_definitions.jsonl (entry, headword, text)"],
-}
 
 
 # ---------------------------------------------------------------- configuration
@@ -93,6 +86,24 @@ def run_root(config: dict[str, Any]) -> Path:
 
 def host_family(config: dict[str, Any], host: str) -> str:
     return (config.get("families") or {}).get(host) or FAMILY_OF[host]
+
+
+def e9_track(config: dict[str, Any]) -> str:
+    """The E9 track whose lexicon, relation choices and item specs the config uses (`e9_track`; T5: the track itself)."""
+    return str(config.get("e9_track") or config["track"])
+
+
+def alias_table_path(config: dict[str, Any]) -> Path | None:
+    """The full evaluation alias table of the config's ontology (`alias_table`, else the E9 track's)."""
+    if config.get("alias_table"):
+        return Path(config["alias_table"]).expanduser()
+    from .e9_tracks import track_spec
+    return track_spec(e9_track(config)).alias_table_path
+
+
+def rounds_root(config: dict[str, Any], family: str) -> Path:
+    """A rounds build's data root for a tokenizer family (`rounds_root`: family → path; T7-ROOD, TK-H1)."""
+    return Path(config["rounds_root"][family]).expanduser()
 
 
 def apply_overrides(run: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
@@ -314,8 +325,8 @@ def prepare(config: dict[str, Any], family: str, *, workers: int = 3, log: Calla
     """The round split of a track for one tokenizer family (T5; T7-ROOD reads TK-H1's files): seed ontology and erased
     gold, round-2 corpora (`round2/train`, `round2-defs/train`), the learn-stage validation corpus and the reference
     strata of the evaluation windows. Idempotent (finished parts are kept)."""
-    if config["track"] != "t5":
-        return prepare_t7_rood(config, family)
+    if config.get("rounds_root"):
+        return prepare_rounds(config, family, workers=workers, log=log)
     from transformers import AutoTokenizer
 
     from ..data.concat import concat_corpora
@@ -400,14 +411,174 @@ def prepare(config: dict[str, Any], family: str, *, workers: int = 3, log: Calla
     return manifest
 
 
-def prepare_t7_rood(config: dict[str, Any], family: str) -> dict[str, Any]:
-    """T7-ROOD (TK-H1 builds the round split). TODO(TK-H1): map `T7_ROOD_INTERFACE` onto ROOD.md once it lands; until
-    then this refuses to run instead of guessing."""
-    root = Path(config.get("rood_root") or T7_ROOD_INTERFACE["data_root"]).expanduser()
-    if not (root / "ontology.pt").exists() or not Path("experiments/t7-new-vocabulary/ROOD.md").exists():
-        raise FileNotFoundError(f"T7-ROOD round split not found ({root}, experiments/t7-new-vocabulary/ROOD.md): TK-H1 builds it; "
-                                f"expected interface: {T7_ROOD_INTERFACE}")
-    raise NotImplementedError("T7-ROOD: wire TK-H1's files (ROOD.md) into the E13 layout (seed ontology, round-2 corpora, reference)")
+def tkl_settings(config: dict[str, Any]) -> dict[str, Any]:
+    """TK-L's E10.L settings for a rounds track's stage 1 (`learn.tkl`, merged over `e10_learn.DEFAULTS`)."""
+    from . import e10_learn as E
+    return E.merge(copy.deepcopy(E.DEFAULTS), (config.get("learn") or {}).get("tkl") or {})
+
+
+def erase_like_tkl(ontology: dict[str, Any], frames: dict[int, list[tuple[int, int]]], settings: dict[str, Any]
+                   ) -> tuple[list[int], list[int], dict[int, list[tuple[int, int]]], set[tuple[int, int, int]]]:
+    """E10.L's erasure (`e10_learn.run_erasure`'s first step, with the same arguments): its seen entries, content relations
+    (≥ `min_distinct_fillers` fillers) and `learn.erase_edges`. Done once at preparation, so the stage-0 store never sees
+    the erased edges, and TK-L's pipeline, rerun on the stage-0 run with the curated frames, erases exactly the same ones."""
+    from .. import learn as L
+    from . import e10_learn as E
+    erase = settings["erase"]
+    seen = E.seen_entries(ontology, frames, min_frequency=int(erase["min_frequency"]), min_degree=int(erase["min_degree"]))
+    content = E.content_relations(frames, seen, len(ontology["relation_names"]), int(erase["min_distinct_fillers"]))
+    erased_frames, erased = L.erase_edges(frames, seen, fraction=float(erase["fraction"]), relations=set(content),
+                                          seed=int(settings["seed"]), keep=int(erase["keep"]))
+    return seen, content, erased_frames, erased
+
+
+def rounds_alias_table(config: dict[str, Any], ontology: dict[str, Any]) -> Path:
+    """The rounds build's evaluation alias table: the E9 track's aliases with round 2 as the holdout (checked against the
+    rounds ontology's `alias_table_sha256`), written once to `alias_table`."""
+    from ..evaluation import channel_probes as cp
+    from ..span_channel import AliasTable
+    from . import e9_tracks as tracks
+    path = alias_table_path(config)
+    if path.exists():
+        return path
+    base = cp.load_alias_table(tracks.ensure_alias_table(tracks.track_spec(e9_track(config))))
+    holdout = frozenset(int(c) for e in ontology["heldout_entries"] for c in base.entry_concepts[int(e)])
+    table = AliasTable(base.alias_to_entry, base.entry_concepts, holdout, base.normalization)
+    if table.digest() != ontology["alias_table_sha256"]:
+        raise ValueError("the E9 alias table with round 2 held out does not reproduce the rounds ontology's digest")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cp.save_alias_table(table, path)
+    return path
+
+
+def definitions_by_links(corpus: Any, tokenizer: Any, definitions: dict[int, str], min_subtokens: int) -> Iterator[str]:
+    """`defs` arm on a built stream: every document decoded (byte-level BPE is lossless) and preceded by the definitions
+    of the defined terms it links (≥ ℓ_min subtokens, in first-mention order)."""
+    tokens = np.asarray(corpus.tokens)
+    eos = int(corpus.manifest.get("eos_id", 0))
+    inject, entries, lengths = corpus.spans["inject"], corpus.spans["entry"], corpus.spans["length"]
+    ends = np.flatnonzero(tokens == eos).tolist()
+    if len(tokens) and int(tokens[-1]) != eos:
+        ends.append(len(tokens))
+    start = 0
+    for end in ends:
+        text = tokenizer.decode(tokens[start:end].tolist())
+        lo, hi = np.searchsorted(inject, np.asarray([start, end], dtype=inject.dtype), side="left")
+        linked = [int(e) for e, n in zip(entries[lo:hi].tolist(), lengths[lo:hi].tolist()) if n >= min_subtokens and int(e) in definitions]
+        shown = list(dict.fromkeys(linked))
+        yield ("\n".join(definitions[e] for e in shown) + "\n\n" + text) if shown else text
+        start = end + 1
+
+
+def build_round2_items(config: dict[str, Any], family: str, output: Path | None = None, *, seed: int = 0) -> dict[str, Any]:
+    """Understanding items (`e9_understanding`, the E9 track's spec and exclusion table) of a rounds track's round-2 anchors:
+    built on the rounds ontology and alias table, where round 2 is the held-out set, so the `heldout` subset is round 2;
+    families relation (`negation/affirm`), reverse, paraphrase and two-hop (T7's spec has no path); no seen, rare or new
+    subsets (CPU; written to `items.understanding[family]`)."""
+    from transformers import AutoTokenizer
+
+    from ..evaluation import channel_probes as cp
+    from . import e9_understanding as und
+    from .e9_freqbias import ensure_exclusion_table
+    from .e9_tracks import FAMILY_TOKENIZERS, lexicon_for, track_spec
+    track = e9_track(config)
+    path = rounds_root(config, family) / "ontology.pt"
+    ontology = torch.load(path, weights_only=False)
+    table_path = rounds_alias_table(config, ontology)
+    ctx = und.BuildContext(track=track, family=family, ontology=ontology, table=cp.load_alias_table(table_path),
+                           lexicon=lexicon_for(track_spec(track), ontology),
+                           tokenizer=AutoTokenizer.from_pretrained(FAMILY_TOKENIZERS[family], local_files_only=True),
+                           tokenizer_name=FAMILY_TOKENIZERS[family], exclusions=torch.load(ensure_exclusion_table(track, family), weights_only=False),
+                           families_spec=und.TRACK_SPECS[track], ontology_path=path, alias_table_path=table_path)
+    return und.build_items_from_context(ctx, Path(output or item_path(config, "understanding", family)), counts={"seen": 0, "rare": 0},
+                                        new_items=None, seed=seed, families=("two_hop", "reverse", "paraphrase", "negation"))
+
+
+def prepare_rounds(config: dict[str, Any], family: str, *, workers: int = 3, log: Callable[[str], None] = print) -> dict[str, Any]:
+    """A rounds build (T7-ROOD: TK-H1's `rounds-v1`, `experiments/t7-new-vocabulary/ROOD.md` §5) in the E13 layout for one
+    tokenizer family: the seed ontology (round-2 frames empty, round-1 edges to round-2 fillers dropped, E10.L's erasure:
+    `erase_like_tkl`), the curated frames and erased gold, the rounds alias table, `round2/train` (a link to the build's
+    `train-round2`), `round2-defs/train` (the same documents with the definitions prepended, topped up with general text
+    no T7 build read so the stream stays 50/50) and the reference strata of the `eval-round2` windows. Idempotent."""
+    from transformers import AutoTokenizer
+
+    from ..data.concat import concat_corpora
+    from ..data.corpus import TokenCorpus, build_corpus, eval_windows, tokenizer_fingerprint
+    from ..evaluation import channel_probes as cp
+    from ..training.lm import save_reference_strata
+    from .c3_corpus import iter_texts
+    from .host_corpus import tokenizer_normalization
+    rounds, root = rounds_root(config, family), data_root(config, family)
+    (root / "seed").mkdir(parents=True, exist_ok=True)
+    ontology = torch.load(rounds / "ontology.pt", weights_only=False)
+    round2 = sorted(int(e) for e in ontology["heldout_entries"])
+    settings = config.get("seed_ontology") or {}
+    curated, _ = seed_ontology(ontology, round2, erase_fraction=0.0, derived_inverses=settings.get("derived_inverses"),
+                               drop_round2_fillers=bool(settings.get("drop_round2_fillers", True)))
+    frames = dict(enumerate(frames_of(curated)))
+    tkl = tkl_settings(config)
+    # Every family erases the same edges: the seen set comes from the reference family's training frequencies (the frames
+    # are the same in every relink; a tokenizer's own frequencies would shift the seeded draws).
+    reference = settings.get("reference_family")
+    basis = curated
+    if reference and reference != family:
+        basis = {**curated, "train_frequency": torch.load(rounds_root(config, reference) / "ontology.pt", weights_only=False)["train_frequency"]}
+    seen, content, erased_frames, erased = erase_like_tkl(basis, frames, tkl)
+    seeded = with_frames(curated, [erased_frames[e] for e in range(len(frames))])
+    relation_names, atomic_names = seeded["relation_names"], seeded["atomic_names"]
+    seeded["e13"] = {**curated["e13"], "erased": len(erased), "erase_rule": "e10_learn: learn.erase_edges over content relations",
+                     "erase": tkl["erase"], "erase_seed": int(tkl["seed"]), "seen": len(seen), "seen_from": reference or family,
+                     "content_relations": [relation_names[r] for r in content],
+                     "erased_by_relation": dict(Counter(relation_names[r] for _, r, _ in erased).most_common())}
+    torch.save(seeded, root / "seed" / "ontology.pt")
+    torch.save({"frames": frames, "seen": seen, "erased": sorted(erased)}, root / "seed" / "curated.pt")
+    _json(root / "seed" / "erased.json", {"edges": [[e, relation_names[r], atomic_names[a]] for e, r, a in sorted(erased)],
+                                          "record": seeded["e13"]})
+    log(f"seed ontology ({family}): {len(erased)} of {sum(len(frames[e]) for e in seen)} edges of {len(seen)} seen round-1 entries "
+        f"erased (content relations {seeded['e13']['content_relations']}); {seeded['e13']['dropped_round2_fillers']} edges to "
+        "round-2 terms dropped")
+    table = cp.load_alias_table(rounds_alias_table(config, ontology))
+    (root / "round2").mkdir(parents=True, exist_ok=True)
+    if not (root / "round2" / "train").exists():
+        (root / "round2" / "train").symlink_to(rounds / "train-round2", target_is_directory=True)
+    stream = TokenCorpus.open(rounds / "train-round2")
+    tokenizer_name = stream.manifest["tokenizer"]
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
+    normalization = tokenizer_normalization(tokenizer)
+    build = dict(tokenizer_name=tokenizer_name, table=table, eos_id=int(stream.manifest["eos_id"]), vocab_size=len(tokenizer),
+                 workers=workers, reuse=True, extra_manifest={"tokenizer_sha256": tokenizer_fingerprint(tokenizer), "e13": "round2-defs"},
+                 **({"normalization": normalization} if normalization else {}))
+    style = str((config.get("write") or {}).get("style", "prose"))
+    definitions = {e: d["text"] for e, d in prose_definitions(item_path(config, "read_set", family), set(round2), style).items()}
+    min_subtokens = int(ontology.get("min_subtokens", 2))
+    defs: dict[str, Any] = {"built": False}
+    if any("defs" in spec.get("round2_arms", ()) for host, spec in config["hosts"].items() if host_family(config, host) == family):
+        documents = build_corpus(definitions_by_links(stream, tokenizer, definitions, min_subtokens), root / "round2-defs-documents",
+                                 max_tokens=10**12, **build)
+        sources = json.loads((rounds / "train-round2" / "sources.json").read_text())["tokens"]
+        added = int(documents["tokens"]) - int(stream.manifest["tokens"])
+        text = config.get("text") or {}
+        top_up = max(0, int(sources["pubmed"]) + added - int(sources["general"]))
+        build_corpus(iter_texts([str(Path(p).expanduser()) for p in text["general_shards"]], skip=int(text["general_skip_docs"])),
+                     root / "round2-defs-general", max_tokens=top_up, **build)
+        concat_corpora([root / "round2-defs-documents", root / "round2-defs-general"], root / "round2-defs" / "train", reuse=True,
+                       extra_manifest={"tokenizer_sha256": build["extra_manifest"]["tokenizer_sha256"]})
+        defs = {"built": True, "definition_tokens_added": added, "general_top_up_tokens": top_up,
+                "tokens": json.loads((root / "round2-defs" / "train" / "manifest.json").read_text())["tokens"]}
+    eval_corpus = TokenCorpus.open(rounds / "eval-round2")
+    length = int(config["round2"].get("seq_len", 1024))
+    windows = int(config["stage0"]["eval_windows"][family])
+    starts = eval_windows(eval_corpus, count=windows, length=length)
+    held = set(round2)
+    masks = reference_masks(eval_corpus, starts, length, min_subtokens,
+                            {"round2": held, "round1": {e for e in range(int(ontology["entry_count"])) if e not in held}})
+    save_reference_strata(root / f"reference-{windows}x{length}.npz", starts, masks, length)
+    manifest = {"track": config["track"], "family": family, "rounds_root": str(rounds), "tokenizer": tokenizer_name,
+                "round2_entries": len(round2), "definitions": len(definitions), "seed_ontology": seeded["e13"] | {"round2_entries": len(round2)},
+                "defs": defs, "corpora": {"round2/train": int(stream.manifest["tokens"])},
+                "reference": {"windows": len(starts), "length": length, **{k: int(v.sum()) for k, v in masks.items()}}}
+    _json(root / "manifest.json", manifest)
+    return manifest
 
 
 # ---------------------------------------------------------------- stage 0
@@ -424,6 +595,12 @@ def stage0_config(config: dict[str, Any], host: str, seed: int) -> dict[str, Any
     source = Path(config["stage0"]["configs"][host].format(seed=seed))
     run = apply_overrides(yaml.safe_load(source.read_text()), config)
     root = data_root(config, family)
+    # A rounds track (T7-ROOD): the E9 recipe on the build's round-1 corpus, evaluated on every `eval-round2` window
+    # (`stage0.data` paths relative to `rounds_root`; `stage0.eval_windows` per family). T5 sets neither.
+    for key, value in ((config["stage0"].get("data") or {}).items()):
+        run["data"][key] = str(rounds_root(config, family) / value)
+    if (config["stage0"].get("eval_windows") or {}).get(family):
+        run["eval"]["windows"] = int(config["stage0"]["eval_windows"][family])
     run["data"]["ontology"] = str(root / "seed" / "ontology.pt")
     run["channel"]["skip_empty_frames"] = True
     run["eval"]["reference_strata"] = str(reference_path(config, family, run))
@@ -455,9 +632,7 @@ def run_family(config: dict[str, Any], run: Any) -> str:
 
 def _open(run_dir: Path, config: dict[str, Any], *, device: str | None = None, batch_size: int = 16) -> Any:
     from .e5_common import open_run
-    from .e9_tracks import track_spec
-    spec = track_spec(config["track"])
-    return open_run(Path(run_dir), device=device, alias_table=spec.alias_table_path, batch_size=batch_size,
+    return open_run(Path(run_dir), device=device, alias_table=alias_table_path(config), batch_size=batch_size,
                     max_length=int(config.get("max_length", 512)))
 
 
@@ -470,10 +645,96 @@ def accepted_edges(store: cs.ConceptStore, learned: Path | None) -> list[cs.Prop
             if r in store.relation_id and a in store.atomic_id]
 
 
+LEARN_METHODS = ("rule_closure", "tkl")
+
+
 def learn(config: dict[str, Any], run_dir: Path, output: Path, *, device: str | None = None, limit: int | None = None,
-          log: Callable[[str], None] = print) -> dict[str, Any]:
-    """Stage 1 (L4): propose missing edges of round-1 entries, test them with the true and null proposals in one Holm
-    family (`HeldOutUtilityTest` on the learn-validation corpus), score the accepted ones against the erased gold."""
+          method: str | None = None, log: Callable[[str], None] = print) -> dict[str, Any]:
+    """Stage 1 (L4) by `method` (default `learn.primary`; absent: `rule_closure`, T5's registered proposer): `rule_closure`
+    (`learn_closure`) or `tkl` (TK-L's learn tool, `learn_tkl`)."""
+    method = method or (config.get("learn") or {}).get("primary", "rule_closure")
+    if method not in LEARN_METHODS:
+        raise ValueError(f"learn method must be one of {LEARN_METHODS}")
+    if method == "tkl":
+        return learn_tkl(config, run_dir, output, device=device, limit=limit, log=log)
+    return learn_closure(config, run_dir, output, device=device, limit=limit, log=log)
+
+
+def learn_tkl(config: dict[str, Any], run_dir: Path, output: Path, *, device: str | None = None, limit: int | None = None,
+              log: Callable[[str], None] = print) -> dict[str, Any]:
+    """Stage 1 with TK-L's learn tool (`vsa_embed.learn`: `propose` — the function behind `store_proposer` — with sources
+    decompose and closure) under its pre-registered `holm+decoy` rule, run through E10.L's `run_erasure` (the facade alone
+    has no null-world decoys and would apply Holm only). Inputs: the stage-0 store (its composer: dictionary and typed
+    candidates of the erased frames), the curated frames (`erase_like_tkl` erases the same edges again; checked), and host
+    hidden states of the stage-0 run at round-1 terms' occurrences (`e10_learn.extract_features`; `learn.tkl.extract`),
+    split by document into the passive half (decomposed) and the evidence half (the acceptance test). Writes
+    `occurrences.npz`, `accepted.json` (the edges stages 2 and 4 write), `summary.json` (L4: precision against the erased
+    gold of the probes, false acceptance in E10.L's null worlds) and `proposals.jsonl.gz`."""
+    from scipy import stats
+
+    from .. import learn as L
+    from . import e10_learn as E
+    from .e9_binding_chain import load_composer
+    started = time.monotonic()
+    settings = tkl_settings(config)
+    if limit:
+        settings["erase"]["probe_cap"] = int(limit)
+    run_config = yaml.safe_load((Path(run_dir) / "resolved_config.yaml").read_text())
+    root = data_root(config, host_family(config, str(run_config["model"]["pretrained"]).split("/")[-1]))
+    curated = torch.load(root / "seed" / "curated.pt", weights_only=False)
+    frames = {int(e): [(int(r), int(a)) for r, a in f] for e, f in curated["frames"].items()}
+    seen = [int(e) for e in curated["seen"]]
+    output.mkdir(parents=True, exist_ok=True)
+    features = output / "occurrences.npz"
+    extract = settings.get("extract") or {}
+    if not features.exists():
+        splits = [(p.split(":")[0], int(p.split(":")[1]) if ":" in p else None) for p in str(extract.get("splits", "eval,train:20000")).split(",")]
+        data = E.extract_features(Path(run_dir), seen, window=int(extract.get("window", 512)), max_per_entry=int(extract.get("max_per_entry", 32)),
+                                  batch=int(extract.get("batch", 8)), splits=splits, device=device, alias_table=alias_table_path(config))
+        np.savez(features, **data)
+    composer, _, ontology = load_composer(Path(run_dir))
+    names = list(ontology["relation_names"])
+    passive, observations, meta = E.load_features(features, layer=settings["evidence"]["layer"], split_seed=int(settings["seed"]))
+    keep, cap = set(seen), int(settings["evidence"]["max_observations"])
+    inputs = E.ErasureInputs(Path(run_dir).name, frames, seen, names,
+                             lambda fr: L.Dictionary.from_composer(composer, fr, relation_names=names),
+                             {c: v for c, v in passive.items() if c in keep}, {c: v[:cap] for c, v in observations.items() if c in keep},
+                             E.atom_concepts(ontology).tolist(), meta={"store": str(run_dir), "features": str(features), **meta})
+    out = E.run_erasure(inputs, settings)
+    summary = out["summary"]
+    if int(summary["erased"]) != len(curated["erased"]):
+        raise RuntimeError(f"TK-L's erasure ({summary['erased']} edges) differs from the seed ontology's ({len(curated['erased'])})")
+    primary = settings["test"]["correction"]
+    accepted = [r for r in out["records"] if r.get("world") == "real" and r["accepted"]]
+    decision = summary["primary"]["all"]
+    worlds = {kind: rules[primary] for kind, rules in summary["nulls"].items() if primary in rules}
+    null_tested, null_accepted = sum(w["tested"] for w in worlds.values()), sum(w["accepted"] for w in worlds.values())
+    threshold = float((config.get("learn") or {}).get("precision_threshold", 0.8))
+    metrics = {"proposer": "vsa_embed.learn (decompose + closure; store_proposer's propose)", "rule": primary,
+               "proposals": decision.get("proposed"), "accepted": decision["accepted"], "accepted_gold": decision["tp"],
+               "erased_gold": decision["gold"], "precision": decision["precision"], "recall": decision["recall"],
+               "null": {"null_proposals": null_tested, "accepted": null_accepted, "rate": null_accepted / null_tested if null_tested else float("nan"),
+                        "rate_max": summary["null_far_max"].get(primary), "by_world": worlds},
+               "p_precision_above_threshold": float(stats.binom.sf(decision["tp"] - 1, decision["accepted"], threshold)) if decision["accepted"] else 1.0,
+               "probes": summary["probes"], "erased": summary["erased"], "decoders": summary["decoders"], "by_source": summary["primary"],
+               "seconds": time.monotonic() - started}
+    atoms = list(ontology["atomic_names"])
+    _json(output / "accepted.json", {"edges": [[int(r["concept"]), names[int(r["relation"])], atoms[int(r["filler"])]] for r in accepted],
+                                     "metrics": metrics})
+    _json(output / "summary.json", metrics)
+    with gzip.open(output / "proposals.jsonl.gz", "wt") as handle:
+        for record in out["records"]:
+            handle.write(json.dumps(record, default=str) + "\n")
+    log(f"learn (TK-L, {primary}): accepted {decision['accepted']} (precision {decision['precision']:.3f} on {summary['probes']} probes), "
+        f"null false acceptance ≤ {metrics['null']['rate_max']}")
+    return metrics
+
+
+def learn_closure(config: dict[str, Any], run_dir: Path, output: Path, *, device: str | None = None, limit: int | None = None,
+                  log: Callable[[str], None] = print) -> dict[str, Any]:
+    """Stage 1 by rule closure (L4 on T5; a secondary on T7-ROOD): propose missing edges of round-1 entries, test them
+    with the true and null proposals in one Holm family (`HeldOutUtilityTest` on the learn-validation corpus, or the rounds
+    split `learn.validation.corpus`), score the accepted ones against the erased gold."""
     from ..data.corpus import TokenCorpus
     started = time.monotonic()
     settings = config.get("learn") or {}
@@ -493,7 +754,8 @@ def learn(config: dict[str, Any], run_dir: Path, output: Path, *, device: str | 
     nulls = cs.null_proposals(store, proposals, seed=int(settings.get("null_seed", 0)), exclude=gold)
     log(f"learn: {len(proposals)} proposals ({sum(p.key in gold for p in proposals)} erased-gold), {len(nulls)} null proposals")
     validation = settings.get("validation") or {}
-    corpus = TokenCorpus.open(root / "learn-validation")
+    corpus = TokenCorpus.open(rounds_root(config, run_family(config, run)) / validation["corpus"] if validation.get("corpus")
+                              else root / "learn-validation")
     windows = cs.validation_windows(corpus, sorted({p.entry for p in proposals + nulls}), per_entry=int(validation.get("per_entry", 8)),
                                     length=int(validation.get("length", 128)), min_subtokens=int(run.config["data"]["min_subtokens"]),
                                     seed=int(validation.get("seed", 0)))
@@ -609,7 +871,7 @@ def write(config: dict[str, Any], run_dir: Path, learned: Path | None, output: P
     added = committed(run, store, learned)
     entries = set(round2_entries(run.ontology))
     read_set = _read_set(config, entries & set(only) if only is not None else entries, run_family(config, run)).limit(limit)
-    ctx = e11.make_context(config["track"], run.ontology, run.table, store.lexicon)
+    ctx = e11.make_context(e9_track(config), run.ontology, run.table, store.lexicon)
     style = str(settings.get("style", "prose"))
     readers = ["oracle", "random", settings.get("reader", "linker"), *settings.get("secondary_readers", ["linker-joint", "typeprior"])]
     scorer = e11.DefinitionScorer(run, read_set)
@@ -732,6 +994,11 @@ def reason(config: dict[str, Any], run_dir: Path, learned: Path | None, written:
     item_set = e12.load_item_set(item_path(config, "understanding", run_family(config, run)), families=("two_hop", "reverse", "negation", "affirm"))
     anchors = {c["concept"] for c in item_set.concepts if c.get("entry") is not None and int(c["entry"]) in entries}
     prompts = [p for p in item_set.prompts if p.item["subset"] == "heldout" and p.item["anchor"] in anchors]
+    cap = int((config.get("reason") or {}).get("max_anchors") or 0)       # opt-in (T7-ROOD): a seeded sample of anchors
+    if cap:
+        pool = sorted({p.item["anchor"] for p in prompts})
+        keep = set(random.Random(int(config.get("seed", 0))).sample(pool, min(cap, len(pool))))
+        prompts = [p for p in prompts if p.item["anchor"] in keep]
     if limit:
         keep = sorted({p.item["anchor"] for p in prompts})[:limit]
         prompts = [p for p in prompts if p.item["anchor"] in keep]
@@ -873,6 +1140,8 @@ def round2_config(config: dict[str, Any], host: str, arm: str, seed: int, *, sch
                   "learned": None if arm in ("C0p",) or not settings.get("use_learned", True) else str(cycle_dir(config, host, seed) / "learn"),
                   "written": str(cycle_dir(config, host, seed) / "write"), "frames": ARM_FRAMES[arm],
                   "general": str(Path(run["data"]["eval"]).with_name("eval-general")), "general_windows": int(settings.get("general_windows", 256))}
+    if settings.get("extra_evals"):                        # opt-in (T7-ROOD: forgetting on `eval-round1`): start / end losses
+        run["e13"]["extra"] = {name: str(rounds_root(config, family) / split) for name, split in settings["extra_evals"].items()}
     return run
 
 
@@ -957,9 +1226,15 @@ def run_round2(config_path: Path, output: Path, *, resume: bool = False, keep_ch
     output.mkdir(parents=True, exist_ok=True)
     general, windows = Path(run["e13"]["general"]), int(run["e13"]["general_windows"])
     base_file = Path(run["e13"]["arm_root"]) / "general-start.npy"
-    if not base_file.exists() and general.exists():
+    extra = {name: Path(path) for name, path in (run["e13"].get("extra") or {}).items()}
+    starts = {name: Path(run["e13"]["arm_root"]) / f"{name}-start.npy" for name in extra}
+    if (not base_file.exists() and general.exists()) or any(not starts[n].exists() for n in extra):
         model = initial_model(run, device)
-        np.save(base_file, general_window_losses(model, run, general, windows=windows, device=device))
+        if not base_file.exists() and general.exists():
+            np.save(base_file, general_window_losses(model, run, general, windows=windows, device=device))
+        for name, path in extra.items():
+            if not starts[name].exists():
+                np.save(starts[name], general_window_losses(model, run, path, windows=windows, device=device))
         del model
     result = train(run, output, resume=resume)
     if (output / "final.pt").exists() and not (output / "locality.json").exists() and general.exists():
@@ -969,6 +1244,11 @@ def run_round2(config_path: Path, output: Path, *, resume: bool = False, keep_ch
         np.save(output / "general_windows.npy", np.stack([start, end]))
         _json(output / "locality.json", {"start": float(start[0].sum() / start[1].sum()), "end": float(end[0].sum() / end[1].sum()),
                                          "windows": windows, "materialized": record})
+        for name, path in extra.items():                    # e.g. forgetting on round-1 evaluation text
+            first, last = np.load(starts[name]), general_window_losses(model, run, path, windows=windows, device=device)
+            np.save(output / f"{name}_windows.npy", np.stack([first, last]))
+            _json(output / f"{name}.json", {"start": float(first[0].sum() / first[1].sum()), "end": float(last[0].sum() / last[1].sum()),
+                                            "windows": windows, "corpus": str(path)})
     if not keep_checkpoint and (output / "final.pt").exists() and (output / "manifest.json").exists():
         (output / "checkpoint.pt").unlink(missing_ok=True)
     return result
@@ -1104,6 +1384,10 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
         block["locality"] = {arm: float(np.mean([json.loads((p / "locality.json").read_text())["end"] -
                                                  json.loads((p / "locality.json").read_text())["start"] for p in paths
                                                  if (p / "locality.json").exists()] or [float("nan")])) for arm, paths in runs.items()}
+        for name in (config["round2"].get("extra_evals") or {}):   # e.g. forgetting on `eval-round1` (rounds tracks)
+            block[f"{name}_change"] = {arm: float(np.mean([json.loads((p / f"{name}.json").read_text())["end"] -
+                                                           json.loads((p / f"{name}.json").read_text())["start"] for p in paths
+                                                           if (p / f"{name}.json").exists()] or [float("nan")])) for arm, paths in runs.items()}
         block["curves"] = {arm: {"tokens": c[0][0].tolist(), "loss": np.mean([(s.sum(1) / n.sum(1)) for _, s, n in c], 0).tolist()}
                            for arm, c in curves.items()}
         l3 = {}
@@ -1133,6 +1417,10 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
                            "recall": hits / max(1, sum(m["erased_gold"] for m in learned)),
                            "null_rate": null_acc / nulls if nulls else float("nan"), "null_ci": list(wilson_interval(null_acc, nulls)) if nulls else None,
                            "p_value": float(stats.binom.sf(hits - 1, accepted, float(stats_cfg.get("l4_precision", 0.8)))) if accepted else 1.0}
+            worst = [m["null"]["rate_max"] for m in learned if m["null"].get("rate_max") is not None]
+            if worst:                                       # TK-L (rounds tracks): the worst of E10.L's null worlds
+                block["L4"].update(null_rate=float(max(worst)), null_rate_pooled=null_acc / nulls if nulls else float("nan"),
+                                   rule=learned[0].get("rule"))
         scored = [json.loads((cycle_dir(config, host, s) / "write" / "items-summary.json").read_text()) for s in seeds
                   if (cycle_dir(config, host, s) / "write" / "items-summary.json").exists()]
         if scored:                                          # stage-2 relation / property items (secondary; ranking harness)
@@ -1270,6 +1558,17 @@ def evaluation_scale(host: str) -> float:
     return _host_scale(host)
 
 
+# GPU hours of the evaluation-type jobs on SmolLM2-360M (scaled to the host by `evaluation_scale`; `estimate_hours` in the
+# config overrides them): learn by rule closure ≈ 2.6M forward tokens; TK-L's learn ≈ 14M forward tokens of hidden-state
+# extraction plus E10.L's CPU erasure run (≈ 0.15 h, not scaled); write = readers + harness items; reason = E12 scoring.
+JOB_HOURS = {"learn_rule_closure": (0.08, 0.0), "learn_tkl": (0.15, 0.15), "write": (0.3, 0.0), "reason": (0.5, 0.0)}
+
+
+def job_hours(config: dict[str, Any], kind: str, host: str) -> float:
+    scaled, fixed = (config.get("estimate_hours") or {}).get(kind, JOB_HOURS[kind])
+    return float(scaled) * evaluation_scale(host) + float(fixed)
+
+
 def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bool = True) -> list[dict[str, Any]]:
     """Every E13 job of the config: (name, priority level, command, GPU-h estimate, lane note). Writes the trainer configs
     (stage 0, rounds 2) under `configs/<track>/`; prints nothing to the queue (the commands are for queue-commands.sh)."""
@@ -1306,11 +1605,18 @@ def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bo
     for host, spec in config["hosts"].items():
         for seed in spec["seeds"]:
             run_dir, cdir = stage0_dir(config, host, seed), cycle_dir(config, host, seed)
+            learn_cfg = config.get("learn") or {}
+            primary = learn_cfg.get("primary", "rule_closure")
             add(f"e13-{track}-{host}-s{seed}-learn", "stage0", [python, "-m", "vsa_embed.experiments.e13_cycle", "learn", "--config", cfg,
-                                                               "--run", str(run_dir), "--output", str(cdir / "learn")], 0.08 * evaluation_scale(host))
+                                                               "--run", str(run_dir), "--output", str(cdir / "learn")],
+                job_hours(config, f"learn_{primary}", host))
+            for method in learn_cfg.get("secondary", []):           # e.g. rule closure next to TK-L's primary (T7-ROOD)
+                add(f"e13-{track}-{host}-s{seed}-learn-{method}", "stage0",
+                    [python, "-m", "vsa_embed.experiments.e13_cycle", "learn", "--config", cfg, "--run", str(run_dir), "--method", method,
+                     "--output", str(cdir / f"learn-{method}")], job_hours(config, f"learn_{method}", host))
             add(f"e13-{track}-{host}-s{seed}-write", "stage0", [python, "-m", "vsa_embed.experiments.e13_cycle", "write", "--config", cfg,
                                                                "--run", str(run_dir), "--learned", str(cdir / "learn"), "--output",
-                                                               str(cdir / "write")], 0.3 * evaluation_scale(host))
+                                                               str(cdir / "write")], job_hours(config, "write", host))
     tokens = int(config["round2"]["tokens"])
     for host, spec in config["hosts"].items():
         for seed in spec["seeds"]:
@@ -1333,7 +1639,7 @@ def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bo
             add(f"e13-{track}-{host}-s{seed}-reason", "evaluations",
                 [python, "-m", "vsa_embed.experiments.e13_cycle", "reason", "--config", cfg, "--run", str(run_dir), "--learned",
                  str(cdir / "learn"), "--written", str(cdir / "write"), "--output", str(cdir / "reason")],
-                0.5 * evaluation_scale(host))
+                job_hours(config, "reason", host))
     add(f"e13-{track}-report", "report", [python, "-m", "vsa_embed.experiments.e13_cycle", "report", "--config", cfg, "--output",
                                           str(ROOT / "report" / track)], 0.0)
     return jobs
@@ -1361,15 +1667,22 @@ def queue_lines(jobs: Sequence[dict[str, Any]]) -> list[str]:
 # ---------------------------------------------------------------- smoke (CPU; SMOKE)
 
 
-def smoke_config(data: Path, runs: Path) -> dict[str, Any]:
-    """The T5 config shrunk for a CPU smoke: SmolLM2-135M, 128-token windows, a few steps per stage, small corpora."""
-    config = load_config(ROOT / "t5.yaml")
+def smoke_config(data: Path, runs: Path, track: str = "t5") -> dict[str, Any]:
+    """A track's config shrunk for a CPU smoke: SmolLM2-135M, 128-token windows, a few steps per stage, small corpora
+    (T7-ROOD: the rounds build itself, 8 evaluation windows, a few hundred extraction windows, 40 probes)."""
+    config = load_config(ROOT / ("t5.yaml" if track == "t5" else "t7-rood.yaml"))
     config.update(label="SMOKE", data_root=str(data), runs_root=str(runs), families={"SmolLM2-135M": "smollm2"},
                   hosts={"SmolLM2-135M": {"seeds": [1], "round2_arms": ["read", "noread", "fvt"],
                                           "frozen_arms": {"rtn": ["q4-read", "q4-noread", "qlora"]}}}, measure={})
-    config["stage0"]["configs"] = {"SmolLM2-135M": "experiments/e9-retrofit/configs/t5/SmolLM2-135M-full-C5-s{seed}.yaml"}
+    config["stage0"]["configs"] = {"SmolLM2-135M": f"experiments/e9-retrofit/configs/{e9_track(config)}/SmolLM2-135M-full-C5-s{{seed}}.yaml"}
     config["stage0"]["references"] = {}
-    config["text"].update(round2_domain_chars=150_000, validation_chars=400_000)
+    if track == "t5":
+        config["text"].update(round2_domain_chars=150_000, validation_chars=400_000)
+    else:
+        config["stage0"]["eval_windows"] = {"smollm2": 8}
+        config["learn"]["tkl"]["extract"] = {"splits": "eval_round1:300,train:300", "window": 128, "max_per_entry": 8, "batch": 4}
+        config["learn"]["tkl"]["test"]["min_observations"] = 2
+        config["reason"]["max_anchors"] = 4
     config["round2"].update(tokens=512, eval_points=[256], eval_windows=8, seq_len=128, general_windows=4, calibration_windows=2)
     config["learn"]["validation"].update(per_entry=3, length=64, min_windows=2)
     config["statistics"]["resamples"] = 200
@@ -1380,15 +1693,16 @@ def smoke_config(data: Path, runs: Path) -> dict[str, Any]:
     return config
 
 
-def smoke(output: Path, *, data: Path | None = None, threads: int = 4) -> dict[str, Any]:
-    """CPU smoke of the whole cycle on T5 (SmolLM2-135M, labelled SMOKE): a small round split, stage 0 for 3 steps,
-    learn / write / reason on a few terms, stage-4 arms read / noread / fvt and stage-5 arms (RTN) q4-read / q4-noread /
-    qlora for 2 steps, then the report. Run data go to `data` (default: a temporary folder); `output` gets the summary."""
+def smoke(output: Path, *, data: Path | None = None, threads: int = 4, track: str = "t5") -> dict[str, Any]:
+    """CPU smoke of the whole cycle on a track (SmolLM2-135M, labelled SMOKE): its round split, stage 0 for 3 steps,
+    learn (and the secondary learn methods) / write / reason on a few terms, stage-4 arms read / noread / fvt and stage-5
+    arms (RTN) q4-read / q4-noread / qlora for 2 steps, then the report. Run data go to `data` (default: a temporary
+    folder); `output` gets the summary."""
     import tempfile
     from ..training.lm import train
     torch.set_num_threads(int(threads))
     data = Path(data) if data else Path(tempfile.mkdtemp(prefix="e13-smoke-"))
-    config = smoke_config(data / "data", data / "runs")
+    config = smoke_config(data / "data", data / "runs", track)
     host, seed = "SmolLM2-135M", 1
     timings: dict[str, float] = {}
     out: dict[str, Any] = {"label": "SMOKE", "data": str(data), "host": host}
@@ -1404,7 +1718,10 @@ def smoke(output: Path, *, data: Path | None = None, threads: int = 4) -> dict[s
     run0 = stage0_dir(config, host, seed)
     out["stage0"] = timed("stage0", lambda: train(stage0, run0, resume=run0.exists()))
     cdir = cycle_dir(config, host, seed)
-    out["learn"] = timed("learn", lambda: learn(config, run0, cdir / "learn", device="cpu", limit=24))
+    out["learn"] = timed("learn", lambda: learn(config, run0, cdir / "learn", device="cpu", limit=24 if track == "t5" else 40))
+    for method in (config.get("learn") or {}).get("secondary", []):
+        out[f"learn-{method}"] = timed(f"learn-{method}", lambda: learn(config, run0, cdir / f"learn-{method}", device="cpu", limit=24,
+                                                                        method=method))
     present = _round2_in_windows(config, stage0)              # read the round-2 terms the few smoke windows contain
     out["write"] = timed("write", lambda: write(config, run0, cdir / "learn", cdir / "write", device="cpu", limit=8, only=present))
     reasoned = timed("reason", lambda: reason(config, run0, cdir / "learn", cdir / "write", cdir / "reason", device="cpu", limit=4))
@@ -1460,17 +1777,22 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--limit", type=int, default=None, help="smoke tests only")
         if name != "learn":
             p.add_argument("--learned", type=Path, default=None)
+        else:
+            p.add_argument("--method", choices=LEARN_METHODS, default=None, help="default: the config's learn.primary")
         if name == "reason":
             p.add_argument("--written", type=Path, required=True)
+    p = sub.add_parser("items", help="understanding items of a rounds track's round-2 anchors (CPU)")
+    p.add_argument("--config", type=Path, required=True); p.add_argument("--family", default="smollm2")
+    p.add_argument("--output", type=Path, default=None)
     p = sub.add_parser("round2"); p.add_argument("--config", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p.add_argument("--resume", action="store_true"); p.add_argument("--keep-checkpoint", action="store_true")
     p = sub.add_parser("report"); p.add_argument("--config", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p = sub.add_parser("plan"); p.add_argument("--config", type=Path, required=True); p.add_argument("--no-write-configs", action="store_true")
     p = sub.add_parser("smoke"); p.add_argument("--output", type=Path, required=True); p.add_argument("--data", type=Path, default=None)
-    p.add_argument("--threads", type=int, default=4)
+    p.add_argument("--threads", type=int, default=4); p.add_argument("--track", choices=("t5", "t7-rood"), default="t5")
     args = parser.parse_args(argv)
     if args.command == "smoke":
-        print(json.dumps(smoke(args.output, data=args.data, threads=args.threads), indent=1, default=str))
+        print(json.dumps(smoke(args.output, data=args.data, threads=args.threads, track=args.track), indent=1, default=str))
         return
     if args.command == "round2":
         print(json.dumps(run_round2(args.config, args.output, resume=args.resume, keep_checkpoint=args.keep_checkpoint), default=str))
@@ -1479,7 +1801,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "prepare":
         print(json.dumps(prepare(config, args.family, workers=args.workers), indent=1, default=str))
     elif args.command == "learn":
-        print(json.dumps(learn(config, args.run, args.output, device=args.device, limit=args.limit), indent=1, default=str))
+        print(json.dumps(learn(config, args.run, args.output, device=args.device, limit=args.limit, method=args.method), indent=1,
+                         default=str))
+    elif args.command == "items":
+        print(json.dumps(build_round2_items(config, args.family, args.output), indent=1, default=str))
     elif args.command == "write":
         print(json.dumps(write(config, args.run, args.learned, args.output, device=args.device, limit=args.limit), indent=1, default=str))
     elif args.command == "reason":
