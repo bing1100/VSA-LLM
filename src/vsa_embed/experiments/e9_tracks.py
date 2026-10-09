@@ -239,10 +239,11 @@ TRACKS: dict[str, TrackSpec] = {
                     kept_relations=("mapped_to", "parent", "branch_top", "branch_second", "record_class"),
                     edit_relations=("pharmacological_action", "mapped_to", "parent"),
                     family_roots={"qwen3": QWEN3_ROOTS["t7"], "qwen3_5": QWEN35_ROOTS["t7"]}),
-    # T8 (decision 63): category = the entity's type (P31); edits change a typed, single-valued fact (citizenship,
+    # T8 (decision 63): 8,192 windows = the fewest that meet the held-out and rare criteria at ℓ_min 2 (runs/v1/feasibility.json).
+    # Category = the entity's type (P31); edits change a typed, single-valued fact (citizenship,
     # occupation, country, birthplace, …) to a filler of the same type.
     "t8": TrackSpec("t8", "T8 Wikidata entities (Wikidata + FineWeb-Edu)", DATA / "tracks/t8-wikidata/v1",
-                    eval_split="eval-entities", windows=4096, config=Path("experiments/t8-wikidata/t8.yaml"),
+                    eval_split="eval-entities", windows=8192, config=Path("experiments/t8-wikidata/t8.yaml"),
                     holdout_names=Path("experiments/t8-wikidata/runs/v1/holdout_concepts.txt"),
                     category_relations=("instance_of",), kept_relations=("instance_of", "subclass_of"),
                     edit_relations=("country_of_citizenship", "occupation", "country", "place_of_birth", "genre", "author",

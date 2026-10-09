@@ -69,7 +69,7 @@ data:
   holdout_max_containing: 5
   rood_min_chars: 3                             # every Wikidata name of ≥ 3 characters excludes a training document
   rood_max_documents: 300                       # exclusion cost: training-side screen documents naming the entity
-  expected_holdout_sha256: null
+  expected_holdout_sha256: 99312697ee24fd8b6d5abb5ff8ee4f8b34ed32622061b8153e78349dfb14291d   # frozen 2026-10-08 by the first full build (runs/v1), before any training
   min_subtokens: 2
   train_tokens: 100000000
   train_min_subtokens: 1
@@ -89,5 +89,5 @@ feasibility:
   heldout_min_occurrences: 2000
   rare_min_entries: 300
   rare_min_occurrences: 2000
-  trainer_windows: 4096
+  trainer_windows: 8192                         # the fewest that meet the held-out and rare criteria at ℓ_min 2 (runs/v1)
   window_length: 1024

@@ -495,6 +495,12 @@ def rood_eligibility(table: AliasTable, ontology: FrameOntology, records: dict[s
     return {"eligible": eligible, "cost": cost, "reasons": dict(reasons), "fillers": fillers}
 
 
+def screen_documents(config: dict[str, Any]) -> int:
+    """Training-side documents the screen read (`screen/screen.json` next to the selection)."""
+    path = Path(config["ontology"]["selection"]).parent / "screen.json"
+    return int(json.loads(path.read_text())["documents_read"]["train"]) if path.exists() else 0
+
+
 def screen_entry_counts(selection: Sequence[dict[str, Any]], table: AliasTable, ontology: FrameOntology) -> Counter:
     """Training-side screen occurrences per single-concept entry (the sum over its selected names)."""
     concept = {q: i for i, q in enumerate(ontology.concept_names)}
@@ -534,8 +540,9 @@ def choose_rood_holdout(counts: Counter, lengths: dict[int, int], table: AliasTa
 def leakage_audit(documents: EntityDocuments, builds: list[tuple[str, Path, dict[str, Any]]], *, full: AliasTable,
                   heldout_entries: Sequence[int], workers: int, scratch: Path) -> dict[str, Any]:
     """Re-read the realized training documents of every build (the longest prefix of the training mix) and check:
-    held-out names found in them (ROOD filter), document ids shared with `eval-entities`, and held-out spans when they
-    are linked with the full alias table (reference tokenizer). Each count must be 0."""
+    held-out names found in them (ROOD filter), document ids shared with `eval-entities`, and held-out mentions when they
+    are linked with the full alias table (reference tokenizer; spans whose next token continues the word — the linker's
+    in-word prefix matches — are counted apart). Each of the three counts must be 0."""
     exclude = documents.exclude()
     eval_ids = {doc_id for doc_id, _ in documents.eval_records()}
     longest = 0
@@ -556,15 +563,40 @@ def leakage_audit(documents: EntityDocuments, builds: list[tuple[str, Path, dict
     scratch.mkdir(parents=True, exist_ok=True)
     linked = build_corpus(iter(texts), scratch, tokenizer_name=tokenizer_name, table=full, eos_id=tokenizer.eos_token_id,
                           max_tokens=10**12, workers=workers, vocab_size=len(tokenizer))
-    spans = TokenCorpus.open(scratch).spans
+    corpus = TokenCorpus.open(scratch)
+    spans = corpus.spans
     held = np.zeros(len(full.entry_concepts), dtype=bool)
     held[list(heldout_entries)] = True
-    heldout_spans = int(held[spans["entry"].astype(np.int64)].sum())
+    found = np.flatnonzero(held[spans["entry"].astype(np.int64)])
+    # Two linker artefacts are not mentions: (1) the linker matches at token ends without a right word boundary, so an
+    # alias can match the start of a longer word ("Javan" in "Javanese", "Matthew 2" in "Matthew 22"); (2) it lowercases
+    # the whole document and indexes that string with the original text's offsets, so after a character whose lowercase
+    # is longer ("İ" → "i̇") its matches shift ("Neith" inside "Neither"). A held-out span is a mention when its decoded
+    # text is a held-out alias and the next token does not continue the word.
+    from vsa_embed.span_channel import normalize_alias
+    held_aliases = {alias for alias, entry in full.alias_to_entry.items() if held[entry]}
+    tokens = np.asarray(corpus.tokens)
+    whole, in_word, shifted, examples = 0, 0, 0, Counter()
+    for index in found.tolist():
+        start, end = int(spans["start"][index]), int(spans["end"][index])
+        following = tokenizer.decode([int(tokens[end + 1])]) if end + 1 < len(tokens) else ""
+        surface = tokenizer.decode([int(t) for t in tokens[start:end + 1]]).strip()
+        if normalize_alias(surface) not in held_aliases:
+            shifted += 1
+            examples[f"shifted: {surface}"] += 1
+        elif following[:1].isalnum():
+            in_word += 1
+            examples[f"{surface}|{following}"] += 1
+        else:
+            whole += 1
+            examples[f"MENTION {surface}"] += 1
     shutil.rmtree(scratch, ignore_errors=True)
     result = {"training_documents_read": read, "eval_entities_documents": len(eval_ids), "heldout_names_in_training": found_names,
-              "training_ids_in_eval_entities": shared_ids, "heldout_spans_full_table": heldout_spans,
+              "training_ids_in_eval_entities": shared_ids, "heldout_mentions_full_table": whole,
+              "heldout_in_word_matches_full_table": in_word, "heldout_shifted_matches_full_table": shifted,
+              "in_word_examples": dict(examples.most_common(12)),
               "full_table_linked_tokens": int(linked["tokens"]), "full_table_spans": int(linked["spans"])}
-    result["passed"] = found_names == 0 and shared_ids == 0 and heldout_spans == 0
+    result["passed"] = found_names == 0 and shared_ids == 0 and whole == 0
     return result
 
 
@@ -714,6 +746,8 @@ def run(config: dict[str, Any], output_dir: Path, *, log: Callable[[str], None] 
                     "closure_entries": len(holdout["closure_entries"]), "heldout_entries": len(holdout["heldout_entries"]),
                     "eligible_entries": holdout["eligible_entries"], "excluded_hub_entries": holdout["excluded_hub_entries"],
                     "rood": holdout["eligibility"], "exclusion_keys": len(holdout["exclusion_keys"]),
+                    "counts": data.get("holdout_counts", "presample"), "min_count": int(data["holdout_min_count"]),
+                    "screen_training_documents": screen_documents(config),
                     "exclusion_cost_documents_screen": holdout["exclusion_cost_documents"], "sha256": holdout["sha256"]},
         "corpora": {label: info for label, _, info in builds},
         "hosts": {h["tokenizer"]: str(data_root / "hosts" / h["name"]) for h in config.get("hosts") or []},
@@ -755,15 +789,24 @@ def render_report(summary: dict[str, Any], by_source: dict[str, dict[str, Any]],
         lines.append(f"| {name} | {s['aliases']:,} | {s['aliases_2plus_subtokens']:,} | {' / '.join(f'{v:,}' for v in s['histogram_1_2_3_4_5plus'])} |")
     lines += ["", "## Holdout (M1, ROOD)", "",
               f"{h['heldout_entries']:,} held-out entries ({h['chosen_entries']:,} chosen of {h['eligible_entries']:,} eligible with "
-              f"the pre-sample count, {h['closure_entries']:,} added by the closure); sha256 `{h['sha256']}`. ROOD eligibility: "
+              f"≥ {h.get('min_count', '?')} {h.get('counts', 'pre-sample')} occurrences, {h['closure_entries']:,} added by the closure); "
+              f"sha256 `{h['sha256']}`. ROOD eligibility: "
               f"{h['rood']['eligible_entries']:,} entries (excluded: {h['rood']['excluded']}). Node-disjoint: no held-out entity "
               f"fills any frame. Alias-disjoint: no held-out name is, or is a whole-word part of, a training alias. Document "
               f"exclusion: every training document naming a held-out entity under any of its {h['exclusion_keys']:,} Wikidata "
-              "names is dropped (those documents feed `eval-entities`).", "",
+              f"names is dropped (those documents feed `eval-entities`); the held-out entities' names occur in "
+              f"{h['exclusion_cost_documents_screen']:,} training-side screen documents (an upper bound, ≈ "
+              f"{h['exclusion_cost_documents_screen'] / max(1, h.get('screen_training_documents', 1)):.1%} of the pool).", "",
               "**Leakage audit** (the realized training documents re-read): "
               f"held-out names found {audit['heldout_names_in_training']}, training documents in `eval-entities` "
-              f"{audit['training_ids_in_eval_entities']}, held-out spans with the full alias table {audit['heldout_spans_full_table']} "
-              f"({audit['training_documents_read']:,} documents) — **{'passed' if audit['passed'] else 'FAILED'}**.", "",
+              f"{audit['training_ids_in_eval_entities']}, held-out mentions with the full alias table "
+              f"{audit['heldout_mentions_full_table']} ({audit['training_documents_read']:,} documents) — "
+              f"**{'passed' if audit['passed'] else 'FAILED'}**. The full-table linker also matches "
+              f"{audit['heldout_in_word_matches_full_table']:,} held-out aliases at the start of a longer word (e.g. "
+              f"{', '.join(list(audit['in_word_examples'])[:4])}; the linker has no right word boundary) and "
+              f"{audit['heldout_shifted_matches_full_table']:,} at offsets shifted by a character whose lowercase is longer "
+              "(the linker lowercases the document and indexes it with the original offsets): neither is a mention, and the "
+              "training table never links held-out aliases at all.", "",
               "## Corpora", "",
               f"Evaluation side: documents whose id's sha256 bucket is < {summary['mix']['eval_buckets']} / 10,000, plus the ROOD "
               f"documents; `eval-entities` keeps the first {summary['mix'].get('eval_domain_docs') or 'all'} evaluation-side and "
