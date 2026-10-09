@@ -1,0 +1,31 @@
+# T7 rounds for E13 (decision 63; TK-H1): T7's records split by MeSH DateIntroduced (the record-level date that replaced
+# DateCreated in the 2025+ XML; fallback: the first training-side PubMed mention, unused: every T7 record has a date) into
+# round 1 (the earliest ≈ 70% of the entries) and round 2 (the latest ≈ 30%, plus the containment closure). Round 2 is the
+# held-out set of a ROOD build (`t7_rood`): every training document that mentions a round-2 name is dropped from round 1
+# and refilled to T7 v1's size. Besides the T7 corpora (`train` = round 1, `eval-pubmed`, `eval`, `eval-general`,
+# `ontology.pt` with round 2 held out), each tokenizer gets `train-round2` (the dropped abstracts mixed 50/50 with the
+# general documents after round 1's), `eval-round2` / `eval-round1` (evaluation abstracts with / without a round-2 name)
+# and `ontology-round2.pt` (nothing held out); the run folder gets `round_split.tsv`, `round2_records.jsonl` (gold
+# frames, SCR notes) and the E11-format set `round2-items-smollm2-v1/`. Qwen3 (E13's Qwen3-1.7B seed) is relinked too.
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1_open_corpus --config experiments/t7-new-vocabulary/t7-rounds.yaml \
+#     --output experiments/t7-new-vocabulary/runs/rounds-v1          # then pin data.expected_holdout_sha256
+extends: t7.yaml
+experiment: t7-new-vocabulary-rounds
+track_label: T7 rounds for E13 (round 2 = MeSH SCRs introduced latest; their documents excluded from round 1)
+paths:
+  data_root: ~/data/vsa-llm/tracks/t7-newvocab/rounds-v1
+holdout:
+  exclude_training_documents: true
+  split: date
+  round2_fraction: 0.30
+  names: candidates
+  top_up: domain
+  match_train_tokens: 57268320   # T7 v1 `train` (SmolLM2 tokens)
+  reference_root: ~/data/vsa-llm/tracks/t7-newvocab/v1
+data:
+  expected_holdout_sha256: 03f35409729e29cbef50ec322061911951fdf06b566cbf16888db544ee7e856e   # pinned 2026-10-08 by the first build (runs/rounds-v1: 2,470 round-2 entries), before any run
+hosts:
+  - name: qwen3
+    tokenizer: Qwen/Qwen3-0.6B-Base
+    train_tokens: 130000000      # an upper bound: the document count fixed by the SmolLM2 budget ends the stream
+cardinality_tokenizers: [HuggingFaceTB/SmolLM2-360M, Qwen/Qwen3-0.6B-Base]

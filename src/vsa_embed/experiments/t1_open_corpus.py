@@ -39,6 +39,11 @@ training-side PubMed text and absent from general web text). Its extra stage `sc
 and writes the frozen selection (`selection.tsv`, pinned by `ontology.selection_sha256` before `build`);
 `data.domain_filter: mentions` keeps only abstracts that mention a selected name (training and evaluation sides
 alike), and `track_label` names the track in manifests and reports. Every key is opt-in: T1 builds as before.
+
+T7-ROOD and the E13 rounds (decision 63, holdout H1; `t7_rood`): the opt-in `holdout:` section
+(`exclude_training_documents: true`) drops every training document that mentions a held-out record and refills the
+tokens; `holdout.split: date` holds out the records introduced latest instead (E13 round 2). Without the section every
+build is unchanged.
 """
 
 from __future__ import annotations
@@ -373,6 +378,20 @@ def channel_ontology(full: AliasTable, ontology: FrameOntology, frequency: np.nd
     }
 
 
+def save_if_changed(obj: Any, path: Path) -> None:
+    """`torch.save` unless `path` already holds exactly these bytes, else an atomic replace: a host relink reruns the
+    reference build, whose `ontology.pt` queued jobs may be reading (the archive is written under the same file name, so
+    equal content gives equal bytes)."""
+    import os
+    import tempfile
+    with tempfile.TemporaryDirectory(dir=path.parent) as scratch:
+        candidate = Path(scratch) / path.name
+        torch.save(obj, candidate)
+        if path.exists() and file_digest(path) == file_digest(candidate):
+            return
+        os.replace(candidate, path)
+
+
 def train_frequency(train_dir: Path, entry_count: int, min_subtokens: int) -> np.ndarray:
     spans = TokenCorpus.open(train_dir).spans
     return np.bincount(spans["entry"][spans["length"] >= min_subtokens], minlength=entry_count)
@@ -419,7 +438,7 @@ def relink_for_host(tokenizer_name: str, out_dir: Path, *, documents: TrackDocum
         if name in ("train", "eval"):
             shares[name] = record_shares(out_dir / name, log, eos, documents.sources)
     frequency = train_frequency(out_dir / "train", len(full.entry_concepts), min_subtokens)
-    torch.save(channel_ontology(full, ontology, frequency, holdout_sha256), out_dir / "ontology.pt")
+    save_if_changed(channel_ontology(full, ontology, frequency, holdout_sha256), out_dir / "ontology.pt")
     return {"tokenizer": tokenizer_name, "corpora": manifests, "source_shares": shares,
             "linked_entries_in_train_at_min_subtokens": int((frequency > 0).sum()),
             "ontology_sha256": file_digest(out_dir / "ontology.pt")}
@@ -674,9 +693,13 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     presample = TokenCorpus.open(data_root / "presample")
     long_enough = presample.spans["length"] >= int(data["holdout_min_subtokens"])
     counts = Counter(presample.spans["entry"][long_enough].tolist())
-    holdout = choose_track_holdout(counts, entry_length, base_table, ontology.concept_names,
-                                   fraction=float(data["holdout_fraction"]), min_count=int(data["holdout_min_count"]),
-                                   seed=int(config["seed"]), max_containing=data.get("holdout_max_containing"))
+    if (config.get("holdout") or {}).get("split") == "date":      # E13 rounds (t7_rood): round 2 = the latest records
+        from .t7_rood import date_holdout
+        holdout = date_holdout(config, ontology, base_table)
+    else:
+        holdout = choose_track_holdout(counts, entry_length, base_table, ontology.concept_names,
+                                       fraction=float(data["holdout_fraction"]), min_count=int(data["holdout_min_count"]),
+                                       seed=int(config["seed"]), max_containing=data.get("holdout_max_containing"))
     expected = data.get("expected_holdout_sha256")
     if expected and expected != holdout["sha256"]:
         raise ValueError(f"holdout sha256 {holdout['sha256']} != pinned {expected}: the frozen holdout changed")
@@ -696,6 +719,11 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
     if sorted(full.heldout_entries()) != holdout["heldout_entries"]:
         raise AssertionError("holdout entries differ between the closure and the alias table")
     assert_alias_disjoint(full, train_table)
+    rood = None
+    if config.get("holdout"):          # T7-ROOD (t7_rood): training documents that mention a held-out record are dropped
+        from .t7_rood import prepare
+        rood = prepare(config, documents=documents, full=full, ontology=ontology, holdout=holdout, tokenizer=tokenizer)
+        documents = rood.documents
     min_subtokens = int(data["min_subtokens"])
     shared = dict(documents=documents, full=full, train_table=train_table, ontology=ontology, holdout_sha256=holdout["sha256"],
                   train_min_subtokens=int(data["train_min_subtokens"]), min_subtokens=min_subtokens, workers=workers)
@@ -711,6 +739,9 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
                                eval_mix_tokens=host.get("eval_mix_tokens", data.get("eval_mix_tokens")),
                                **{**shared, "documents": host_documents})
         builds.append((host["tokenizer"], root, info, int(host.get("reference_train_tokens") or host["train_tokens"])))
+    # T7-ROOD: the leakage audit of every training corpus (the build fails on a leak) and, for the E13 rounds, the
+    # round-2 corpora, records and items.
+    rood_summary = rood.finish(builds, output_dir=output_dir, **shared) if rood is not None else None
     l1_manifest = None
     if int(data.get("l1_slice_tokens") or 0) and int(data["train_min_subtokens"]) > 1:
         l1_manifest = build_corpus(documents.train(), data_root / "train-l1", tokenizer_name=tokenizer_name, table=train_table,
@@ -774,9 +805,11 @@ def run(config: dict[str, Any], output_dir: Path) -> dict[str, Any]:
         "train_l1_slice": l1_manifest,
         "alias_table_sha256": full.digest(), "data_root": str(data_root),
         "domain_filter": data.get("domain_filter"),
+        **({"rood": rood_summary} if rood_summary is not None else {}),
     }
     (output_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str) + "\n")
-    (output_dir / "report.md").write_text(render_report(summary, by_source, feasibility, criteria))
+    (output_dir / "report.md").write_text(render_report(summary, by_source, feasibility, criteria)
+                                          + (rood.report(rood_summary) if rood is not None else ""))
     write_run_metadata(output_dir, config, git_at_start=git_at_start, device="cpu", track=config_label(config))
     return summary
 

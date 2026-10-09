@@ -1,0 +1,24 @@
+# T7-ROOD — the HRRBERT-style "really out of distribution" variant of T7 (decision 63, holdout H1; `t7_rood`).
+# T7 v1 holds its 908 entries out of the linker only: the names still occur, unlinked, in the training text. Here every
+# TRAINING document (PubMed or general) that mentions any name of a held-out record is dropped (case-insensitive,
+# whole-token matching over every candidate name of the record, linked or not); evaluation documents keep them.
+# The held-out set is T7 v1's (same presample and choice, pinned below by t7.yaml's expected_holdout_sha256), so T7 and
+# T7-ROOD differ only in the exclusion. The dropped domain tokens are refilled from training-side abstracts of the same
+# files that mention no selected name, up to T7 v1's training size with the SmolLM2 tokenizer (57,268,320 tokens); the
+# stream is then a fixed document count, so the Qwen3 relink (t7-rood-qwen3.yaml) reads the same documents. The build
+# decodes every training document again and fails unless none contains a held-out name; it compares the evaluation
+# corpora and the training documents with T7 v1 (`reference_root`). Interface and numbers: ROOD.md.
+#   PYTHONPATH=src python -m vsa_embed.experiments.t1_open_corpus --config experiments/t7-new-vocabulary/t7-rood.yaml \
+#     --output experiments/t7-new-vocabulary/runs/rood-v1
+extends: t7.yaml
+experiment: t7-new-vocabulary-rood
+track_label: T7-ROOD new-vocabulary biomedical, held-out documents excluded from training (MeSH SCR + PubMed 2025-26)
+paths:
+  data_root: ~/data/vsa-llm/tracks/t7-newvocab/rood-v1
+holdout:
+  exclude_training_documents: true
+  split: frequency               # T7 v1's holdout (5e133b5f…)
+  names: candidates              # every candidate name of a held-out record (mesh_novel.candidate_aliases), linked or not
+  top_up: domain                 # refill from training-side abstracts that mention no selected name
+  match_train_tokens: 57268320   # T7 v1 `train` (SmolLM2 tokens, EOS included)
+  reference_root: ~/data/vsa-llm/tracks/t7-newvocab/v1
