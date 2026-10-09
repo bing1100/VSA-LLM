@@ -74,6 +74,10 @@ RUN_NAME = re.compile(r"^(?P<host>.+)-(?P<mode>full|lora|frozen)-(?P<model>[^-]+
 KINDS = ("none", "recall", "roleless", "wrong", "symbolic", "definition", "recall-all", "recall-free", "fields", "noconf")
 STORE_KINDS = frozenset({"recall", "roleless", "wrong", "recall-all", "recall-free", "fields", "noconf"})
 UNDERSTANDING_FAMILIES = ("two_hop", "reverse")
+# Opt-in (`--families`; T7-ROOD, decision 63: no role-swap twins and no two-hop items on T7): the WP-UB families that ask
+# about one relation of the anchor's own frame. Their context is the anchor's whole-frame recall (slot-aware, as for new
+# words); `slot_correct` records whether the recall put the gold filler of the item's relation in context.
+RELATION_FAMILIES = ("paraphrase", "negation", "affordance")
 REVERSE_K = 5
 SYMBOLIC_HOLDERS = 5
 DEFINITION_STYLE = {"t5": "prose", "t4": "prose"}
@@ -235,7 +239,7 @@ def load_item_set(path: Path, *, limit: int | None = None, families: Sequence[st
     elif schema == und.SCHEMA:
         kind = "understanding"
         manifest, concepts, items = und.load_items(path)
-        items = [i for i in items if i["family"] in families and i["test"] in families]
+        items = [i for i in items if i["family"] in families and (i["test"] in families or i["family"] in RELATION_FAMILIES)]
         if limit:
             firsts: dict[str, list[str]] = defaultdict(list)
             for item in items:
@@ -511,6 +515,7 @@ class ContextBuilder:
         writer = self.writer(style=style, confidence=condition.kind != "noconf")
         cleanup = "all" if condition.kind == "recall-all" else self.cleanup
         texts, records = {}, []
+        whole: dict[str, tuple[str, dict[int, float]]] = {}           # relation families: one recall per anchor
         for prompt in self.items.prompts:
             item = prompt.item
             anchor = self.concepts[item["anchor"]]
@@ -547,6 +552,17 @@ class ContextBuilder:
                                 "hop1_correct": float(meta["hop1"] == gold1) if gold1 is not None else None,
                                 "bridge_correct": float(bridge is not None and meta["bridge"] == bridge),
                                 "hop2_correct": float(answer is not None and meta["hop2"] == answer)})
+            elif item["family"] in RELATION_FAMILIES:
+                if condition.kind == "definition" or item["anchor"] not in self.frames:   # no definition writer: not scored
+                    continue
+                if item["anchor"] not in whole:
+                    lines = self._frame_lines(condition, item["anchor"])
+                    whole[item["anchor"]] = (writer.render(anchor["surface"], lines), sq.slot_accuracy(lines, self.frames[item["anchor"]]))
+                text, accuracy = whole[item["anchor"]]
+                relation = self.relation_id.get(item["relation"].split(":", 1)[0])
+                texts[prompt.id] = text
+                records.append({"condition": condition.name, "item": prompt.id, "store": condition.store, "text": text,
+                                "slot_correct": accuracy.get(relation) if relation is not None else None})
             elif item["family"] == "reverse":
                 relation = self.relation_id[item["relation"]]
                 filler = self.atomic_id.get(item["meta"]["filler"])
@@ -740,7 +756,7 @@ def summarize(item_set: ItemSet, results: dict[str, list[dict[str, Any]]], recor
             units = understanding_units([r for r in rows if r["anchor"] in linked])
             for k, v in units.items():
                 rec = by_item.get(k, {})
-                for key in ("hop1_correct", "bridge_correct", "hop2_correct", "pair_correct", "anchor_in_top"):
+                for key in ("hop1_correct", "bridge_correct", "hop2_correct", "pair_correct", "anchor_in_top", "slot_correct"):
                     if rec.get(key) is not None:
                         v[key] = rec[key]
             block["items"] = {"units": units, "by": _grouped(units, ("family", "subset"))}
@@ -904,7 +920,7 @@ def render_report(summary: dict[str, Any], header: dict[str, Any]) -> str:
 
 def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     from .e9_tracks import ensure_alias_table, track_spec
-    item_set = load_item_set(args.items, limit=args.limit)
+    item_set = load_item_set(args.items, limit=args.limit, families=_families(args))
     if args.item_kinds:                         # role items only: e.g. `choice` (the twins' primary kind) in a pilot
         kinds = {k.strip() for k in args.item_kinds.split(",") if k.strip()}
         item_set.prompts = [p for p in item_set.prompts if p.row.get("kind") in kinds]
@@ -922,7 +938,7 @@ def run_evaluate(args: argparse.Namespace) -> dict[str, Any]:
               "conditions": [c.name for c in conditions], "stores": {l: str(resolve_store(run_dir, l)) for l in labels},
               "cleanup": args.cleanup, "seed": args.seed, "limit": args.limit, "item_kinds": args.item_kinds, "batch_size": args.batch_size,
               "max_length": args.max_length, "max_lines": args.max_lines, "alias_table": str(alias_table) if alias_table else None,
-              "label": args.label}
+              "label": args.label, **({"families": list(_families(args))} if getattr(args, "families", None) else {})}
     if args.overwrite:
         for name in RESULT_FILES:
             if (output / name).is_file():
@@ -959,7 +975,7 @@ def load_evaluation(folder: Path) -> dict[str, Any] | None:
 
 def run_recall(args: argparse.Namespace) -> list[dict[str, Any]]:
     """Print (and optionally write) the recalled texts of an item set from one store: no host, CPU only."""
-    item_set = load_item_set(args.items, limit=args.limit)
+    item_set = load_item_set(args.items, limit=args.limit, families=_families(args))
     store = load_store(Path(args.store), "own")
     family = item_set.manifest.get("family") or "smollm2"
     lexicon = lexicon_for_track(item_set.track, family, store.ontology)
@@ -974,10 +990,18 @@ def run_recall(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 
 def evaluate_command(run_dir: Path, items: Path, *, python: str = sys.executable, batch_size: int = 16, conditions: Sequence[str] | None = None,
-                     max_length: int = 768, limit: int | None = None, tag: str | None = None) -> list[str]:
+                     max_length: int = 768, limit: int | None = None, tag: str | None = None,
+                     families: Sequence[str] | None = None) -> list[str]:
     return [python, "-m", "vsa_embed.experiments.e12_self_query", "evaluate", "--run", str(run_dir), "--items", str(items), "--overwrite",
             "--batch-size", str(batch_size), "--max-length", str(max_length), *(["--limit", str(limit)] if limit else []),
-            *(["--conditions", ",".join(conditions)] if conditions else []), *(["--tag", tag] if tag else [])]
+            *(["--conditions", ",".join(conditions)] if conditions else []), *(["--tag", tag] if tag else []),
+            *(["--families", ",".join(families)] if families else [])]
+
+
+def _families(args: argparse.Namespace) -> tuple[str, ...]:
+    """The understanding families an evaluation scores (`--families`; default `UNDERSTANDING_FAMILIES`)."""
+    given = getattr(args, "families", None)
+    return tuple(f.strip() for f in given.split(",") if f.strip()) if given else UNDERSTANDING_FAMILIES
 
 
 CONTEXT_BATCH = {"SmolLM2-135M": 48, "SmolLM2-360M": 24, "Qwen3-0.6B-Base": 8, "Qwen3-1.7B-Base": 4}   # 360M at 24: 3.5 GB peak (pilot)
@@ -990,7 +1014,7 @@ SET_MAX_LENGTH = {"natural": 1536}
 def queue_stage(stage: str, items: Path, *, priority: int = 50, models: Sequence[str] | None = None, seeds: Sequence[int] | None = None,
                 hosts: Sequence[str] | None = None, root: Path = ROOT, queue_dir: Path | None = None, python: str | None = None,
                 dry_run: bool = False, core: bool = False, override: Sequence[str] | None = None,
-                tag: str | None = None) -> list[dict[str, Any]]:
+                tag: str | None = None, families: Sequence[str] | None = None) -> list[dict[str, Any]]:
     """One GPU-lane job per run of `stage` (finished or not: a job waits in the queue for its run's training), named
     `<stage>-<stem>-<output folder>` (idempotent). P0 reads the C5 stores of seeds 1–3 (its single run stands for every seed)."""
     from vsa_embed.jobqueue import DEFAULT_DIR, add
@@ -1018,7 +1042,8 @@ def queue_stage(stage: str, items: Path, *, priority: int = 50, models: Sequence
         batch = CONTEXT_BATCH.get(host, 8) // (2 if kind == "natural" else 1)
         jobs.append({"name": f"{stage}-{path.stem}-{output_folder(run_dir, items, tag).name}", "priority": int(priority), "model": model,
                      "command": evaluate_command(run_dir, items, python=python, batch_size=max(1, batch), conditions=conditions,
-                                                 max_length=SET_MAX_LENGTH.get(kind, 768), limit=SET_LIMIT.get(kind), tag=tag)})
+                                                 max_length=SET_MAX_LENGTH.get(kind, 768), limit=SET_LIMIT.get(kind), tag=tag,
+                                                 families=families)})
     if dry_run:
         return jobs
     queued = []
@@ -1048,11 +1073,13 @@ def main(argv: list[str] | None = None) -> None:
     ev.add_argument("--label", default=None, help="a free label recorded in the outputs (e.g. PILOT)")
     ev.add_argument("--item-kinds", default="", help="role items: score only these kinds (choice, cloze); default every kind")
     ev.add_argument("--overwrite", action="store_true")
+    ev.add_argument("--families", default=None, help="understanding item sets: the WP-UB families scored (default two_hop,reverse; opt-in relation families: "
+                    + ",".join(RELATION_FAMILIES) + ")")
     rc = sub.add_parser("recall", help="print the recalled texts of an item set from one store (CPU, no host)")
     rc.add_argument("--store", type=Path, required=True); rc.add_argument("--items", type=Path, required=True)
     rc.add_argument("--condition", default="recall:own"); rc.add_argument("--cleanup", default="typed", choices=sq.CLEANUPS)
     rc.add_argument("--limit", type=int, default=3); rc.add_argument("--seed", type=int, default=0)
-    rc.add_argument("--output", type=Path, default=None)
+    rc.add_argument("--output", type=Path, default=None); rc.add_argument("--families", default=None)
     qu = sub.add_parser("queue", help="queue one phase-A job per run of a stage")
     qu.add_argument("--stage", required=True); qu.add_argument("--items", type=Path, required=True)
     qu.add_argument("--priority", type=int, default=50); qu.add_argument("--models", nargs="*", default=None)
@@ -1061,6 +1088,7 @@ def main(argv: list[str] | None = None) -> None:
     qu.add_argument("--core", action="store_true", help="the core conditions (secondary arms, replications; preregistration §3)")
     qu.add_argument("--conditions", default="", help="these conditions on every selected run instead of the defaults (e.g. SQ4's formats)")
     qu.add_argument("--tag", default=None, help="output folder suffix (`self-query-<items>-<tag>`; the report merges it with the base)")
+    qu.add_argument("--families", default=None, help="passed to every job's evaluate (understanding item sets)")
     args = parser.parse_args(argv)
     if args.command == "evaluate":
         result = run_evaluate(args)
@@ -1072,7 +1100,8 @@ def main(argv: list[str] | None = None) -> None:
     else:
         override = [c.name for c in parse_conditions(args.conditions)] if args.conditions else None
         jobs = queue_stage(args.stage, args.items, priority=args.priority, models=args.models, seeds=args.seeds, hosts=args.hosts, core=args.core,
-                           root=args.root, dry_run=args.dry_run, override=override, tag=args.tag)
+                           root=args.root, dry_run=args.dry_run, override=override, tag=args.tag,
+                           families=list(_families(args)) if args.families else None)
         print(json.dumps([{"name": j["name"], "priority": j["priority"], "command": " ".join(j["command"])} for j in jobs], indent=2))
 
 

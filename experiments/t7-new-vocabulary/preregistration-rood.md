@@ -97,4 +97,7 @@ above the E9 criterion of 2,000 occurrences and 300 entries.
 
 ## 8. Changes after this document
 
-None yet.
+- **2026-10-08 (before any run): the P2 / P3 script.** `src/vsa_embed/experiments/t7_rood_compare.py` implements §4 as
+  written: windows pooled over seeds 1–3, P0 standing for every seed, 10,000 resamples. Its queue job is
+  `t7rood-vs-t7-report` at 54.4974 (`queue-commands-rood-followups.sh`). A Qwen3 seed-1 run of the same script,
+  `t7rood-vs-t7-qwen3-report`, gives the §6 secondary. Nothing in §§1–7 changes.

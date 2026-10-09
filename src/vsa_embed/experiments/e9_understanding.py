@@ -355,7 +355,8 @@ T8_SPEC: dict[str, Any] = {
         "country": {"affirm": ["{x} is located in the country of", "{x} is in"],
                     "negate": ["{x} is not located in the country of", "{x} is not in"]}},
 }
-TRACK_SPECS = {"t5": T5_SPEC, "t4": T4_SPEC, "t7": T7_SPEC, "t8": T8_SPEC}
+# T7-ROOD (decision 63, H1; `e9_tracks.TRACKS["t7rood"]`): T7's ontology and lexicon, so T7's spec.
+TRACK_SPECS = {"t5": T5_SPEC, "t4": T4_SPEC, "t7": T7_SPEC, "t7rood": T7_SPEC, "t8": T8_SPEC}
 
 
 # ---------------------------------------------------------------- build context

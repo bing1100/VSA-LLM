@@ -1,0 +1,1550 @@
+{
+  "source": {
+    "run": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood/SmolLM2-135M-lora-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-135M/lora",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t7rood-SmolLM2-135M-lora-C5-s1-SMOKE",
+    "run_git_sha": "95812eaea0f70f2babc927369db9c4473baa8d73",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t7-newvocab/rood-v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t7-newvocab/rood-v1/eval-pubmed",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-360M"
+  },
+  "items": "experiments/e9-retrofit/items/understanding-t7rood-smollm2-v1",
+  "kind": "understanding",
+  "label": "SMOKE",
+  "stores": {
+    "own": {
+      "label": "own",
+      "run": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood/SmolLM2-135M-lora-C5-s1",
+      "operator": "hrr",
+      "method": "correlation",
+      "role_blind": false,
+      "family": "hrr"
+    }
+  },
+  "summary": {
+    "kind": "understanding",
+    "conditions": {
+      "none": {
+        "items": {
+          "units": {
+            "u-t7rood-14-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "seen"
+            },
+            "u-t7rood-14-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "seen"
+            },
+            "u-t7rood-14-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "seen"
+            },
+            "u-t7rood-14-negation-mapped_to-affirm": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "seen"
+            },
+            "u-t7rood-14-negation-mapped_to-negate": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "negation",
+              "subset": "seen"
+            },
+            "u-t7rood-134-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "seen"
+            },
+            "u-t7rood-134-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "seen"
+            },
+            "u-t7rood-134-reverse-mapped_to": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "seen"
+            },
+            "u-t7rood-134-negation-mapped_to-affirm": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "seen"
+            },
+            "u-t7rood-134-negation-mapped_to-negate": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "seen"
+            },
+            "u-t7rood-1-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "rare"
+            },
+            "u-t7rood-1-paraphrase-branch_second": {
+              "accuracy": 0.0,
+              "score": -0.2,
+              "family": "paraphrase",
+              "subset": "rare"
+            },
+            "u-t7rood-1-paraphrase-record_class": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "paraphrase",
+              "subset": "rare"
+            },
+            "u-t7rood-1-reverse-mapped_to": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "reverse",
+              "subset": "rare"
+            },
+            "u-t7rood-1-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "rare"
+            },
+            "u-t7rood-1-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "rare"
+            },
+            "u-t7rood-15-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "rare"
+            },
+            "u-t7rood-15-paraphrase-branch_second": {
+              "accuracy": 0.5,
+              "score": 0.3,
+              "family": "paraphrase",
+              "subset": "rare"
+            },
+            "u-t7rood-15-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "rare"
+            },
+            "u-t7rood-15-reverse-mapped_to": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "rare"
+            },
+            "u-t7rood-15-negation-mapped_to-affirm": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "negation",
+              "subset": "rare"
+            },
+            "u-t7rood-15-negation-mapped_to-negate": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "rare"
+            },
+            "u-t7rood-0-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "heldout"
+            },
+            "u-t7rood-0-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "heldout"
+            },
+            "u-t7rood-0-reverse-mapped_to": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "reverse",
+              "subset": "heldout"
+            },
+            "u-t7rood-0-negation-mapped_to-affirm": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "negation",
+              "subset": "heldout"
+            },
+            "u-t7rood-0-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "heldout"
+            },
+            "u-t7rood-3-affordance-handling": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "affordance",
+              "subset": "heldout"
+            },
+            "u-t7rood-3-paraphrase-record_class": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "paraphrase",
+              "subset": "heldout"
+            },
+            "u-t7rood-3-reverse-mapped_to": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "heldout"
+            },
+            "u-t7rood-3-negation-mapped_to-affirm": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "heldout"
+            },
+            "u-t7rood-3-negation-mapped_to-negate": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "heldout"
+            },
+            "e9n-0000-affordance-handling": {
+              "accuracy": 0.0,
+              "score": -0.3333333333333333,
+              "family": "affordance",
+              "subset": "new"
+            },
+            "e9n-0000-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "new"
+            },
+            "e9n-0000-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "new"
+            },
+            "e9n-0000-reverse-pharmacological_action": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "new"
+            },
+            "e9n-0000-negation-mapped_to-affirm": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "negation",
+              "subset": "new"
+            },
+            "e9n-0000-negation-mapped_to-negate": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "negation",
+              "subset": "new"
+            },
+            "e9n-0000-negation-pharmacological_action-affirm": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "negation",
+              "subset": "new"
+            },
+            "e9n-0000-negation-pharmacological_action-negate": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "negation",
+              "subset": "new"
+            },
+            "e9n-0001-affordance-handling": {
+              "accuracy": 0.0,
+              "score": -0.3333333333333333,
+              "family": "affordance",
+              "subset": "new"
+            },
+            "e9n-0001-paraphrase-record_class": {
+              "accuracy": 0.0,
+              "score": -0.3333333333333333,
+              "family": "paraphrase",
+              "subset": "new"
+            },
+            "e9n-0001-reverse-mapped_to": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "reverse",
+              "subset": "new"
+            },
+            "e9n-0001-reverse-pharmacological_action": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "new"
+            },
+            "e9n-0001-negation-mapped_to-affirm": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new"
+            },
+            "e9n-0001-negation-mapped_to-negate": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new"
+            },
+            "e9n-0001-negation-pharmacological_action-affirm": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new"
+            },
+            "e9n-0001-negation-pharmacological_action-negate": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new"
+            }
+          },
+          "by": {
+            "affordance/all": {
+              "accuracy": 0.6875,
+              "score": 0.35416666666666674,
+              "n": 8
+            },
+            "affordance/heldout": {
+              "accuracy": 0.75,
+              "score": 0.41666666666666674,
+              "n": 2
+            },
+            "affordance/new": {
+              "accuracy": 0.0,
+              "score": -0.3333333333333333,
+              "n": 2
+            },
+            "affordance/rare": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "n": 2
+            },
+            "affordance/seen": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "n": 2
+            },
+            "negation/all": {
+              "accuracy": 0.475,
+              "score": -0.025,
+              "n": 20
+            },
+            "negation/heldout": {
+              "accuracy": 0.375,
+              "score": -0.125,
+              "n": 4
+            },
+            "negation/new": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "n": 8
+            },
+            "negation/rare": {
+              "accuracy": 0.625,
+              "score": 0.125,
+              "n": 4
+            },
+            "negation/seen": {
+              "accuracy": 0.375,
+              "score": -0.125,
+              "n": 4
+            },
+            "paraphrase/all": {
+              "accuracy": 0.65,
+              "score": 0.3433333333333334,
+              "n": 10
+            },
+            "paraphrase/heldout": {
+              "accuracy": 0.75,
+              "score": 0.41666666666666674,
+              "n": 2
+            },
+            "paraphrase/new": {
+              "accuracy": 0.5,
+              "score": 0.1666666666666667,
+              "n": 2
+            },
+            "paraphrase/rare": {
+              "accuracy": 0.5,
+              "score": 0.23333333333333334,
+              "n": 4
+            },
+            "paraphrase/seen": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "n": 2
+            },
+            "reverse/all": {
+              "accuracy": 0.35,
+              "score": -0.15,
+              "n": 10
+            },
+            "reverse/heldout": {
+              "accuracy": 0.25,
+              "score": -0.25,
+              "n": 2
+            },
+            "reverse/new": {
+              "accuracy": 0.375,
+              "score": -0.125,
+              "n": 4
+            },
+            "reverse/rare": {
+              "accuracy": 0.25,
+              "score": -0.25,
+              "n": 2
+            },
+            "reverse/seen": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "n": 2
+            }
+          }
+        }
+      },
+      "recall:own": {
+        "items": {
+          "units": {
+            "u-t7rood-14-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-14-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-14-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "seen",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-14-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-14-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-affordance-handling": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "affordance",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-reverse-mapped_to": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "seen",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-134-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-paraphrase-branch_second": {
+              "accuracy": 0.5,
+              "score": 0.3,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "rare",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-1-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-paraphrase-branch_second": {
+              "accuracy": 0.5,
+              "score": 0.3,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "rare",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-15-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-affordance-handling": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "affordance",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-reverse-mapped_to": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "reverse",
+              "subset": "heldout",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-0-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-affordance-handling": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "affordance",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-reverse-mapped_to": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "heldout",
+              "pair_correct": 1.0,
+              "anchor_in_top": 0.0
+            },
+            "u-t7rood-3-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-reverse-mapped_to": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 0.0
+            },
+            "e9n-0000-reverse-pharmacological_action": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "e9n-0000-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-negation-pharmacological_action-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-negation-pharmacological_action-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 0.0
+            },
+            "e9n-0001-reverse-pharmacological_action": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "e9n-0001-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-negation-pharmacological_action-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-negation-pharmacological_action-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            }
+          },
+          "by": {
+            "affordance/all": {
+              "accuracy": 0.8125,
+              "score": 0.47916666666666674,
+              "slot_correct": 1.0,
+              "n": 8
+            },
+            "affordance/heldout": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "affordance/new": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "affordance/rare": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "affordance/seen": {
+              "accuracy": 0.75,
+              "score": 0.41666666666666674,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "negation/all": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 20
+            },
+            "negation/heldout": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "negation/new": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 8
+            },
+            "negation/rare": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "negation/seen": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "paraphrase/all": {
+              "accuracy": 0.9,
+              "score": 0.5933333333333335,
+              "slot_correct": 1.0,
+              "n": 10
+            },
+            "paraphrase/heldout": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "paraphrase/new": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "paraphrase/rare": {
+              "accuracy": 0.75,
+              "score": 0.4833333333333334,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "paraphrase/seen": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "reverse/all": {
+              "accuracy": 0.7,
+              "anchor_in_top": 0.7,
+              "pair_correct": 1.0,
+              "score": 0.2,
+              "n": 10
+            },
+            "reverse/heldout": {
+              "accuracy": 0.25,
+              "anchor_in_top": 0.5,
+              "pair_correct": 1.0,
+              "score": -0.25,
+              "n": 2
+            },
+            "reverse/new": {
+              "accuracy": 0.875,
+              "anchor_in_top": 0.5,
+              "pair_correct": 1.0,
+              "score": 0.375,
+              "n": 4
+            },
+            "reverse/rare": {
+              "accuracy": 1.0,
+              "anchor_in_top": 1.0,
+              "pair_correct": 1.0,
+              "score": 0.5,
+              "n": 2
+            },
+            "reverse/seen": {
+              "accuracy": 0.5,
+              "anchor_in_top": 1.0,
+              "pair_correct": 1.0,
+              "score": 0.0,
+              "n": 2
+            }
+          }
+        }
+      },
+      "symbolic": {
+        "items": {
+          "units": {
+            "u-t7rood-14-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-14-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-14-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "seen",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-14-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-14-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-affordance-handling": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "affordance",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-reverse-mapped_to": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "seen",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-134-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-134-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "seen",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-paraphrase-branch_second": {
+              "accuracy": 0.5,
+              "score": 0.3,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-reverse-mapped_to": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "reverse",
+              "subset": "rare",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-1-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-1-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-paraphrase-branch_second": {
+              "accuracy": 0.5,
+              "score": 0.3,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "rare",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-15-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-15-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "rare",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "heldout",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-0-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-0-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-affordance-handling": {
+              "accuracy": 0.5,
+              "score": 0.16666666666666669,
+              "family": "affordance",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-reverse-mapped_to": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "reverse",
+              "subset": "heldout",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "u-t7rood-3-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "u-t7rood-3-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "heldout",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "e9n-0000-reverse-pharmacological_action": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "e9n-0000-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-negation-pharmacological_action-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0000-negation-pharmacological_action-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-affordance-handling": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "affordance",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-paraphrase-record_class": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "family": "paraphrase",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-reverse-mapped_to": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "e9n-0001-reverse-pharmacological_action": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "reverse",
+              "subset": "new",
+              "pair_correct": 1.0,
+              "anchor_in_top": 1.0
+            },
+            "e9n-0001-negation-mapped_to-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-negation-mapped_to-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-negation-pharmacological_action-affirm": {
+              "accuracy": 1.0,
+              "score": 0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            },
+            "e9n-0001-negation-pharmacological_action-negate": {
+              "accuracy": 0.0,
+              "score": -0.5,
+              "family": "negation",
+              "subset": "new",
+              "slot_correct": 1.0
+            }
+          },
+          "by": {
+            "affordance/all": {
+              "accuracy": 0.875,
+              "score": 0.5416666666666667,
+              "slot_correct": 1.0,
+              "n": 8
+            },
+            "affordance/heldout": {
+              "accuracy": 0.75,
+              "score": 0.41666666666666674,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "affordance/new": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "affordance/rare": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "affordance/seen": {
+              "accuracy": 0.75,
+              "score": 0.41666666666666674,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "negation/all": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 20
+            },
+            "negation/heldout": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "negation/new": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 8
+            },
+            "negation/rare": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "negation/seen": {
+              "accuracy": 0.5,
+              "score": 0.0,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "paraphrase/all": {
+              "accuracy": 0.9,
+              "score": 0.5933333333333335,
+              "slot_correct": 1.0,
+              "n": 10
+            },
+            "paraphrase/heldout": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "paraphrase/new": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "paraphrase/rare": {
+              "accuracy": 0.75,
+              "score": 0.4833333333333334,
+              "slot_correct": 1.0,
+              "n": 4
+            },
+            "paraphrase/seen": {
+              "accuracy": 1.0,
+              "score": 0.6666666666666667,
+              "slot_correct": 1.0,
+              "n": 2
+            },
+            "reverse/all": {
+              "accuracy": 0.7,
+              "anchor_in_top": 1.0,
+              "pair_correct": 1.0,
+              "score": 0.2,
+              "n": 10
+            },
+            "reverse/heldout": {
+              "accuracy": 0.5,
+              "anchor_in_top": 1.0,
+              "pair_correct": 1.0,
+              "score": 0.0,
+              "n": 2
+            },
+            "reverse/new": {
+              "accuracy": 0.875,
+              "anchor_in_top": 1.0,
+              "pair_correct": 1.0,
+              "score": 0.375,
+              "n": 4
+            },
+            "reverse/rare": {
+              "accuracy": 0.75,
+              "anchor_in_top": 1.0,
+              "pair_correct": 1.0,
+              "score": 0.25,
+              "n": 2
+            },
+            "reverse/seen": {
+              "accuracy": 0.5,
+              "anchor_in_top": 1.0,
+              "pair_correct": 1.0,
+              "score": 0.0,
+              "n": 2
+            }
+          }
+        }
+      }
+    },
+    "linked": 17,
+    "concepts": 18,
+    "conditions_order": [
+      "none",
+      "recall:own",
+      "symbolic"
+    ]
+  },
+  "resolved": {
+    "u-t7rood-14": {
+      "entry": 14,
+      "found": [
+        14
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-134": {
+      "entry": 134,
+      "found": [
+        134
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-4539": {
+      "entry": 4539,
+      "found": [
+        4539
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-7653": {
+      "entry": 7653,
+      "found": [
+        7653
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-1": {
+      "entry": 1,
+      "found": [
+        1
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-15": {
+      "entry": 15,
+      "found": [
+        15
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-6324": {
+      "entry": 6324,
+      "found": [],
+      "status": "unlinked"
+    },
+    "u-t7rood-6386": {
+      "entry": 6386,
+      "found": [
+        6386
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-0": {
+      "entry": 0,
+      "found": [
+        0
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-3": {
+      "entry": 3,
+      "found": [
+        3
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-1245": {
+      "entry": 1245,
+      "found": [
+        1245
+      ],
+      "status": "linked"
+    },
+    "u-t7rood-7995": {
+      "entry": 7995,
+      "found": [
+        7995
+      ],
+      "status": "linked"
+    },
+    "e9n-0000": {
+      "entry": 8184,
+      "found": [
+        8184
+      ],
+      "status": "linked"
+    },
+    "e9n-0001": {
+      "entry": 8185,
+      "found": [
+        8185
+      ],
+      "status": "linked"
+    },
+    "e9n-0148": {
+      "entry": 8186,
+      "found": [
+        8186
+      ],
+      "status": "linked"
+    },
+    "e9n-0164": {
+      "entry": 8187,
+      "found": [
+        8187
+      ],
+      "status": "linked"
+    },
+    "e9n-0177": {
+      "entry": 8188,
+      "found": [
+        8188
+      ],
+      "status": "linked"
+    },
+    "e9n-0184": {
+      "entry": 8189,
+      "found": [
+        8189
+      ],
+      "status": "linked"
+    }
+  },
+  "timings": {
+    "none": 8.6,
+    "recall:own": 28.7,
+    "symbolic": 28.1
+  },
+  "longest_tokens": {
+    "none": 41,
+    "recall:own": 197,
+    "symbolic": 190
+  },
+  "seconds": 65.38939926307648,
+  "items_manifest_sha256": {
+    "concepts.jsonl": "30810f8116352502f5c9ed3a09b07286e828e0618e45ce4e938e8a259c413b84",
+    "items.jsonl.gz": "5bca5bfa7bc4e6b5771a68e0a55d96dd6a5efd1ae33c8cb7117e45cf26b29778"
+  }
+}

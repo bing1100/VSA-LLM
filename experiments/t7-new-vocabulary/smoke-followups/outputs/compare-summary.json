@@ -1,0 +1,83 @@
+{
+  "host": "SmolLM2-135M",
+  "seeds": [
+    1
+  ],
+  "rood": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7rood",
+  "reference": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/smoke-followups/e9/runs/t7",
+  "resamples": 200,
+  "seed": 0,
+  "strata": {
+    "after_heldout": {
+      "windows": {
+        "rood": {
+          "windows": 16,
+          "tokens": 16
+        },
+        "reference": {
+          "windows": 16,
+          "tokens": 16
+        }
+      },
+      "P2": {
+        "available": true,
+        "contrast": "(C5 \u2212 C0') / C0'",
+        "predicted": "\u0394 \u2264 0",
+        "rood": {
+          "mean": 0.008241424276743374,
+          "ci_low": 0.005289954532891151,
+          "ci_high": 0.0131406688981099,
+          "p_value": 0.011428571428571429,
+          "resamples": 174
+        },
+        "reference": {
+          "mean": 0.008241424276743374,
+          "ci_low": 0.005289954532891151,
+          "ci_high": 0.0131406688981099,
+          "p_value": 0.011428571428571429,
+          "resamples": 174
+        },
+        "difference": {
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "p_value": 1.0,
+          "resamples": 174
+        },
+        "windows": 16,
+        "reading": "holds (point estimate \u2264 0)"
+      },
+      "P3": {
+        "available": true,
+        "contrast": "(C0' \u2212 P0) / P0",
+        "predicted": "\u0394 > 0",
+        "rood": {
+          "mean": -0.0066525207543517515,
+          "ci_low": -0.008836886155055252,
+          "ci_high": -0.0030052852868136942,
+          "p_value": 0.011428571428571429,
+          "resamples": 174
+        },
+        "reference": {
+          "mean": -0.0066525207543517515,
+          "ci_low": -0.008836886155055252,
+          "ci_high": -0.0030052852868136942,
+          "p_value": 0.011428571428571429,
+          "resamples": 174
+        },
+        "difference": {
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0,
+          "p_value": 1.0,
+          "resamples": 174
+        },
+        "windows": 16,
+        "reading": "does not hold (point estimate \u2264 0)"
+      }
+    }
+  },
+  "flags": [
+    "single seed: CIs cover evaluation windows only"
+  ]
+}
