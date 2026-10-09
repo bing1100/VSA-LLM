@@ -13,9 +13,14 @@ it in priority order is done (its inputs). The default `--lane all` is the origi
 A runner starts nothing while a job of its lane is running with a live process, and a job blocked
 for disk space is retried first on every poll instead of being skipped.
 
+`cancel` withdraws jobs that have not run (pending, blocked or failed): their JSON moves to `<queue>/cancelled/`
+with the reason and time, out of the queue's (non-recursive) listing, so a CPU-lane job behind them is no longer held
+back; a running or finished job is refused. Moving the file back re-queues it.
+
     vsa-queue add --name e4-50m-c0-s1 --priority 10 -- python -m vsa_embed.training.lm --config … --output …
     vsa-queue status
     vsa-queue run [--once] [--lane all|gpu|cpu] [--cpu-pattern REGEX]
+    vsa-queue cancel NAME [NAME …] --reason TEXT
 """
 
 from __future__ import annotations
@@ -68,6 +73,22 @@ def add(queue: Path, command: list[str], *, name: str, priority: int = 100, cwd:
 
 def jobs(queue: Path) -> list[dict[str, Any]]:
     return sorted((json.loads(p.read_text()) for p in queue.glob("*.json")), key=lambda j: (j["priority"], j["created"]))
+
+
+def cancel(queue: Path, name: str, *, reason: str) -> Path:
+    """Withdraw a job that has not run: its JSON moves to `<queue>/cancelled/` with `cancelled` = reason and time."""
+    path = queue / f"{name}.json"
+    job = json.loads(path.read_text())
+    if job["status"] not in ("pending", "blocked", "failed"):
+        raise ValueError(f"job {name!r} is {job['status']}; only pending, blocked or failed jobs can be cancelled")
+    target = queue / "cancelled" / path.name
+    target.parent.mkdir(exist_ok=True)
+    if target.exists():
+        raise FileExistsError(f"{target} already exists")
+    job.update(cancelled={"reason": reason, "at": _now(), "status": job["status"]})
+    _write(target, job)
+    path.unlink()
+    return target
 
 
 def _alive(pid: int | None) -> bool:
@@ -167,6 +188,8 @@ def main(argv: list[str] | None = None) -> None:
     run_parser.add_argument("--lane", choices=("all", "gpu", "cpu"), default="all")
     run_parser.add_argument("--cpu-pattern", default=None, help="regex: matching job names are CPU-lane jobs")
     retry_parser = sub.add_parser("retry"); retry_parser.add_argument("name")
+    cancel_parser = sub.add_parser("cancel"); cancel_parser.add_argument("names", nargs="+")
+    cancel_parser.add_argument("--reason", required=True)
     args = parser.parse_args(argv)
     if args.action == "add":
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -179,6 +202,9 @@ def main(argv: list[str] | None = None) -> None:
     elif args.action == "retry":
         path = args.queue / f"{args.name}.json"
         job = json.loads(path.read_text()); job.update(status="pending", interrupted=True); _write(path, job)
+    elif args.action == "cancel":
+        for name in args.names:
+            print(cancel(args.queue, name, reason=args.reason))
     else:
         run(args.queue, once=args.once, lane=args.lane, cpu_pattern=args.cpu_pattern)
 

@@ -103,3 +103,20 @@ def test_a_job_whose_runner_is_alive_is_not_recovered_after_its_process_exits(tm
 def test_the_cli_takes_fractional_priorities_and_keeps_integral_ones_integers() -> None:
     from vsa_embed.jobqueue import _priority
     assert _priority("54.498") == 54.498 and isinstance(_priority("54"), int) and isinstance(_priority("54.0"), int)
+
+
+def test_cancel_withdraws_an_unrun_job_and_unblocks_the_cpu_lane(tmp_path: Path) -> None:
+    from vsa_embed.jobqueue import cancel
+    import pytest
+    queue = tmp_path / "q"
+    add(queue, [sys.executable, "-c", "pass"], name="dropped", priority=10, min_free_gb=0)
+    add(queue, [sys.executable, "-c", "pass"], name="ran", priority=5, min_free_gb=0)
+    add(queue, [sys.executable, "-c", "pass"], name="x-report", priority=20, min_free_gb=0)
+    run_next(queue, lane="gpu", cpu_pattern="-report")                 # "ran" (priority 5)
+    with pytest.raises(ValueError):                                    # a finished job stays
+        cancel(queue, "ran", reason="test")
+    target = cancel(queue, "dropped", reason="not needed")
+    assert target == queue / "cancelled" / "dropped.json" and not (queue / "dropped.json").exists()
+    assert json.loads(target.read_text())["cancelled"]["reason"] == "not needed"
+    assert [j["name"] for j in jobs(queue)] == ["ran", "x-report"]
+    assert run_next(queue, lane="cpu", cpu_pattern="-report")["name"] == "x-report"   # no longer held back
