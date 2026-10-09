@@ -37,10 +37,22 @@ def standardize_rows(rows: Tensor, reference: Sequence[int] | Tensor | None = No
     out) and scale every row to unit L2 norm, like the composer's output; returns (rows, statistics)."""
     x = rows.double()
     ref = x if reference is None else x[torch.as_tensor(reference, dtype=torch.long)]
-    mean, std = ref.mean(0), ref.std(0).clamp_min(eps)
-    z = (x - mean) / std
+    stats = standardization_stats(ref, eps)
+    return apply_standardization(x, stats, eps), {k: v.float() for k, v in stats.items()}
+
+
+def standardization_stats(reference_rows: Tensor, eps: float = 1e-6) -> dict[str, Tensor]:
+    """Per-dimension mean and standard deviation (float64) of the reference rows, as `standardize_rows` uses them."""
+    x = reference_rows.double()
+    return {"mean": x.mean(0), "std": x.std(0).clamp_min(eps)}
+
+
+def apply_standardization(rows: Tensor, stats: dict[str, Tensor], eps: float = 1e-6) -> Tensor:
+    """`standardize_rows` with given statistics: whiten each dimension, then unit L2 rows (float64 inside, float32 out) —
+    e.g. a new text's encoding mapped into an existing table's space (E11's definition-encoder route)."""
+    z = (rows.double() - stats["mean"].double()) / stats["std"].double()
     z = z / z.norm(dim=-1, keepdim=True).clamp_min(eps)
-    return z.float(), {"mean": mean.float(), "std": std.float()}
+    return z.float()
 
 
 def save_source_table(path: Path, rows: Tensor, *, kind: str, ontology: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:

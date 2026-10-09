@@ -24,7 +24,9 @@ scorer or a generator injected (`vsa_embed.experiments.e11_read_to_learn` suppli
   `linker` / `linker-all` (finder + the trained model chooses each filler's relation: the relation whose single bound
   edge makes the definition most likely under the channel; `linker` keeps an edge only if it beats no row at all),
   `host` (few-shot extraction by the host's own weights, the E7 template and parser), `teacher` (Claude through the
-  B13 runner, E7's `TeacherAuthor`), `random` (equal-degree random frame, the E9 rule) and `none` (no frame).
+  B13 runner, E7's `TeacherAuthor`), `random` (equal-degree random frame, the E9 rule), `linker-random` (the `linker`
+  frame's shape — its relations and edge count — with wrong fillers: the shape-matched content control of decision 64)
+  and `none` (no frame).
 - **Metrics** (`frame_metrics`): edge precision / recall / F1 against gold, filler recall of the finder, relation
   accuracy on found gold fillers, recall of the stated gold edges.
 """
@@ -44,8 +46,9 @@ import numpy as np
 from .span_channel import AliasTable, CausalLinker, normalize_alias
 
 Frame = list[tuple[int, int]]           # (relation id, atom id) edges
-READERS = ("oracle", "stated", "typeprior", "pattern", "linker", "linker-all", "linker-joint", "host", "teacher", "random", "none")
-MODEL_READERS = frozenset({"linker", "linker-all", "linker-joint", "host"})          # need the trained run
+READERS = ("oracle", "stated", "typeprior", "pattern", "linker", "linker-all", "linker-joint", "host", "teacher", "random",
+           "linker-random", "none")
+MODEL_READERS = frozenset({"linker", "linker-all", "linker-joint", "host", "linker-random"})   # need the trained run
 STATIC_READERS = ("oracle", "stated", "typeprior", "pattern", "random", "none")
 WORDISH = re.compile(r"\w+|[^\w\s]")
 
@@ -404,6 +407,27 @@ def read_none(task: ReadTask) -> ReadResult:
 
 def read_random(task: ReadTask) -> ReadResult:
     return ReadResult(task.concept, task.style, "random", list(task.random_frame or []) or None)
+
+
+def read_shape_random(task: ReadTask, base: ReadResult, pools: dict[int, Counter], rng: random.Random, *,
+                      reader: str = "linker-random") -> ReadResult:
+    """`base`'s frame with every filler replaced by one drawn frequency-weighted from its relation's pool (`pools`, as
+    `e9_tracks.random_frames`), never one of `base`'s or the gold's fillers of that relation: the same shape (relations
+    and edge count) with wrong content. No frame in, no frame out; an edge whose pool holds no other filler is dropped."""
+    if not base.frame:
+        return ReadResult(task.concept, task.style, reader, None, {}, {"shape_of": base.reader})
+    taken: dict[int, set[int]] = defaultdict(set)
+    for r, a in list(task.gold or ()) + list(base.frame):
+        taken[int(r)].add(int(a))
+    edges = []
+    for r, _ in base.frame:
+        exclude = taken[int(r)]
+        items = sorted((f, c) for f, c in pools.get(int(r), Counter()).items() if f not in exclude)
+        if items:
+            population, weights = zip(*items)
+            edges.append((int(r), int(rng.choices(population, weights)[0])))
+    return ReadResult(task.concept, task.style, reader, edges or None, {},
+                      {"shape_of": base.reader, "dropped": len(base.frame) - len(edges)})
 
 
 def _pick_atom(atoms: Sequence[int], typing: RelationTyping, relation: int | None = None) -> int | None:

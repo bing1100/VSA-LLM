@@ -1,0 +1,386 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C6d-s1",
+    "checkpoint": "final.pt",
+    "condition": "C6d",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-360M/train",
+    "channel_mode": "source",
+    "channel": {
+      "mode": "source",
+      "source_kind": "definition",
+      "source_table": "/home/bhux/data/vsa-llm/e9/row-sources/t5-smollm2/definition-SmolLM2-360M.pt",
+      "source_hidden": 597,
+      "gate_bias": 0.0,
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-SmolLM2-360M-full-C6d-s1",
+    "run_git_sha": "832e004675c2d442f0299209d700b8bdf9db5738",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "smoke": true,
+  "set": {
+    "path": "experiments/e11-read-to-learn/items/t5-new-smollm2-v1",
+    "kind": "new",
+    "track": "t5",
+    "concepts": 5,
+    "items": 58
+  },
+  "styles": [
+    "prose"
+  ],
+  "primary_style": "prose",
+  "readers": [
+    "none"
+  ],
+  "model_readers": [],
+  "compose": false,
+  "frames": {},
+  "definition_forward_tokens": 0,
+  "definition_rows": null,
+  "encoder": {
+    "applicable": true,
+    "check": {
+      "reference_entries": 256,
+      "fit": "sample of 256",
+      "texts": "the table's stored verbalizations",
+      "host": "HuggingFaceTB/SmolLM2-360M",
+      "host_weights": "float32",
+      "cosine_to_table_mean": 0.9967509508132935,
+      "cosine_to_table_min": 0.9942535161972046,
+      "seconds": 62.54656512802467
+    },
+    "cost_per_word": {
+      "prose": {
+        "terms": 5,
+        "forward_passes": 1.0,
+        "forward_tokens": 76.6,
+        "forward_flops": 55430995583.99999,
+        "seconds": 0.46449198517948387,
+        "context_tokens_per_use": 0.0,
+        "example": "In our organisation, It is a tool in the finance domain whose main job is that it plans headcount. It gets tier 3 support. For now, It has deprecated status. Responsibility for It rests with the Bairk"
+      }
+    },
+    "parameters": 361821120,
+    "text": "the read definition with its headword removed (`encoder_text`)"
+  },
+  "items": {
+    "means": {
+      "prose|encoder": {
+        "property": [
+          0.22916666666666666,
+          24
+        ],
+        "property_new": [
+          0.2631578947368421,
+          19
+        ],
+        "paraphrase": [
+          0.4166666666666667,
+          24
+        ],
+        "entailment": [
+          0.6,
+          10
+        ],
+        "statement_accuracy": [
+          0.16666666666666666,
+          24
+        ],
+        "statement_loss": [
+          4.9707143626040535,
+          24
+        ]
+      },
+      "prose|none": {
+        "property": [
+          0.22916666666666666,
+          24
+        ],
+        "property_new": [
+          0.23684210526315788,
+          19
+        ],
+        "paraphrase": [
+          0.5,
+          24
+        ],
+        "entailment": [
+          0.7,
+          10
+        ],
+        "statement_accuracy": [
+          0.16666666666666666,
+          24
+        ],
+        "statement_loss": [
+          5.01610428378346,
+          24
+        ]
+      },
+      "prose|oracle": {
+        "property": [
+          0.1875,
+          24
+        ],
+        "property_new": [
+          0.21052631578947367,
+          19
+        ],
+        "paraphrase": [
+          0.375,
+          24
+        ],
+        "entailment": [
+          0.6,
+          10
+        ],
+        "statement_accuracy": [
+          0.16666666666666666,
+          24
+        ],
+        "statement_loss": [
+          4.993755894256279,
+          24
+        ]
+      }
+    },
+    "contrasts": [
+      {
+        "style": "prose",
+        "a": "oracle",
+        "b": "none",
+        "test": "property",
+        "mean": -0.041666666666666664,
+        "ci_low": -0.14583333333333334,
+        "ci_high": 0.041666666666666664,
+        "n": 24,
+        "p_value": 0.5373134328358209,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "oracle",
+        "b": "none",
+        "test": "property_new",
+        "mean": -0.02631578947368421,
+        "ci_low": -0.13157894736842105,
+        "ci_high": 0.07894736842105263,
+        "n": 19,
+        "p_value": 0.7562189054726368,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "oracle",
+        "b": "none",
+        "test": "entailment",
+        "mean": -0.1,
+        "ci_low": -0.3,
+        "ci_high": 0.0,
+        "n": 10,
+        "p_value": 0.5771144278606966,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "oracle",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": -0.125,
+        "ci_low": -0.2916666666666667,
+        "ci_high": 0.041666666666666664,
+        "n": 24,
+        "p_value": 0.26865671641791045,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "oracle",
+        "b": "none",
+        "test": "statement_accuracy",
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "n": 24,
+        "p_value": 1.0,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "oracle",
+        "b": "none",
+        "test": "statement_loss",
+        "mean": -0.022348389527181062,
+        "ci_low": -0.14337173614342752,
+        "ci_high": 0.09590864839469693,
+        "n": 24,
+        "p_value": 0.7164179104477612,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "none",
+        "test": "property",
+        "mean": 0.0,
+        "ci_low": -0.0625,
+        "ci_high": 0.0625,
+        "n": 24,
+        "p_value": 1.0,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "none",
+        "test": "property_new",
+        "mean": 0.02631578947368421,
+        "ci_low": 0.0,
+        "ci_high": 0.07894736842105263,
+        "n": 19,
+        "p_value": 0.7263681592039801,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "none",
+        "test": "entailment",
+        "mean": -0.1,
+        "ci_low": -0.3,
+        "ci_high": 0.0,
+        "n": 10,
+        "p_value": 0.746268656716418,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": -0.08333333333333333,
+        "ci_low": -0.20833333333333334,
+        "ci_high": 0.0,
+        "n": 24,
+        "p_value": 0.25870646766169153,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "none",
+        "test": "statement_accuracy",
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "n": 24,
+        "p_value": 1.0,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "none",
+        "test": "statement_loss",
+        "mean": -0.04538992117940622,
+        "ci_low": -0.12543245441444553,
+        "ci_high": 0.021902461456037685,
+        "n": 24,
+        "p_value": 0.21890547263681592,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "property",
+        "mean": 0.041666666666666664,
+        "ci_low": -0.041666666666666664,
+        "ci_high": 0.125,
+        "n": 24,
+        "p_value": 0.4577114427860697,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "property_new",
+        "mean": 0.05263157894736842,
+        "ci_low": -0.02631578947368421,
+        "ci_high": 0.13157894736842105,
+        "n": 19,
+        "p_value": 0.3681592039800995,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "entailment",
+        "mean": 0.0,
+        "ci_low": -0.20249999999999996,
+        "ci_high": 0.3,
+        "n": 10,
+        "p_value": 1.0,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "paraphrase",
+        "mean": 0.041666666666666664,
+        "ci_low": -0.08437499999999998,
+        "ci_high": 0.16666666666666666,
+        "n": 24,
+        "p_value": 0.8557213930348259,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "statement_accuracy",
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "n": 24,
+        "p_value": 1.0,
+        "p_holm": 1.0
+      },
+      {
+        "style": "prose",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "statement_loss",
+        "mean": -0.023041531652225156,
+        "ci_low": -0.0772750113417976,
+        "ci_high": 0.03834388203890207,
+        "n": 24,
+        "p_value": 0.43781094527363185,
+        "p_holm": 1.0
+      }
+    ],
+    "primary_style": "prose"
+  },
+  "timings": {
+    "readers": 0.0019136399496346712,
+    "encoder": 66.51979437517002,
+    "encoder_items": 109.80085713788867
+  },
+  "seconds": 176.56615111697465
+}

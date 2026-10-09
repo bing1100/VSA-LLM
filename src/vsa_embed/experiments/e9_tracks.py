@@ -604,12 +604,18 @@ def replaced_frames(channel: Any, frames: dict[int, list[tuple[int, int]]]) -> I
         composer.set_schedule(original)
 
 
+def relation_pools(ontology: dict[str, Any]) -> dict[int, Counter]:
+    """Relation → Counter of its fillers over every ontology frame (the pools `random_frames` draws from)."""
+    pools: dict[int, Counter] = defaultdict(Counter)
+    for r, f in zip(np.asarray(ontology["relations"]).tolist(), np.asarray(ontology["fillers"]).tolist()):
+        pools[int(r)][int(f)] += 1
+    return pools
+
+
 def random_frames(ontology: dict[str, Any], entries: Sequence[int], *, seed: int) -> dict[int, list[tuple[int, int]]]:
     """Per entry: its relations with fillers drawn frequency-weighted from each relation's fillers."""
-    offsets = np.asarray(ontology["offsets"]); relations = np.asarray(ontology["relations"]); fillers = np.asarray(ontology["fillers"])
-    pools: dict[int, Counter] = defaultdict(Counter)
-    for r, f in zip(relations.tolist(), fillers.tolist()):
-        pools[r][f] += 1
+    offsets = np.asarray(ontology["offsets"]); relations = np.asarray(ontology["relations"])
+    pools = relation_pools(ontology)
     rng = random.Random(seed)
     out = {}
     for e in sorted(set(int(x) for x in entries)):

@@ -1,0 +1,331 @@
+{
+  "source": {
+    "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C6d-s1",
+    "checkpoint": "final.pt",
+    "condition": "C6d",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-360M/train",
+    "channel_mode": "source",
+    "channel": {
+      "mode": "source",
+      "source_kind": "definition",
+      "source_table": "/home/bhux/data/vsa-llm/e9/row-sources/t4-smollm2/definition-SmolLM2-360M.pt",
+      "source_hidden": 1222,
+      "gate_bias": 0.0,
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t4-SmolLM2-360M-full-C6d-s1",
+    "run_git_sha": "b14e6a01bab0a5b11592ed82ba8368e28dc4a65d",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "smoke": true,
+  "set": {
+    "path": "experiments/e11-read-to-learn/items/t4-heldout-smollm2-v1",
+    "kind": "heldout",
+    "track": "t4",
+    "concepts": 8,
+    "items": 28
+  },
+  "styles": [
+    "chebi"
+  ],
+  "primary_style": "chebi",
+  "readers": [
+    "none"
+  ],
+  "model_readers": [],
+  "compose": false,
+  "frames": {},
+  "definition_forward_tokens": 0,
+  "definition_rows": null,
+  "encoder": {
+    "applicable": true,
+    "check": {
+      "reference_entries": 512,
+      "fit": "sample of 512",
+      "texts": "the table's stored verbalizations",
+      "host": "HuggingFaceTB/SmolLM2-360M",
+      "host_weights": "float32",
+      "cosine_to_table_mean": 0.9985381960868835,
+      "cosine_to_table_min": 0.9945211410522461,
+      "seconds": 778.5941739880946
+    },
+    "cost_per_word": {
+      "chebi": {
+        "terms": 8,
+        "forward_passes": 1.0,
+        "forward_tokens": 65.125,
+        "forward_flops": 47127200880.0,
+        "seconds": 4.79810663725948,
+        "context_tokens_per_use": 0.0,
+        "example": "An optically active form of limonene having (4R)-configuration."
+      }
+    },
+    "parameters": 361821120,
+    "text": "the read definition with its headword removed (`encoder_text`)"
+  },
+  "items": {
+    "means": {
+      "chebi|encoder": {
+        "property": [
+          0.5,
+          14
+        ],
+        "paraphrase": [
+          0.5,
+          14
+        ],
+        "entailment": [
+          0.8571428571428571,
+          14
+        ]
+      },
+      "chebi|none": {
+        "property": [
+          0.4761904761904762,
+          14
+        ],
+        "paraphrase": [
+          0.35714285714285715,
+          14
+        ],
+        "entailment": [
+          0.8571428571428571,
+          14
+        ]
+      },
+      "chebi|oracle": {
+        "property": [
+          0.4761904761904762,
+          14
+        ],
+        "paraphrase": [
+          0.42857142857142855,
+          14
+        ],
+        "entailment": [
+          0.7857142857142857,
+          14
+        ]
+      }
+    },
+    "contrasts": [
+      {
+        "style": "chebi",
+        "a": "oracle",
+        "b": "none",
+        "test": "property",
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "n": 14,
+        "p_value": 1.0,
+        "p_holm": 1.0
+      },
+      {
+        "style": "chebi",
+        "a": "oracle",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": 0.07142857142857142,
+        "ci_low": 0.0,
+        "ci_high": 0.21428571428571427,
+        "n": 14,
+        "p_value": 0.7164179104477612,
+        "p_holm": 1.0
+      },
+      {
+        "style": "chebi",
+        "a": "oracle",
+        "b": "none",
+        "test": "entailment",
+        "mean": -0.07142857142857142,
+        "ci_low": -0.21428571428571427,
+        "ci_high": 0.0,
+        "n": 14,
+        "p_value": 0.6069651741293532,
+        "p_holm": 1.0
+      },
+      {
+        "style": "chebi",
+        "a": "encoder",
+        "b": "none",
+        "test": "property",
+        "mean": 0.02380952380952381,
+        "ci_low": 0.0,
+        "ci_high": 0.07142857142857142,
+        "n": 14,
+        "p_value": 0.6368159203980099,
+        "p_holm": 1.0
+      },
+      {
+        "style": "chebi",
+        "a": "encoder",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": 0.14285714285714285,
+        "ci_low": 0.0,
+        "ci_high": 0.35714285714285715,
+        "n": 14,
+        "p_value": 0.208955223880597,
+        "p_holm": 0.6268656716417911
+      },
+      {
+        "style": "chebi",
+        "a": "encoder",
+        "b": "none",
+        "test": "entailment",
+        "mean": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "n": 14,
+        "p_value": 1.0,
+        "p_holm": 1.0
+      },
+      {
+        "style": "chebi",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "property",
+        "mean": 0.02380952380952381,
+        "ci_low": 0.0,
+        "ci_high": 0.07142857142857142,
+        "n": 14,
+        "p_value": 0.6368159203980099,
+        "p_holm": 1.0
+      },
+      {
+        "style": "chebi",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "paraphrase",
+        "mean": 0.07142857142857142,
+        "ci_low": 0.0,
+        "ci_high": 0.21428571428571427,
+        "n": 14,
+        "p_value": 0.6368159203980099,
+        "p_holm": 1.0
+      },
+      {
+        "style": "chebi",
+        "a": "encoder",
+        "b": "oracle",
+        "test": "entailment",
+        "mean": 0.07142857142857142,
+        "ci_low": 0.0,
+        "ci_high": 0.21428571428571427,
+        "n": 14,
+        "p_value": 0.6069651741293532,
+        "p_holm": 1.0
+      }
+    ],
+    "primary_style": "chebi"
+  },
+  "windows": {
+    "loss": {
+      "chebi|none": {
+        "other": {
+          "loss": 1.9485029152461462,
+          "targets": 56
+        },
+        "own": {
+          "loss": null,
+          "targets": 0
+        },
+        "unlinked": 2.1209913859535634
+      },
+      "chebi|encoder": {
+        "other": {
+          "loss": 1.9609740802219935,
+          "targets": 56
+        },
+        "own": {
+          "loss": null,
+          "targets": 0
+        },
+        "unlinked": 2.1214043017591693
+      },
+      "chebi|oracle": {
+        "other": {
+          "loss": 1.9636563573564803,
+          "targets": 56
+        },
+        "own": {
+          "loss": null,
+          "targets": 0
+        },
+        "unlinked": 2.121393956817432
+      }
+    },
+    "contrasts": [
+      {
+        "condition": "chebi|encoder",
+        "reference": "none",
+        "part": "other",
+        "mean": 0.012471164975847517,
+        "ci_low": -0.003121018409729004,
+        "ci_high": 0.025986313819885254,
+        "p_value": 0.14358974358974358,
+        "clusters": 8,
+        "nonempty_clusters": 3,
+        "resamples": 194,
+        "relative": 0.006400383021378281,
+        "relative_ci_low": -0.0027075644268166462,
+        "relative_ci_high": 0.013766638316626513
+      },
+      {
+        "condition": "chebi|oracle",
+        "reference": "none",
+        "part": "other",
+        "mean": 0.015153442110334123,
+        "ci_low": 0.010432839393615723,
+        "ci_high": 0.019491155942281086,
+        "p_value": 0.010256410256410256,
+        "clusters": 8,
+        "nonempty_clusters": 3,
+        "resamples": 194,
+        "relative": 0.007776966609475077,
+        "relative_ci_low": 0.005446684902292427,
+        "relative_ci_high": 0.010325731309571871
+      },
+      {
+        "condition": "chebi|encoder",
+        "reference": "oracle",
+        "part": "other",
+        "mean": -0.002682277134486607,
+        "ci_low": -0.013553857803344727,
+        "ci_high": 0.006495157877604167,
+        "p_value": 0.5435897435897435,
+        "clusters": 8,
+        "nonempty_clusters": 3,
+        "resamples": 194,
+        "relative": -0.001365960558443918,
+        "relative_ci_low": -0.011652856029967122,
+        "relative_ci_high": 0.003405740248340088
+      }
+    ],
+    "windows": 5,
+    "occurrences": 7,
+    "own_occurrences": 0,
+    "terms_with_occurrences": 3
+  },
+  "timings": {
+    "readers": 0.011272311210632324,
+    "encoder": 817.0711603111122,
+    "encoder_items": 5309.652697769925,
+    "windows": 131.79342079907656
+  },
+  "seconds": 6279.650258512003
+}

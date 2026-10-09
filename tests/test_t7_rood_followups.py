@@ -142,10 +142,16 @@ def test_follow_up_plan_priorities_names_and_quoting() -> None:
     assert compare[0]["name"] == "t7rood-vs-t7-report" and compare[0]["priority"] == 54.4974 and "-report" in compare[1]["name"]
     jobs = plan.e11_jobs()
     assert jobs[0]["name"].startswith("e11-gradient-dev") and jobs[-1]["name"] == "e11-t7rood-report"
-    assert {j["priority"] for j in jobs} == {54.4979} and len(jobs) == 1 + 6 + 1
+    assert {j["priority"] for j in jobs} == {54.4979, 54.49791, 54.49792} and len(jobs) == 1 + 9 + 1
+    assert jobs[-1]["priority"] == max(j["priority"] for j in jobs)                 # the report after every evaluation
     c5 = next(j["command"] for j in jobs if j["name"].endswith("C5-s2"))
     assert c5[c5.index("--items") + 1].endswith("t7rood-heldout-smollm2-v1") and c5[c5.index("--alias-table") + 1].endswith("t7rood.json")
     assert c5[c5.index("--gradient-lr-from") + 1].startswith(str(plan.E11_DEV))
+    # Decision 64: the in-context route and the shape-matched control on C5; the C6d encoder route, reported with them.
+    assert "context" in c5[c5.index("--methods") + 1].split(",") and "linker-random" in c5[c5.index("--readers") + 1].split(",")
+    c6d = next(j for j in jobs if j["name"].endswith("C6d-s3"))
+    assert c6d["priority"] == 54.49791 and c6d["command"][c6d["command"].index("--methods") + 1] == "encoder,windows"
+    assert "--gradient-lr-from" not in c6d["command"] and c6d["command"][-1] in jobs[-1]["command"]
     e12 = plan.e12_jobs()
     evals = [j for j in e12 if "self-query" in j["name"]]
     assert len(evals) == 10 and {j["priority"] for j in e12} == {54.49795} and e12[-1]["name"].endswith("-report")
