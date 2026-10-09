@@ -136,3 +136,100 @@ T5 at 54.4985 (stage 0 with data preparation, learn and write) / 54.4986 (stage 
 3. Reusing the E9 C0′ / C2 runs as stage-0 references (they read no frame, so the seed ontology does not change them).
 4. Whether TK-L's proposer, if ready, replaces `rule_closure` as the stage-1 primary (then L4 measures it; the rule
    closure result stays as a baseline).
+
+Settled on 2026-10-08 with the author's delegation (execution.md, TK-E13 row), before the T5 jobs ran: 1–3 as proposed;
+4: T5 keeps the registered rule-closure proposer (TK-L's proposer could enter T5 only as a secondary, by a dated amendment
+before the learn jobs run). T5 is unchanged by amendment 1.
+
+## 12. Amendments
+
+### Amendment 1 (2026-10-08): T7-ROOD — written before any T7-ROOD run; T5 unaffected
+
+TK-H1's round split exists (`experiments/t7-new-vocabulary/ROOD.md` §5, merged in f526e5b). This amendment fixes how E13
+runs on it. Configuration: `t7-rood.yaml`. Everything not stated here is as in §§1–10.
+
+**Round split and text** (TK-H1's `rounds-v1`; entry ids are T7's).
+- Cut 2013-01-26 (MeSH `DateIntroduced`). Round 1: 5,714 entries. Round 2: 2,470 entries (2,455 introduced after the
+  cut, 15 moved by the alias-containment closure).
+- Round-1 training corpus `train`: 57.27M SmolLM2 tokens, 50/50 PubMed / general. Its leakage audit found no round-1
+  training document that names a round-2 record, for either tokenizer.
+- Round-2 training stream `train-round2`: 21.3M tokens, made of the 24,882 abstracts round 1 dropped plus 9,665 general
+  documents, 50/50.
+- The `defs` stream: the same documents, each preceded by the SCR notes of the defined round-2 terms it links. It is
+  topped up with FineWeb-Edu (shard 002, from document 300,000, which no T7 build read) to stay 50/50.
+
+**Evaluation.**
+- Round-2 endpoints use `eval-round2` (the evaluation abstracts that name a round-2 record), every window: 2,359 SmolLM2
+  windows and 2,356 Qwen3 windows of 1,024 tokens. The reference strata are `ref_round2` and `ref_round1`.
+- Forgetting adds `eval-round1` (the evaluation abstracts without a round-2 name): 256 windows at the start and the end
+  of every round-2 run, next to `ref_round1`.
+- Locality: `eval-general`.
+
+**Seed ontology.**
+- Round-2 entries get no frame. Round-1 edges to round-2 fillers are dropped; on T7 there are none. No inverse relations
+  are derived.
+- The erasure follows **E10.L's rule**, so TK-L's pipeline reproduces it exactly (`erase_like_tkl`):
+  - the edges of the content relations (≥ 10 distinct fillers: `mapped_to`, `pharmacological_action`, `branch_second`);
+  - of seen round-1 entries (round-1 training frequency ≥ 10, ≥ 2 edges);
+  - erased with probability 0.2, each entry keeping ≥ 1 edge, seed 0.
+- The seen set is taken from the SmolLM2 frequencies for both tokenizers, so both hosts share one gold. Result: 1,966 of
+  the 15,594 edges of 2,933 entries are erased.
+
+**Stage 0.** The E9 T7 C5 recipe on `train`, evaluated on `eval-round2`:
+- SmolLM2-360M: full fine-tuning, 50M tokens.
+- Qwen3-1.7B-Base: LoRA r 64, the E9 Qwen3 recipe.
+
+**Stage 1. Primary: TK-L's learn tool** (`vsa_embed.learn`).
+- Proposals: `propose` with sources decompose and closure. This is the function behind
+  `store_proposer`.
+- Acceptance: E10.L's pre-registered **`holm+decoy`** rule, i.e. Holm and a target–decoy FDR threshold from the complete
+  null world.
+- It runs through `e10_learn.run_erasure` with E10.L's T7 settings. The `ConceptStore` facade has no null-world decoys and
+  would apply Holm only, hence the runner.
+- Store: the stage-0 C5 composer. Passive vectors and evidence: the stage-0 host's hidden states (middle layer) at round-1
+  terms' occurrences in `eval-round1`, then 20,000 round-1 training windows (up to 32 per term). They are split by
+  document into a proposal half and a test half.
+- Decoders: cross-fitted ridge. Decomposition: OMP, ≤ 2 new edges, ≤ 2,000 probes. Controls: same-type heads.
+- Null worlds: relabel, swap and permute, plus the complete world.
+- L4: precision = accepted ∩ erased gold (of the probes) / accepted. The null false-acceptance rate is that of the
+  **worst** null world under `holm+decoy`. Holm's p for L4 is the exact one-sided binomial p of precision > 0.8.
+
+**Stage 1. Secondary: rule closure** (E13's registered proposer, T5's primary), with the held-out utility test.
+- Validation windows come from `eval-round1`.
+- On T7's relations it is expected to propose little: there are no inverse pairs, and the CPU smoke found no rule.
+
+Stages 2–5 consume the primary's accepted edges.
+
+**Stage 2.**
+- Read set: TK-H1's `round2-items-smollm2-v1`, 906 round-2 records with an informative SCR note, read as
+  `<headword>: <note>` (style `scr`). Reader: `linker`.
+- The harness items are the relation (`negation/affirm`) and property (`paraphrase`) items of those terms, from the
+  item set below.
+
+**Stage 3.**
+- Item set `items/understanding-t7rounds-{smollm2,qwen3}-v1`, built here with E9's understanding builders on the rounds
+  ontology, so the `heldout` subset is exactly round 2: 2,470 anchors, 2,730 relation items, 2,730 reverse items and
+  4,380 paraphrase items.
+- No two-hop items: T7's item spec has no path.
+- Conditions: `none`, `recall:own`, `symbolic`. No `definition` condition, because E12 has no T7 definition writer.
+- A seeded sample of 600 anchors keeps the cost down.
+- L5 is computed over the relation and reverse items.
+
+**Stages 4–5.** As for T5, on `train-round2` and the `defs` stream, with the same arms. There are no C0′ / C2 references,
+because no such runs exist on the round-1 corpus. Qwen3-1.7B-Base runs `read`, `noread`, `gold` and the RTN arms
+`q4-read`, `q4-noread`, `qlora`.
+
+**Endpoints.** L1–L5 as in §5, on T7-ROOD. T7-ROOD is its own family: Holm across its five tests, primary host
+SmolLM2-360M.
+
+**Queue** (`queue-commands.sh`, not queued by this work package). The plan has 68 jobs, ≈ 46.0 GPU-h:
+SmolLM2-360M ≈ 24.7, Qwen3-1.7B ≈ 21.0, preparation 0.3.
+
+| Priority | Jobs | GPU-h |
+|---|---|---:|
+| 54.4996 | preparation, stage 0, learn (TK-L and rule closure), write | 14.3 |
+| 54.4997 | stage 4 | 13.5 |
+| 54.4998 | stage 5 and reason | 18.3 |
+| 54.4999 | `e13-t7-rood-report` (CPU lane) | — |
+
+The hours come from the same measured per-step costs, scaled to `eval-round2`'s 2,359 windows.

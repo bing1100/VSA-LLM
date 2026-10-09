@@ -157,6 +157,57 @@ def test_round2_rank_items_follow_the_harness_format() -> None:
         assert Item.from_json(item.to_json()).to_json() == item.to_json()
 
 
+def test_t7_rood_configs_and_plan() -> None:
+    config = e13.load_config(e13.ROOT / "t7-rood.yaml")
+    stage0 = e13.stage0_config(config, "SmolLM2-360M", 2)
+    assert stage0["data"]["train"].endswith("t7-newvocab/rounds-v1/train") and stage0["data"]["eval"].endswith("rounds-v1/eval-round2")
+    assert stage0["data"]["eval_round1"].endswith("rounds-v1/eval-round1") and stage0["eval"]["windows"] == 2359
+    assert stage0["data"]["ontology"].endswith("e13/t7-rood/smollm2/seed/ontology.pt")
+    assert stage0["eval"]["reference_strata"].endswith("t7-rood/smollm2/reference-2359x1024.npz") and stage0["e9_track"] == "t7"
+    qwen = e13.stage0_config(config, "Qwen3-1.7B-Base", 1)
+    assert qwen["data"]["train"].endswith("rounds-v1/hosts/qwen3/train") and qwen["eval"]["windows"] == 2356
+    read = e13.round2_config(config, "SmolLM2-360M", "read", 1)
+    assert read["data"]["train"].endswith("e13/t7-rood/smollm2/round2/train") and read["e13"]["extra"]["eval_round1"].endswith("rounds-v1/eval-round1")
+    assert read["e13"]["general"].endswith("rounds-v1/eval-general")
+    assert e13.item_path(config, "understanding", "qwen3").name == "understanding-t7rounds-qwen3-v1"
+    jobs = e13.plan(config, write_configs=False)
+    names = [j["name"] for j in jobs]
+    assert len(names) == len(set(names)) and [n for n in names if "-report" in n] == ["e13-t7-rood-report"]
+    assert {j["priority"] for j in jobs} <= {54.4996, 54.4997, 54.4998, 54.4999}
+    by = {j["name"]: j for j in jobs}
+    assert by["e13-t7-rood-SmolLM2-360M-s1-learn"]["priority"] == 54.4996 and "--method" not in by["e13-t7-rood-SmolLM2-360M-s1-learn"]["command"]
+    assert by["e13-t7-rood-SmolLM2-360M-s1-learn-rule_closure"]["command"][-3:-1] == ["rule_closure", "--output"]
+    assert by["e13-t7-rood-SmolLM2-360M-q4-read-rtn-s1"]["priority"] == 54.4998 == by["e13-t7-rood-SmolLM2-360M-s1-reason"]["priority"]
+    assert not any("C0p" in n or "C2" in n for n in names) and 25 < sum(j["hours"] for j in jobs) < 80
+    t5 = e13.load_config(e13.ROOT / "t5.yaml")
+    assert not any("learn-" in j["name"] for j in e13.plan(t5, write_configs=False))
+    assert e13.job_hours(t5, "learn_rule_closure", "SmolLM2-360M") == 0.08 and e13.job_hours(t5, "reason", "SmolLM2-360M") == 0.5
+
+
+def test_erasure_matches_e10_learn_and_definitions_are_prepended_by_links(tmp_path: Path) -> None:
+    from vsa_embed import learn as L
+    from vsa_embed.experiments import e10_learn as E
+    ontology = toy_ontology()
+    ontology["train_frequency"] = [20, 20, 20, 20, 0, 0]
+    frames = dict(enumerate(e13.frames_of(ontology)))
+    settings = {"seed": 3, "erase": {"fraction": 0.5, "min_distinct_fillers": 1, "keep": 1, "min_frequency": 10, "min_degree": 2}}
+    seen, content, erased_frames, erased = e13.erase_like_tkl(ontology, frames, settings)
+    assert seen == E.seen_entries(ontology, frames, min_frequency=10, min_degree=2)
+    again = L.erase_edges(frames, seen, fraction=0.5, relations=set(content), seed=3, keep=1)
+    assert erased == again[1] and erased_frames == again[0]
+    if not _gpt2_ok():
+        return
+    from vsa_embed.data.corpus import TokenCorpus, build_corpus
+    from vsa_embed.span_channel import AliasTable
+    table = AliasTable.from_pairs([("hydroxychloroquine", 0), ("new york", 1)])
+    build_corpus(["Doc one: hydroxychloroquine here.", "Doc two: nothing.", "Doc three: New York and hydroxychloroquine."],
+                 tmp_path / "c", tokenizer_name="gpt2", table=table, eos_id=50256, max_tokens=10_000, batch_texts=8, workers=1)
+    tokenizer = transformers.AutoTokenizer.from_pretrained("gpt2", local_files_only=True)
+    texts = list(e13.definitions_by_links(TokenCorpus.open(tmp_path / "c"), tokenizer, {0: "HCQ: a drug.", 1: "NY: a city."}, 1))
+    assert texts == ["HCQ: a drug.\n\nDoc one: hydroxychloroquine here.", "Doc two: nothing.",
+                     "NY: a city.\nHCQ: a drug.\n\nDoc three: New York and hydroxychloroquine."]
+
+
 def test_queue_lines_parse_with_the_jobqueue_cli(tmp_path: Path) -> None:
     import json
     import shlex

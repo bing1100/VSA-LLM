@@ -1,0 +1,497 @@
+{
+  "label": "SMOKE",
+  "data": "/tmp/claude-1000/-home-bhux-workplace/71272da5-02b7-47b1-a057-5887c33fb83d/scratchpad/e13-t7smoke",
+  "host": "SmolLM2-135M",
+  "prepare": {
+    "track": "t7-rood",
+    "family": "smollm2",
+    "rounds_root": "/home/bhux/data/vsa-llm/tracks/t7-newvocab/rounds-v1",
+    "tokenizer": "HuggingFaceTB/SmolLM2-360M",
+    "round2_entries": 2470,
+    "definitions": 906,
+    "seed_ontology": {
+      "round1_entries": 5714,
+      "round2_entries": 2470,
+      "dropped_round2_fillers": 0,
+      "derived_inverses": {},
+      "edges_round1": 30012,
+      "erased": 1966,
+      "erase_fraction": 0.0,
+      "min_keep": 2,
+      "seed": 0,
+      "erased_by_relation": {
+        "branch_second": 964,
+        "mapped_to": 851,
+        "pharmacological_action": 151
+      },
+      "atoms_added": 0,
+      "synthetic_entries": 0,
+      "erase_rule": "e10_learn: learn.erase_edges over content relations",
+      "erase": {
+        "fraction": 0.2,
+        "min_distinct_fillers": 10,
+        "keep": 1,
+        "probe_cap": 2000,
+        "min_frequency": 10,
+        "min_degree": 2,
+        "probe_requires_evidence": true
+      },
+      "erase_seed": 0,
+      "seen": 2933,
+      "content_relations": [
+        "mapped_to",
+        "pharmacological_action",
+        "branch_second"
+      ]
+    },
+    "defs": {
+      "built": false
+    },
+    "corpora": {
+      "round2/train": 21326939
+    },
+    "reference": {
+      "windows": 8,
+      "length": 128,
+      "round2": 40,
+      "round1": 16
+    }
+  },
+  "stage0": {
+    "steps": 3,
+    "tokens": 768
+  },
+  "learn": {
+    "proposer": "vsa_embed.learn (decompose + closure; store_proposer's propose)",
+    "rule": "holm+decoy",
+    "proposals": 4,
+    "accepted": 0,
+    "accepted_gold": 0,
+    "erased_gold": 2,
+    "precision": null,
+    "recall": 0.0,
+    "null": {
+      "null_proposals": 6,
+      "accepted": 0,
+      "rate": 0.0,
+      "rate_max": 0.0,
+      "by_world": {
+        "complete": {
+          "proposals": 4,
+          "tested": 4,
+          "accepted": 0,
+          "rate": 0.0,
+          "rate_all": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.48990002040399916
+        },
+        "relabel": {
+          "proposals": 0,
+          "tested": 0,
+          "accepted": 0,
+          "rate": null,
+          "rate_all": null,
+          "ci_low": null,
+          "ci_high": null
+        },
+        "swap": {
+          "proposals": 4,
+          "tested": 2,
+          "accepted": 0,
+          "rate": 0.0,
+          "rate_all": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.6576280471103807
+        },
+        "permute": {
+          "proposals": 0,
+          "tested": 0,
+          "accepted": 0,
+          "rate": null,
+          "rate_all": null,
+          "ci_low": null,
+          "ci_high": null
+        }
+      }
+    },
+    "p_precision_above_threshold": 1.0,
+    "probes": 2,
+    "erased": 1966,
+    "decoders": {
+      "passive": {
+        "folds": 5,
+        "fold_alphas": [
+          0.01,
+          0.01,
+          0.01,
+          0.01,
+          0.01
+        ],
+        "alpha": 0.01,
+        "oof_r2": -0.2221976428159429,
+        "oof_cosine": 0.6229560375213623,
+        "rows": 82,
+        "input_dim": 576,
+        "output_dim": 256
+      },
+      "evidence": {
+        "rows": 88,
+        "fold_alphas": [
+          0.01,
+          0.01,
+          0.01,
+          0.01,
+          0.01
+        ],
+        "mean_cosine_to_target": 0.6091978660869327,
+        "observations": 120
+      }
+    },
+    "by_source": {
+      "all": {
+        "accepted": 0,
+        "gold": 2,
+        "tp": 0,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0,
+        "proposed": 4,
+        "proposal_coverage": 0.0,
+        "false_acceptance_nongold": 0.0,
+        "testable": 2
+      },
+      "decompose": {
+        "accepted": 0,
+        "gold": 2,
+        "tp": 0,
+        "precision": null,
+        "recall": 0.0,
+        "f1": 0.0,
+        "proposed": 4,
+        "proposal_coverage": 0.0,
+        "false_acceptance_nongold": 0.0,
+        "testable": 2
+      }
+    },
+    "seconds": 54.61709273210727
+  },
+  "learn-rule_closure": {
+    "proposals": 0,
+    "proposals_gold": 0,
+    "erased_gold": 1966,
+    "tested": 0,
+    "accepted": 0,
+    "accepted_gold": 0,
+    "precision": null,
+    "precision_ci": [
+      null,
+      null
+    ],
+    "recall": 0.0,
+    "proposal_recall": 0.0,
+    "null": {
+      "null_proposals": 0,
+      "accepted": 0,
+      "rate": null,
+      "ci_low": null,
+      "ci_high": null
+    },
+    "p_precision_above_threshold": 1.0,
+    "validation_windows": 0,
+    "entries_with_windows": 0,
+    "forward_tokens": 0,
+    "rules": [],
+    "proposer": "rule_closure",
+    "seconds": 40.00700473994948
+  },
+  "write": {
+    "learned_edges_written": 0,
+    "round2_entries": 2470,
+    "definitions_read": 2,
+    "style": "scr",
+    "frames": {
+      "scr": {
+        "linker": {
+          "frames": 2,
+          "empty": 1,
+          "edges_mean": 0.5,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "stated_recall": null,
+          "filler_recall": 0.0,
+          "relation_accuracy": null,
+          "ambiguous_relation_accuracy": null,
+          "ambiguous_edges": 0,
+          "cost_per_word": {
+            "forward_passes": 2.0,
+            "forward_tokens": 38.0,
+            "seconds": 0.05028606753330678
+          }
+        },
+        "linker-joint": {
+          "frames": 2,
+          "empty": 1,
+          "edges_mean": 0.5,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "stated_recall": null,
+          "filler_recall": 0.0,
+          "relation_accuracy": null,
+          "ambiguous_relation_accuracy": null,
+          "ambiguous_edges": 0,
+          "cost_per_word": {
+            "forward_passes": 3.5,
+            "forward_tokens": 66.0,
+            "seconds": 0.08693718595895916
+          }
+        },
+        "oracle": {
+          "frames": 2,
+          "empty": 0,
+          "edges_mean": 4.5,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "stated_recall": null,
+          "filler_recall": 0.0,
+          "relation_accuracy": 1.0,
+          "ambiguous_relation_accuracy": 1.0,
+          "ambiguous_edges": 7,
+          "cost_per_word": {}
+        },
+        "random": {
+          "frames": 2,
+          "empty": 0,
+          "edges_mean": 4.5,
+          "precision": 0.3333333333333333,
+          "recall": 0.3333333333333333,
+          "f1": 0.3333333333333333,
+          "stated_recall": null,
+          "filler_recall": 0.0,
+          "relation_accuracy": 1.0,
+          "ambiguous_relation_accuracy": 1.0,
+          "ambiguous_edges": 2,
+          "cost_per_word": {}
+        },
+        "typeprior": {
+          "frames": 2,
+          "empty": 1,
+          "edges_mean": 0.5,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "stated_recall": null,
+          "filler_recall": 0.0,
+          "relation_accuracy": null,
+          "ambiguous_relation_accuracy": null,
+          "ambiguous_edges": 0,
+          "cost_per_word": {}
+        }
+      }
+    },
+    "reading_cost": {
+      "forward_tokens": 208,
+      "training_token_equivalent": 69.33333333333333,
+      "rows_scored": 11,
+      "headword_unlinked": 0
+    },
+    "fvt": {
+      "entries_without_alias": 0,
+      "target_norm": 0.8751786351203918,
+      "reference_entries": 2048
+    },
+    "general_base_loss": 3.1126743227980156,
+    "items": {
+      "items": 12,
+      "accuracy": {
+        "none": 0.3333333333333333,
+        "store:linker": 0.3333333333333333,
+        "store:oracle": 0.3333333333333333,
+        "store:random": 0.3333333333333333,
+        "definition-in-context": 0.4166666666666667
+      },
+      "contrasts": [
+        {
+          "a": "store:linker",
+          "b": "none",
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0
+        },
+        {
+          "a": "store:oracle",
+          "b": "none",
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0
+        },
+        {
+          "a": "store:random",
+          "b": "none",
+          "mean": 0.0,
+          "ci_low": 0.0,
+          "ci_high": 0.0
+        },
+        {
+          "a": "definition-in-context",
+          "b": "none",
+          "mean": 0.08333333333333333,
+          "ci_low": 0.0,
+          "ci_high": 0.25
+        }
+      ]
+    },
+    "seconds": 71.40665280306712
+  },
+  "reason": {
+    "none": {
+      "negation/all": {
+        "accuracy": 0.625,
+        "score": 0.125,
+        "n": 4
+      },
+      "negation/heldout": {
+        "accuracy": 0.625,
+        "score": 0.125,
+        "n": 4
+      },
+      "reverse/all": {
+        "accuracy": 0.25,
+        "score": -0.25,
+        "n": 4
+      },
+      "reverse/heldout": {
+        "accuracy": 0.25,
+        "score": -0.25,
+        "n": 4
+      }
+    },
+    "recall:own": {
+      "negation/all": {
+        "accuracy": 0.875,
+        "score": 0.375,
+        "n": 4
+      },
+      "negation/heldout": {
+        "accuracy": 0.875,
+        "score": 0.375,
+        "n": 4
+      },
+      "reverse/all": {
+        "accuracy": 0.25,
+        "anchor_in_top": 0.0,
+        "pair_correct": 0.5,
+        "score": -0.25,
+        "n": 4
+      },
+      "reverse/heldout": {
+        "accuracy": 0.25,
+        "anchor_in_top": 0.0,
+        "pair_correct": 0.5,
+        "score": -0.25,
+        "n": 4
+      }
+    },
+    "symbolic": {
+      "negation/all": {
+        "accuracy": 1.0,
+        "score": 0.5,
+        "n": 4
+      },
+      "negation/heldout": {
+        "accuracy": 1.0,
+        "score": 0.5,
+        "n": 4
+      },
+      "reverse/all": {
+        "accuracy": 0.625,
+        "anchor_in_top": 1.0,
+        "pair_correct": 1.0,
+        "score": 0.125,
+        "n": 4
+      },
+      "reverse/heldout": {
+        "accuracy": 0.625,
+        "anchor_in_top": 1.0,
+        "pair_correct": 1.0,
+        "score": 0.125,
+        "n": 4
+      }
+    }
+  },
+  "round2": {
+    "SmolLM2-135M-read-s1": {
+      "steps": 2,
+      "tokens": 512
+    },
+    "SmolLM2-135M-noread-s1": {
+      "steps": 2,
+      "tokens": 512
+    },
+    "SmolLM2-135M-fvt-s1": {
+      "steps": 2,
+      "tokens": 512
+    },
+    "SmolLM2-135M-q4-read-rtn-s1": {
+      "steps": 2,
+      "tokens": 512
+    },
+    "SmolLM2-135M-q4-noread-rtn-s1": {
+      "steps": 2,
+      "tokens": 512
+    },
+    "SmolLM2-135M-qlora-rtn-s1": {
+      "steps": 2,
+      "tokens": 512
+    }
+  },
+  "verdicts": {
+    "L1": false,
+    "L2": false,
+    "L3": false,
+    "L3_noninferior_to_qlora": false,
+    "L4": false,
+    "L5": false
+  },
+  "holm": {
+    "L1": {
+      "p": 0.7263681592039801,
+      "p_holm": 1.0
+    },
+    "L2": {
+      "p": 1.0,
+      "p_holm": 1.0
+    },
+    "L3": {
+      "p": 0.7263681592039801,
+      "p_holm": 1.0
+    },
+    "L4": {
+      "p": 1.0,
+      "p_holm": 1.0
+    },
+    "L5": {
+      "p": 0.5472636815920398,
+      "p_holm": 1.0
+    }
+  },
+  "timings": {
+    "prepare": 0.4,
+    "stage0": 9.2,
+    "learn": 54.6,
+    "learn-rule_closure": 40.0,
+    "write": 71.4,
+    "reason": 80.9,
+    "round2:SmolLM2-135M-read-s1": 8.6,
+    "round2:SmolLM2-135M-noread-s1": 9.1,
+    "round2:SmolLM2-135M-fvt-s1": 8.6,
+    "round2:SmolLM2-135M-q4-read-rtn-s1": 6.8,
+    "round2:SmolLM2-135M-q4-noread-rtn-s1": 6.3,
+    "round2:SmolLM2-135M-qlora-rtn-s1": 9.5,
+    "report": 0.0
+  },
+  "step_seconds": 1.2439701710827649,
+  "cpu_threads": 4
+}

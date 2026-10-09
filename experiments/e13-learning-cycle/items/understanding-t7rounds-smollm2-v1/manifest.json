@@ -1,0 +1,287 @@
+{
+  "schema": "e9-understanding/1",
+  "track": "t7",
+  "family": "smollm2",
+  "tokenizer": "HuggingFaceTB/SmolLM2-135M",
+  "seed": 0,
+  "ontology": "/home/bhux/data/vsa-llm/tracks/t7-newvocab/rounds-v1/ontology.pt",
+  "ontology_alias_sha256": "90d54b356cb6e5f1840b4cf84186d6cb110be15171b4bd94a2f566eab4df95b4",
+  "alias_table": "/home/bhux/data/vsa-llm/e13/t7-rood/alias-table-rounds.json",
+  "new_items": null,
+  "counts_requested": {
+    "seen": 0,
+    "rare": 0
+  },
+  "anchors": {
+    "heldout": 2470
+  },
+  "families": [
+    "two_hop",
+    "reverse",
+    "paraphrase",
+    "negation"
+  ],
+  "items": 12570,
+  "items_by": {
+    "heldout/negation/affirm": 2730,
+    "heldout/negation/negate": 2730,
+    "heldout/paraphrase/paraphrase": 4380,
+    "heldout/reverse/reverse": 2730
+  },
+  "rules": {
+    "overlap": "an option sharing a content-word stem (\u2265 3 letters, not a stopword) with any verbalization within two hops of the term (exclusion table) is not used",
+    "two_hop": "answer = the first sorted r2 filler of the r1 filler's frame that is not in the term's frame (atom or text); distractors = other r2 fillers not in the term's frame",
+    "scoring": "PMI against the null prompt (term \u2192 'this'/'that'; reverse: cue \u2192 'we mean'); argmax per template"
+  },
+  "spec": {
+    "anchor": {
+      "relation": "record_class",
+      "values": [
+        "class:chemical",
+        "class:disease",
+        "class:organism"
+      ]
+    },
+    "two_hop": [],
+    "affordance": {
+      "relation": "record_class",
+      "items": {
+        "handling": {
+          "templates": [
+            "In practice, {x} is usually",
+            "Researchers report that {x} is usually"
+          ],
+          "options": {
+            "class:chemical": " synthesized and given in measured doses",
+            "class:disease": " diagnosed in patients and then treated",
+            "class:organism": " grown in culture and sequenced"
+          }
+        }
+      }
+    },
+    "paraphrase": {
+      "branch_second": {
+        "templates": [
+          "In the MeSH tree, {x} falls under",
+          "{x} is catalogued among the"
+        ],
+        "k": 5,
+        "options": {
+          "branch:B01": [
+            " eukaryotes"
+          ],
+          "branch:B02": [
+            " archaea"
+          ],
+          "branch:B03": [
+            " bacteria"
+          ],
+          "branch:B04": [
+            " viruses"
+          ],
+          "branch:B05": [
+            " organism forms"
+          ],
+          "branch:C01": [
+            " infections"
+          ],
+          "branch:C04": [
+            " neoplasms"
+          ],
+          "branch:C05": [
+            " musculoskeletal diseases"
+          ],
+          "branch:C06": [
+            " digestive system diseases"
+          ],
+          "branch:C07": [
+            " stomatognathic diseases"
+          ],
+          "branch:C08": [
+            " respiratory tract diseases"
+          ],
+          "branch:C09": [
+            " otorhinolaryngologic diseases"
+          ],
+          "branch:C10": [
+            " nervous system diseases"
+          ],
+          "branch:C11": [
+            " eye diseases"
+          ],
+          "branch:C12": [
+            " urogenital diseases"
+          ],
+          "branch:C14": [
+            " cardiovascular diseases"
+          ],
+          "branch:C15": [
+            " hemic and lymphatic diseases"
+          ],
+          "branch:C16": [
+            " congenital, hereditary, and neonatal diseases and abnormalities"
+          ],
+          "branch:C17": [
+            " skin and connective tissue diseases"
+          ],
+          "branch:C18": [
+            " nutritional and metabolic diseases"
+          ],
+          "branch:C19": [
+            " endocrine system diseases"
+          ],
+          "branch:C20": [
+            " immune system diseases"
+          ],
+          "branch:C21": [
+            " disorders of environmental origin"
+          ],
+          "branch:C22": [
+            " animal diseases"
+          ],
+          "branch:C23": [
+            " pathological conditions, signs and symptoms"
+          ],
+          "branch:C24": [
+            " occupational diseases"
+          ],
+          "branch:C25": [
+            " chemically-induced disorders"
+          ],
+          "branch:C26": [
+            " wounds and injuries"
+          ],
+          "branch:D01": [
+            " inorganic chemicals"
+          ],
+          "branch:D02": [
+            " organic chemicals"
+          ],
+          "branch:D03": [
+            " heterocyclic compounds"
+          ],
+          "branch:D04": [
+            " polycyclic compounds"
+          ],
+          "branch:D05": [
+            " macromolecular substances"
+          ],
+          "branch:D06": [
+            " hormones, hormone substitutes, and hormone antagonists"
+          ],
+          "branch:D08": [
+            " enzymes and coenzymes"
+          ],
+          "branch:D09": [
+            " carbohydrates"
+          ],
+          "branch:D10": [
+            " lipids"
+          ],
+          "branch:D12": [
+            " amino acids, peptides, and proteins"
+          ],
+          "branch:D13": [
+            " nucleic acids, nucleotides, and nucleosides"
+          ],
+          "branch:D20": [
+            " complex mixtures"
+          ],
+          "branch:D23": [
+            " biological factors"
+          ],
+          "branch:D25": [
+            " biomedical and dental materials"
+          ],
+          "branch:D26": [
+            " pharmaceutical preparations"
+          ],
+          "branch:D27": [
+            " chemical actions and uses"
+          ]
+        },
+        "same_prefix": true
+      },
+      "record_class": {
+        "templates": [
+          "{x} is",
+          "Put simply, {x} is"
+        ],
+        "k": 3,
+        "options": {
+          "class:chemical": [
+            " a substance with a defined molecular structure"
+          ],
+          "class:disease": [
+            " an illness that affects patients"
+          ],
+          "class:organism": [
+            " a living species"
+          ]
+        }
+      }
+    },
+    "reverse": {
+      "mapped_to": {
+        "cue": "indexed under {t}",
+        "match": "record_class"
+      },
+      "pharmacological_action": {
+        "cue": "that acts as {t}",
+        "match": "record_class"
+      }
+    },
+    "reverse_templates": [
+      "Of {x} and {y}, the one {c} is",
+      "Between {y} and {x}, the one {c} is"
+    ],
+    "comparison": {
+      "mapped_to": {
+        "templates": [
+          "{x} and {y} are indexed under",
+          "In MeSH, {x} and {y} share"
+        ],
+        "candidates": [
+          " the same heading",
+          " different headings"
+        ]
+      },
+      "record_class": {
+        "templates": [
+          "{x} and {y} are",
+          "In MeSH, {x} and {y} are recorded as"
+        ],
+        "candidates": [
+          " the same kind of entity",
+          " different kinds of entities"
+        ]
+      }
+    },
+    "negation": {
+      "mapped_to": {
+        "affirm": [
+          "{x} is a kind of",
+          "In MeSH, {x} is indexed under"
+        ],
+        "negate": [
+          "{x} is not a kind of",
+          "In MeSH, {x} is not indexed under"
+        ]
+      },
+      "pharmacological_action": {
+        "affirm": [
+          "The pharmacological action of {x} is",
+          "{x} is classed among the"
+        ],
+        "negate": [
+          "The pharmacological action of {x} is not",
+          "{x} is not classed among the"
+        ]
+      }
+    }
+  },
+  "sha256": {
+    "concepts.jsonl": "c8a7ba850005b7fd23a950f25439323d73c11b2f15aca8b571b3a6e866cead52",
+    "items.jsonl.gz": "fc769f27dd094b4e48ba2dfdd47729b695d303a4a5d047096ef09f8870f4ad79"
+  }
+}

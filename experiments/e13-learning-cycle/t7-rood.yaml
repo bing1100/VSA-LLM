@@ -1,40 +1,41 @@
-# E13 learning cycle on T7-ROOD (the main real-text track; methodology §4, holdout H1).
-# TODO(TK-H1): the round split (records split by entry date into round 1 / round 2; every training document that
-# mentions a round-2 record dropped) is built by the TK-H1 agent, which documents it in
-# experiments/t7-new-vocabulary/ROOD.md. Neither that file nor the data existed in this worktree on 2026-10-08, so
-# `e13_cycle prepare` refuses this config (`prepare_t7_rood`) and the paths below are the expected interface
-# (`e13_cycle.T7_ROOD_INTERFACE`). When ROOD.md lands: fix the paths, wire `prepare_t7_rood` (seed ontology from
-# round1_entries / round2_entries, round-2 corpora from round2/train-domain + fresh general text, the learn-validation
-# corpus from held-out round-1 abstracts, reference strata on eval-pubmed), build the round-2 read set
-# (scope / SCR notes of round-2 records, E11 `scr_definition`) and round-2 understanding items, then run `plan`.
+# E13 learning cycle on T7-ROOD (the main real-text track; methodology §4, holdout H1; pre-registration amendment 1).
+# The round split is TK-H1's `rounds-v1` build (`experiments/t7-new-vocabulary/ROOD.md` §5): T7's records split by MeSH
+# DateIntroduced at 2013-01-26 into round 1 (5,714 entries) and round 2 (2,470); every training document naming a
+# round-2 record is dropped from round 1 (audited: 0 leaks) and is round 2's training text (`train-round2`, 50/50 with
+# general text). Read by `python -m vsa_embed.experiments.e13_cycle {prepare,items,learn,write,reason,report,plan} --config <this>`.
 experiment: e13-learning-cycle
 track: t7-rood
+e9_track: t7                         # lexicon, relation choices, item spec and exclusion table
 seed: 20261008
-data_root: ~/data/vsa-llm/e13/t7-rood
-rood_root: ~/data/vsa-llm/tracks/t7-rood/v1          # TODO(TK-H1): confirm
+data_root: ~/data/vsa-llm/e13/t7-rood                  # <data_root>/<family>/ : seed ontology, defs stream, reference strata
+rounds_root:
+  smollm2: ~/data/vsa-llm/tracks/t7-newvocab/rounds-v1
+  qwen3: ~/data/vsa-llm/tracks/t7-newvocab/rounds-v1/hosts/qwen3
+alias_table: ~/data/vsa-llm/e13/t7-rood/alias-table-rounds.json   # T7's aliases with round 2 held out (rounds ontology digest)
 families: {SmolLM2-360M: smollm2, Qwen3-1.7B-Base: qwen3}
 
 seed_ontology:
-  erase_fraction: 0.20
-  min_keep: 2
-  drop_round2_fillers: true
-  derived_inverses: {}               # TODO(TK-H1 / author): T7 relations with a materializable inverse (e.g. mapped_to⁻¹)
+  drop_round2_fillers: true          # round-1 frames lose their edges to round-2 terms
+  derived_inverses: {}               # none: TK-L's proposer (primary) does not need them; erasure: learn.tkl.erase
+  reference_family: smollm2          # the erasure's seen set (training frequency ≥ 10) for every family: one gold for both hosts
 
-text:
-  general_share: 0.5
-  general_shards: [~/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet]   # a shard no T7 build read
-  general_skip_docs: 0
-  definition_style: scr
+text:                                # general text of the `defs` stream's top-up (no T7 build read past document 300,000)
+  general_shards: [~/data/vsa-llm/fineweb-edu/sample/10BT/002_00000.parquet]
+  general_skip_docs: 300000
 
 items:
-  read_set: experiments/e11-read-to-learn/items/t7-rood-round2-smollm2-v1        # TODO(TK-H1): to be built from round-2 SCR notes
-  understanding: experiments/e9-retrofit/items/understanding-t7-rood-smollm2-v1  # TODO: round-2 anchors (e9_understanding --track t7)
+  read_set: experiments/t7-new-vocabulary/runs/rounds-v1/round2-items-smollm2-v1     # 906 SCR notes (E11 format, style scr)
+  understanding:                     # round-2 anchors (`e13_cycle items`): relation / reverse / paraphrase
+    smollm2: experiments/e13-learning-cycle/items/understanding-t7rounds-smollm2-v1
+    qwen3: experiments/e13-learning-cycle/items/understanding-t7rounds-qwen3-v1
 
 stage0:
-  configs:                           # the E9 T7 C5 recipe; data.train must become the ROOD round-1 corpus (TODO(TK-H1))
-    SmolLM2-360M: experiments/e9-retrofit/configs/t7-rood/SmolLM2-360M-full-C5-s{seed}.yaml
-    Qwen3-1.7B-Base: experiments/e9-retrofit/configs/t7-rood-qwen3/Qwen3-1.7B-Base-lora-C5-s{seed}.yaml
-  references: {}                     # C0′ / C2 of T7-ROOD are TK-H1's E9 configs (not reusable from T7: different corpus)
+  configs:                           # the E9 T7 C5 recipe; data paths below replace T7's corpora by the rounds build's
+    SmolLM2-360M: experiments/e9-retrofit/configs/t7/SmolLM2-360M-full-C5-s{seed}.yaml
+    Qwen3-1.7B-Base: experiments/e9-retrofit/configs/t7-qwen3/Qwen3-1.7B-Base-lora-C5-s{seed}.yaml
+  data: {train: train, eval: eval-round2, eval_round1: eval-round1}       # relative to rounds_root
+  eval_windows: {smollm2: 2359, qwen3: 2356}                              # every eval-round2 window (ROOD.md §5.1)
+  references: {}                     # no C0′ / C2 on the round-1 corpus
 
 hosts:
   SmolLM2-360M:
@@ -51,23 +52,45 @@ measure:
   Qwen3-1.7B-Base: experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C5-s1
 
 learn:
-  proposer: rule_closure
+  primary: tkl                       # TK-L's learn tool (decompose + closure, `holm+decoy`) through E10.L's run_erasure
+  secondary: [rule_closure]          # E13's registered proposer (T5's primary), on the same store
+  proposer: rule_closure             # the rule-closure path's proposer
   rules: {min_support: 10, min_confidence: 0.6, kinds: [inverse_of, symmetric, transitive, composition_of]}
-  validation: {per_entry: 8, length: 128, min_windows: 3, seed: 0}
+  validation: {corpus: eval-round1, per_entry: 8, length: 128, min_windows: 3, seed: 0}
   alpha: 0.05
   null_seed: 0
   precision_threshold: 0.8
+  tkl:                               # E10.L's pre-registered T7 arm (`e10-learn/configs/erased-t7.yaml`), passive = features
+    seed: 0                          # erasure / probe / null seed: the seed ontology's erasure uses it too (prepare)
+    num_threads: 4
+    erase: {fraction: 0.2, min_distinct_fillers: 10, keep: 1, probe_cap: 2000, min_frequency: 10, min_degree: 2,
+            probe_requires_evidence: true}
+    passive: {kind: features}
+    evidence: {kind: occurrences, max_observations: 16, layer: middle}
+    decoder: {folds: 5}
+    sources: [decompose, closure]
+    decompose: {method: omp, max_new: 2, threshold: 0.1, min_relative: 0.0}
+    test: {alpha: 0.05, correction: holm+decoy, control: head, controls: 8, min_observations: 4, decoy_statistic: utility,
+           variants: [holm]}
+    nulls: [relabel, swap, permute]  # + the complete null (always; it supplies the decoys)
+    pool: {distractors: 2}
+    baselines: [prior]
+    precision_target: 0.8
+    extract: {splits: "eval_round1,train:20000", window: 512, max_per_entry: 32, batch: 16}   # stage-0 host hidden states
 
 write: {reader: linker, secondary_readers: [linker-joint, typeprior], style: scr}
-reason: {conditions: "none,recall:own,symbolic"}
+
+reason:
+  conditions: none,recall:own,symbolic    # no definition writer for T7 (E12)
+  max_anchors: 600                   # a seeded sample of the round-2 anchors
 
 round2:
   tokens: 10000000
   data_seed: 4321
   eval_points: [250000, 500000, 750000, 1000000, 1500000, 2000000, 3000000, 4000000, 5000000, 6000000, 8000000]
-  eval_windows: 4096                 # T7's evaluation windows (feasibility); reference strata on them
   seq_len: 1024
   general_windows: 256
+  extra_evals: {eval_round1: eval-round1}   # forgetting on round-1 evaluation text, start and end
   use_learned: true
   lora_rank: 64
   lora_host_lr: 0.0002
@@ -76,7 +99,11 @@ round2:
 
 statistics: {resamples: 2000, holm_alpha: 0.05, noninferiority_relative: 0.01, l4_precision: 0.8, l4_far: 0.05}
 
-priority:                            # four levels: stage 0 (+ learn / write), stage 4, stage 5 + evaluations, report
+estimate_hours:                      # [scaled by host size, fixed] GPU hours of the evaluation-type jobs
+  write: [0.45, 0.0]
+  reason: [0.4, 0.0]
+
+priority:                            # four levels: stage 0 (+ preparation, learn, write), stage 4, stage 5 + reason, report
   base: 54.4996
   step: 0.0001
   slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 2, report: 3}
