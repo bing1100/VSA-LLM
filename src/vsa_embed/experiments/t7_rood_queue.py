@@ -87,8 +87,9 @@ def e12_hours(items: Path = UNDERSTANDING, *, conditions: int = 3) -> float:
 
 def e12_jobs(python: str = "$PY", *, root: Path = E9) -> list[dict[str, Any]]:
     from .e12_self_query import queue_stage
-    planned = queue_stage("t7rood", UNDERSTANDING, priority=0, hosts=[HOST], root=root, python=python, dry_run=True, core=True,
-                          families=list(E12_FAMILIES))
+    # the decision-63 models only: decision 64's C5sh / C6d arms (configs in the same stage) are loss controls, not E12 subjects
+    planned = queue_stage("t7rood", UNDERSTANDING, priority=0, models=["P0", "C0p", "C2", "C5"], hosts=[HOST], root=root,
+                          python=python, dry_run=True, core=True, families=list(E12_FAMILIES))
     hours = e12_hours() if (UNDERSTANDING / "manifest.json").exists() else float("nan")
     jobs = [{**j, "priority": E12_PRIORITY, "min_free_gb": 5, "hours": hours * (len(j["command"][j["command"].index("--conditions") + 1]
                                                                                      .split(",")) / 3), "block": "e12"} for j in planned]
