@@ -130,7 +130,7 @@ def test_round2_configs_and_the_plan(tmp_path: Path) -> None:
     names = [j["name"] for j in jobs]
     assert len(names) == len(set(names))
     assert [n for n in names if "-report" in n] == ["e13-t5-report"]
-    assert {j["priority"] for j in jobs} <= {54.4985, 54.4986, 54.4987, 54.4988, 54.4989}
+    assert {j["priority"] for j in jobs} <= {54.4985, 54.4986, 54.49865, 54.4987, 54.4988, 54.49885, 54.4989}   # amendment 2: .49865, .49885
     by = {j["name"]: j for j in jobs}
     assert by["e13-t5-SmolLM2-360M-read-s1"]["priority"] == 54.4986 and by["e13-t5-SmolLM2-360M-q4-read-rtn-s1"]["priority"] == 54.4987
     assert by["e13-t5-SmolLM2-360M-s1-reason"]["priority"] == 54.4988 and by["e13-t5-report"]["priority"] == 54.4989
@@ -173,7 +173,7 @@ def test_t7_rood_configs_and_plan() -> None:
     jobs = e13.plan(config, write_configs=False)
     names = [j["name"] for j in jobs]
     assert len(names) == len(set(names)) and [n for n in names if "-report" in n] == ["e13-t7-rood-report"]
-    assert {j["priority"] for j in jobs} == {54.4996, 54.49965, 54.4997, 54.49975, 54.49979}
+    assert {j["priority"] for j in jobs} == {54.4996, 54.49965, 54.49967, 54.4997, 54.49975, 54.49977, 54.49979}   # amendment 2
     by = {j["name"]: j for j in jobs}
     assert by["e13-t7-rood-SmolLM2-360M-s1-learn"]["priority"] == 54.4996 and "--method" not in by["e13-t7-rood-SmolLM2-360M-s1-learn"]["command"]
     assert by["e13-t7-rood-SmolLM2-360M-s1-learn-rule_closure"]["command"][-3:-1] == ["rule_closure", "--output"]

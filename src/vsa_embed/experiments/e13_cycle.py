@@ -21,11 +21,18 @@ Every stage-4/5 run evaluates the fixed E9 evaluation windows with two reference
 `ref_round2` (the 8 targets after a round-2 term) and `ref_round1` (after a round-1 term), at `round2.eval_points`;
 per-window losses (`eval_windows.npz`) feed the paired cluster bootstrap over windows × seeds (`report`).
 
+Pre-registration amendment 2 (decision 64, 2026-10-09; before any E13 run): L1 is supported only if `read` beats both
+`noread` and the wrong-frame arm `random` (co-primaries, Holm over six tests); the definition comparators — L1:
+`read − definition` (`context`: the `noread` arm's step-0 model with the round-2 definitions in context), L5:
+`recall:own − definition` (T7-ROOD: the read set's SCR notes, `reason.definition_source: read_set`) — with the prompt
+tokens each condition adds, and L5's cost criterion (non-inferior to the definition at margin δ with fewer tokens).
+
     python -m vsa_embed.experiments.e13_cycle prepare --config experiments/e13-learning-cycle/t5.yaml --family smollm2
     python -m vsa_embed.experiments.e13_cycle learn  --config CFG --run STAGE0_RUN --output DIR
     python -m vsa_embed.experiments.e13_cycle write  --config CFG --run STAGE0_RUN --learned DIR --output DIR
     python -m vsa_embed.experiments.e13_cycle reason --config CFG --run STAGE0_RUN --learned DIR --written DIR --output DIR
     python -m vsa_embed.experiments.e13_cycle round2 --config ARM_YAML --output RUN [--resume]
+    python -m vsa_embed.experiments.e13_cycle context --config CFG --arm NOREAD_ARM_YAML --output DIR    (amendment 2)
     python -m vsa_embed.experiments.e13_cycle report --config CFG --output DIR
     python -m vsa_embed.experiments.e13_cycle plan   --config CFG [--no-write-configs]   (prints the queue commands; queues nothing)
     python -m vsa_embed.experiments.e13_cycle smoke  --output DIR                          (CPU, SmolLM2-135M, a few steps; SMOKE)
@@ -65,6 +72,12 @@ ARM_FRAMES = {"read": "read", "noread": None, "fvt": None, "gold": "gold", "defs
               "C2": None, "q4-read": "read", "q4-noread": None, "qlora": None, "qlora-read": "read"}
 FAMILY_OF = {"SmolLM2-360M": "smollm2", "SmolLM2-135M": "smollm2", "Qwen3-1.7B-Base": "qwen3", "Qwen3-0.6B-Base": "qwen3"}
 HOST_MODE_TAG = {"train": "full", "lora": "lora", "frozen": "frozen"}
+# Amendment 2: stage 3's `definition` text — E12's prose writer from the gold frame (`writer`; T5, as registered) or the
+# read set's own definition of the anchor (`read_set`; T7-ROOD: the SCR note the stage-2 reader reads).
+DEFINITION_SOURCES = ("writer", "read_set")
+# Amendment 2: the primary Holm family of a track (L1 has two co-primaries: read − noread and read − random).
+HOLM_FAMILY = ("L1", "L1_random", "L2", "L3", "L4", "L5")
+L5_MARGIN = 0.05                                    # δ of L5's cost criterion (`statistics.l5_noninferiority_margin`)
 
 
 # ---------------------------------------------------------------- configuration
@@ -319,6 +332,13 @@ def prose_definitions(read_set_dir: Path, entries: set[int], style: str = "prose
         if d["style"] == style and c.get("entry") is not None and int(c["entry"]) in entries:
             out[int(c["entry"])] = {"headword": d["headword"], "text": d["text"], "concept": d["concept"]}
     return out
+
+
+def round2_definitions(config: dict[str, Any], family: str, entries: set[int]) -> dict[int, str]:
+    """Entry → the round-2 definition the cycle reads (`items.read_set` in `write.style`): T5 the E11 prose definitions,
+    T7-ROOD the SCR notes (`<headword>: <note>`) — the texts the stage-2 reader reads and the `defs` arm trains on."""
+    style = str((config.get("write") or {}).get("style") or (config.get("text") or {}).get("definition_style", "prose"))
+    return {e: d["text"] for e, d in prose_definitions(item_path(config, "read_set", family), entries, style).items()}
 
 
 def prepare(config: dict[str, Any], family: str, *, workers: int = 3, log: Callable[[str], None] = print) -> dict[str, Any]:
@@ -983,15 +1003,24 @@ def reason(config: dict[str, Any], run_dir: Path, learned: Path | None, written:
            limit: int | None = None, log: Callable[[str], None] = print) -> dict[str, Any]:
     """Stage 3 (L5): relation (`negation/affirm`), reverse and two-hop items about round-2 terms, scored with the recall
     of the read store in context (`recall:own`), with no tool (`none`), and with the gold frame (`symbolic`) or the
-    definition as text — E12's scoring on the learned store with the read frames written."""
+    definition as text — E12's scoring on the learned store with the read frames written. Amendment 2: the prompt tokens
+    each condition adds per item (`added_tokens`), and `reason.definition_source` (`writer`: E12's prose writer from the
+    gold frame, T5; `read_set`: the read set's definition of the anchor, T7-ROOD — anchors without one are not scored
+    under `definition`)."""
     from . import e12_self_query as e12
     from ..self_query import RecallStore
     started = time.monotonic()
+    settings = config.get("reason") or {}
+    source = str(settings.get("definition_source", "writer"))
+    if source not in DEFINITION_SOURCES:
+        raise ValueError(f"reason.definition_source {source!r}: one of {DEFINITION_SOURCES}")
     run = _open(run_dir, config, device=device)
     store = cs.ConceptStore.from_run(run)
     committed(run, store, learned)
     entries = set(round2_entries(run.ontology))
+    definitions = round2_definitions(config, run_family(config, run), entries) if source == "read_set" else None
     item_set = e12.load_item_set(item_path(config, "understanding", run_family(config, run)), families=("two_hop", "reverse", "negation", "affirm"))
+    entry_of = {c["concept"]: c.get("entry") for c in item_set.concepts}
     anchors = {c["concept"] for c in item_set.concepts if c.get("entry") is not None and int(c["entry"]) in entries}
     prompts = [p for p in item_set.prompts if p.item["subset"] == "heldout" and p.item["anchor"] in anchors]
     cap = int((config.get("reason") or {}).get("max_anchors") or 0)       # opt-in (T7-ROOD): a seeded sample of anchors
@@ -1007,19 +1036,23 @@ def reason(config: dict[str, Any], run_dir: Path, learned: Path | None, written:
     item_set.prompts = prompts
     item_set.concepts = [c for c in item_set.concepts if c["concept"] in used or (c.get("role") == "bridge" and c.get("source") in bridges)]
     frames = arm_frames(written, "read", (store.relation_id, store.atomic_id))
-    conditions = e12.parse_conditions(config.get("reason", {}).get("conditions", "none,recall:own,symbolic,definition"))
+    conditions = e12.parse_conditions(settings.get("conditions", "none,recall:own,symbolic,definition"))
     with store.written({e: frames.get(e) for e in entries}):
         loaded = e12.LoadedStore("own", Path(run_dir), RecallStore(run.composer), run.ontology, run.composer.operator,
                                  store.relation_id, store.atomic_id)
         store_frames = {c["concept"]: store.frame(int(c["entry"])) for c in item_set.concepts if c.get("entry") is not None}
-        result = evaluate_items(run, item_set, conditions, {"own": loaded}, store_frames, log=log)
+        result = evaluate_items(run, item_set, conditions, {"own": loaded}, store_frames, definitions=definitions, log=log)
     summary = e12.summarize(item_set, result["results"], result["records"], result["resolved"])
     output.mkdir(parents=True, exist_ok=True)
     units = summary["conditions"]
-    _json(output / "summary.json", {"items": len(prompts), "anchors": len({p.item["anchor"] for p in prompts}),
+    scored = sorted({p.item["anchor"] for p in prompts})
+    with_definition = None if definitions is None else [a for a in scored if entry_of.get(a) is not None and int(entry_of[a]) in definitions]
+    _json(output / "summary.json", {"items": len(prompts), "anchors": len(scored),
                                     "anchor_of": {p.id: p.item["anchor"] for p in prompts},
                                     "conditions": {k: v["items"]["by"] for k, v in units.items()},
                                     "units": {k: v["items"]["units"] for k, v in units.items()}, "timings": result["timings"],
+                                    "added_tokens": result["added_tokens"], "definition_source": source,
+                                    "anchors_with_definition": with_definition,
                                     "linked": summary["linked"], "seconds": time.monotonic() - started})
     with gzip.open(output / "recalls.jsonl.gz", "wt") as handle:
         for name, records in result["records"].items():
@@ -1028,14 +1061,27 @@ def reason(config: dict[str, Any], run_dir: Path, learned: Path | None, written:
     return summary
 
 
+def context_tokens(tokenizer: Any, contexts: dict[str, str]) -> dict[str, int]:
+    """Amendment 2 (L5's token accounting): the prompt tokens a condition adds per item — the context block E12 puts
+    before each of the item's templates (`_guard(context)` and its newline, `e12_self_query.prompt_texts`), in the host's
+    tokenizer without special tokens."""
+    from .e12_self_query import _guard
+    ids = list(contexts)
+    if not ids:
+        return {}
+    encoded = tokenizer([_guard(contexts[i]) + "\n" for i in ids], add_special_tokens=False)["input_ids"]
+    return {i: len(e) for i, e in zip(ids, encoded)}
+
+
 def evaluate_items(run: Any, item_set: Any, conditions: Sequence[Any], stores: dict[str, Any], store_frames: dict[str, list],
-                   *, log: Callable[[str], None] = print) -> dict[str, Any]:
-    """`e12_self_query.evaluate` with `CycleContextBuilder` (relation items get the anchor's whole recalled frame)."""
+                   *, definitions: dict[int, str] | None = None, log: Callable[[str], None] = print) -> dict[str, Any]:
+    """`e12_self_query.evaluate` with `CycleContextBuilder` (relation items get the anchor's whole recalled frame); also
+    the prompt tokens each condition adds per scored item (`added_tokens`; `none`: 0)."""
     from . import e12_self_query as e12
     family = item_set.manifest.get("family") or run.config.get("e9_family") or "smollm2"
     lexicon = e12.lexicon_for_track(item_set.track, family, run.ontology)
-    builder = CycleContextBuilder(item_set, run.ontology, lexicon, stores, store_frames=store_frames)
-    results, records, timings = {}, {}, {}
+    builder = CycleContextBuilder(item_set, run.ontology, lexicon, stores, store_frames=store_frames, definitions=definitions)
+    results, records, timings, added = {}, {}, {}, {}
     with e12.host_view(run, item_set) as (adapter, ids):
         resolved = e12.link_status(adapter, item_set, ids)
         cache = None
@@ -1047,8 +1093,10 @@ def evaluate_items(run: Any, item_set: Any, conditions: Sequence[Any], stores: d
             with e12.smaller_batches(adapter, 2 if contexts else 1):
                 rows, cache, _ = e12.score_prompts(adapter, prompts, contexts, cache)
             results[condition.name], records[condition.name] = rows, recs
+            counts = context_tokens(adapter.tokenizer, {p.id: contexts[p.id] for p in prompts if p.id in contexts})
+            added[condition.name] = {p.id: counts.get(p.id, 0) for p in prompts}
             timings[condition.name] = round(time.monotonic() - t0, 1)
-    return {"results": results, "records": records, "resolved": resolved, "timings": timings}
+    return {"results": results, "records": records, "resolved": resolved, "timings": timings, "added_tokens": added}
 
 
 def _cycle_builder_base() -> type:
@@ -1058,11 +1106,20 @@ def _cycle_builder_base() -> type:
 
 class CycleContextBuilder(_cycle_builder_base()):          # type: ignore[misc]
     """E12's context builder on the read store: whole-frame recalls decode the store's own slots (the relations the
-    read frame holds, which the tool knows) and the relation items (`negation/affirm`) get the anchor's recall."""
+    read frame holds, which the tool knows) and the relation items (`negation/affirm`) get the anchor's recall.
+    `definitions` (entry → text; amendment 2, `reason.definition_source: read_set`) replaces E12's definition writer by
+    the read set's own definitions; an anchor without one is not scored under `definition`."""
 
-    def __init__(self, *args: Any, store_frames: dict[str, list], **kwargs: Any) -> None:
+    def __init__(self, *args: Any, store_frames: dict[str, list], definitions: dict[int, str] | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.store_frames = store_frames
+        self.definitions = definitions
+
+    def _definition(self, concept: str) -> str | None:
+        if self.definitions is None:
+            return super()._definition(concept)
+        entry = self.concepts[concept].get("entry")
+        return None if entry is None else self.definitions.get(int(entry))
 
     def _frame_lines(self, condition: Any, concept: str, *, vector_of: str | None = None) -> list:
         if condition.kind == "symbolic" or concept not in self.store_frames:
@@ -1080,6 +1137,8 @@ class CycleContextBuilder(_cycle_builder_base()):          # type: ignore[misc]
             concept = prompt.item["anchor"]
             surface = self.concepts[concept]["surface"]
             text = self._definition(concept) if condition.kind == "definition" else writer.render(surface, self._frame_lines(condition, concept))
+            if text is None:                              # no definition of this anchor: not scored (never scored without context)
+                continue
             texts[prompt.id] = text
             records.append({"condition": condition.name, "item": prompt.id, "text": text})
         return texts, records
@@ -1254,6 +1313,145 @@ def run_round2(config_path: Path, output: Path, *, resume: bool = False, keep_ch
     return result
 
 
+# ---------------------------------------------------------------- amendment 2: the definition in context (L1's comparator)
+
+
+def eval_alias_table(config: dict[str, Any], family: str) -> tuple[Any, Path]:
+    """The alias table the track's text is linked with (`alias_table`: the rounds table; else the E9 track's)."""
+    from ..evaluation import channel_probes as cp
+    from . import e9_tracks as tracks
+    if config.get("alias_table"):
+        path = Path(config["alias_table"]).expanduser()
+    else:
+        path = Path(tracks.ensure_alias_table(tracks.track_spec(e9_track(config), family)))
+    return cp.load_alias_table(path), path
+
+
+def link_text(tokenizer: Any, linker: Any, text: str, min_subtokens: int) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """Token ids and linked spans (≥ `min_subtokens` subtokens, local positions) of one text, as the corpus builder
+    tokenizes and links a document (`data.corpus._encode_batch`) and `TokenCorpus.window` returns a window."""
+    encoded = tokenizer(text, return_offsets_mapping=True, add_special_tokens=False)
+    found = [s for s in linker.link(text, encoded["offset_mapping"]) if s.length >= min_subtokens]
+    spans = {"start": np.asarray([s.start_token for s in found], dtype=np.int64),
+             "end": np.asarray([s.end_token for s in found], dtype=np.int64),
+             "inject": np.asarray([s.inject_token for s in found], dtype=np.int64),
+             "entry": np.asarray([s.entry for s in found], dtype=np.int64),
+             "length": np.asarray([s.length for s in found], dtype=np.int64),
+             "confidence": np.asarray([s.confidence for s in found], dtype=np.float32)}
+    return np.asarray(encoded["input_ids"], dtype=np.int64), spans
+
+
+def with_prefix(prefix: tuple[np.ndarray, dict[str, np.ndarray]], window: tuple[np.ndarray, dict[str, np.ndarray]]
+                ) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """A window preceded by a prefix: ids concatenated, the window's span positions shifted by the prefix length."""
+    (pids, pspans), (wids, wspans) = prefix, window
+    shift = len(pids)
+    spans = {k: np.concatenate([np.asarray(pspans[k]), np.asarray(wspans[k]) + shift if k in ("start", "end", "inject") else np.asarray(wspans[k])])
+             for k in pspans}
+    return np.concatenate([pids, np.asarray(wids, dtype=np.int64)]), spans
+
+
+def window_definitions(spans: dict[str, np.ndarray], definitions: dict[int, str]) -> list[int]:
+    """The defined entries a window links (spans of ≥ ℓ_min subtokens, as `TokenCorpus.window` returns them), in
+    first-mention order — the order the `defs` arm's documents show their definitions in (`definitions_by_links`)."""
+    order = np.argsort(np.asarray(spans["start"]), kind="stable")
+    return list(dict.fromkeys(int(e) for e in np.asarray(spans["entry"])[order].tolist() if int(e) in definitions))
+
+
+@torch.no_grad()
+def definition_context_losses(model: Any, run: dict[str, Any], definitions: dict[int, str], table: Any, tokenizer: Any,
+                              device: torch.device, *, batch: int | None = None, log: Callable[[str], None] = print
+                              ) -> dict[str, np.ndarray]:
+    """L1's definition comparator (amendment 2): per evaluation window with `ref_round2` targets, the loss of `model` on
+    those targets as the trainer evaluates the window (`none`) and with the definitions of the round-2 terms the window
+    links prepended as text (`"\\n".join(definitions) + "\\n\\n"`, linked like any text: `definition`). Only the window's
+    own targets are scored, in both conditions. Arrays over every evaluation window (windows without targets: counts 0):
+    `none` / `definition` (2 × windows: loss sums, target counts), `added_tokens` (prefix tokens), `defined_terms`."""
+    from ..data.corpus import TokenCorpus, collate_windows, eval_windows
+    from ..span_channel import CausalLinker
+    from ..training.lm import load_reference_strata
+    corpus = TokenCorpus.open(Path(run["data"]["eval"]))
+    length, min_subtokens = int(run["model"]["seq_len"]), int(run["data"]["min_subtokens"])
+    starts = eval_windows(corpus, count=int(run["eval"]["windows"]), length=length)
+    mask = load_reference_strata(Path(run["eval"]["reference_strata"]), starts, length)["ref_round2"]
+    linker = CausalLinker(table, boundary=str(corpus.manifest.get("boundary", "prefix")), min_subtokens=1)
+    pad = int(corpus.manifest.get("eos_id", tokenizer.eos_token_id or 0))
+    n = len(starts)
+    out = {"starts": np.asarray(starts, dtype=np.int64), "none": np.zeros((2, n)), "definition": np.zeros((2, n)),
+           "added_tokens": np.zeros(n, dtype=np.int64), "defined_terms": np.zeros(n, dtype=np.int64)}
+    rows = np.flatnonzero(mask.any(1)).tolist()
+    prefixes: dict[int, tuple[np.ndarray, dict[str, np.ndarray]]] = {}
+    for w in rows:
+        shown = window_definitions(corpus.window(int(starts[w]), length, min_subtokens=min_subtokens)[1], definitions)
+        if shown:
+            prefixes[w] = link_text(tokenizer, linker, "\n".join(definitions[e] for e in shown) + "\n\n", min_subtokens)
+            out["added_tokens"][w], out["defined_terms"][w] = len(prefixes[w][0]), len(shown)
+    model.eval()
+    for condition, size in (("none", int(batch or run["eval"]["batch"])), ("definition", max(1, int(batch or run["eval"]["batch"]) // 2))):
+        for i in range(0, len(rows), size):
+            chunk = rows[i:i + size]
+            windows = [corpus.window(int(starts[w]), length, min_subtokens=min_subtokens) for w in chunk]
+            if condition == "definition":
+                windows = [with_prefix(prefixes[w], window) if w in prefixes else window for w, window in zip(chunk, windows)]
+            lengths = [len(ids) for ids, _ in windows]
+            longest = max(lengths)                       # right padding: causal attention never reads it; never scored
+            ids, spans = collate_windows([(np.concatenate([ids, np.full(longest - len(ids), pad, dtype=np.int64)]), s) for ids, s in windows])
+            ids_d = ids.to(device)
+            with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                per_token = model(ids_d, spans={k: v.to(device) for k, v in spans.items()} if model.channel else None,
+                                  labels=ids_d, reduction="none")["loss"].float().cpu().double().numpy()
+            for b, w in enumerate(chunk):
+                shift = lengths[b] - length               # window target j sits at position shift + j − 1
+                values = per_token[b, shift:shift + length - 1]
+                out[condition][:, w] = (values[mask[w]].sum(), mask[w].sum())
+        log(f"  context: {condition} — {len(rows)} windows")
+    return out
+
+
+def context_dir(config: dict[str, Any], host: str, seed: int) -> Path:
+    return cycle_dir(config, host, seed) / "context"
+
+
+def definition_context(config: dict[str, Any], arm_config: Path, output: Path, *, device: str | None = None,
+                       log: Callable[[str], None] = print) -> dict[str, Any]:
+    """Amendment 2 (`context` job): the step-0 model of a round-2 arm (the trainer's own construction, `initial_model`;
+    registered on `noread`: the stage-0 model with the learned edges, no round-2 row) on the evaluation windows, without
+    and with the round-2 definitions in context (`definition_context_losses`). L1's `read − definition` pairs it with the
+    stage-4 runs' step-0 losses (`report`)."""
+    from transformers import AutoTokenizer
+
+    from ..data.corpus import TokenCorpus
+    started = time.monotonic()
+    run = yaml.safe_load(Path(arm_config).read_text())
+    materialize(run)
+    dev = torch.device(device or (run.get("device", "cuda") if torch.cuda.is_available() else "cpu"))
+    family = run["e13"]["family"]
+    entries = set(round2_entries(torch.load(run["e13"]["seed_ontology"], weights_only=False)))
+    definitions = round2_definitions(config, family, entries)
+    table, table_path = eval_alias_table(config, family)
+    manifest = TokenCorpus.open(Path(run["data"]["eval"])).manifest
+    tokenizer = AutoTokenizer.from_pretrained(manifest.get("tokenizer") or run["model"]["pretrained"], local_files_only=True)
+    model = initial_model(run, dev)
+    result = definition_context_losses(model, run, definitions, table, tokenizer, dev, log=log)
+    output.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(output / "definition_context.npz", **result)
+    scored = result["none"][1] > 0
+    defined = scored & (result["defined_terms"] > 0)
+    loss = lambda key, keep: float(result[key][0][keep].sum() / max(1.0, result[key][1][keep].sum()))      # noqa: E731
+    summary = {"arm": run["e13"]["arm"], "arm_config": str(arm_config), "round2_definitions": len(definitions),
+               "windows": int(scored.sum()), "windows_with_definitions": int(defined.sum()),
+               "added_tokens_per_window": float(result["added_tokens"][scored].mean()) if scored.any() else None,
+               "added_tokens_per_defined_window": float(result["added_tokens"][defined].mean()) if defined.any() else None,
+               "loss": {"none": loss("none", scored), "definition": loss("definition", scored)},
+               "alias_table": str(table_path), "alias_table_matches_eval": table.digest() == manifest.get("alias_table_sha256"),
+               "seconds": time.monotonic() - started}
+    _json(output / "summary.json", summary)
+    log(f"context: {summary['windows']} windows ({summary['windows_with_definitions']} with definitions, "
+        f"{summary['added_tokens_per_window']} tokens added per window); loss none {summary['loss']['none']:.4f}, "
+        f"definition {summary['loss']['definition']:.4f}")
+    return summary
+
+
 # ---------------------------------------------------------------- analysis
 
 
@@ -1358,9 +1556,12 @@ def _stage_runs(config: dict[str, Any], host: str, arms: Sequence[str], seeds: S
 
 
 def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] = print) -> dict[str, Any]:
-    """L1–L5 with their pre-registered statistics and Holm across the five primary tests (`summary.json`, `report.md`)."""
+    """L1–L5 with their pre-registered statistics and Holm across the primary family (amendment 2: six tests, L1's two
+    co-primaries read − noread and read − random among them); the definition comparators and token costs of L1 and L5
+    (secondary) and L5's cost criterion (`summary.json`, `report.md`)."""
     stats_cfg = config.get("statistics") or {}
     resamples = int(stats_cfg.get("resamples", 2000))
+    margin = float(stats_cfg.get("l5_noninferiority_margin", L5_MARGIN))
     result: dict[str, Any] = {"track": config["track"], "label": config.get("label"), "hosts": {}}
     for host, spec in config["hosts"].items():
         seeds = [int(s) for s in spec["seeds"]]
@@ -1369,8 +1570,20 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
         curves = {arm: [load_curves(p, "ref_round2") for p in paths] for arm, paths in runs.items()}
         if {"read", "noread"} <= set(curves):
             block["L1"] = paired_windows(curves["read"], curves["noread"], 0, resamples)
-            cost = [json.loads((cycle_dir(config, host, s) / "write" / "summary.json").read_text())["reading_cost"]["training_token_equivalent"]
-                    for s in seeds if (cycle_dir(config, host, s) / "write" / "summary.json").exists()]
+            if "random" in curves:                          # amendment 2: L1's co-primary (wrong-frame control)
+                block["L1_random"] = paired_windows(curves["read"], curves["random"], 0, resamples)
+            writes = [json.loads((cycle_dir(config, host, s) / "write" / "summary.json").read_text())
+                      for s in seeds if (cycle_dir(config, host, s) / "write" / "summary.json").exists()]
+            contexts = [context_dir(config, host, s) / "definition_context.npz" for s in seeds]
+            if all(p.exists() for p in contexts):           # amendment 2: L1's definition comparator (secondary)
+                from ..training.lm import load_window_losses
+                loaded = [dict(np.load(p)) for p in contexts]
+                if all(np.array_equal(c["starts"], load_window_losses(path / "eval_windows.npz")["starts"])
+                       for c, path in zip(loaded, runs["noread"])):
+                    block["L1_definition"] = l1_definition(curves["read"], curves["noread"], loaded, resamples, writes=writes)
+                else:
+                    block["L1_definition"] = {"error": "the context jobs' evaluation windows are not the stage-4 runs' windows"}
+            cost = [w["reading_cost"]["training_token_equivalent"] for w in writes]
             offset = float(np.mean(cost)) if cost else 0.0
             block["L2"] = efficiency(curves, "read", "noread", offset=offset, resamples=resamples)
             block["L2_without_reading_cost"] = efficiency(curves, "read", "noread", resamples=resamples)
@@ -1430,15 +1643,18 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
         reasons = [json.loads((cycle_dir(config, host, s) / "reason" / "summary.json").read_text()) for s in seeds
                    if (cycle_dir(config, host, s) / "reason" / "summary.json").exists()]
         if reasons and all("recall:own" in r["units"] and "none" in r["units"] for r in reasons):
-            block["L5"] = _l5(reasons, resamples)
+            block["L5"] = _l5(reasons, resamples, margin=margin)
         result["hosts"][host] = block
     primary_host = next(iter(config["hosts"]))
     p = result["hosts"].get(primary_host, {})
-    tests = {"L1": p.get("L1", {}).get("p_value"), "L2": p.get("L2", {}).get("p_value"),
+    tests = {"L1": p.get("L1", {}).get("p_value"), "L1_random": p.get("L1_random", {}).get("p_value"),
+             "L2": p.get("L2", {}).get("p_value"),
              "L3": (p.get("L3", {}).get("rtn", {}).get("read_vs_noread_end") or {}).get("p_value"),
              "L4": p.get("L4", {}).get("p_value"), "L5": p.get("L5", {}).get("p_value")}
     present = {k: v for k, v in tests.items() if v is not None}
-    adjusted = dict(zip(present, holm_adjust(list(present.values())))) if present else {}
+    adjusted = family_holm(tests)
+    result["holm_family"] = {"tests": list(HOLM_FAMILY), "alpha": float(stats_cfg.get("holm_alpha", 0.05)),
+                             "not_evaluable": [k for k in HOLM_FAMILY if k not in present]}
     result["holm"] = {k: {"p": present[k], "p_holm": adjusted[k]} for k in present}
     result["verdicts"] = verdicts(p, adjusted, stats_cfg)
     output.mkdir(parents=True, exist_ok=True)
@@ -1446,6 +1662,17 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
     (output / "report.md").write_text(render_report(result))
     log(f"report: {result['verdicts']}")
     return result
+
+
+def family_holm(tests: dict[str, float | None]) -> dict[str, float]:
+    """Holm-adjusted p of the evaluable tests over the whole registered family (`HOLM_FAMILY`; amendment 2: six tests,
+    L1's co-primaries read − noread and read − random among them): a test that is not evaluable (None) counts as p = 1,
+    so a missing run never shrinks the family."""
+    present = {k: float(v) for k, v in tests.items() if v is not None}
+    if not present:
+        return {}
+    family = {k: present.get(k, 1.0) for k in dict.fromkeys([*HOLM_FAMILY, *present])}
+    return {k: v for k, v in zip(family, holm_adjust(list(family.values()))) if k in present}
 
 
 def _bytes(run_dir: Path) -> dict[str, Any]:
@@ -1461,33 +1688,133 @@ def _bytes(run_dir: Path) -> dict[str, Any]:
             "trainable_parameters": trainable, "trainable_bytes_fp32": 4 * trainable}
 
 
-def _l5(reasons: list[dict[str, Any]], resamples: int) -> dict[str, Any]:
-    by_anchor: list[dict[str, float]] = []
+def anchor_table(reasons: list[dict[str, Any]], a: str, b: str, *, value: str = "accuracy",
+                 anchors: set[str] | None = None) -> np.ndarray:
+    """anchors × seeds table: per anchor the mean over its items scored under both `a` and `b` of a − b (`value`:
+    the item's accuracy, or `tokens`: the prompt tokens the condition added; amendment 2), for the anchors scored in every
+    seed (and in `anchors`, if given)."""
+    per_seed: list[dict[str, float]] = []
     for r in reasons:
         diffs: dict[str, list[float]] = defaultdict(list)
-        for item, unit in r["units"]["recall:own"].items():
-            none = r["units"]["none"].get(item)
-            if none is not None:
-                diffs[r["anchor_of"][item]].append(unit["accuracy"] - none["accuracy"])
-        by_anchor.append({a: float(np.mean(v)) for a, v in diffs.items()})
-    common = sorted(set.intersection(*(set(b) for b in by_anchor)))
-    table = np.asarray([[b[a] for b in by_anchor] for a in common])
-    out = two_way_cluster_bootstrap(table, resamples=resamples) if table.size else {"mean": float("nan"), "p_value": 1.0}
+        units_b = r["units"].get(b, {})
+        for item, unit in r["units"].get(a, {}).items():
+            other = units_b.get(item)
+            anchor = r["anchor_of"][item]
+            if other is None or (anchors is not None and anchor not in anchors):
+                continue
+            if value == "tokens":
+                diffs[anchor].append(float(r["added_tokens"][a].get(item, 0) - r["added_tokens"][b].get(item, 0)))
+            else:
+                diffs[anchor].append(unit["accuracy"] - other["accuracy"])
+        per_seed.append({k: float(np.mean(v)) for k, v in diffs.items()})
+    common = sorted(set.intersection(*(set(s) for s in per_seed))) if per_seed else []
+    return np.asarray([[s[k] for s in per_seed] for k in common], dtype=np.float64).reshape(len(common), len(per_seed))
+
+
+def _bootstrap(table: np.ndarray, resamples: int) -> dict[str, Any]:
+    return two_way_cluster_bootstrap(table, resamples=resamples) if table.size else {"mean": float("nan"), "ci_low": None,
+                                                                                       "ci_high": None, "p_value": None, "clusters": 0}
+
+
+def token_accounting(reasons: list[dict[str, Any]], conditions: Sequence[str]) -> dict[str, Any]:
+    """Amendment 2: per condition, on the items it scores (and `none` scores: every item), the accuracy, the accuracy of
+    `none` on the same items, the prompt tokens it adds per item and the accuracy it buys per 100 added tokens
+    (`100 × (accuracy − accuracy of none) / added tokens`); per seed and their mean."""
+    out: dict[str, Any] = {}
+    for name in conditions:
+        if not all(name in r["units"] and name in (r.get("added_tokens") or {}) for r in reasons):
+            continue
+        rows = []
+        for r in reasons:
+            items = [i for i in r["units"][name] if i in r["units"]["none"]]
+            if not items:
+                continue
+            accuracy = float(np.mean([r["units"][name][i]["accuracy"] for i in items]))
+            none = float(np.mean([r["units"]["none"][i]["accuracy"] for i in items]))
+            tokens = float(np.mean([r["added_tokens"][name].get(i, 0) for i in items]))
+            rows.append({"items": len(items), "accuracy": accuracy, "accuracy_none": none, "added_tokens": tokens,
+                         "gain_per_100_tokens": 100.0 * (accuracy - none) / tokens if tokens > 0 else None})
+        if rows:
+            mean = {k: float(np.mean([row[k] for row in rows])) for k in ("items", "accuracy", "accuracy_none", "added_tokens")}
+            gains = [row["gain_per_100_tokens"] for row in rows if row["gain_per_100_tokens"] is not None]
+            out[name] = {**mean, "gain_per_100_tokens": float(np.mean(gains)) if gains else None, "per_seed": rows}
+    return out
+
+
+def _l5(reasons: list[dict[str, Any]], resamples: int, *, margin: float = L5_MARGIN) -> dict[str, Any]:
+    """L5 (recall:own − none per anchor, anchors × seeds) and, amendment 2, its secondaries: `recall:own − definition` on
+    the items both score (non-inferiority at `margin`), the token accounting of every condition, the per-item token
+    difference recall:own − definition (fewer tokens iff its upper CI < 0), and (T7-ROOD) L5 on the anchors that have a
+    definition (the read set: the only anchors the reader wrote a frame for)."""
+    out = _bootstrap(anchor_table(reasons, "recall:own", "none"), resamples)
     out["by_family"] = {}
     for r in reasons:
         for name in ("recall:own", "none", "symbolic", "definition"):
             if name in r["conditions"]:
                 out["by_family"].setdefault(name, []).append({k: v.get("accuracy") for k, v in r["conditions"][name].items()})
+    if all("added_tokens" in r for r in reasons):
+        out["tokens"] = token_accounting(reasons, ("recall:own", "definition", "symbolic"))
+    if all("definition" in r["units"] for r in reasons):
+        vs = _bootstrap(anchor_table(reasons, "recall:own", "definition"), resamples)
+        low, high = vs.get("ci_low"), vs.get("ci_high")
+        vs.update(margin=margin, noninferior=low is not None and low > -margin, superior=low is not None and low > 0,
+                  inferior=high is not None and high < -margin)
+        if all("added_tokens" in r for r in reasons):
+            difference = _bootstrap(anchor_table(reasons, "recall:own", "definition", value="tokens"), resamples)
+            vs["tokens_recall_minus_definition"] = {**difference, "fewer": difference.get("ci_high") is not None and difference["ci_high"] < 0}
+        out["vs_definition"] = vs
+    if all(r.get("anchors_with_definition") is not None for r in reasons):
+        keep = set.intersection(*(set(r["anchors_with_definition"]) for r in reasons))
+        out["anchors_with_definition"] = _bootstrap(anchor_table(reasons, "recall:own", "none", anchors=keep), resamples)
     return out
 
 
+def l1_definition(read: list, noread: list, contexts: list[dict[str, np.ndarray]], resamples: int, *,
+                  writes: Sequence[dict[str, Any]] = ()) -> dict[str, Any]:
+    """Amendment 2, L1's definition comparator (secondary): per window and seed, (read − noread at step 0, from the
+    stage-4 runs) − (definition − none, from the `context` job on the noread arm's step-0 model) = read − definition with
+    each job's own baseline differenced out; windows × seeds pigeonhole bootstrap over the windows with `ref_round2` targets
+    in every run, and over those whose definition prefix is not empty. Token costs: the definition adds its prefix to
+    every window; the read rows add none at inference (their one-off reading cost: the write stage's forward tokens)."""
+    rd, dn, keep, defined, tokens = [], [], None, None, []
+    for (_, sr, nr), (_, sn, nn), c in zip(read, noread, contexts):
+        if nr.shape[1] != c["none"].shape[1]:
+            raise ValueError("the context job's windows are not the stage-4 runs' windows")
+        valid = (nr[0] > 0) & (nn[0] > 0) & (c["none"][1] > 0) & (c["definition"][1] > 0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            context_gain = c["definition"][0] / c["definition"][1] - c["none"][0] / c["none"][1]
+            rd.append(sr[0] / nr[0] - sn[0] / nn[0] - context_gain)
+        dn.append(context_gain)
+        keep = valid if keep is None else keep & valid
+        defined = (c["defined_terms"] > 0) if defined is None else defined & (c["defined_terms"] > 0)
+        tokens.append(c["added_tokens"])
+    rd_t, dn_t, tokens_t = np.stack(rd, 1), np.stack(dn, 1), np.stack(tokens, 1).astype(np.float64)
+    reading = [w["reading_cost"]["forward_tokens"] / max(1, w["definitions_read"]) for w in writes if w.get("definitions_read")]
+    return {"read_minus_definition": _bootstrap(rd_t[keep], resamples),
+            "read_minus_definition_defined_windows": _bootstrap(rd_t[keep & defined], resamples),
+            "definition_minus_none": _bootstrap(dn_t[keep], resamples),
+            "windows": int(keep.sum()), "windows_with_definitions": int((keep & defined).sum()),
+            "tokens": {"definition_added_per_window": float(tokens_t[keep].mean()) if keep.any() else None,
+                       "definition_added_per_defined_window": float(tokens_t[keep & defined].mean()) if (keep & defined).any() else None,
+                       "read_added_per_window": 0.0,
+                       "read_one_off_forward_tokens_per_term": float(np.mean(reading)) if reading else None}}
+
+
 def verdicts(block: dict[str, Any], adjusted: dict[str, float], stats_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Pre-registered verdicts. Amendment 2: L1 is met only if both co-primaries are (read − noread and read − random:
+    Holm-adjusted p < α and upper CI < 0); without the `random` arm L1 is not evaluable (None). `L5_store_advantage`:
+    L5 met, recall:own non-inferior to the definition at δ and fewer prompt tokens (upper CI of the difference < 0)."""
     alpha = float(stats_cfg.get("holm_alpha", 0.05))
     ok = lambda k: k in adjusted and adjusted[k] < alpha        # noqa: E731
     below = lambda value, bound: value is not None and value == value and value < bound     # noqa: E731
     out: dict[str, Any] = {}
     if "L1" in block:
-        out["L1"] = bool(ok("L1") and below(block["L1"]["ci_high"], 0))
+        out["L1_vs_noread"] = bool(ok("L1") and below(block["L1"]["ci_high"], 0))
+        if "L1_random" in block:
+            out["L1_vs_random"] = bool(ok("L1_random") and below(block["L1_random"]["ci_high"], 0))
+            out["L1"] = out["L1_vs_noread"] and out["L1_vs_random"]
+        else:
+            out["L1"] = None                              # not evaluable: the wrong-frame control is missing
     if "L2" in block:
         out["L2"] = bool(ok("L2") and below(block["L2"]["ci_high"], 1))
     l3 = (block.get("L3") or {}).get("rtn") or {}
@@ -1499,21 +1826,27 @@ def verdicts(block: dict[str, Any], adjusted: dict[str, float], stats_cfg: dict[
                          and block["L4"]["null_rate"] <= float(stats_cfg.get("l4_far", 0.05)) and ok("L4"))
     if "L5" in block:
         out["L5"] = bool(ok("L5") and block["L5"].get("ci_low") is not None and block["L5"]["ci_low"] > 0)
+        vs = block["L5"].get("vs_definition") or {}
+        if "tokens_recall_minus_definition" in vs:
+            out["L5_store_advantage"] = bool(out["L5"] and vs["noninferior"] and vs["tokens_recall_minus_definition"]["fewer"])
     return out
 
 
 def render_report(result: dict[str, Any]) -> str:
     label = f"{result['label']} — " if result.get("label") else ""
-    lines = [f"# {label}E13 learning cycle — {result['track']}", "", "Pre-registration: `experiments/e13-learning-cycle/preregistration.md`.", "",
-             "## Primary endpoints (primary host; Holm across L1–L5)", "", "| endpoint | estimate | 95% CI | p | p (Holm) | met |",
-             "|---|---:|---|---:|---:|---|"]
+    lines = [f"# {label}E13 learning cycle — {result['track']}", "", "Pre-registration: `experiments/e13-learning-cycle/preregistration.md` "
+             "(amendment 2: L1's co-primaries, the definition comparators, L5's cost criterion).", "",
+             "## Primary endpoints (primary host; Holm across L1 (read − noread), L1 (read − random), L2, L3, L4, L5)", "",
+             "| endpoint | estimate | 95% CI | p | p (Holm) | met |", "|---|---:|---|---:|---:|---|"]
     host = next(iter(result["hosts"]), None)
     block = result["hosts"].get(host, {})
     holm, verdict = result["holm"], result["verdicts"]
     fmt = lambda x: "—" if x is None or (isinstance(x, float) and not math.isfinite(x)) else f"{x:.4g}"     # noqa: E731
-    rows = {"L1": block.get("L1"), "L2": block.get("L2"), "L3": ((block.get("L3") or {}).get("rtn") or {}).get("read_vs_noread_end"),
-            "L5": block.get("L5")}
-    for name in ("L1", "L2", "L3", "L4", "L5"):
+    rows = {"L1": block.get("L1"), "L1_random": block.get("L1_random"), "L2": block.get("L2"),
+            "L3": ((block.get("L3") or {}).get("rtn") or {}).get("read_vs_noread_end"), "L5": block.get("L5")}
+    labels = {"L1": "L1 read − noread", "L1_random": "L1 read − random (gate)"}
+    met = {"L1": verdict.get("L1_vs_noread"), "L1_random": verdict.get("L1_vs_random")}
+    for name in ("L1", "L1_random", "L2", "L3", "L4", "L5"):
         if name == "L4" and "L4" in block:
             b = block["L4"]
             lines.append(f"| L4 precision (null rate) | {fmt(b['precision'])} ({fmt(b['null_rate'])}) | {b['precision_ci']} | "
@@ -1523,8 +1856,29 @@ def render_report(result: dict[str, Any]) -> str:
         if not b:
             continue
         estimate = b.get("ratio", b.get("mean"))
-        lines.append(f"| {name} | {fmt(estimate)} | [{fmt(b.get('ci_low'))}, {fmt(b.get('ci_high'))}] | {fmt(b.get('p_value'))} | "
-                     f"{fmt(holm.get(name, {}).get('p_holm'))} | {verdict.get(name)} |")
+        lines.append(f"| {labels.get(name, name)} | {fmt(estimate)} | [{fmt(b.get('ci_low'))}, {fmt(b.get('ci_high'))}] | "
+                     f"{fmt(b.get('p_value'))} | {fmt(holm.get(name, {}).get('p_holm'))} | {met.get(name, verdict.get(name))} |")
+    if "L1" in verdict:
+        lines += ["", f"**L1 (both co-primaries met): {verdict['L1']}** (None: not evaluable without the `random` arm)."]
+    secondary = []
+    d = block.get("L1_definition") or {}
+    if "read_minus_definition" in d:
+        b, t = d["read_minus_definition"], d["tokens"]
+        secondary.append(f"| L1 read − definition (step-0 loss) | {fmt(b.get('mean'))} | [{fmt(b.get('ci_low'))}, {fmt(b.get('ci_high'))}] | "
+                         f"read 0 / definition {fmt(t['definition_added_per_window'])} per window (read: "
+                         f"{fmt(t['read_one_off_forward_tokens_per_term'])} forward tokens once per term) |")
+    vs = ((block.get("L5") or {}).get("vs_definition")) or {}
+    if "mean" in vs:
+        tokens = (block.get("L5") or {}).get("tokens") or {}
+        cost = " / ".join(f"{k} {fmt(v['added_tokens'])} ({fmt(v['gain_per_100_tokens'])} per 100)" for k, v in tokens.items())
+        secondary.append(f"| L5 recall:own − definition (accuracy; δ {fmt(vs['margin'])}: non-inferior {vs['noninferior']}) | {fmt(vs['mean'])} | "
+                         f"[{fmt(vs.get('ci_low'))}, {fmt(vs.get('ci_high'))}] | {cost or '—'} |")
+    if secondary:
+        lines += ["", "## Definition comparators (secondary; amendment 2)", "",
+                  "| comparison | estimate | 95% CI | added prompt tokens per item / window (accuracy gained over none per 100 tokens) |",
+                  "|---|---:|---|---|", *secondary]
+        if "L5_store_advantage" in verdict:
+            lines += ["", f"L5 cost criterion (store advantage over the definition): {verdict['L5_store_advantage']}."]
     lines += ["", "## Per host", "", "```json", json.dumps({h: {k: v for k, v in b.items() if k != "curves"} for h, b in result["hosts"].items()},
                                                           indent=1, default=str)[:20000], "```", ""]
     return "\n".join(lines)
@@ -1569,6 +1923,14 @@ def job_hours(config: dict[str, Any], kind: str, host: str) -> float:
     return float(scaled) * evaluation_scale(host) + float(fixed)
 
 
+def context_hours(config: dict[str, Any], host: str) -> float:
+    """GPU hours of a `context` job: ≈ 2.5 evaluation passes over the round-2 windows (`none`; `definition` with its
+    prefix at half the batch) plus loading the model."""
+    family = host_family(config, host)
+    windows = int(config["round2"].get("eval_windows") or (config["stage0"].get("eval_windows") or {}).get(family, 1024))
+    return estimate_hours(config, host, 0, 2.5, windows=windows) + 0.02
+
+
 def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bool = True) -> list[dict[str, Any]]:
     """Every E13 job of the config: (name, priority level, command, GPU-h estimate, lane note). Writes the trainer configs
     (stage 0, rounds 2) under `configs/<track>/`; prints nothing to the queue (the commands are for queue-commands.sh)."""
@@ -1577,7 +1939,8 @@ def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bo
     levels = config["priority"]
     base, step = float(levels["base"]), float(levels["step"])
     level = lambda k: round(base + k * step, 6)                  # noqa: E731
-    slots = levels.get("slots", {"stage0": 0, "stage4": 1, "stage5": 2, "evaluations": 3, "report": 4})
+    slots = {"stage0": 0, "stage4": 1, "stage5": 2, "evaluations": 3, "report": 4, "amended": 1.5, "context": 3.5,
+             **levels.get("slots", {})}
     cfg_root = ROOT / "configs" / track
     jobs: list[dict[str, Any]] = []
     cfg = config["_path"]
@@ -1619,8 +1982,9 @@ def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bo
                                                                str(cdir / "write")], job_hours(config, "write", host))
     tokens = int(config["round2"]["tokens"])
     for host, spec in config["hosts"].items():
+        amended = set(spec.get("amended_arms", ()))           # arms added by an amendment: their own free level (`amended`)
         for seed in spec["seeds"]:
-            batches = [(arm, None, "stage4") for arm in spec.get("round2_arms", PRIMARY_ARMS)]
+            batches = [(arm, None, "amended" if arm in amended else "stage4") for arm in spec.get("round2_arms", PRIMARY_ARMS)]
             batches += [(arm, scheme, "stage5") for scheme, arms in (spec.get("frozen_arms") or {}).items() for arm in arms]
             for arm, scheme, slot in batches:
                 run = round2_config(config, host, arm, seed, scheme=scheme)
@@ -1640,6 +2004,15 @@ def plan(config: dict[str, Any], *, python: str | None = None, write_configs: bo
                 [python, "-m", "vsa_embed.experiments.e13_cycle", "reason", "--config", cfg, "--run", str(run_dir), "--learned",
                  str(cdir / "learn"), "--written", str(cdir / "write"), "--output", str(cdir / "reason")],
                 job_hours(config, "reason", host))
+    if config["round2"].get("definition_context"):             # amendment 2: L1's definition comparator
+        for host, spec in config["hosts"].items():
+            if "noread" not in spec.get("round2_arms", PRIMARY_ARMS):
+                continue
+            for seed in spec["seeds"]:
+                arm = cfg_root / "round2" / f"{round2_name(host, 'noread', seed)}.yaml"
+                add(f"e13-{track}-{host}-s{seed}-context", "context",
+                    [python, "-m", "vsa_embed.experiments.e13_cycle", "context", "--config", cfg, "--arm", str(arm), "--output",
+                     str(context_dir(config, host, seed))], context_hours(config, host))
     add(f"e13-{track}-report", "report", [python, "-m", "vsa_embed.experiments.e13_cycle", "report", "--config", cfg, "--output",
                                           str(ROOT / "report" / track)], 0.0)
     return jobs
@@ -1672,7 +2045,7 @@ def smoke_config(data: Path, runs: Path, track: str = "t5") -> dict[str, Any]:
     (T7-ROOD: the rounds build itself, 8 evaluation windows, a few hundred extraction windows, 40 probes)."""
     config = load_config(ROOT / ("t5.yaml" if track == "t5" else "t7-rood.yaml"))
     config.update(label="SMOKE", data_root=str(data), runs_root=str(runs), families={"SmolLM2-135M": "smollm2"},
-                  hosts={"SmolLM2-135M": {"seeds": [1], "round2_arms": ["read", "noread", "fvt"],
+                  hosts={"SmolLM2-135M": {"seeds": [1], "round2_arms": ["read", "noread", "fvt", "random"],
                                           "frozen_arms": {"rtn": ["q4-read", "q4-noread", "qlora"]}}}, measure={})
     config["stage0"]["configs"] = {"SmolLM2-135M": f"experiments/e9-retrofit/configs/{e9_track(config)}/SmolLM2-135M-full-C5-s{{seed}}.yaml"}
     config["stage0"]["references"] = {}
@@ -1695,9 +2068,9 @@ def smoke_config(data: Path, runs: Path, track: str = "t5") -> dict[str, Any]:
 
 def smoke(output: Path, *, data: Path | None = None, threads: int = 4, track: str = "t5") -> dict[str, Any]:
     """CPU smoke of the whole cycle on a track (SmolLM2-135M, labelled SMOKE): its round split, stage 0 for 3 steps,
-    learn (and the secondary learn methods) / write / reason on a few terms, stage-4 arms read / noread / fvt and stage-5
-    arms (RTN) q4-read / q4-noread / qlora for 2 steps, then the report. Run data go to `data` (default: a temporary
-    folder); `output` gets the summary."""
+    learn (and the secondary learn methods) / write / reason on a few terms, stage-4 arms read / noread / fvt / random and
+    stage-5 arms (RTN) q4-read / q4-noread / qlora for 2 steps, the definition in context on the noread arm's step-0 model
+    (amendment 2), then the report. Run data go to `data` (default: a temporary folder); `output` gets the summary."""
     import tempfile
     from ..training.lm import train
     torch.set_num_threads(int(threads))
@@ -1737,8 +2110,12 @@ def smoke(output: Path, *, data: Path | None = None, threads: int = 4, track: st
         path.write_text(yaml.safe_dump(run, sort_keys=False))
         out["round2"][name] = timed(f"round2:{name}", lambda: run_round2(path, run_root(config) / "round2" / name,
                                                                          resume=(run_root(config) / "round2" / name).exists()))
+    noread = data / "configs" / f"{round2_name(host, 'noread', seed)}.yaml"
+    out["context"] = timed("context", lambda: definition_context(config, noread, context_dir(config, host, seed), device="cpu"))
+    added = json.loads((cdir / "reason" / "summary.json").read_text())["added_tokens"]
+    out["reason_added_tokens_per_item"] = {k: (float(np.mean(list(v.values()))) if v else 0.0) for k, v in added.items()}
     result = timed("report", lambda: report(config, Path(output) / "report"))
-    out.update(verdicts=result["verdicts"], holm=result["holm"], timings=timings,
+    out.update(verdicts=result["verdicts"], holm=result["holm"], holm_family=result["holm_family"], timings=timings,
                step_seconds=_step_seconds(run0), cpu_threads=int(threads))
     _json(Path(output) / "smoke.json", out)
     return out
@@ -1786,6 +2163,9 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--output", type=Path, default=None)
     p = sub.add_parser("round2"); p.add_argument("--config", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p.add_argument("--resume", action="store_true"); p.add_argument("--keep-checkpoint", action="store_true")
+    p = sub.add_parser("context", help="amendment 2: an arm's step-0 model without / with the round-2 definitions in context")
+    p.add_argument("--config", type=Path, required=True); p.add_argument("--arm", type=Path, required=True, help="the arm's round-2 YAML (noread)")
+    p.add_argument("--output", type=Path, required=True); p.add_argument("--device", default=None)
     p = sub.add_parser("report"); p.add_argument("--config", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p = sub.add_parser("plan"); p.add_argument("--config", type=Path, required=True); p.add_argument("--no-write-configs", action="store_true")
     p = sub.add_parser("smoke"); p.add_argument("--output", type=Path, required=True); p.add_argument("--data", type=Path, default=None)
@@ -1807,6 +2187,8 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(build_round2_items(config, args.family, args.output), indent=1, default=str))
     elif args.command == "write":
         print(json.dumps(write(config, args.run, args.learned, args.output, device=args.device, limit=args.limit), indent=1, default=str))
+    elif args.command == "context":
+        print(json.dumps(definition_context(config, args.arm, args.output, device=args.device), indent=1, default=str))
     elif args.command == "reason":
         summary = reason(config, args.run, args.learned, args.written, args.output, device=args.device, limit=args.limit)
         print(json.dumps({k: v for k, v in summary.items() if k != "conditions"}, default=str))

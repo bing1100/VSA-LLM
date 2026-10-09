@@ -44,7 +44,8 @@ hosts:
     frozen_arms: {rtn: [q4-read, q4-noread, qlora, qlora-read], nf4: [q4-read, q4-noread, qlora]}
   Qwen3-1.7B-Base:                   # secondary host (one seed)
     seeds: [1]
-    round2_arms: [read, noread, gold]
+    round2_arms: [read, noread, gold, random]
+    amended_arms: [random]           # amendment 2: L1's wrong-frame control on this host too (queued at the `amended` level)
     frozen_arms: {rtn: [q4-read, q4-noread, qlora]}
 
 measure:                             # measured per-step costs (median train tokens/s of metrics.jsonl) for the GPU-h estimates
@@ -66,6 +67,7 @@ write:
 
 reason:
   conditions: none,recall:own,symbolic,definition
+  definition_source: writer          # E12's prose writer from the gold frame (as registered); amendment 2 adds the token accounting
 
 round2:
   tokens: 10000000                   # per run (≈ 153 steps of 65,536 tokens); same optimizer recipe as stage 0, fresh AdamW
@@ -79,6 +81,7 @@ round2:
   lora_host_lr: 0.0002
   group_size: null                   # auto (128 when every input width divides)
   calibration_windows: 64
+  definition_context: true           # amendment 2: L1's definition comparator (`context` jobs: the noread arm's step-0 model)
 
 statistics:
   resamples: 2000
@@ -86,8 +89,10 @@ statistics:
   noninferiority_relative: 0.01      # L3: q4-read − qlora upper CI < 1% of qlora's loss after round-2 terms
   l4_precision: 0.8
   l4_far: 0.05
+  l5_noninferiority_margin: 0.05     # amendment 2: L5's cost criterion, recall:own − definition lower CI > −δ (accuracy)
 
 priority:                            # queue levels (lower runs first); nothing is queued by the code
   base: 54.4985
   step: 0.0001
-  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 3, report: 4}
+  slots: {stage0: 0, stage4: 1, stage5: 2, evaluations: 3, report: 4,
+          amended: 1.5, context: 3.5}  # amendment 2: 54.49865 (Qwen3 random), 54.49885 (context): free levels

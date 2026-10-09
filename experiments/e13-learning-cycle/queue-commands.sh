@@ -4,6 +4,7 @@
 # NOT EXECUTED by the agent that wrote them. Run from the repository root of the main checkout after merging this branch:
 #   cd /home/bhux/workplace/VSA-LLM && PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python
 # (`jobqueue add --priority` takes fractional priorities since e586bd7.)
+# Amendment 2 (decision 64, 2026-10-09): its 10 added jobs are in queue-commands-decision64.sh; every line below is unchanged.
 # Priorities (lower runs first; fractional levels inside one slot, as e9_plan --level-step):
 #   54.4985 stage 0: data preparation (CPU work in the GPU lane, ≈ 10 min each), the stage-0 C5 runs, then learn / write
 #           (queued after the trainings, so they run after them: equal priorities are first come, first served)

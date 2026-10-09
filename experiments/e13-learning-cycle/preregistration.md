@@ -78,6 +78,9 @@ Operator controls (untyped, translation) are not run (methodology §4: only if s
 
 **Multiplicity:** Holm across the five primary p-values (L1, L2, L3, L4, L5) at α = 0.05. Everything else is secondary.
 
+**Amended 2026-10-09 (amendment 2, §12):** L1 has two co-primaries (read − noread and read − random, both must be met) and
+the Holm family six tests; L1 and L5 report named definition comparators with their token costs; L5 has a cost criterion.
+
 ## 6. Secondary analyses (reported, no claim without a primary)
 
 - `gold`, `fvt`, `defs`, `random` vs `noread`: step-0 and final `ref_round2` differences and tokens to criterion;
@@ -95,8 +98,13 @@ Operator controls (untyped, translation) are not run (methodology §4: only if s
 
 ## 7. Expectations (from the evidence, methodology §4)
 
-- E9 held-out terms composed from gold frames lower the loss after the term by 9–13% on T5: L1 large on T5, smaller
-  with the linker reader (E11 frame F1 on T5 new words: linker 0.55, oracle 1.00).
+- On T5 gold frames carry the held-out gain: E9 held-out terms composed from gold frames lower the loss after the term
+  by 9–13%, and the shuffled-frames control C5sh is 4.6% worse than C5 after held-out terms. On real text (T4) the
+  held-out gain was not frame-specific (C5 − C5sh after held-out terms +0.01% [−0.08, +0.10], 3 seeds; the own frame
+  mattered on seen, rare and unseen terms: after_unseen −0.82%), hence L1's specificity gate (read − random, amendment 2).
+  L1 large on T5, smaller with the linker reader (E11 frame F1 on T5 new words: linker 0.55, oracle 1.00); on real text
+  read − noread may pass while read − random does not. *(Rewritten by amendment 2, 2026-10-09; the original is quoted
+  there.)*
 - E10.9a predicts that stage 1 adds little speed but writes correct edges for unobserved concepts; on the T5 seed
   ontology rule closure proposes 1,302 edges, all of them erased gold (CPU check without a model), so L4 depends on
   the acceptance test's power and the null rate.
@@ -212,6 +220,7 @@ Stages 2–5 consume the primary's accepted edges.
   4,380 paraphrase items.
 - No two-hop items: T7's item spec has no path.
 - Conditions: `none`, `recall:own`, `symbolic`. No `definition` condition, because E12 has no T7 definition writer.
+  *(Superseded by amendment 2: `definition` = the anchor's SCR note from the read set.)*
 - A seeded sample of 600 anchors keeps the cost down.
 - L5 is computed over the relation and reverse items.
 
@@ -220,7 +229,7 @@ because no such runs exist on the round-1 corpus. Qwen3-1.7B-Base runs `read`, `
 `q4-read`, `q4-noread`, `qlora`.
 
 **Endpoints.** L1–L5 as in §5, on T7-ROOD. T7-ROOD is its own family: Holm across its five tests, primary host
-SmolLM2-360M.
+SmolLM2-360M. *(Amendment 2: six tests, L1 with two co-primaries.)*
 
 **Queue** (`queue-commands.sh`, not queued by this work package). The plan has 68 jobs, ≈ 46.0 GPU-h:
 SmolLM2-360M ≈ 24.7, Qwen3-1.7B ≈ 21.0, preparation 0.3.
@@ -236,3 +245,142 @@ SmolLM2-360M ≈ 24.7, Qwen3-1.7B ≈ 21.0, preparation 0.3.
 The levels sit inside 54.4996–54.49979 because E10.L holds 54.4995–54.49959 and T1c-ROOD holds 54.4998–54.49984.
 
 The hours come from the same measured per-step costs, scaled to `eval-round2`'s 2,359 windows.
+
+### Amendment 2 (2026-10-09; decision 64): L1's specificity gate, the definition comparators, L5's token cost — T5 and T7-ROOD
+
+**Written before any E13 run.** On 2026-10-09 all 138 queued E13 jobs (`.jobs/e13-*.json`) were `pending`: none was
+running or done, and no run folder existed. The amendment therefore covers every E13 result on both tracks.
+Configuration: `t5.yaml`, `t7-rood.yaml`. Code: `e13_cycle` (`context`, `reason`, `report`). Everything not stated here is
+as registered.
+
+**Why.** Evidence that arrived after amendment 1:
+1. *T4 real chemistry, 3 seeds.* C5sh (every entry, held-out ones included, reads another entry's frame) keeps C5's gain
+   after held-out terms: C5 − C5sh +0.01% [−0.08, +0.10]. The own frame matters only on seen, rare and unseen terms
+   (after_unseen −0.82%). On T5 C5sh is 4.6% worse than C5 after held-out terms. So on real text a zero-shot "write"
+   gain on never-seen terms can pass with **any** frame.
+2. *Definition encoder.* C6d (the frozen host's mean-pooled hidden state of the verbalized frame) beats C5 on T4
+   held-out terms: +0.17% [+0.05, +0.29].
+3. *E12.* Decoding the HRR store into the prompt works on T5: 0.78 vs 0.50. On T4 a prose definition in context does
+   as well: 0.91 vs 0.88. The store's remaining case is token cost, which few endpoints measure. A C0′ host reading
+   the HRR store does as well as C5, and a fixed random operator decodes as well as a learned one.
+
+**Audit of this file** (each item checked against the text above and `e13_cycle` at b14e6a0):
+- *L1 can pass with any frame.* Confirmed. §5's L1 compares `read` with `noread` only, i.e. a row against no row.
+  `read − random` was not even computed: §6 lists `random` vs `noread` as a secondary, and that is all `report` computed.
+- *§7 credited gold frames with the T5 held-out gain.* Confirmed; rewritten in place (below).
+- *T7-ROOD had no `definition` condition* (amendment 1, stage 3). Confirmed. The reason given was that E12 has no T7
+  definition writer: E12's `definition` is written from the gold frame (`read_to_learn.t5_definition` / `t4_definition`),
+  and no T7 writer exists. Natural definitions do exist, though. The read set `round2-items-smollm2-v1` holds TK-H1's
+  SCR notes of 906 round-2 records (style `scr`, `<headword>: <note>`). These are the texts the stage-2 reader reads and
+  the `defs` stream prepends (`prepare_rounds`, c055737). Stage 3 never looked at the read set.
+- *L5 has no token accounting and no definition comparator.* Confirmed. `definition` accuracy was only listed per
+  family (T5).
+- *Operator controls are not run* (§4, after the arms table). Confirmed. Unchanged by this amendment; see "Not changed".
+
+**1. L1: specificity gate (co-primary).**
+- **L1 is met only if both co-primaries are met:**
+  - (a) `read − noread` as registered;
+  - (b) `read − random`, with the same statistic: the `ref_round2` loss at token 0 of the stage-4 runs, per-window
+    differences, windows × seeds pigeonhole bootstrap with 2,000 resamples.
+  
+  Each must have a Holm-adjusted p < 0.05 and an upper CI < 0.
+- **New family.** Per track (T5; T7-ROOD its own family), Holm runs over six hypotheses — L1·noread, L1·random, L2, L3,
+  L4, L5 — at familywise α = 0.05. A test that cannot be evaluated counts as p = 1, so the family never shrinks.
+  Without the `random` runs, L1 is not evaluable.
+- **The control.** `random` is E11's random frame: equal degree, the gold relations, fillers frequency-weighted. It is
+  the registered content control and already an arm of SmolLM2-360M on both tracks. **Added:** `random` for
+  Qwen3-1.7B-Base seed 1 on T5 and T7-ROOD, so that host's descriptive L1 (§6) is gated too.
+- **Reading the gate.** On T7-ROOD the frequency-weighted random frames keep 36% of the gold edges (`record_class` 80%,
+  `branch_top` 77%), against 9% on T5. There, read − random measures what the read frame adds beyond the type and branch
+  prior. Passing the gate shows that the read content matters; failing it does not show that frames are irrelevant.
+- **Wording.** If L1·noread passes and L1·random fails, the report says: "rows written for new terms lower the loss, but
+  not specifically through their read frames". No zero-shot write claim is made.
+
+**2. Definition comparators (named secondaries; no claim on their own).**
+- ***L1: read − definition.***
+  - *The `context` job.* A new job per host and seed (`e13_cycle context`) takes the `noread` arm's step-0 model. This
+    is `initial_model`, the trainer's own construction: the stage-0 model with the learned edges and no round-2 row.
+  - *What it evaluates.* The stage-4 evaluation windows that hold `ref_round2` targets, in two conditions:
+    - `none`: as the trainer evaluates them;
+    - `definition`: with the definitions of the round-2 terms the window links prepended. The terms are those with
+      ≥ ℓ_min subtokens, in first-mention order; the format is the `defs` arm's, `"\n".join(definitions) + "\n\n"`, and
+      the prefix is linked like any text.
+    
+    Only the window's own targets are scored.
+  - *Statistic.* Per window and seed: (read − noread)[stage-4 step 0] − (definition − none)[context job]. Each job's
+    own baseline is differenced out, and the bootstrap is the same as L1's. Also reported: definition − none, and both on
+    the windows that carry at least one definition.
+  - *Token cost.* The definition adds its prefix to every window (tokens per window). The read rows add none at
+    inference; their one-off reading cost is the write stage's forward tokens per term read.
+- ***Definitions used.***
+  - T5: the E11 prose definitions (`t5-heldout-smollm2-v1`, style `prose`).
+  - T7-ROOD: the SCR notes.
+  
+  Both are the texts the reader reads and the `defs` arm trains on.
+- ***L5: recall:own − definition.***
+  - *Conditions.* On T7-ROOD, stage 3 gains `definition` = the anchor's SCR note (`reason.definition_source: read_set`).
+    T5 keeps E12's writer, prose written from the gold frame, as registered.
+  - *Anchors without a definition.* On T7-ROOD these are the round-2 records outside the 906; the reader wrote no frame
+    for them either. They are not scored under `definition`, and no item is ever scored without its context.
+  - *No verbalized frame text.* The verbalized frame text (`e9_rowsource.verbalize_frame`, C6d's) is not used. Natural
+    definitions exist. For anchors without one, a gold-frame verbalization would be an oracle, and `symbolic` already
+    is that oracle.
+  - *Statistic.* Per anchor, the mean of recall:own − definition over the items scored under both conditions (T5:
+    relation and two-hop; T7-ROOD: relation; reverse items get no definition). Anchors × seeds bootstrap.
+  - *Descriptive (T7-ROOD).* L5 restricted to the anchors with a note: the only anchors the reader wrote a frame for.
+
+**3. L5 token accounting and the cost criterion.**
+- **Accounting.** Per item and condition, the prompt tokens the condition adds are counted: the context block before
+  each template (`_guard(context) + "\n"`, host tokenizer, no special tokens). `none` adds 0. Reported for every
+  condition, on the items it scores:
+  - its accuracy;
+  - `none`'s accuracy on the same items;
+  - the mean added tokens;
+  - the **accuracy per 100 added tokens** = 100 × (accuracy − accuracy of `none`) / added tokens.
+- **Cost criterion** (pre-registered secondary claim: "the store is a cheaper substitute for the definition"). All three
+  conditions must hold:
+  - (i) L5 is met;
+  - (ii) non-inferiority: the lower 95% CI bound of recall:own − definition > −δ, with **δ = 0.05** (accuracy);
+  - (iii) fewer tokens: the upper 95% CI bound of the per-item token difference recall:own − definition < 0, same
+    bootstrap.
+  
+  The criterion is a fixed-sequence test after L5, outside the Holm family. Possible outcomes:
+  - recall:own − definition has an upper CI < −δ: the report says the definition in context is better.
+  - (ii) holds but (iii) fails: no cost advantage is claimed.
+- **Why δ = 0.05.**
+  - It accepts a deficit the size of E12's T4 gap (definition 0.91 vs recall 0.88: 0.03) and rejects one about twice
+    that.
+  - It keeps ≥ 80% of the recall tool's E12 T5 gain over `none` (0.28; 0.05 / 0.28 ≈ 18%).
+  - It is near the smallest difference the stage-3 sample can resolve. With up to 360 T5 anchors × 3 seeds and an
+    assumed per-anchor SD of about 0.35 (not measured), the 95% half-width is ≈ 0.035 before the seed component.
+    T7-ROOD's 600-anchor sample is expected to hold ≈ 37% anchors with a note (906 of 2,470), so its test is weaker. The
+    report states the number of anchors.
+
+**4. §7 rewritten.** Original wording: "E9 held-out terms composed from gold frames lower the loss after the term by
+9–13% on T5: L1 large on T5, smaller with the linker reader (E11 frame F1 on T5 new words: linker 0.55, oracle 1.00)."
+New wording, in §7: on T5 gold frames carry the held-out gain (C5sh 4.6% worse); on real text (T4) the held-out gain was
+not frame-specific, hence the L1 gate.
+
+**Not changed.**
+- The arms, apart from the added Qwen3 `random`.
+- L2–L4 and the other statistics.
+- T5's `definition` text and stage 3's anchor sample.
+- **Operator controls (untyped, translation) stay not run.** Given E12's random-operator result, L5 cannot attribute a
+  recall-tool gain to the learned operator or composer. L5 is read as "the store's text in context", which is what the
+  definition comparator and the token accounting test.
+- L2 and L3 have no wrong-frame arm (no `q4-random`), so they are not gated for specificity. Their claims are about the
+  read rows, not about frame specificity.
+- C6d-style rows (the finding-2 definition encoder) need a projection trained with the channel, so they cannot be
+  written into the stage-0 C5 store at step 0. They are not an E13 arm.
+
+**Queue.** `queue-commands-decision64.sh` lists the new jobs; it was not run.
+- **Added:** 10 jobs, ≈ 3.6 GPU-h.
+  - T5 ≈ 1.41: Qwen3 `random` 1.18 at 54.49865; four `context` jobs 0.23 at 54.49885.
+  - T7-ROOD ≈ 2.23: Qwen3 `random` 1.81 at 54.49967; four `context` jobs 0.42 at 54.49977.
+  
+  Every level is a free one inside the track's band.
+- **Unchanged:** no queued command line changes, so nothing is cancelled.
+- **Merge before the first E13 reason job.** The reason and report jobs read the amended configuration and code at run
+  time.
+- **New totals:** T5 75 jobs ≈ 38.4 GPU-h; T7-ROOD 73 jobs ≈ 48.2 GPU-h. The T7-ROOD reason jobs grow by ≈ 0.05 GPU-h
+  each.
