@@ -150,7 +150,7 @@ def test_resume_without_a_checkpoint_starts_over_and_keeps_the_partial_files(set
     train(cfg, tmp_path / "straight")
     run = tmp_path / "crashed"
     train(cfg, run)
-    for name in ("checkpoint.pt", "final.pt", "manifest.json"):     # as if it died before its first checkpoint
+    for name in ("final.pt", "manifest.json"):                      # as if it died before its first checkpoint
         (run / name).unlink()
     partial = (run / "metrics.jsonl").read_text()
     train(cfg, run, resume=True)                                    # what the job queue does on a retry
@@ -162,9 +162,19 @@ def test_resume_without_a_checkpoint_starts_over_and_keeps_the_partial_files(set
     b = torch.load(run / "final.pt", weights_only=False)["model"]
     for key in a:
         torch.testing.assert_close(a[key], b[key])
-    (run / "checkpoint.pt").unlink()                                # a finished run is never restarted
-    with pytest.raises(FileExistsError):
-        train(cfg, run, resume=True)
+    assert not (run / "checkpoint.pt").exists()                     # a finished run drops its resume state
+    before = (run / "final.pt").stat().st_mtime_ns
+    assert train(cfg, run, resume=True) == {"steps": 0, "tokens": 0, "already_complete": True}
+    assert (run / "final.pt").stat().st_mtime_ns == before          # a finished run is never restarted
+    with pytest.raises(FileExistsError):                            # nor overwritten by a fresh start
+        train(cfg, run)
+
+
+def test_keep_checkpoint_retains_the_resume_state(setup, tmp_path: Path) -> None:
+    train(config(setup["root"], "none", train={"keep_checkpoint": True}), tmp_path / "kept")
+    assert (tmp_path / "kept" / "checkpoint.pt").is_file() and (tmp_path / "kept" / "final.pt").is_file()
+    train(config(setup["root"], "none"), tmp_path / "dropped")
+    assert not (tmp_path / "dropped" / "checkpoint.pt").exists() and (tmp_path / "dropped" / "final.pt").is_file()
 
 
 def test_window_losses_survive_an_interrupted_run(setup, tmp_path: Path) -> None:

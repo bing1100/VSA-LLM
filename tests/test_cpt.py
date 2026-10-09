@@ -133,7 +133,7 @@ def test_probe_loader_reads_trainable_only_checkpoints(setup, tmp_path: Path, mo
 
 def test_full_state_runs_are_unchanged_by_the_new_options(setup, tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(lm, "build_model", tiny_host)
-    lm.train(config(setup["root"], "free", "lora"), tmp_path / "full")
+    lm.train(config(setup["root"], "free", "lora", train={"keep_checkpoint": True}), tmp_path / "full")
     final = torch.load(tmp_path / "full" / "final.pt", weights_only=False)
     assert "trainable_only" not in final and "model.transformer.wte.weight" in final["model"]
     groups = torch.load(tmp_path / "full" / "checkpoint.pt", weights_only=False)["optimizer"]["param_groups"]

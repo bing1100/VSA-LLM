@@ -10,7 +10,10 @@ sums and target counts to `eval_windows.npz` (`strata`, `starts`, `sum_<tokens>`
 differences are paired by window. Evaluation rows carry the training tokens under `tokens` and the
 stratum's target count under `stratum_tokens` (rows written before that key existed have the count
 under `tokens`). `--resume` continues from `checkpoint.pt`; a run that died before its first
-checkpoint starts over, its partial files kept as `<stem>.aborted-<n><suffix>`.
+checkpoint starts over, its partial files kept as `<stem>.aborted-<n><suffix>`. A run that finishes
+deletes its `checkpoint.pt` (resume-only state, ≈ 3× the size of `final.pt` for a fully trained host;
+every evaluation reads `final.pt`) unless `train.keep_checkpoint: true`, and `--resume` on a finished
+run (`final.pt` and `manifest.json` present) returns without training.
 
 Evaluation strata (per target token `j`, predicted from position `j − 1`):
 `all`; `unlinked` (not inside or within 8 tokens after a linked span); `inside` (subtokens 2..ℓ of
@@ -571,6 +574,8 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     eval_only = bool(config["train"].get("eval_only", False))
     if eval_only and resume and (output_dir / "final.pt").exists():
         return {"steps": 0, "tokens": 0, "eval_only": True}
+    if resume and (output_dir / "final.pt").exists() and (output_dir / "manifest.json").exists():
+        return {"steps": 0, "tokens": 0, "already_complete": True}     # e.g. a finished job the queue re-ran
     git_at_start = None
     if resume and not checkpoint_path.exists() and not eval_only and output_dir.exists() and any(output_dir.iterdir()):
         # Died before its first checkpoint: start over, keeping the partial files aside.
@@ -742,6 +747,8 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                            steps=total_steps, tokens_per_step=tokens_per_step,
                            **({"channel_host_scale": scale} if scale else {}), **host_records(config, model),
                            **({"host_quantization": quantization} if quantization else {}))
+    if not config["train"].get("keep_checkpoint", False):
+        checkpoint_path.unlink(missing_ok=True)
     return {"steps": step, "tokens": step * tokens_per_step}
 
 
