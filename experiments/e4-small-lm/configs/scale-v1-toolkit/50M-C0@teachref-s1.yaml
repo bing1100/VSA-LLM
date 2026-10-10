@@ -1,0 +1,30 @@
+model:
+  vocab_size: 50257
+  seq_len: 1024
+  size: 50M
+data:
+  min_subtokens: 2
+  seed: 1234
+  train: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/train
+  eval: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/eval
+  ontology: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/ontology.pt
+eval:
+  windows: 1024
+  batch: 32
+  first_tokens: 5000000
+  save_window_losses: true
+  reference_strata: /home/bhux/data/vsa-llm/c3-teacher/wordnet-gpt2-v1/reference-hybrid-1024x1024.npz
+device: cuda
+train:
+  micro_batch: 32
+  grad_accum: 1
+  total_tokens: 500000000
+  lr: 0.002
+  warmup_tokens: 5000000
+  checkpoint_minutes: 5
+  eval_only: true
+  init_from: experiments/e4-small-lm/runs/scale-v1/50M-C0-s1/final.pt
+channel:
+  mode: none
+seed: 1
+experiment: e4-scale-v1-toolkit-50M-C0@teachref-s1

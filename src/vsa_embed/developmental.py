@@ -50,6 +50,8 @@ class DevelopmentalConfig:
     route_unobserved: str = "context"   # or "parent": unobserved usages keep the unsplit parent vector
     sync_parent: bool = True            # with "parent": keep the parent at the usage-weighted mean of its children
     merge_cosine: float = 0.98
+    consolidate_every: int = 0          # > 0: `grow` also merges near-identical sibling pairs every this many steps
+    merge_min_age: int = 0              # … only pairs split at least this many steps ago (new children start at cos ≈ 1)
     freeze_activity: float = 0.0        # freeze vectors whose activity stays below this
     freeze_patience: int = 500
     seed: int = 0
@@ -268,6 +270,8 @@ class DevelopmentalDictionary:
             return []
         accepted = self._test_candidates()
         events = [self._split(vector_id, result) for vector_id, result in accepted]
+        if self.config.consolidate_every and self.step % self.config.consolidate_every == 0:
+            events += self.consolidate(min_age=self.config.merge_min_age)
         self._update_freezing()
         self._screen()
         return events
@@ -425,13 +429,18 @@ class DevelopmentalDictionary:
 
     # -- consolidation ------------------------------------------------------------------------
 
-    def consolidate(self) -> list[dict[str, Any]]:
-        """Merge sibling pairs that became near-identical; the second row is retired (frozen)."""
+    def consolidate(self, *, min_age: int = 0) -> list[dict[str, Any]]:
+        """Merge sibling pairs that became near-identical; the second row is retired (frozen). With `min_age`, only
+        pairs split at least that many steps ago are considered (during training; the split step is read from the cards).
+        A parent-fallback link (`route_unobserved: parent`) moves the retired child's usage weight to the kept one."""
         events = []
         parameter = self._parameter()
         schedule = self.composer.schedule
+        born = {tuple(c["children"]): int(c["step"]) for c in self.cards if c.get("event") == "split"} if min_age else {}
         for first, second in list(self.siblings):
             vectors = parameter.detach()
+            if min_age and self.step - born.get((first, second), self.step) < min_age:
+                continue
             if self.frozen[second] or float(F.cosine_similarity(vectors[first], vectors[second], dim=0)) < self.config.merge_cosine:
                 continue
             with torch.no_grad():
@@ -443,6 +452,8 @@ class DevelopmentalDictionary:
             schedule = self.composer.schedule
             self.frozen[second] = True
             self.siblings.remove((first, second))
+            self.parent_links = [(p, a, b, wa + wb, 0.0) if (a, b) == (first, second) else (p, a, b, wa, wb)
+                                 for p, a, b, wa, wb in self.parent_links]
             card = {"event": "merge", "target": self.config.target, "step": self.step,
                     "kept": first, "retired": second}
             self.cards.append(card); events.append(card)

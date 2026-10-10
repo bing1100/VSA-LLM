@@ -1,0 +1,103 @@
+{
+ "smoke": true,
+ "label": "SMOKE (CPU, stand-in host; tracker timing only)",
+ "steps": 760,
+ "settings": {
+  "target": "atomics",
+  "beta": 0.9,
+  "screen_every": 250,
+  "activity_percentile": 0.25,
+  "coherence_threshold": 1.01,
+  "max_candidates": 16,
+  "min_usages": 4,
+  "min_contributions": 20,
+  "max_splits_per_round": 4,
+  "growth_budget": 0.05,
+  "cooldown": 1000,
+  "epsilon": 0.05,
+  "permutations": 999,
+  "p_value": 0.002,
+  "test": "permutation",
+  "route_unobserved": "parent",
+  "sync_parent": true,
+  "merge_cosine": 0.98,
+  "consolidate_every": 1000,
+  "merge_min_age": 1000,
+  "freeze_activity": 0.0,
+  "seed": 1
+ },
+ "forced": true,
+ "threads": 6,
+ "per_step_seconds": {
+  "sample": 0.0009713887338109903,
+  "forward_backward": 0.22061647535669374,
+  "observe": 0.002380802298552896,
+  "grow": 0.011265437780438285,
+  "begin": 9.946073527987067e-06
+ },
+ "observe_seconds_with_candidates": 0.0028523896478445214,
+ "round_seconds": 4.182442735414952,
+ "rounds": [
+  {
+   "step": 250,
+   "seconds": 0.04792375583201647,
+   "tested": 0,
+   "contributions": [],
+   "events": 0,
+   "splits": 0
+  },
+  {
+   "step": 500,
+   "seconds": 5.566984033910558,
+   "tested": 16,
+   "contributions": [
+    1629,
+    257,
+    225,
+    208,
+    193
+   ],
+   "events": 1,
+   "splits": 1
+  },
+  {
+   "step": 750,
+   "seconds": 2.7979014369193465,
+   "tested": 16,
+   "contributions": [
+    553,
+    251,
+    223,
+    162,
+    141
+   ],
+   "events": 0,
+   "splits": 0
+  }
+ ],
+ "parent_sync_seconds_at_budget": 0.003843483701348305,
+ "tracker_seconds_per_step": 0.02343559036438062,
+ "gpu_step_seconds_50M": 0.4847337278106509,
+ "overhead_fraction_upper_bound": 0.048347348285892634,
+ "splits": 1,
+ "atomics_after": 8194,
+ "cards": [
+  {
+   "event": "split",
+   "target": "atomics",
+   "step": 500,
+   "parent": 48,
+   "children": [
+    8192,
+    8193
+   ],
+   "parent_kept_for_unobserved": true,
+   "gain": 0.0001117333013098687,
+   "p_value": 0.001,
+   "contributions": 1629,
+   "observed_usages": 196,
+   "usages_to_new_child": 116,
+   "usages_kept": 209
+  }
+ ]
+}
