@@ -1,0 +1,47 @@
+{
+  "schema_version": 2,
+  "created_at": "2026-10-10T15:45:13.728916+00:00",
+  "git_sha": "e32f4a5cc934c03c124370dce08ccd097085f0a6",
+  "git_dirty": false,
+  "git_state_recorded_at": "run start",
+  "python": "3.12.4",
+  "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+  "packages": {
+    "torch": "2.11.0+cu128",
+    "transformers": "4.54.0",
+    "nltk": "3.8.1",
+    "PyYAML": "6.0.2",
+    "numpy": "2.2.6",
+    "safetensors": "0.5.3",
+    "vsa-embed": "0.1.0.dev0"
+  },
+  "device": "cuda",
+  "cuda_device": "NVIDIA GeForce RTX 3090",
+  "torch_num_threads": 6,
+  "argv": [
+    "/home/bhux/workplace/VSA-LLM/src/vsa_embed/experiments/e9_frameswap.py",
+    "score",
+    "--run",
+    "experiments/e9-retrofit/runs/t1c/SmolLM2-360M-full-C5-s1",
+    "--output",
+    "experiments/e9-retrofit/frameswap/t1c-linked/SmolLM2-360M-full-C5-s1",
+    "--entries",
+    "linked",
+    "--variants",
+    "own",
+    "other",
+    "empty",
+    "mean",
+    "--fillers",
+    "none",
+    "--resume"
+  ],
+  "config_sha256": "e95b98e0d5deeb1b6dd5046847361bcf17211491cf7eb1a2f459ffb520c5b780",
+  "kind": "e9-frameswap",
+  "keys": [
+    "empty@linked",
+    "mean@linked",
+    "other@linked",
+    "own"
+  ]
+}
