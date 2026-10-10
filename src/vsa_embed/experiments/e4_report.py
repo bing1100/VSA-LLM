@@ -778,12 +778,15 @@ def render(summary: dict[str, Any], *, figures: dict[str, dict[str, str]], title
 
 _PALETTE = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948")
 _BASELINE_INK, _MUTED, _GRID = "#52514e", "#8a8984", "#e6e5e0"
+_HYBRID_SLOTS = {"HRRAdd": 0, "HRRCat": 6}     # CVD-checked against C2 and C5 (validate_palette, all pairs)
 
 
 def condition_style(name: str) -> dict[str, Any]:
     """Colour follows the condition family (C1…C8 → fixed slots; baselines neutral); variants are dashed."""
     base = name.split("@")[0]
     match = re.match(r"C(\d+)", base)
+    if base in _HYBRID_SLOTS:          # decision 65's hybrids: slots 1 and 7, unused by the conditions they appear with
+        return {"color": _PALETTE[_HYBRID_SLOTS[base]], "linestyle": "--" if "@" in name else "-"}
     if base in ("C0", "C0'") or (match and match[1] == "0"):
         colour = _BASELINE_INK
     elif match and 1 <= int(match[1]) <= 8:
