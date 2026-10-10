@@ -340,3 +340,20 @@ def test_queue_lines(tmp_path) -> None:
     assert any("--priority 51.5 " in line for line in jobs) and any("--priority 52 " in line for line in jobs)
     assert any(line.startswith("# skipped t4/SmolLM2-360M-full-C5-s2") for line in lines)
     assert all("GPU-h" in line for line in jobs) and not any(" add " in line and "--queue" in line for line in jobs)
+
+
+def test_linked_set_is_every_entry_the_windows_link_and_reports_the_extra_strata(world, tmp_path) -> None:
+    import pytest
+    onto = world["ontology"]
+    with pytest.raises(ValueError):
+        fs.target_entries(onto, "linked")
+    linked = np.array([4, 1, 1, 7, 0, int(onto["entry_count"]) + 3])
+    assert fs.target_entries(onto, "linked", linked).tolist() == [0, 1, 4, 7]     # unique, in range, held-out kept
+    out = tmp_path / "in" / world["runs"]["C5"].name
+    summary = fs.score_run(world["runs"]["C5"], out, entries=["linked"], variants=["own", "other", "empty"], device="cpu",
+                           fillers=world["fillers"], log=lambda _: None)
+    record = summary["targets"]["linked"]
+    assert record["stratum"] == "after_len3plus" and record["entries"] >= 2 and record["windows_touched"] >= 1
+    group = next(iter(fs.write_report([tmp_path / "in"], tmp_path / "report", resamples=200)["groups"].values()))
+    block = group["sets"]["linked"]
+    assert block["stratum"] == "after_len3plus" and "inside" in block["strata"] and "after_len3plus" in block["strata"]

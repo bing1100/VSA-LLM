@@ -100,4 +100,28 @@ numbers only; they test the pipeline and the cost, not the hypotheses.
 
 ## 8. Changes after registration
 
-None yet.
+**Amendment 1 (author, 2026-10-10, before any `linked` run): the `linked` target set.** On natural text the most
+consistent gain is after and inside linked multi-token terms (C5 − C0′ after 3+-subtoken terms: T4 −1.09%*, T7 −0.57%*,
+T1c seed 1 −0.93% / −1.82%; inside −1.54% / −0.28% / −0.52%). The arms say much of it is not frame-specific (T4: C5sh
+keeps about 80% of it, C5 − C5sh −0.20%*; TransE ties; T7: C5sh ≈ C5). This set asks the within-model question for the
+whole channel.
+
+- **Target set `linked`:** every entry the evaluation windows link, held-out entries included. Matched stratum
+  `after_len3plus`. Also reported: `inside`, `after_len2`, `after_heldout`, `after_unseen`, `after_rare_seen`.
+  Variants `own`, `other` (derangement within the set), `empty`, `mean`. `other-any` is dropped: its pool is the entries
+  the windows never link.
+- **Separate outputs:** `frameswap/<stage>-linked/<run>/`, so the held-out / unseen / rare outputs and their reports are
+  untouched.
+- **Primary of this amendment:** `other − own` on `after_len3plus`, pooled over seeds, Holm over the three variants.
+  Positive = each term's own vector carries part of the multi-token gain.
+- **Secondaries:** `empty − own` (how much of the gain needs the injected vector at all) and `mean − own` (whether an
+  average vector does as well).
+- **Predictions (from the arms, before any `linked` result):**
+  - T4 C5: `empty − own` ≈ +1% (most of C5 − C0′); `other − own` small and positive (≈ +0.2%).
+  - T7 C5: `empty − own` > 0; `other − own` ≈ 0.
+  - T1c: no prediction (seed 1, no arms yet).
+  - T5: large on both.
+- **Runs:**
+  - finished: T4 (360M C5, C5sh, C6d × 3 seeds; 135M C5 s1), T5 (360M C5 × 3), T1c (360M and 135M C5 s1;
+    licensed: aggregates only, `--fillers none`), T7 (360M C5, C5sh × 3);
+  - once trained: T7 C6d; T7-ROOD, T8 and T1c-ROOD C5, C5sh, C6d × 3.

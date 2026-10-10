@@ -33,9 +33,11 @@ variants of one model grouped by quantizer; these are entry-set variants with ta
 within-model report of their own (they reuse its filler tables and helpers).
 
 **Target sets** (`--entries`; several in one job share `own`): `heldout` (the ontology's held-out entries, never linked in
-training), `unseen` (training frequency 0, not held out), `rare_seen` (1–9). A compose channel's target set and pools drop
-entries with an empty frame (no row in any variant). Each set's matched stratum is `after_heldout` / `after_unseen` /
-`after_rare_seen`.
+training), `unseen` (training frequency 0, not held out), `rare_seen` (1–9), `linked` (every entry the evaluation windows
+link, held-out ones included: the whole channel; decision 64 follow-up, author 2026-10-10 — does each multi-token term's
+own vector carry the population-level gain?). A compose channel's target set and pools drop entries with an empty frame
+(no row in any variant). Each set's matched stratum is `after_heldout` / `after_unseen` / `after_rare_seen` /
+`after_len3plus`; `linked` also reports `inside`, `after_len2` and the held-out / unseen / rare strata.
 
 **Channels.** Frame channels (C5 and its arms C5rf / C5ut / C5tr / C5sh; readout arms U5*) and row-source arms (C6*).
 C5sh's own frame is the shuffled frame it was trained with. C2 (free table) is scored with a warning: its held-out rows are
@@ -92,9 +94,10 @@ from .e9_rescore import _sink_arrays, _write_record, ensure_filler_table, filler
 ROOT = Path("experiments/e9-retrofit")
 VARIANTS = ("own", "other", "other-any", "empty", "mean")
 SWAPS = VARIANTS[1:]
-ENTRY_SETS = {"heldout": "after_heldout", "unseen": "after_unseen", "rare_seen": "after_rare_seen"}
+ENTRY_SETS = {"heldout": "after_heldout", "unseen": "after_unseen", "rare_seen": "after_rare_seen", "linked": "after_len3plus"}
 SET_INDEX = {name: i for i, name in enumerate(ENTRY_SETS)}
 REPORT_STRATA = ("{}", "{}_filler", "{}_nonfiller", "after", "unlinked", "all")
+EXTRA_STRATA = {"linked": ("inside", "after_len2", "after_heldout", "after_unseen", "after_rare_seen")}
 ALPHA = 0.05
 STEM = re.compile(r"^(?P<host>.+)-(?P<mode>[^-]+)-(?P<model>[^-]+)-s(?P<seed>\d+)$")
 KIND, REPORT_KIND = "e9-frameswap", "e9-frameswap-report"
@@ -107,9 +110,15 @@ def variant_key(variant: str, entries: str) -> str:
 # ---------------------------------------------------------------- target sets and swap plans
 
 
-def target_entries(ontology: dict[str, Any], kind: str) -> np.ndarray:
-    """Sorted entry ids of a target set (`heldout`, `unseen`, `rare_seen`; see the module docstring)."""
+def target_entries(ontology: dict[str, Any], kind: str, linked: np.ndarray | None = None) -> np.ndarray:
+    """Sorted entry ids of a target set (`heldout`, `unseen`, `rare_seen`, `linked`; see the module docstring); `linked`
+    (the entries the evaluation windows link) is required for the `linked` set."""
     count = int(ontology["entry_count"])
+    if kind == "linked":
+        if linked is None:
+            raise ValueError("the linked set needs the entries the evaluation windows link")
+        found = np.unique(np.asarray(linked, dtype=np.int64))
+        return found[(found >= 0) & (found < count)]
     heldout = np.zeros(count, dtype=bool)
     heldout[np.asarray(list(ontology["heldout_entries"]), dtype=np.int64)] = True
     if kind == "heldout":
@@ -196,7 +205,7 @@ def swap_plan(channel: Any, ontology: dict[str, Any], kind: str, variants: Seque
     """Target entries and each variant's mapping / row for one target set (entry ids stay in memory, never in outputs);
     `linked`: the entries the evaluation windows link (`present` = the targets among them)."""
     usable = usable_entries(channel)
-    found = target_entries(ontology, kind)
+    found = target_entries(ontology, kind, linked)
     found = found[found < usable.size]
     targets = found[usable[found]]
     inside = np.zeros(usable.size, dtype=bool)
@@ -491,7 +500,8 @@ def analyze(outputs: Sequence[dict[str, Any]], *, resamples: int = 10_000, seed:
                                  "targets": {int(o["summary"]["run_seed"]): o["summary"].get("targets") for o in members}}
         for kind in sets:
             matched = ENTRY_SETS[kind]
-            strata = [s.format(matched) for s in REPORT_STRATA if any(s.format(matched) in o["strata"] for o in members)]
+            strata = [s for s in dict.fromkeys([*(s.format(matched) for s in REPORT_STRATA), *EXTRA_STRATA.get(kind, ())])
+                      if any(s in o["strata"] for o in members)]
             block: dict[str, Any] = {"stratum": matched, "strata": {}, "per_seed": {}}
             for stratum in strata:
                 rows = {v: c for v in SWAPS if (c := pooled_difference(members, variant_key(v, kind), stratum, resamples=resamples,
