@@ -117,6 +117,15 @@ Opt-in keys of the learning cycle (E13, decision 63; absent keys change nothing)
   vocabulary expansion, trained as new-token embeddings would be).
 - `eval.points` (a list of token counts): the evaluation points instead of the log-spaced schedule (the end is
   always evaluated), for curves read off at fixed tokens (tokens to criterion).
+
+Opt-in pieces of the from-scratch scaling screen (decision 65, `e4_plan --stage scale-v1`; absent keys change nothing):
+
+- `model.size: 20M` (6 layers, width 384, 6 heads: 30,339,456 parameters with the tied 50,257-row embedding, 10,647,552
+  non-embedding) below 50M and 125M.
+- `channel.mode: compose_add | compose_cat` (HRRBERT's HRRAdd / HRRCat, `span_channel.SpanChannel`): the composer of
+  `compose` mode (all its keys apply; `channel.dimension` is the composed width) plus a free per-entry table of width
+  `channel.free_dimension` (0 = the composed width), summed with the composed row (a narrower free row lifted to the
+  composed width) or concatenated with it, before the projector. Held-out entries read C2's fallback free row.
 """
 
 from __future__ import annotations
@@ -142,10 +151,11 @@ from ..developmental import DevelopmentalConfig, DevelopmentalDictionary
 from ..integrations.transformers import ChannelLM
 from ..provenance import git_state, prepare_output_dir, write_run_metadata
 from ..row_sources import FillerIndex, load_filler_index, load_source_table
-from ..span_channel import HOST_SCALE_FRACTION, SpanChannel
+from ..span_channel import COMPOSED_MODES, HOST_SCALE_FRACTION, SpanChannel
 
 MODEL_SIZES = {
     "tiny": dict(n_layer=2, n_embd=64, n_head=2),
+    "20M": dict(n_layer=6, n_embd=384, n_head=6),     # decision 65: 30,339,456 parameters (10,647,552 non-embedding)
     "50M": dict(n_layer=8, n_embd=512, n_head=8),
     "125M": dict(n_layer=12, n_embd=768, n_head=12),
     "350M": dict(n_layer=24, n_embd=1024, n_head=16),
@@ -272,7 +282,7 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
         channel = SpanChannel(None, width, entry_count=entries, mode="source", gate_bias=float(settings["gate_bias"]),
                               semantic_dimension=width if config["train"]["semantic_weight"] else 0,
                               source_rows=rows, source_hidden=int(settings.get("source_hidden") or 0))
-    elif mode != "compose":
+    elif mode not in COMPOSED_MODES:
         channel = SpanChannel(None, width, entry_count=entries, mode=mode, hashed_buckets=int(settings["hashed_buckets"]),
                               gate_bias=float(settings["gate_bias"]), free_dimension=int(settings["free_dimension"]),
                               semantic_dimension=width if config["train"]["semantic_weight"] else 0)
@@ -288,8 +298,9 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
             context_dimension=int(settings["key_dimension"]) if context_window else 0,
             **({"slots": int(settings["slots"])} if settings.get("slots") else {}),
         )
+        hybrid = {"mode": mode, "free_dimension": int(settings["free_dimension"])} if mode != "compose" else {}
         channel = SpanChannel(composer, width, entry_count=entries, gate_bias=float(settings["gate_bias"]),
-                              semantic_dimension=width if config["train"]["semantic_weight"] else 0)
+                              semantic_dimension=width if config["train"]["semantic_weight"] else 0, **hybrid)
         channel.skip_empty_frames = bool(settings.get("skip_empty_frames", False))   # opt-in; default keeps the error
         context = CausalLocalContext(width, int(settings["key_dimension"]), window=context_window) if context_window else None
         if settings.get("readout"):

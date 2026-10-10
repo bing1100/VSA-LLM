@@ -50,9 +50,11 @@ def config(root: Path, mode: str, **extra) -> dict:
             "channel": {"mode": mode, "dimension": 16, "key_dimension": 8, **extra.pop("channel", {})}}
 
 
-@pytest.mark.parametrize("mode", ["none", "compose", "free", "random", "hashed"])
+@pytest.mark.parametrize("mode", ["none", "compose", "free", "random", "hashed", "compose_add", "compose_cat"])
 def test_every_condition_trains_and_logs_strata(setup, tmp_path: Path, mode: str) -> None:
     extra = {"channel": {"hashed_buckets": 64}} if mode == "hashed" else {}
+    if mode.startswith("compose_"):
+        extra = {"channel": {"free_dimension": 3, "context_window": 4}}
     result = train(config(setup["root"], mode, **extra), tmp_path / mode)
     assert result["steps"] == 6
     rows = [json.loads(line) for line in (tmp_path / mode / "metrics.jsonl").read_text().splitlines()]
@@ -78,6 +80,29 @@ def test_interrupted_run_resumes_to_the_same_result(setup, tmp_path: Path) -> No
     b = torch.load(tmp_path / "resumed" / "final.pt", weights_only=False)["model"]
     for key in a:
         torch.testing.assert_close(a[key], b[key])
+
+
+@pytest.mark.parametrize("mode", ["compose_add", "compose_cat"])
+def test_hybrid_runs_resume_exactly_and_rebuild_with_held_out_entries_unseen(setup, tmp_path: Path, mode: str) -> None:
+    from vsa_embed.training.lm import MODEL_SIZES, load_final
+    torch.set_num_threads(1)
+    channel = {"free_dimension": 3, "context_window": 4}
+    train(config(setup["root"], mode, channel=dict(channel)), tmp_path / "straight")
+    assert train(config(setup["root"], mode, channel=dict(channel), train={"stop_after_steps": 3}), tmp_path / "resumed")["interrupted"]
+    train(config(setup["root"], mode, channel=dict(channel)), tmp_path / "resumed", resume=True)
+    a = torch.load(tmp_path / "straight" / "final.pt", weights_only=False)["model"]
+    b = torch.load(tmp_path / "resumed" / "final.pt", weights_only=False)["model"]
+    assert {"channel.table.weight", "channel.composer.atomics", "channel.projector.weight"} <= set(a)
+    assert ("channel.free_lift.weight" in a) == (mode == "compose_add")
+    for key in a:
+        torch.testing.assert_close(a[key], b[key])
+    model = load_final(tmp_path / "straight" / "final.pt")
+    heldout = torch.load(setup["root"] / "ontology.pt", weights_only=False)["heldout_entries"]
+    assert model.channel.mode == mode and model.channel.unseen.nonzero().flatten().tolist() == heldout == [0]
+    torch.testing.assert_close(model.channel.table.weight, a["channel.table.weight"])
+    manifest = json.loads((tmp_path / "straight" / "manifest.json").read_text())
+    assert manifest["channel_parameters"] == sum(p.numel() for p in model.channel.parameters())
+    assert MODEL_SIZES["20M"] == {"n_layer": 6, "n_embd": 384, "n_head": 6}
 
 
 def test_stratum_masks_place_after_and_inside_targets() -> None:

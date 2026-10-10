@@ -116,3 +116,42 @@ def test_matched_controls_have_the_composition_channels_parameters(plan: dict[st
 
 def _merge(a: dict, b: dict) -> dict:
     return e4_plan._merge(a, b)
+
+
+def test_scale_v1_preset_writes_the_decision_65_grid_in_queue_order(plan: dict[str, Path]) -> None:
+    e4_plan.main(["--stage", "scale-v1", "--data-root", str(plan["data"]), "--queue"])
+    out = plan["configs"] / "scale-v1"
+    order = [f"{size}-{c}-s1" for size, names in e4_plan.SCALE_CONDITIONS.items() for c in names]
+    assert sorted(p.stem for p in out.glob("*.yaml")) == sorted(order) and len(order) == 16
+    for size, (lr, micro, accum) in {"20M": (2.667e-3, 32, 1), "50M": (2e-3, 32, 1), "125M": (1.333e-3, 16, 2)}.items():
+        config = _load(out / f"{size}-C0-s1.yaml")
+        assert config["model"]["size"] == size and config["seed"] == 1 and config["experiment"] == f"e4-scale-v1-{size}-C0-s1"
+        assert (config["train"]["lr"], config["train"]["micro_batch"], config["train"]["grad_accum"]) == (lr, micro, accum)
+        assert micro * accum * config["model"]["seq_len"] == 32_768 and config["train"]["checkpoint_minutes"] == 10
+        assert config["train"]["total_tokens"] == 500_000_000 and config["train"]["warmup_tokens"] == 10_000_000
+        assert config["eval"] == {"windows": 1024, "batch": 32, "first_tokens": 5_000_000, "save_window_losses": True}
+    total = (500_000_000 // 32_768) * 32_768
+    assert eval_token_schedule(5_000_000, total) == [5_000_000 * 2**i for i in range(7)] + [total]
+    c5, shuffled = _load(out / "50M-C5-s1.yaml")["channel"], _load(out / "50M-C5sh-s1.yaml")["channel"]
+    assert shuffled == {**c5, "frames": "shuffled"} and c5["context_window"] == 8 and c5["key_dimension"] == 8
+    assert not (out / "20M-C5sh-s1.yaml").exists() and not (out / "125M-C5sh-s1.yaml").exists()
+    for name, mode in (("HRRAdd", "compose_add"), ("HRRCat", "compose_cat")):
+        channel = _load(out / f"125M-{name}-s1.yaml")["channel"]
+        assert channel == {**c5, "mode": mode, "dimension": 128, "free_dimension": channel["free_dimension"]}
+    queued = sorted(jobqueue.jobs(plan["jobs"]), key=lambda j: j["created"])
+    assert [j["name"] for j in queued] == [f"scale-v1-{stem}" for stem in order] and {j["priority"] for j in queued} == {54.3}
+
+
+def test_hybrids_are_the_closest_integer_match_to_c5s_channel_parameters(plan: dict[str, Path]) -> None:
+    ontology = torch.load(plan["data"] / "ontology.pt", weights_only=False)
+    for size in ("20M", "125M"):
+        width = e4_plan.model_width(size)
+        matched = e4_plan.matched_hybrid_widths(ontology, width, 256, 8)
+        c5 = e4_plan.channel_parameter_count(e4_plan.conditions("hrr", 8, 256, 1, 1, {})["C5"]["channel"], ontology, width)
+        for name, record in matched.items():
+            channel = record["channel"]
+            assert record["c5_parameters"] == c5 and channel["dimension"] == 128 and channel["mode"] == e4_plan.HYBRIDS[name]
+            assert record["parameters"] == e4_plan.channel_parameter_count(channel, ontology, width)
+            gaps = {w: abs(e4_plan.channel_parameter_count({**channel, "free_dimension": w}, ontology, width) - c5)
+                    for w in (channel["free_dimension"] - 1, channel["free_dimension"], channel["free_dimension"] + 1) if w >= 1}
+            assert min(gaps, key=gaps.get) == channel["free_dimension"]

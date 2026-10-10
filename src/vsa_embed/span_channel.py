@@ -41,6 +41,10 @@ _WORD = re.compile(r"\w", re.UNICODE)
 # 256 → 960 projector gives rows of norm ≈ 1.12 against rows of 3.70; SmolLM2-135M: 0.87 / 3.18 ≈ 0.27), so scaling
 # is a no-op-sized change there, while Qwen2.5-0.5B (rows of 0.46) starts ≈ 8× lower than unscaled.
 HOST_SCALE_FRACTION = 0.3
+# Channel modes whose rows come from a `FrameComposer`: C3–C5 (`compose`) and HRRBERT's two hybrids (decision 65),
+# which join the composed row with a free per-entry row before the projector (`compose_add` HRRAdd, `compose_cat` HRRCat).
+HYBRID_MODES = ("compose_add", "compose_cat")
+COMPOSED_MODES = ("compose", *HYBRID_MODES)
 
 
 def normalize_alias(text: str) -> str:
@@ -333,6 +337,13 @@ class SpanChannel(nn.Module):
     uses fixed random per-entry vectors (control C1); `mode="hashed"` uses a hashed table keyed by
     the span's subtoken ids (control C1h). Otherwise rows come from the `FrameComposer`.
 
+    HRRBERT's hybrids (decision 65) add a free per-entry row (C2's table, width `free_dimension`; 0 = the composer's
+    width) to the composed row `c_j` before the projector: `mode="compose_add"` (HRRAdd) injects `P (c_j + U f_j)` — `U`
+    (`free_lift`, near-isometric at initialization) lifts a narrower free row to the composer's width and is absent when
+    the widths agree — and `mode="compose_cat"` (HRRCat) injects `P [f_j ; c_j]`. Entries without a trained free row
+    (held-out concepts, `set_unseen`; zero-shot insertions, `add_entries`) read C2's fallback, the mean of the trained
+    free rows, while their composed part is composed zero-shot from the trained dictionary, as in `compose` mode.
+
     Host scale (opt-in, `set_host_scale`; open decision 1): every row is multiplied by a fixed scalar
     `s = ρ · n̄_E / n̄_c`, with `n̄_E` the host's mean input-embedding row norm and `n̄_c` this channel's
     mean row norm when `set_host_scale` is called (at build time, i.e. at initialization), so the injected
@@ -346,10 +357,10 @@ class SpanChannel(nn.Module):
                  semantic_dimension: int = 0, free_dimension: int = 0, source_rows: Tensor | None = None,
                  source_hidden: int = 0) -> None:
         super().__init__()
-        if mode not in {"compose", "free", "random", "hashed", "source"}:
-            raise ValueError("mode must be compose, free, random, hashed or source")
-        if mode == "compose" and composer is None:
-            raise ValueError("compose mode needs a FrameComposer")
+        if mode not in {"compose", "free", "random", "hashed", "source", *HYBRID_MODES}:
+            raise ValueError("mode must be compose, compose_add, compose_cat, free, random, hashed or source")
+        if mode in COMPOSED_MODES and composer is None:
+            raise ValueError(f"{mode} mode needs a FrameComposer")
         self.mode, self.composer, self.entry_count = mode, composer, entry_count
         # Opt-in (`channel.skip_empty_frames`): an entry whose frame has no edge gets a zero row, i.e. no
         # injection, instead of an error. Linking and strata are untouched (T1-open has 2 such MeSH entries).
@@ -369,6 +380,17 @@ class SpanChannel(nn.Module):
                                      if source_hidden else nn.Linear(width, model_dimension, bias=False))
         elif mode == "compose":
             self.projector = nn.Linear(source_dimension, model_dimension, bias=False)
+        elif mode in HYBRID_MODES:
+            composed = composer.atomics.shape[1]
+            width = free_dimension or composed
+            self.table = nn.Embedding(entry_count, width)          # initialized as C2's free table
+            nn.init.normal_(self.table.weight, std=width**-0.5)
+            self.register_buffer("unseen", torch.zeros(entry_count, dtype=torch.bool))
+            self.free_lift = None
+            if mode == "compose_add" and width != composed:
+                self.free_lift = nn.Linear(width, composed, bias=False)
+                nn.init.normal_(self.free_lift.weight, std=composed**-0.5)   # unit-norm columns: a lifted row keeps its norm
+            self.projector = nn.Linear(composed + (width if mode == "compose_cat" else 0), model_dimension, bias=False)
         elif mode == "free":
             # `free_dimension` > 0: a low-dimensional free table plus a projector, so the control's
             # parameter count can be matched to the composition channel.
@@ -459,13 +481,16 @@ class SpanChannel(nn.Module):
                         rows = rows.to(part.dtype).index_put((keep.nonzero().squeeze(1),), part)
                     return rows
             return self.projector(self.composer.compose(entries, context))
+        if self.mode in HYBRID_MODES:
+            composed = self._composed_rows(entries, context)
+            free = self._free_rows(entries).to(composed.dtype)
+            if self.mode == "compose_add":
+                return self.projector(composed + (free if self.free_lift is None else self.free_lift(free)))
+            return self.projector(torch.cat([free, composed], -1))
         if self.mode == "source":
             return self.source_projector(self.source_rows[entries])
         if self.mode == "free":
-            rows = self.table(entries)
-            if bool(self.unseen.any()):
-                fallback = self.table.weight[~self.unseen].mean(0)
-                rows = torch.where(self.unseen[entries][:, None], fallback.expand_as(rows), rows)
+            rows = self._free_rows(entries)
             return self.free_projector(rows) if self.free_projector is not None else rows
         if self.mode == "random":
             return self.scale * self.table_fixed[entries]
@@ -476,13 +501,46 @@ class SpanChannel(nn.Module):
             keys.append(hash(tuple(input_ids[b, s:e + 1].tolist())) % self.hashed_buckets)
         return self.table(torch.tensor(keys, device=entries.device))
 
+    def _free_rows(self, entries: Tensor) -> Tensor:
+        """Free-table rows (C2 and the hybrids' free part); entries marked unseen read the mean of the trained rows."""
+        rows = self.table(entries)
+        if bool(self.unseen.any()):
+            fallback = self.table.weight[~self.unseen].mean(0)
+            rows = torch.where(self.unseen[entries][:, None], fallback.expand_as(rows), rows)
+        return rows
+
+    def _composed_rows(self, entries: Tensor, context: Tensor | None) -> Tensor:
+        """The hybrids' composed part (composer width, before the projector); with `skip_empty_frames`, entries whose
+        frame has no edge get a zero composed part (their free part still applies)."""
+        if self.skip_empty_frames:
+            keep = self.composer.schedule.degrees[entries] > 0
+            if not bool(keep.all()):
+                rows = self.composer.atomics.new_zeros(entries.numel(), self.composer.atomics.shape[1])
+                if bool(keep.any()):
+                    part = self.composer.compose(entries[keep], None if context is None else context[keep])
+                    rows = rows.to(part.dtype).index_put((keep.nonzero().squeeze(1),), part)
+                return rows
+        return self.composer.compose(entries, context)
+
+    def _grow_free_table(self, count: int) -> None:
+        """Append `count` free rows marked unseen (zero-initialized; they read the fallback row)."""
+        start, weight = self.table.weight.shape[0], self.table.weight
+        table = nn.Embedding(start + count, weight.shape[1], device=weight.device, dtype=weight.dtype)
+        with torch.no_grad():
+            table.weight.zero_()
+            table.weight[:start] = weight.detach()
+        table.weight.requires_grad_(weight.requires_grad)
+        self.table = table
+        self.unseen = torch.cat([self.unseen, torch.ones(count, dtype=torch.bool, device=self.unseen.device)])
+
     def add_entries(self, count: int, frames: Sequence[Iterable[tuple[int, int]]] | None = None, *, seed: int = 0,
                     source_rows: Tensor | None = None) -> Tensor:
         """Append `count` link entries at evaluation time (E9 zero-shot insertion); returns their ids.
 
         Composition (`compose`) appends the entries' `frames` to the composer (rows composed from the
         existing atomics and relations); the free table (C2) appends rows marked unseen, which fall
-        back to the mean of the trained rows; the random control (C1) appends fixed random vectors
+        back to the mean of the trained rows (the hybrids `compose_add` / `compose_cat` do both: composed part
+        from the frames, free part from the fallback); the random control (C1) appends fixed random vectors
         drawn from `seed`; a hashed memory (C1h) is keyed by subtokens and needs nothing; a row-source
         channel (`source`) appends `source_rows` if given, else the mean source row (no information about
         the new entry). Rows of existing entries are unchanged in every mode.
@@ -490,21 +548,14 @@ class SpanChannel(nn.Module):
         if count < 0 or (frames is not None and len(frames) != count):
             raise ValueError("frames must hold one frame per new entry")
         start = self.entry_count
-        if self.mode == "compose":
+        if self.mode in COMPOSED_MODES:
             if frames is None:
-                raise ValueError("compose mode needs the new entries' frames")
+                raise ValueError(f"{self.mode} mode needs the new entries' frames")
             ids = self.composer.add_concepts(frames)
             if int(ids[0] if count else start) != start:
                 raise ValueError("the composer's concepts are not the channel's entries")
-        elif self.mode == "free":
-            weight = self.table.weight
-            table = nn.Embedding(start + count, weight.shape[1], device=weight.device, dtype=weight.dtype)
-            with torch.no_grad():
-                table.weight.zero_()
-                table.weight[:start] = weight.detach()
-            table.weight.requires_grad_(weight.requires_grad)
-            self.table = table
-            self.unseen = torch.cat([self.unseen, torch.ones(count, dtype=torch.bool, device=self.unseen.device)])
+        if self.mode in {"free", *HYBRID_MODES}:        # the hybrids' free part grows as C2's table
+            self._grow_free_table(count)
         elif self.mode == "random":
             fixed = self.table_fixed
             extra = torch.randn(count, fixed.shape[1], generator=torch.Generator().manual_seed(seed)) / fixed.shape[1] ** 0.5
@@ -520,8 +571,8 @@ class SpanChannel(nn.Module):
         return torch.arange(start, start + count)
 
     def set_unseen(self, entries: Tensor | Iterable[int]) -> None:
-        """Mark entries that received no training signal (free-table control only)."""
-        if self.mode == "free":
+        """Mark entries that received no training signal (the free table of C2 and of the hybrids)."""
+        if self.mode in {"free", *HYBRID_MODES}:
             self.unseen.zero_()
             index = torch.as_tensor(list(entries) if not isinstance(entries, Tensor) else entries, dtype=torch.long)
             if index.numel():
