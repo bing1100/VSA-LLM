@@ -67,7 +67,8 @@ def e11_jobs(python: str = "$PY") -> list[dict[str, Any]]:
     module = [python, "-m", "vsa_embed.experiments.e11_read_to_learn"]
     jobs = [{"name": f"e11-gradient-dev-{HOST}-t7rood", "priority": E11_PRIORITY, "min_free_gb": 10, "hours": E11_HOURS["dev"], "block": "e11",
              "command": [*module, "gradient-dev", "--run", str(E9 / "runs" / "t5" / f"{HOST}-full-C0p-s1"), "--items",
-                         str(E11 / "items" / "t5-dev-smollm2-v1"), "--output", str(E11_DEV)]}]
+                         str(E11 / "items" / "t5-dev-smollm2-v1"), "--alias-table",   # the T5 run's table, not T7-ROOD's
+                         str(Path("~/data/vsa-llm/e9/alias-tables/t5.json").expanduser()), "--output", str(E11_DEV)]}]
     outputs = []
     plans = {"C5": ("frames,context,gradient,windows,locality", E11_C5_READERS, E11_PRIORITY),
              "C0p": ("context,gradient,windows", "none", E11_PRIORITY),

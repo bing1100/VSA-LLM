@@ -2428,6 +2428,7 @@ def plan_jobs(*, tracks: Sequence[str] = ("t5", "t4", "t1"), hosts: Sequence[str
                      "hours": round(40 * 3 * 2.4 / CONTENTION / 3600 * (1.0 if "360M" in host else SCALE_135M), 3),
                      "command": [python, "-m", "vsa_embed.experiments.e11_read_to_learn", "gradient-dev", "--run",
                                  str(runs_root / "t5" / f"{host}-full-C0p-s1"), "--items", str(ITEMS / "t5-dev-smollm2-v1"),
+                                 "--alias-table", str(Path("~/data/vsa-llm/e9/alias-tables").expanduser() / "t5.json"),
                                  "--output", str(ROOT / "dev" / host)]})
     for (track, kind), (folder, _, styles) in SETS.items():
         if track not in tracks:
