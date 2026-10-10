@@ -94,9 +94,10 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
    - **Consequence:** by rule 7, E9 is not evidence that HRR binding is the source.
 3. **What the composed vector adds beyond a generic domain vector differs between the tracks.**
    - **T5:** the term's own frame is necessary (shuffled frames are worse than no channel). Composing it beats subtoken-mean, definition-encoder and TransE rows at the same site by 10.8–15.3% on held-out terms.
-   - **T4, held-out terms:** a shuffled frame keeps the whole gain, and the definition encoder is ahead (claim A's refutation reading is triggered).
-   - **T4, seen, rare and unseen terms:** the own frame matters, but a frozen TransE row ties composition on every stratum, and only the subtoken mean is clearly beaten.
-   - **Open question:** does composition-specific zero-shot behaviour exist outside synthetic text? T7 and the decision-64 controls (C5sh, C6d on T7, T7-ROOD and T8) and the held-out frame swap (`e9_frameswap`) decide it.
+   - **T4, held-out terms:** a shuffled frame keeps the whole gain, and the definition encoder is ahead (claim A's refutation reading is triggered). The frame swap explains why. These are frequent real terms that the host learns as unlinked text. Within the trained model their own composed vector beats another term's (+0.19%*), but injecting nothing beats both (−0.19%*). C5's held-out gain therefore comes from the channel-trained host weights, not from the zero-shot vector.
+   - **T4, unseen terms (no training occurrence):** the own composed vector helps and is term-specific (frame swap: empty +1.60%*, other +1.33%*), so zero-shot composition does work on natural text for terms absent from training. The same holds after rare seen terms.
+   - **Against the alternatives (T4):** on the unseen and rare strata a frozen TransE row ties composition, the definition encoder ties it after rare and unseen terms, and only the subtoken mean is clearly beaten.
+   - **Open question:** is the natural-text zero-shot benefit specific to composition? T7 and the decision-64 controls (C5sh and C6d on T7, T7-ROOD and T8) decide it.
 4. **Copying explains part of T5, little of T4.**
    - **T5:** 86–90% of the rare- and unseen-term gain is on frame-filler tokens, but two thirds of the held-out gain is on other tokens.
    - **T4 (135M, seed 1):** 42% of the unseen-term gain and 2% of the held-out gain are on filler tokens. The 360M rescoring at 3 seeds is queued.
@@ -114,7 +115,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 ## Next
 
 - **Official T4 report** (priority 54): quantization and dimension 3 at 3 seeds, and the 360M filler split.
-- **T7, then the decision-64 controls** (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD), and the held-out frame swap (`e9_frameswap`).
+- **T7, then the decision-64 controls** (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD), and the frame swap on those tracks.
 - **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
 ## T5 controls (WP-PQ1; SmolLM2-360M, 3 seeds, 2026-10-07)
@@ -195,7 +196,7 @@ C5 − C2 is negative on every term stratum (−0.22% after held-out to −2.06%
 | C6g: TransE KG embedding | +0.10% / −0.04% / +0.02% / +0.05%* | −0.50%* |
 
 - **The binding operator does not matter on natural text either**: fixed random binding and untyped composition tie learned HRR on every stratum; translation is within ±0.14%.
-- **After held-out terms the gain is not frame-specific.** In C5sh every entry, held-out entries included, reads another entry's frame (`training/lm.py`, a derangement over all entries), and C5sh keeps C5's whole held-out gain. On seen terms the own frame matters (after unseen −0.82%*, rare −0.37%*, 3+-subtoken −0.20%*), as on T5. The held-out gain on T4 therefore reflects a generic domain vector at the term position, not the term's relations. The held-out frame swap (`e9_frameswap`, decision 64) tests this within each trained model.
+- **After held-out terms the gain is not frame-specific.** In C5sh every entry, held-out entries included, reads another entry's frame (`training/lm.py`, a derangement over all entries), and C5sh keeps C5's whole held-out gain. On seen terms the own frame matters (after unseen −0.82%*, rare −0.37%*, 3+-subtoken −0.20%*), as on T5. The held-out gain on T4 therefore does not come from the term's relations. The frame swap (next section) locates it in the channel-trained host weights: within C5, injecting nothing at held-out terms beats their own vector.
 - **Claim A's refutation reading is triggered after held-out terms on T4**: the definition encoder (the host encoding the same frame as text) beats C5 there (+0.17%*), and subtoken mean and TransE tie it.
 - **Beyond held-out terms, composition beats only the subtoken mean.**
   - **Subtoken mean (C6m):** C5 is ahead after unseen (−0.48%*), rare (−0.21%*) and 3+-subtoken terms (−0.20%*).
@@ -204,6 +205,48 @@ C5 − C2 is negative on every term stratum (−0.22% after held-out to −2.06%
 - **T5 versus T4.** On T5 the same controls go the other way: C5sh is 4.6% worse than no channel, and C5 is ahead of every same-site vector by 10.8–15.3%.
   - "The frame's content is necessary" holds on T5, and on T4 after seen, rare and unseen terms.
   - "Composition beats same-site vectors" is a T5 result. On T4 it holds only against the subtoken mean, plus the definition encoder on long terms.
+
+## Frame swap: does the trained model use a term's own frame? (decision 64, 2026-10-09)
+
+**Method.**
+- **Pre-registration:** `experiments/e9-retrofit/preregistration-frameswap.md`, committed before any run. Reports are under `experiments/e9-retrofit/frameswap/{t5,t4,t1,wordnet}/report/`.
+- **What is swapped:** each finished run is re-scored on its own evaluation windows. Only a target set's rows change; every other span keeps its own row.
+- **Variants:**
+  - `other`: another target term's frame.
+  - `other-any`: a random non-target term's frame.
+  - `empty`: no injection.
+  - `mean`: the mean non-target row.
+- **Measure:** variant − own, relative to own's loss, so positive means the term's own row helps. Pooled over seeds per window, with a window bootstrap and Holm over the four variants.
+- **Primary endpoint:** `other − own` after held-out terms (C5, 360M). The pre-registered reading rule counts a held-out gain as ontology-specific only if this is > 0 after Holm.
+
+**SmolLM2-360M C5, 3 seeds, on the matched stratum of each target set:**
+
+| Track · target set | other | other-any | empty | mean |
+|---|---|---|---|---|
+| T5 · held-out | **+24.4%*** | +23.8%* | **+28.7%*** | +21.2%* |
+| T5 · unseen | +20.4%* | +23.0%* | +16.6%* | +14.3%* |
+| T5 · rare seen | +21.5%* | +21.7%* | +16.9%* | +13.4%* |
+| T4 · held-out | **+0.19% [+0.13, +0.26]*** | +0.30%* | **−0.19% [−0.25, −0.12]*** | −0.07% (n.s.) |
+| T4 · unseen | +1.33%* | +1.25%* | +1.60%* | +1.07%* |
+| T4 · rare seen | +0.75%* | +0.81%* | +0.79%* | +0.52%* |
+
+**Other models after held-out terms (T4):**
+- **C6d (360M, 3 seeds):** other +0.35%*, empty +0.01% (n.s.).
+- **C5sh (360M, 3 seeds):** other +0.12%*, empty −0.11%*.
+- **C5 at 135M (seed 1):** other +0.19%*, empty −0.55%*. On unseen terms at 135M: other +1.89%*, empty +2.90%*.
+
+**T1-open and WordNet (C5, both hosts, seed 1):** the primary is null (−0.00% to +0.02%). The only significant effects are T1 135M empty −0.04% and mean −0.05% after held-out terms. The host ignores the vector, as the null C5 − C0′ predicts.
+
+**Locality:** the `unlinked` stratum moves by ≤ 0.01% on T4 and by ≤ 0.37% on T5, against 16–29% on T5's matched strata. `own` replays each run's final evaluation (equal counts).
+
+**Reading.**
+- **T5:** the own frame carries a large part of the loss after every kind of term, held-out terms included (the vector is used and term-specific). The synthetic zero-shot result stands.
+- **T4 held-out terms:** the primary endpoint passes, against the pre-registered prediction (≈ 0). Within the trained model a held-out term's own composed vector is better than another held-out term's. But injecting nothing is better still (−0.19%*, 135M −0.55%*), and a constant mean row is no worse. The own row is read term-specifically, but it is a net cost: it is only the least harmful row.
+  - **Who the held-out terms are:** T4's real held-out terms (551 of 850; the other 299 are synthetic and absent from the text) were chosen among entries with ≥ 5 occurrences in a presample of the training documents (`t4.yaml`, `holdout_min_count: 5`). They appear in the training text, unlinked, so the host learns them as plain tokens and never receives an injection at their positions. At evaluation the injection is new to it.
+  - **Where C5's held-out gain comes from:** C5's held-out gain over C0′ (−0.40%) is therefore not delivered by the zero-shot vector. It comes from the host weights trained alongside the channel. This fits C5sh keeping the gain (with its own empty −0.11%*) and the free table's −0.18% after held-out terms (C2 has no held-out rows).
+  - **Definition encoder:** its held-out row costs nothing and is term-specific. So it wins there (C5 − C6d +0.17%*) because its row does no harm, not because it helps more.
+- **T4 unseen terms:** these are linked entries with no training occurrence, and 68% of them share no concept with any trained entry. The own composed vector helps and is term-specific (own vs empty 1.60%, vs another unseen term's frame 1.33%). The same holds after rare seen terms. On natural text, then, composing a frame for a term absent from training does help. What does not help is injecting a vector for a term the host already learned from text without one.
+- **What the frame swap does not settle:** on these strata a frozen TransE row or the definition encoder matches C5 (section "T4 chemistry — seeds 1–3"). The frame swap shows the vector is used; it does not show composition is better than those alternatives.
 
 ## T4 chemistry — natural text (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
