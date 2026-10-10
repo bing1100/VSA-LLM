@@ -97,6 +97,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
    - **T4, held-out terms:** a shuffled frame keeps the whole gain, and the definition encoder is ahead (claim A's refutation reading is triggered). The frame swap explains why. These are frequent real terms that the host learns as unlinked text. Within the trained model their own composed vector beats another term's (+0.19%*), but injecting nothing beats both (−0.19%*). C5's held-out gain therefore comes from the channel-trained host weights, not from the zero-shot vector. On T7, whose held-out names occur unlinked in 22.7% of the training abstracts, the injection cost wins: C5 − C0′ +0.48%* after held-out terms.
    - **T4, unseen terms (no training occurrence):** the own composed vector helps and is term-specific (frame swap: empty +1.60%*, other +1.33%*), so zero-shot composition does work on natural text for terms absent from training. The same holds after rare seen terms.
    - **Against the alternatives (T4):** on the unseen and rare strata a frozen TransE row ties composition, the definition encoder ties it after rare and unseen terms, and only the subtoken mean is clearly beaten.
+   - **Linked frame swap (amendment 1):** inside each trained model every linked term's own vector carries the multi-token gain, but the shuffled-frames model depends on its own per-term code just as much. The relations' content is the across-model C5 − C5sh: −0.20%* after 3+-subtoken terms on T4, ≈ 0 on T7. Most of the natural-text gain is compositional parameter sharing: a consistent code composed from the wrong frame beats the free table on T4 (−0.89% vs −0.23%). The amendment's predictions (`other − own` ≈ +0.2% on T4, ≈ 0 on T7) failed: observed +2.24% and +1.00%.
    - **Open question:** is the natural-text zero-shot benefit specific to composition? T7 and the decision-64 controls (C5sh and C6d on T7, T7-ROOD and T8) decide it.
 4. **Copying explains part of T5, little of T4.**
    - **T5:** 86–90% of the rare- and unseen-term gain is on frame-filler tokens, but two thirds of the held-out gain is on other tokens.
@@ -247,6 +248,34 @@ C5 − C2 is negative on every term stratum (−0.22% after held-out to −2.06%
   - **Definition encoder:** its held-out row costs nothing and is term-specific. So it wins there (C5 − C6d +0.17%*) because its row does no harm, not because it helps more.
 - **T4 unseen terms:** these are linked entries with no training occurrence, and 68% of them share no concept with any trained entry. The own composed vector helps and is term-specific (own vs empty 1.60%, vs another unseen term's frame 1.33%). The same holds after rare seen terms. On natural text, then, composing a frame for a term absent from training does help. What does not help is injecting a vector for a term the host already learned from text without one.
 - **What the frame swap does not settle:** on these strata a frozen TransE row or the definition encoder matches C5 (section "T4 chemistry — seeds 1–3"). The frame swap shows the vector is used; it does not show composition is better than those alternatives.
+
+### Linked terms (amendment 1, 2026-10-10)
+
+**Design.** Amendment 1 (`preregistration-frameswap.md` §8, committed before any `linked` run, `e32f4a5`) swaps the vectors of every linked term in the evaluation windows. The matched stratum is after 3+-subtoken terms. Reports: `frameswap/{t5,t4,t7}-linked/report/`.
+
+**Results.** Variant − own after 3+-subtoken terms, relative (all Holm p < 0.001):
+
+| Model | other | empty | mean |
+|---|---|---|---|
+| T5 360M C5 (3 seeds) | +34.2% | +24.4% | +20.4% |
+| T4 360M C5 (3 seeds) | +2.24% [+2.11, +2.37] | +1.95% [+1.83, +2.08] | +1.83% |
+| T4 360M C5sh (3 seeds) | +1.74% | +1.59% | +1.44% |
+| T4 360M C6d (3 seeds) | +2.42% | +1.69% | +1.69% |
+| T4 135M C5 (seed 1) | +3.49% | +2.90% | +3.08% |
+| T7 360M C5 (3 seeds) | +1.00% [+0.94, +1.06] | +0.97% [+0.90, +1.04] | +0.80% |
+| T7 360M C5sh (3 seeds) | +0.85% | +0.91% | +0.72% |
+
+The unlinked text moves by ≤ 0.06% on T4 and T7, and by 0.9–1.9% on T5.
+
+**The amendment's predictions fail.** It predicted `other − own` ≈ +0.2% on T4 and ≈ 0 on T7. The observed values are +2.24% and +1.00%. The predicted `empty − own` ≈ +1% on T4 had the right direction but about half the observed size (+1.95%). T5 (large on both) was right.
+
+**Reading.**
+- **Each linked term's own vector carries the multi-token gain inside its trained model.** Another term's vector is at least as bad as none, and on T4 worse.
+- **Removal measures dependence, not benefit.** Removing the vectors costs more than C5's whole advantage over C0′ (T4: 1.95% vs 1.09%; T7: 0.97% vs 0.57%). So the C5-trained host co-adapts to the channel, and within-model removal measures how much the host depends on the vectors. The benefit is the across-model comparison, C5 − C0′.
+- **The shuffled-frames model depends on its per-term code just as much** (T4 C5sh empty +1.59%, T7 +0.91%). What the host relies on is a consistent per-term code, whatever frame it was composed from.
+- **The relations' content is the across-model C5 − C5sh.** It is −0.20%* after 3+-subtoken terms on T4, and −0.00% on T7 (point estimate from the final evaluations; T7 report pending).
+- **Sharing atoms carries most of the natural-text gain.** A consistent code composed from the *wrong* frame still beats the free per-entry table on T4 (C0′ comparison after 3+-subtoken terms: C5sh −0.89%*, C2 −0.23%, C5 −1.09%). So most of the natural-text gain comes from sharing atoms across entries (compositional parameter sharing), not from the frame's truth. On T7, C5sh (−0.56%) and C2 (−0.46%) are close.
+- **The other reports agree.** In the held-out reports above, after held-out terms, removing their vectors helps (T4 −0.19%*). The linked set swaps the neighbouring seen terms too, so its `after_heldout` rows mix both effects. They still show the same sign for T7: empty −0.34%*.
 
 ## T4 chemistry — natural text (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
