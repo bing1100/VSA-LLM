@@ -7,7 +7,7 @@
   - 360M dimension 1 and the PQ1 controls at 3 seeds (section "T4 chemistry — seeds 1–3"; preliminary report `report/t4-arms-prelim`).
   - T4 quantization, dimension 3 and 135M are still seed 1. The official 3-seed report is queued.
 - **T1-open and the WordNet negative control:** seed 1, both null. The cross-track section shows the gain following the novelty of the vocabulary.
-- **T7** (new MeSH 2026 vocabulary, natural text) is training.
+- **T7** (MeSH 2026 names, natural text): 360M at 3 seeds for P0, C0′, C2 and C5 (preliminary; section "T7"). After held-out terms the embedding hurts (+0.48%*).
 
 Full generated T5 report with every table and figure: `experiments/e9-retrofit/report/t5/report.md` (frozen at commit `dd612dc`; later arm batches write their own folders). Intervals are 95% cluster bootstraps over evaluation windows (loss) or items (dimension 3), with paired differences pooled over seeds; the across-seed spread is given where it matters. The seed-1 version of this report (commit `ccb9204` and earlier) is superseded; where 3 seeds change a seed-1 conclusion this is said explicitly.
 
@@ -86,7 +86,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 
 1. **On vocabulary that is genuinely new to the host, retrofitting works and replicates.**
    - **T5:** a jointly trained, ontology-composed embedding lowers a pretrained model's loss after new and held-out glossary terms by 3–13%, with no locality cost. Held-out terms: −13.3% at 360M, −9.2% at 135M (3 seeds; SD across seeds ≤ 1.7 points). On Qwen3 with LoRA the gain is larger: −17.7% and −20.2% (2 seeds).
-   - **Natural text:** on T4 chemistry (360M, 3 seeds) the same direction holds, much smaller: held-out −0.40%, unseen −2.29%, rare −0.91%, 3+-subtoken −1.09%. On T1-open and WordNet, whose terms the host already models, there is no gain.
+   - **Natural text:** on T4 chemistry (360M, 3 seeds) the same direction holds, much smaller: held-out −0.40%, unseen −2.29%, rare −0.91%, 3+-subtoken −1.09%. On T7 (MeSH 2026 names, 3 seeds, preliminary) it helps after rare (−0.50%) and 3+-subtoken terms (−0.57%), but hurts after held-out terms (+0.48%*), whose names the host reads unlinked in training. On T1-open and WordNet, whose terms the host already models, there is no gain.
    - **Scope:** the gain follows how new the vocabulary is to the host. T5's sizes are a synthetic upper bound.
 2. **The mechanism is compositional parameter sharing, not the binding operator.**
    - **T5:** untyped composition equals HRR, translation x + r beats it (−17.2% vs C0′), and a fixed random binding costs 5.2%.
@@ -94,7 +94,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
    - **Consequence:** by rule 7, E9 is not evidence that HRR binding is the source.
 3. **What the composed vector adds beyond a generic domain vector differs between the tracks.**
    - **T5:** the term's own frame is necessary (shuffled frames are worse than no channel). Composing it beats subtoken-mean, definition-encoder and TransE rows at the same site by 10.8–15.3% on held-out terms.
-   - **T4, held-out terms:** a shuffled frame keeps the whole gain, and the definition encoder is ahead (claim A's refutation reading is triggered). The frame swap explains why. These are frequent real terms that the host learns as unlinked text. Within the trained model their own composed vector beats another term's (+0.19%*), but injecting nothing beats both (−0.19%*). C5's held-out gain therefore comes from the channel-trained host weights, not from the zero-shot vector.
+   - **T4, held-out terms:** a shuffled frame keeps the whole gain, and the definition encoder is ahead (claim A's refutation reading is triggered). The frame swap explains why. These are frequent real terms that the host learns as unlinked text. Within the trained model their own composed vector beats another term's (+0.19%*), but injecting nothing beats both (−0.19%*). C5's held-out gain therefore comes from the channel-trained host weights, not from the zero-shot vector. On T7, whose held-out names occur unlinked in 22.7% of the training abstracts, the injection cost wins: C5 − C0′ +0.48%* after held-out terms.
    - **T4, unseen terms (no training occurrence):** the own composed vector helps and is term-specific (frame swap: empty +1.60%*, other +1.33%*), so zero-shot composition does work on natural text for terms absent from training. The same holds after rare seen terms.
    - **Against the alternatives (T4):** on the unseen and rare strata a frozen TransE row ties composition, the definition encoder ties it after rare and unseen terms, and only the subtoken mean is clearly beaten.
    - **Open question:** is the natural-text zero-shot benefit specific to composition? T7 and the decision-64 controls (C5sh and C6d on T7, T7-ROOD and T8) decide it.
@@ -115,7 +115,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 ## Next
 
 - **Official T4 report** (priority 54): quantization and dimension 3 at 3 seeds, and the 360M filler split.
-- **T7, then the decision-64 controls** (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD), and the frame swap on those tracks.
+- **The official T7 report, then T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
 - **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
 ## T5 controls (WP-PQ1; SmolLM2-360M, 3 seeds, 2026-10-07)
@@ -278,6 +278,35 @@ Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entit
 2. Claim B (quantization) is weaker still: the gain is partly lost under INT4 on natural text.
 3. Claim C (zero-shot learning by editing the ontology) does not transfer to natural text at seed 1: it is a synthetic-glossary result (T5 SmolLM2 and Qwen3) until a natural-text track shows it.
 
+## T7 — new MeSH 2026 vocabulary in PubMed 2025–26 (SmolLM2-360M, 3 seeds, 2026-10-10; preliminary)
+
+**Sources and status.**
+- **Point estimates:** from the runs' final evaluations (checked here).
+- **Intervals:** from a scratchpad `e9_report` (2,000 resamples) run by the peer session. The official `t7` report (priority 54, with C5sh and C6d once trained) supersedes them.
+- **Track:** T7 links MeSH 2026 supplementary-concept names in PubMed 2025–26 abstracts (decision 55). It has no unseen stratum.
+
+| Stratum | C5 − C0′ | C2 − C0′ | C0′ − P0 (novelty) |
+|---|---|---|---|
+| after held-out | **+0.48% [+0.36, +0.61]*** (worse) | −0.02% | −10.2% [−10.6, −9.8] |
+| after rare | −0.50% [−0.65, −0.36]* | −0.18% | −7.2% |
+| after 3+-subtoken | −0.57%* | −0.46% | −9.9% |
+| inside | −0.28%* | −0.25% | −34.1% |
+| unlinked | −0.01% | −0.01% | −8.3% |
+
+After held-out terms C5 is also worse than the free table (C5 − C2 +0.50%*).
+
+**The recorded prediction fails on the primary stratum.** Before running, the prediction (decision 55; section "Across tracks") was a gain at least T4's and below T5's. After held-out terms the composed embedding makes the loss **worse**.
+
+**Mechanism.**
+- **The held-out names are in the training text.** They occur, unlinked, in 15,530 of the 68,264 domain training abstracts (22.7%; 6.76M of 57.27M tokens). Source: `experiments/t7-new-vocabulary/preregistration-rood.md` and `ROOD.md` §2–3, committed before these results. Held-out aliases leave the training linker (`AliasTable.without_holdout`), so the host learns the names as plain tokens and never receives an injection at their positions.
+- **Injecting there costs.** On T4 the frame swap showed that injecting a vector at such positions is a net cost (no injection beats the own vector by 0.19%*). On T7 that cost outweighs any gain from the jointly trained host weights.
+
+**The novelty premise was also wrong.** Continued training lowers the loss after T7's held-out names by only 10.2% (T4: 40.1%), close to the 8.3% on ordinary text. Only the names themselves are new to the host (inside −34.1%).
+- By the cross-track ordering, a small gain was the expected size.
+- The seen strata fit that: rare −0.50%, 3+-subtoken −0.57%, between T1's null and T4's −0.9% / −1.1%.
+
+**The clean zero-shot test is T7-ROOD.** It drops the 15,530 abstracts and refills to the same budget (leakage audit 0). It is pre-registered with P1: C5 − C0′ < 0 after held-out terms.
+
 ## T1-open — MeSH terms in PubMed (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
 Full tables: `experiments/e9-retrofit/report/t1/report.md`. MeSH descriptors linked in PubMed abstracts (open-clinical substitute for SNOMED CT / MIMIC), half general text; same recipe and protocol. Two of 30,915 MeSH entries have no frame edges and get no injection (`channel.skip_empty_frames`, opt-in; linking and strata unchanged).
@@ -296,12 +325,13 @@ A simple novelty index is how much plain continued training (C0′) lowers the l
 |---|---|---|---|---|
 | T5 invented glossary (synthetic) | −74 / −74 / −75 / −81% | −11.7 / −5.5 / −5.6 / −7.1% | −74 / −73 / −73 / −80% | −7.5 / −3.4 / −3.1 / −6.4% |
 | T4 chemistry (ChEBI, PubMed) | −40 / −56 / −52 / −45% | −0.4 / −2.3 / −0.9 / −1.1% | −36 / −51 / −48 / −40% | −0.6 / −3.7 / −1.6 / −1.7% |
+| T7 MeSH 2026 names (PubMed 2025–26; 3 seeds) | −10.2 / — / −7.2 / −9.9% | **+0.48** / — / −0.50 / −0.57% | not run | not run |
 | T1-open (MeSH, PubMed) | −8 / −5 / −6 / −8% | +0.0 / +0.0 / −0.0 / −0.1% | −8 / −4 / −6 / −8% | +0.0 / −0.2 / +0.0 / −0.1% |
 | WordNet general (negative control, 50M tokens) | -0.6 / -0.6 / -0.8 / -0.8% | -0.00 / +0.04 / +0.01 / +0.01% | -0.3 / -0.3 / -0.3 / -0.4% | -0.00 / +0.02 / -0.06 / -0.00% |
 
 - **Ordering:** the gain is largest where the vocabulary is newest to the host (T5), smaller on T4, and zero where the host already models the terms (T1, WordNet). Within T4 the unseen stratum is both the most novel (−56%) and the most improved (−2.3%).
 - **Implication for the paper:** the channel is a tool for vocabulary that is genuinely new to the host (invented, private or fast-changing terms), not for terms already well represented in pretraining. That is the defensible scope of claim A, and it matches the host learning to ignore the channel on known vocabulary (engagement check).
-- **Caveat:** three tracks and one synthetic track are not a dose–response curve. T5's sizes also contain filler copying (75–90% of the gain after rare, unseen and multi-subtoken terms) and templated, type-specific continuations (most of the held-out gain; section "T5 controls"). T4 seeds 1–3 reproduce the seed-1 sizes at 360M (−0.40 / −2.29 / −0.91 / −1.09%). T7 (MeSH 2026 supplementary-concept names new to the host; queued, decision 55; prediction recorded before running: a gain at least T4's and below T5's) tests the ordering directly.
+- **Caveat:** three tracks and one synthetic track are not a dose–response curve. T5's sizes also contain filler copying (75–90% of the gain after rare, unseen and multi-subtoken terms) and templated, type-specific continuations (most of the held-out gain; section "T5 controls"). T4 seeds 1–3 reproduce the seed-1 sizes at 360M (−0.40 / −2.29 / −0.91 / −1.09%). T7 (MeSH 2026 supplementary-concept names, chosen as new to the host) was predicted, before running, to show a gain at least T4's and below T5's. It failed: its novelty index is only −7 to −10%, and after held-out terms, whose names the host reads unlinked in training, the embedding hurts (+0.48%*; section "T7"). Its seen strata (−0.50 / −0.57%) sit where its novelty puts them. T7-ROOD is the clean test.
 
 ## Qwen3 on T5 at 2 seeds (2026-10-06)
 
