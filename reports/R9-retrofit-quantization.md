@@ -264,6 +264,7 @@ C5 − C2 is negative on every term stratum (−0.22% after held-out to −2.06%
 | T4 135M C5 (seed 1) | +3.49% | +2.90% | +3.08% |
 | T7 360M C5 (3 seeds) | +1.00% [+0.94, +1.06] | +0.97% [+0.90, +1.04] | +0.80% |
 | T7 360M C5sh (3 seeds) | +0.85% | +0.91% | +0.72% |
+| T7 360M C6d (3 seeds) | +0.94% | +0.76% | +0.67% |
 
 The unlinked text moves by ≤ 0.06% on T4 and T7, and by 0.9–1.9% on T5.
 
@@ -272,10 +273,10 @@ The unlinked text moves by ≤ 0.06% on T4 and T7, and by 0.9–1.9% on T5.
 **Reading.**
 - **Each linked term's own vector carries the multi-token gain inside its trained model.** Another term's vector is at least as bad as none, and on T4 worse.
 - **Removal measures dependence, not benefit.** Removing the vectors costs more than C5's whole advantage over C0′ (T4: 1.95% vs 1.09%; T7: 0.97% vs 0.57%). So the C5-trained host co-adapts to the channel, and within-model removal measures how much the host depends on the vectors. The benefit is the across-model comparison, C5 − C0′.
-- **The shuffled-frames model depends on its per-term code just as much** (T4 C5sh empty +1.59%, T7 +0.91%). What the host relies on is a consistent per-term code, whatever frame it was composed from.
-- **The relations' content is the across-model C5 − C5sh.** It is −0.20%* after 3+-subtoken terms on T4, and −0.00% on T7 (point estimate from the final evaluations; T7 report pending).
+- **The shuffled-frames model depends on its per-term code just as much** (T4 C5sh empty +1.59%, T7 +0.91%). What the host relies on is a consistent per-term code, whatever frame it was composed from. The definition encoder's model depends less on removal (empty T4 +1.69%, T7 +0.76%) but as much on swapping (other +2.42% / +0.94%).
+- **The relations' content is the across-model C5 − C5sh.** It is −0.20%* after 3+-subtoken terms on T4, and −0.00% on T7 (point estimate from the final evaluations; T7 report pending; C5 − C6d on T7 −0.12%).
 - **Sharing atoms carries most of the natural-text gain.** A consistent code composed from the *wrong* frame still beats the free per-entry table on T4 (C0′ comparison after 3+-subtoken terms: C5sh −0.89%*, C2 −0.23%, C5 −1.09%). So most of the natural-text gain comes from sharing atoms across entries (compositional parameter sharing), not from the frame's truth. On T7, C5sh (−0.56%) and C2 (−0.46%) are close.
-- **The other reports agree.** In the held-out reports above, after held-out terms, removing their vectors helps (T4 −0.19%*). The linked set swaps the neighbouring seen terms too, so its `after_heldout` rows mix both effects. They still show the same sign for T7: empty −0.34%*.
+- **The other reports agree.** In the held-out reports above, after held-out terms, removing their vectors helps (T4 −0.19%*). The linked set swaps the neighbouring seen terms too, so its `after_heldout` rows mix both effects. They still show the same sign for T7: empty −0.34%* (C6d −0.17%*).
 
 ## T4 chemistry — natural text (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
@@ -323,6 +324,13 @@ Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entit
 | unlinked | −0.01% | −0.01% | −8.3% |
 
 After held-out terms C5 is also worse than the free table (C5 − C2 +0.50%*).
+
+**Controls (C5sh and C6d, 3 seeds; point estimates from the final evaluations, intervals pending the official report).** Relative to C0′, after held-out / rare / 3+-subtoken terms:
+- **Shuffled frames (C5sh):** +0.31% / −0.42% / −0.56%.
+- **Definition encoder (C6d):** +0.26% / −0.35% / −0.45%.
+- **Free table (C2):** −0.02% / −0.18% / −0.46%.
+
+Every arm that injects a term-specific vector at held-out positions is worse than C0′ there. The free table has no trained row for a held-out term and injects the mean of its trained rows (`span_channel.py`), and it is neutral. This fits the mechanism below and T4's frame swap, where a constant mean row was no worse than the own row. After 3+-subtoken terms C5 ties C5sh (−0.00%) and is ahead of C6d and C2 by about 0.1%.
 
 **The recorded prediction fails on the primary stratum.** Before running, the prediction (decision 55; section "Across tracks") was a gain at least T4's and below T5's. After held-out terms the composed embedding makes the loss **worse**.
 
