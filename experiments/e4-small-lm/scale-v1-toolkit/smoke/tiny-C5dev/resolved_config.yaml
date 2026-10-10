@@ -1,0 +1,72 @@
+model:
+  vocab_size: 50257
+  seq_len: 256
+  size: tiny
+  gradient_checkpointing: false
+  pretrained: null
+  host_mode: train
+  lora_rank: 16
+data:
+  min_subtokens: 2
+  seed: 1234
+  train: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/train
+  eval: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/eval
+  ontology: /home/bhux/data/vsa-llm/c3/wordnet-gpt2-v1/ontology.pt
+eval:
+  windows: 32
+  batch: 8
+  first_tokens: 30720
+  save_window_losses: true
+device: cpu
+train:
+  micro_batch: 4
+  grad_accum: 1
+  total_tokens: 122880
+  lr: 0.002
+  warmup_tokens: 10240
+  checkpoint_minutes: 60
+  log_every: 10
+  min_lr_ratio: 0.1
+  weight_decay: 0.1
+  beta1: 0.9
+  beta2: 0.95
+  grad_clip: 1.0
+  semantic_weight: 0.0
+  delta_weight: 0.001
+channel:
+  mode: compose
+  operator: hrr
+  dimension: 256
+  composition: attentive
+  key_dimension: 8
+  context_window: 8
+  developmental:
+    target: atomics
+    beta: 0.9
+    screen_every: 10
+    activity_percentile: 0.25
+    coherence_threshold: 0.6
+    max_candidates: 16
+    min_usages: 4
+    min_contributions: 20
+    max_splits_per_round: 4
+    growth_budget: 0.01
+    cooldown: 20
+    epsilon: 0.05
+    permutations: 199
+    p_value: 0.01
+    test: permutation
+    route_unobserved: parent
+    sync_parent: true
+    merge_cosine: 0.98
+    consolidate_every: 20
+    merge_min_age: 20
+    freeze_activity: 0.0
+    seed: 1
+  gate_bias: -2.0
+  hashed_buckets: 0
+  concept_factor: induced
+  free_dimension: 0
+  frames: ontology
+seed: 1
+experiment: SMOKE-scale-v1-toolkit-tiny-C5dev

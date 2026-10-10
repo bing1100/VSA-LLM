@@ -4,7 +4,8 @@
         [--baseline C0] [--references C3 ...] [--candidates C5 C6] [--projection-tokens 2.5e9 7e9]
 
 Every folder under `--runs` holding `metrics.jsonl` is a run. Runs are grouped into cohorts (same
-model, token budget, evaluation windows, eval corpus, ontology and `ℓ_min`); inside a cohort a run
+model, token budget, evaluation windows, eval corpus, ontology and `ℓ_min`; `--pool-ontologies` drops the ontology,
+for arms trained on another ontology of the same entries, e.g. decision 65's C5teach); inside a cohort a run
 is a (condition, seed), parsed from the config's `experiment` (`e4-<stage>-<size>-<condition>-s<seed>`)
 or the folder name (`<size>-<condition>-s<seed>`). Runs without `manifest.json` are listed as
 incomplete and skipped. Runs with `train.stop_after_steps` are kill-and-resume checks: they are
@@ -890,12 +891,16 @@ def _json_default(value: Any) -> Any:
 def write_report(runs_dirs: Sequence[Path], output: Path, *, baseline: str = "C0", references: Sequence[str] = (),
                  candidates: Sequence[str] = ("C5", "C6"), projection_tokens: Sequence[float] = (2.5e9, 7e9),
                  resamples: int = 10_000, seed: int = 0, match_margin: float = 0.005, locality_margin: float = 0.005,
-                 title: str = "E4 small-LM report", figures: bool = True) -> dict[str, Any]:
+                 title: str = "E4 small-LM report", figures: bool = True, pool_ontologies: bool = False) -> dict[str, Any]:
     config = {"runs": [str(p) for p in runs_dirs], "baseline": baseline, "references": list(references),
               "candidates": list(candidates), "projection_tokens": list(projection_tokens), "resamples": resamples,
-              "seed": seed, "match_margin": match_margin, "locality_margin": locality_margin, "title": title}
+              "seed": seed, "match_margin": match_margin, "locality_margin": locality_margin, "title": title,
+              **({"pool_ontologies": True} if pool_ontologies else {})}
     git_at_start = prepare_output_dir(output)
     runs = discover(runs_dirs)
+    if pool_ontologies:     # opt-in (decision 65, C5teach): arms on another ontology of the same entries share the cohort
+        for run in runs:
+            run.cohort = run.cohort[:5] + ("*",) + run.cohort[6:]
     if not runs:
         raise FileNotFoundError(f"no run folders (metrics.jsonl) under {', '.join(map(str, runs_dirs))}")
     summary, grids = analyze(runs, baseline=baseline, references=references, candidates=candidates,
@@ -925,11 +930,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--resamples", type=int, default=10_000); parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--match-margin", type=float, default=0.005); parser.add_argument("--locality-margin", type=float, default=0.005)
     parser.add_argument("--title", default="E4 small-LM report"); parser.add_argument("--no-figures", action="store_true")
+    parser.add_argument("--pool-ontologies", action="store_true",
+                        help="ignore the ontology path in the cohort key (arms on another ontology of the same entries)")
     args = parser.parse_args(argv)
     summary = write_report(args.runs, args.output, baseline=args.baseline, references=args.references, candidates=args.candidates,
                            projection_tokens=args.projection_tokens, resamples=args.resamples, seed=args.seed,
                            match_margin=args.match_margin, locality_margin=args.locality_margin, title=args.title,
-                           figures=not args.no_figures)
+                           figures=not args.no_figures, pool_ontologies=args.pool_ontologies)
     print(json.dumps({label: {c: g["overall"] for c, g in cohort["gate"].items()} for label, cohort in summary["cohorts"].items()}))
 
 

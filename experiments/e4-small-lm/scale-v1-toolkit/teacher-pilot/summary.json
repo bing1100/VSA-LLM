@@ -1,0 +1,690 @@
+{
+  "smoke": false,
+  "pilot": true,
+  "prompt_version": "c3-teacher-v1",
+  "sample": 400,
+  "entries_scored": 400,
+  "synsets": 829,
+  "parse": {
+    "answered": 829,
+    "proposed": 2710,
+    "mapped": 2636,
+    "parse_rate": 0.9726937269372694,
+    "mapped_by": {
+      "exact": 690,
+      "lexname": 829,
+      "pos": 829,
+      "ancestor": 284,
+      "lemma_ancestor": 2,
+      "lemma": 2
+    },
+    "unmapped_by": {
+      "no_ancestor": 61,
+      "self": 3,
+      "unknown_lemma": 10
+    }
+  },
+  "cost": {
+    "usd_total": 2.4089808,
+    "usd_per_entry": 0.006022452,
+    "usd_per_synset": 0.002905887575392039,
+    "attempts": 34,
+    "failed_attempts": 0,
+    "usage": {
+      "input_tokens": 68,
+      "cache_creation_input_tokens": 115230,
+      "cache_read_input_tokens": 75684,
+      "output_tokens": 69467
+    },
+    "models": [
+      "claude-haiku-4-5-20251001",
+      "claude-opus-5-5"
+    ],
+    "effort": [
+      "medium"
+    ],
+    "batch": [
+      25
+    ],
+    "median_usd_per_call": 0.0708907
+  },
+  "time": {
+    "wall_seconds": 132.2,
+    "workers": [
+      4
+    ],
+    "wall_seconds_per_entry": 0.33049999999999996,
+    "median_call_seconds": 15.775,
+    "call_seconds_total": 541.59,
+    "call_seconds_per_synset": 0.6533051869722558
+  },
+  "agreement": {
+    "all": {
+      "all_relations": {
+        "precision": 0.7755808205635195,
+        "recall": 0.7543269230769231,
+        "macro_precision": 0.8283238430317235,
+        "macro_recall": 0.8159474700006737,
+        "teacher_edges_per_entry": 5.0575,
+        "wordnet_edges_per_entry": 5.2,
+        "filler_precision": 0.7818725099601593,
+        "filler_recall": 0.7651072124756335,
+        "entries": 400
+      },
+      "without_lexname_pos": {
+        "precision": 0.5925133689839572,
+        "recall": 0.5601617795753286,
+        "macro_precision": 0.6478150663219313,
+        "macro_recall": 0.6195859885409066,
+        "teacher_edges_per_entry": 2.3375,
+        "wordnet_edges_per_entry": 2.4725,
+        "filler_precision": 0.6032608695652174,
+        "filler_recall": 0.5775234131113424,
+        "entries": 400
+      }
+    },
+    "heldout": {
+      "all_relations": {
+        "precision": 0.7481420313790256,
+        "recall": 0.7219123505976096,
+        "macro_precision": 0.8046702329609938,
+        "macro_recall": 0.7949550049364124,
+        "teacher_edges_per_entry": 6.055,
+        "wordnet_edges_per_entry": 6.275,
+        "filler_precision": 0.7545757071547421,
+        "filler_recall": 0.7314516129032258,
+        "entries": 200
+      },
+      "without_lexname_pos": {
+        "precision": 0.5584192439862543,
+        "recall": 0.5233494363929146,
+        "macro_precision": 0.5996656131710479,
+        "macro_recall": 0.5756493885592245,
+        "teacher_edges_per_entry": 2.91,
+        "wordnet_edges_per_entry": 3.105,
+        "filler_precision": 0.568935427574171,
+        "filler_recall": 0.5379537953795379,
+        "entries": 200
+      }
+    },
+    "heldout:0": {
+      "all_relations": {
+        "precision": 0.7933579335793358,
+        "recall": 0.7846715328467153,
+        "macro_precision": 0.8620942976106021,
+        "macro_recall": 0.8413922219085261,
+        "teacher_edges_per_entry": 6.775,
+        "wordnet_edges_per_entry": 6.85,
+        "filler_precision": 0.8007518796992481,
+        "filler_recall": 0.79182156133829,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.6615384615384615,
+        "recall": 0.6277372262773723,
+        "macro_precision": 0.7317169317169318,
+        "macro_recall": 0.6902247325324249,
+        "teacher_edges_per_entry": 3.25,
+        "wordnet_edges_per_entry": 3.425,
+        "filler_precision": 0.672,
+        "filler_recall": 0.6363636363636364,
+        "entries": 40
+      }
+    },
+    "heldout:1-2": {
+      "all_relations": {
+        "precision": 0.7671957671957672,
+        "recall": 0.7178217821782178,
+        "macro_precision": 0.8177777777777777,
+        "macro_recall": 0.7856572594072594,
+        "teacher_edges_per_entry": 4.725,
+        "wordnet_edges_per_entry": 5.05,
+        "filler_precision": 0.7671957671957672,
+        "filler_recall": 0.725,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.5581395348837209,
+        "recall": 0.4897959183673469,
+        "macro_precision": 0.569467787114846,
+        "macro_recall": 0.5234567901234567,
+        "teacher_edges_per_entry": 2.15,
+        "wordnet_edges_per_entry": 2.45,
+        "filler_precision": 0.5581395348837209,
+        "filler_recall": 0.5,
+        "entries": 40
+      }
+    },
+    "heldout:10-29": {
+      "all_relations": {
+        "precision": 0.7424749163879598,
+        "recall": 0.7003154574132492,
+        "macro_precision": 0.8074189342939343,
+        "macro_recall": 0.7936384316475851,
+        "teacher_edges_per_entry": 7.475,
+        "wordnet_edges_per_entry": 7.925,
+        "filler_precision": 0.7474747474747475,
+        "filler_recall": 0.7115384615384616,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.5533333333333333,
+        "recall": 0.5060975609756098,
+        "macro_precision": 0.6134754185025925,
+        "macro_recall": 0.5805059523809524,
+        "teacher_edges_per_entry": 3.75,
+        "wordnet_edges_per_entry": 4.1,
+        "filler_precision": 0.5608108108108109,
+        "filler_recall": 0.5220125786163522,
+        "entries": 40
+      }
+    },
+    "heldout:3-9": {
+      "all_relations": {
+        "precision": 0.7302904564315352,
+        "recall": 0.6821705426356589,
+        "macro_precision": 0.7602376443001443,
+        "macro_recall": 0.7372076023391813,
+        "teacher_edges_per_entry": 6.025,
+        "wordnet_edges_per_entry": 6.45,
+        "filler_precision": 0.7344398340248963,
+        "filler_recall": 0.688715953307393,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.5384615384615384,
+        "recall": 0.4701492537313433,
+        "macro_precision": 0.5466422466422467,
+        "macro_recall": 0.4999968781218781,
+        "teacher_edges_per_entry": 2.925,
+        "wordnet_edges_per_entry": 3.35,
+        "filler_precision": 0.5470085470085471,
+        "filler_recall": 0.48120300751879697,
+        "entries": 40
+      }
+    },
+    "heldout:30+": {
+      "all_relations": {
+        "precision": 0.7014218009478673,
+        "recall": 0.7254901960784313,
+        "macro_precision": 0.7758225108225109,
+        "macro_recall": 0.8168795093795094,
+        "teacher_edges_per_entry": 5.275,
+        "wordnet_edges_per_entry": 5.1,
+        "filler_precision": 0.7177033492822966,
+        "filler_recall": 0.7425742574257426,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.45454545454545453,
+        "recall": 0.5113636363636364,
+        "macro_precision": 0.5323593073593073,
+        "macro_recall": 0.5838293650793651,
+        "teacher_edges_per_entry": 2.475,
+        "wordnet_edges_per_entry": 2.2,
+        "filler_precision": 0.4845360824742268,
+        "filler_recall": 0.5465116279069767,
+        "entries": 40
+      }
+    },
+    "trained": {
+      "all_relations": {
+        "precision": 0.8165024630541872,
+        "recall": 0.8036363636363636,
+        "macro_precision": 0.8519774531024531,
+        "macro_recall": 0.8369399350649351,
+        "teacher_edges_per_entry": 4.06,
+        "wordnet_edges_per_entry": 4.125,
+        "filler_precision": 0.8225806451612904,
+        "filler_recall": 0.8165024630541872,
+        "entries": 200
+      },
+      "without_lexname_pos": {
+        "precision": 0.6487252124645893,
+        "recall": 0.6222826086956522,
+        "macro_precision": 0.695698500394633,
+        "macro_recall": 0.6635225885225885,
+        "teacher_edges_per_entry": 1.765,
+        "wordnet_edges_per_entry": 1.84,
+        "filler_precision": 0.659942363112392,
+        "filler_recall": 0.6450704225352113,
+        "entries": 200
+      }
+    },
+    "trained:0": {
+      "all_relations": {
+        "precision": 0.8064516129032258,
+        "recall": 0.8116883116883117,
+        "macro_precision": 0.8254166666666667,
+        "macro_recall": 0.8222591991341991,
+        "teacher_edges_per_entry": 3.875,
+        "wordnet_edges_per_entry": 3.85,
+        "filler_precision": 0.8129032258064516,
+        "filler_recall": 0.8344370860927153,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.6417910447761194,
+        "recall": 0.6323529411764706,
+        "macro_precision": 0.6362433862433863,
+        "macro_recall": 0.6118404118404118,
+        "teacher_edges_per_entry": 1.675,
+        "wordnet_edges_per_entry": 1.7,
+        "filler_precision": 0.6567164179104478,
+        "filler_recall": 0.676923076923077,
+        "entries": 40
+      }
+    },
+    "trained:1-9": {
+      "all_relations": {
+        "precision": 0.8794326241134752,
+        "recall": 0.8435374149659864,
+        "macro_precision": 0.8843452380952381,
+        "macro_recall": 0.8558333333333333,
+        "teacher_edges_per_entry": 3.525,
+        "wordnet_edges_per_entry": 3.675,
+        "filler_precision": 0.8785714285714286,
+        "filler_recall": 0.8424657534246576,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.7586206896551724,
+        "recall": 0.6984126984126984,
+        "macro_precision": 0.7523148148148148,
+        "macro_recall": 0.6986486486486487,
+        "teacher_edges_per_entry": 1.45,
+        "wordnet_edges_per_entry": 1.575,
+        "filler_precision": 0.7543859649122807,
+        "filler_recall": 0.6935483870967742,
+        "entries": 40
+      }
+    },
+    "trained:10-99": {
+      "all_relations": {
+        "precision": 0.8391608391608392,
+        "recall": 0.8333333333333334,
+        "macro_precision": 0.8545833333333335,
+        "macro_recall": 0.8433333333333334,
+        "teacher_edges_per_entry": 3.575,
+        "wordnet_edges_per_entry": 3.6,
+        "filler_precision": 0.8450704225352113,
+        "filler_recall": 0.8450704225352113,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.6833333333333333,
+        "recall": 0.6721311475409836,
+        "macro_precision": 0.7192982456140351,
+        "macro_recall": 0.6929824561403508,
+        "teacher_edges_per_entry": 1.5,
+        "wordnet_edges_per_entry": 1.525,
+        "filler_precision": 0.6949152542372882,
+        "filler_recall": 0.6949152542372882,
+        "entries": 40
+      }
+    },
+    "trained:100-999": {
+      "all_relations": {
+        "precision": 0.766497461928934,
+        "recall": 0.7512437810945274,
+        "macro_precision": 0.8271626984126984,
+        "macro_recall": 0.8184821428571428,
+        "teacher_edges_per_entry": 4.925,
+        "wordnet_edges_per_entry": 5.025,
+        "filler_precision": 0.7835051546391752,
+        "filler_recall": 0.7755102040816326,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.5604395604395604,
+        "recall": 0.5257731958762887,
+        "macro_precision": 0.6604010025062655,
+        "macro_recall": 0.631939906939907,
+        "teacher_edges_per_entry": 2.275,
+        "wordnet_edges_per_entry": 2.425,
+        "filler_precision": 0.5909090909090909,
+        "filler_recall": 0.5652173913043478,
+        "entries": 40
+      }
+    },
+    "trained:1000+": {
+      "all_relations": {
+        "precision": 0.8125,
+        "recall": 0.7988826815642458,
+        "macro_precision": 0.868379329004329,
+        "macro_recall": 0.8447916666666666,
+        "teacher_edges_per_entry": 4.4,
+        "wordnet_edges_per_entry": 4.475,
+        "filler_precision": 0.8114285714285714,
+        "filler_recall": 0.8022598870056498,
+        "entries": 40
+      },
+      "without_lexname_pos": {
+        "precision": 0.6493506493506493,
+        "recall": 0.6329113924050633,
+        "macro_precision": 0.7122655122655123,
+        "macro_recall": 0.6829831932773108,
+        "teacher_edges_per_entry": 1.925,
+        "wordnet_edges_per_entry": 1.975,
+        "filler_precision": 0.6447368421052632,
+        "filler_recall": 0.6363636363636364,
+        "entries": 40
+      }
+    }
+  },
+  "per_relation": {
+    "hypernym": {
+      "teacher": 576,
+      "wordnet": 570,
+      "hits": 338,
+      "precision": 0.5868055555555556,
+      "recall": 0.5929824561403508
+    },
+    "instance_hypernym": {
+      "teacher": 54,
+      "wordnet": 50,
+      "hits": 38,
+      "precision": 0.7037037037037037,
+      "recall": 0.76
+    },
+    "part_meronym": {
+      "teacher": 25,
+      "wordnet": 51,
+      "hits": 14,
+      "precision": 0.56,
+      "recall": 0.27450980392156865
+    },
+    "member_meronym": {
+      "teacher": 16,
+      "wordnet": 30,
+      "hits": 10,
+      "precision": 0.625,
+      "recall": 0.3333333333333333
+    },
+    "substance_meronym": {
+      "teacher": 3,
+      "wordnet": 1,
+      "hits": 0,
+      "precision": 0.0,
+      "recall": 0.0
+    },
+    "part_holonym": {
+      "teacher": 45,
+      "wordnet": 55,
+      "hits": 33,
+      "precision": 0.7333333333333333,
+      "recall": 0.6
+    },
+    "member_holonym": {
+      "teacher": 32,
+      "wordnet": 42,
+      "hits": 25,
+      "precision": 0.78125,
+      "recall": 0.5952380952380952
+    },
+    "substance_holonym": {
+      "teacher": 5,
+      "wordnet": 5,
+      "hits": 2,
+      "precision": 0.4,
+      "recall": 0.4
+    },
+    "attribute": {
+      "teacher": 8,
+      "wordnet": 4,
+      "hits": 2,
+      "precision": 0.25,
+      "recall": 0.5
+    },
+    "similar_to": {
+      "teacher": 61,
+      "wordnet": 83,
+      "hits": 50,
+      "precision": 0.819672131147541,
+      "recall": 0.6024096385542169
+    },
+    "topic_domain": {
+      "teacher": 62,
+      "wordnet": 37,
+      "hits": 14,
+      "precision": 0.22580645161290322,
+      "recall": 0.3783783783783784
+    },
+    "entailment": {
+      "teacher": 0,
+      "wordnet": 12,
+      "hits": 0,
+      "precision": null,
+      "recall": 0.0
+    },
+    "cause": {
+      "teacher": 4,
+      "wordnet": 4,
+      "hits": 2,
+      "precision": 0.5,
+      "recall": 0.5
+    },
+    "antonym": {
+      "teacher": 44,
+      "wordnet": 45,
+      "hits": 26,
+      "precision": 0.5909090909090909,
+      "recall": 0.5777777777777777
+    },
+    "lexname": {
+      "teacher": 627,
+      "wordnet": 630,
+      "hits": 555,
+      "precision": 0.8851674641148325,
+      "recall": 0.8809523809523809
+    },
+    "pos": {
+      "teacher": 461,
+      "wordnet": 461,
+      "hits": 460,
+      "precision": 0.9978308026030369,
+      "recall": 0.9978308026030369
+    }
+  },
+  "examples": [
+    {
+      "entry": 73013,
+      "name": "piece of writing",
+      "group": "heldout",
+      "band": "3-9",
+      "senses": 1,
+      "wordnet": [
+        "lexname: noun.communication \u2713",
+        "pos: n \u2713",
+        "hypernym: written_communication.n.01 \u2713",
+        "part_meronym: conclusion.n.08"
+      ],
+      "teacher": [
+        "lexname: noun.communication \u2713",
+        "pos: n \u2713",
+        "hypernym: written_communication.n.01 \u2713"
+      ]
+    },
+    {
+      "entry": 94236,
+      "name": "transparent",
+      "group": "heldout",
+      "band": "3-9",
+      "senses": 4,
+      "wordnet": [
+        "lexname: adj.all \u2713",
+        "pos: s \u2713",
+        "similar_to: clear.a.04",
+        "similar_to: thin.a.01 \u2713",
+        "similar_to: straight.a.06",
+        "similar_to: obvious.a.01"
+      ],
+      "teacher": [
+        "lexname: adj.all \u2713",
+        "pos: s \u2713",
+        "similar_to: thin.a.01 \u2713",
+        "similar_to: clear.a.01"
+      ]
+    },
+    {
+      "entry": 29440,
+      "name": "developed",
+      "group": "heldout",
+      "band": "10-29",
+      "senses": 3,
+      "wordnet": [
+        "lexname: adj.all \u2713",
+        "pos: a \u2713",
+        "pos: s \u2713"
+      ],
+      "teacher": [
+        "lexname: adj.all \u2713",
+        "pos: a \u2713",
+        "pos: s \u2713"
+      ]
+    },
+    {
+      "entry": 36320,
+      "name": "experienced",
+      "group": "heldout",
+      "band": "30+",
+      "senses": 1,
+      "wordnet": [
+        "lexname: adj.all \u2713",
+        "pos: a \u2713",
+        "antonym: inexperienced.a.01 \u2713"
+      ],
+      "teacher": [
+        "lexname: adj.all \u2713",
+        "pos: a \u2713",
+        "attribute: experience.n.03",
+        "antonym: inexperienced.a.01 \u2713"
+      ]
+    },
+    {
+      "entry": 45194,
+      "name": "get to",
+      "group": "heldout",
+      "band": "30+",
+      "senses": 3,
+      "wordnet": [
+        "lexname: verb.emotion \u2713",
+        "pos: v \u2713",
+        "lexname: verb.change \u2713",
+        "hypernym: get_down.v.07",
+        "lexname: verb.motion",
+        "hypernym: achieve.v.01"
+      ],
+      "teacher": [
+        "lexname: verb.emotion \u2713",
+        "pos: v \u2713",
+        "lexname: verb.change \u2713",
+        "hypernym: begin.v.03",
+        "lexname: verb.social",
+        "hypernym: succeed.v.01"
+      ]
+    },
+    {
+      "entry": 876,
+      "name": "acarpellous",
+      "group": "trained",
+      "band": "0",
+      "senses": 1,
+      "wordnet": [
+        "lexname: adj.all \u2713",
+        "pos: a \u2713",
+        "topic_domain: botany.n.02"
+      ],
+      "teacher": [
+        "lexname: adj.all \u2713",
+        "pos: a \u2713"
+      ]
+    },
+    {
+      "entry": 37706,
+      "name": "family upupidae",
+      "group": "trained",
+      "band": "1-9",
+      "senses": 1,
+      "wordnet": [
+        "lexname: noun.animal \u2713",
+        "pos: n \u2713",
+        "hypernym: bird_family.n.01 \u2713",
+        "member_meronym: coraciiform_bird.n.01",
+        "member_meronym: bird_genus.n.01 \u2713",
+        "member_holonym: coraciiformes.n.01 \u2713"
+      ],
+      "teacher": [
+        "lexname: noun.animal \u2713",
+        "pos: n \u2713",
+        "hypernym: bird_family.n.01 \u2713",
+        "member_meronym: bird_genus.n.01 \u2713",
+        "member_holonym: coraciiformes.n.01 \u2713"
+      ]
+    },
+    {
+      "entry": 48008,
+      "name": "hand job",
+      "group": "trained",
+      "band": "1-9",
+      "senses": 1,
+      "wordnet": [
+        "lexname: noun.act \u2713",
+        "pos: n \u2713",
+        "hypernym: sexual_activity.n.01 \u2713"
+      ],
+      "teacher": [
+        "lexname: noun.act \u2713",
+        "pos: n \u2713",
+        "hypernym: sexual_activity.n.01 \u2713"
+      ]
+    },
+    {
+      "entry": 28589,
+      "name": "deleterious",
+      "group": "trained",
+      "band": "1000+",
+      "senses": 1,
+      "wordnet": [
+        "lexname: adj.all \u2713",
+        "pos: s \u2713",
+        "similar_to: harmful.a.01 \u2713"
+      ],
+      "teacher": [
+        "lexname: adj.all \u2713",
+        "pos: s \u2713",
+        "similar_to: harmful.a.01 \u2713"
+      ]
+    },
+    {
+      "entry": 54021,
+      "name": "interval",
+      "group": "trained",
+      "band": "1000+",
+      "senses": 4,
+      "wordnet": [
+        "lexname: noun.cognition",
+        "pos: n \u2713",
+        "hypernym: set.n.02",
+        "lexname: noun.attribute \u2713",
+        "hypernym: distance.n.01 \u2713",
+        "lexname: noun.communication",
+        "hypernym: musical_notation.n.01 \u2713",
+        "lexname: noun.time \u2713",
+        "hypernym: measure.n.02"
+      ],
+      "teacher": [
+        "lexname: noun.group",
+        "pos: n \u2713",
+        "hypernym: set.n.01",
+        "topic_domain: mathematics.n.01",
+        "lexname: noun.attribute \u2713",
+        "hypernym: distance.n.01 \u2713",
+        "hypernym: musical_notation.n.01 \u2713",
+        "topic_domain: music.n.01",
+        "lexname: noun.time \u2713",
+        "hypernym: time.n.05"
+      ]
+    }
+  ]
+}
