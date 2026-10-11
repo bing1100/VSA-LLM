@@ -717,7 +717,7 @@ Baselines that also give a held-out term a vector zero-shot, and that the claim 
 
 Recommended wording once the controls are in (novelty check §2.6): "… lowers next-token loss after invented, contamination-free glossary terms by 3–13% relative to continued training without the channel. The largest reduction (9–13%) is after held-out terms … On seen rare terms it beats a capacity-matched free per-concept table by 7–8%. The host neutralizes the channel on vocabulary it already models, and unlinked text is unchanged." Add "and new-token initialization … and approaches in-context frames" only after A-B1–A-B4.
 
-**Dimension 2 — the gap under weight quantization (claim B; a narrow measurement).** torchao weight-only INT8 and INT4 (round-to-nearest; group 64 on SmolLM2, whose 960-wide layers do not divide by 128, and 128 on Qwen3); the input embedding and output head stay 16-bit; variant A keeps the composed embedding in FP16, variant B quantizes it too (A ≈ B everywhere).
+**Dimension 2 — the gap under weight quantization (claim B; a narrow measurement).** torchao weight-only INT8 and INT4 (round-to-nearest; group 64 on SmolLM2, whose 576- and 960-wide layers do not divide by 128, and 128 on Qwen3); the input embedding and output head stay 16-bit; variant A keeps the composed embedding in FP16, variant B quantizes it too (A ≈ B everywhere).
 - INT8 costs every model ≤ 1.4% loss. INT4 costs the fine-tuned hosts +38% (360M) and +63% (135M) on the domain text, against +5.6% / +7.7% for the original host; general-text INT4 damage is the same for every trained model.
 - The gain C5 − C0′ (nats/token) at bf16 → INT4 (three seeds), with the difference-in-differences $\mathrm{DiD}$ (negative = the advantage grows):
 
