@@ -120,7 +120,7 @@ def world(tmp_path_factory) -> dict:
     for kind in e9_rowsource.KINDS:
         tables[kind] = root / f"{kind}.pt"
         e9_rowsource.build_table(kind, ontology=ontology, output=tables[kind], table=full, model=fake_host(), tokenizer=tokenizer,
-                                 **({"min_steps": 40, "max_steps": 40, "log_every": 0} if kind == "kge" else {}))
+                                 **({"min_steps": 40, "max_steps": 40, "log_every": 0} if kind in e9_rowsource.KGE_KINDS else {}))
     yield {"root": root, "table": full, "ontology": ontology, "tokenizer": tokenizer, "fillers": fillers, "tables": tables}
     patch.undo()
 
@@ -201,7 +201,7 @@ def test_each_arm_builds_and_trains(world, arm, tmp_path) -> None:
         kind = e9_plan.ROW_SOURCE_ARMS[arm]
         source = {"source_kind": kind, "source_table": str(world["tables"][kind]),
                   "source_hidden": e9_rowsource.matched_hidden(e9_plan.channel_budget(world["ontology"], 32, 16),
-                                                               32 if kind != "kge" else 256, 32)}
+                                                               32 if kind not in e9_rowsource.KGE_KINDS else 256, 32)}
     spec = e9_plan.model_spec(arm, free_dimension=8, gate_bias=0.0, source=source)["channel"]
     config = _config(root, arm, {**spec, "dimension": 16})
     lm.train(config, tmp_path / arm)
@@ -220,8 +220,11 @@ def test_each_arm_builds_and_trains(world, arm, tmp_path) -> None:
         new = channel.add_entries(2)                                                         # new words: mean source row
         assert torch.allclose(channel.source_rows[new[0]], table.mean(0), atol=1e-6)
         return
+    if arm in e9_plan.FREE_ARMS:                                                             # C2w: a free table at C5's width
+        assert channel.mode == "free" and channel.table.weight.shape[1] == e9_plan.FREE_ARMS[arm]["free_dimension"]
+        return
     composer = channel.composer
-    family = {"C5rf": "unitary_hrr", "C5ut": "additive", "C5tr": "translation", "C5sh": "hrr"}[arm]
+    family = {"C5rf": "unitary_hrr", "C5ut": "additive", "C5tr": "translation", "C5sh": "hrr", "C5ld": "hrr"}[arm]
     assert composer.transform.family == family
     if arm == "C5rf":
         assert not any(p.requires_grad for p in composer.transform.parameters())
@@ -377,7 +380,7 @@ def test_e9_plan_arms_configs(plan_root, tmp_path, monkeypatch) -> None:
     assert budget == e9_plan.channel_budget(plan_root["counts"], 960)
     for arm, kind in e9_plan.ROW_SOURCE_ARMS.items():
         channel = configs[f"SmolLM2-360M-full-{arm}-s2"]["channel"]
-        source_width = 256 if kind == "kge" else 960
+        source_width = 256 if kind in e9_rowsource.KGE_KINDS else 960
         assert channel["mode"] == "source" and channel["source_kind"] == kind and channel["gate_bias"] == 0.0
         assert channel["source_table"] == str(e9_rowsource.table_path("t5", "smollm2", kind, "SmolLM2-360M"))
         assert abs(channel["source_hidden"] * (source_width + 960) - budget) <= (source_width + 960) / 2
@@ -494,3 +497,100 @@ def test_report_pq_sections_on_synthetic_inputs(tmp_path) -> None:
     report = (tmp_path / "report" / "report.md").read_text()
     for heading in ("operator and specificity ablation", "same-site row sources", "filler vs non-filler", "claim-B controls"):
         assert heading in report
+
+
+# -- 2026-10-11 addendum: link dropout and the inductive TransE table -------------------------------------------------
+
+def test_drop_links_is_deterministic_and_drops_whole_spans() -> None:
+    n = 4000
+    spans = {"batch": torch.arange(n) % 8, "start": torch.arange(n), "end": torch.arange(n) + 1, "entry": torch.arange(n) % 50,
+             "confidence": torch.ones(n)}
+    a = lm.drop_links(spans, 0.3, seed=1, step=5, micro_step=2)
+    b = lm.drop_links(spans, 0.3, seed=1, step=5, micro_step=2)
+    c = lm.drop_links(spans, 0.3, seed=2, step=5, micro_step=2)
+    assert all(torch.equal(a[k], b[k]) for k in spans) and not torch.equal(a["start"], c["start"])
+    assert set(a) == set(spans) and len({v.shape[0] for v in a.values()}) == 1          # every field filtered alike
+    assert torch.equal(a["end"], a["start"] + 1)                                         # rows stay aligned
+    assert abs(a["entry"].shape[0] / n - 0.7) < 0.03
+    assert lm.drop_links({k: v[:0] for k, v in spans.items()}, 0.3, seed=1, step=0, micro_step=0)["entry"].numel() == 0
+    with pytest.raises(ValueError):
+        lm.drop_links(spans, 1.0, seed=1, step=0, micro_step=0)
+
+
+def test_kge_inductive_excludes_heldout_and_folds_in(world) -> None:
+    onto = world["ontology"]
+    heldout = set(int(e) for e in onto["heldout_entries"])
+    full, inductive = e9_rowsource.kge_graph(onto), e9_rowsource.kge_graph(onto, exclude=heldout)
+    out = torch.as_tensor(sorted(heldout))
+    assert not torch.isin(inductive["heads"], out).any() and not torch.isin(inductive["tails"], out).any()
+    assert inductive["excluded_triples"] == full["heads"].numel() - inductive["heads"].numel() > 0
+    # the fold-in is the exact L1 fit: the per-dimension median of t - r over the entry's triples
+    entity, relation = torch.randn(full["entities"], 6), torch.randn(onto["relation_count"], 6)
+    reference = [e for e in range(onto["entry_count"]) if e not in heldout]
+    folded, record = e9_rowsource.fold_in_transe(entity, relation, full, sorted(heldout), reference)
+    for e in sorted(heldout):
+        rows = (full["heads"] == e) & ~torch.isin(full["tails"], out)
+        if rows.any():
+            want = (entity[full["tails"][rows]] - relation[full["relations"][rows]]).median(0).values
+            assert torch.allclose(folded[e], want)
+    keep = [e for e in range(full["entities"]) if e not in heldout]
+    assert torch.equal(folded[keep], entity[keep]) and record["folded_entries"] == len(heldout)
+    rows, meta = load_source_table(world["tables"]["kge_inductive"], onto)
+    assert rows.shape[0] == onto["entry_count"] and torch.isfinite(rows).all()
+    assert meta["meta"]["fold_in"]["folded_entries"] == len(heldout) and meta["meta"]["excluded_triples"] > 0
+    assert e9_rowsource.table_path("t7rood", "smollm2", "kge_inductive").name == "kge-transe-inductive-d256.pt"
+    assert e9_plan.row_source("C6gi", track="t7rood", family="smollm2", host="SmolLM2-360M", budget=10_000)["source_kind"] == "kge_inductive"
+
+
+def test_addendum_arm_specs() -> None:
+    assert e9_plan.model_spec("C2w", free_dimension=34, gate_bias=0.0)["channel"] == {"mode": "free", "free_dimension": 256,
+                                                                                     "gate_bias": 0.0}
+    c5ld = e9_plan.model_spec("C5ld", free_dimension=34, gate_bias=0.0)["channel"]
+    assert c5ld["link_dropout"] == 0.3 and c5ld["mode"] == "compose" and c5ld["operator"] == "hrr"
+    assert {"C2w", "C5ld", "C6gi"} <= set(e9_plan.ARMS) and e9_plan.batch_tag(["C2w"]) == "pq"
+
+
+def test_incontext_glossary_scoring_and_report(world, tmp_path) -> None:
+    import gzip
+    from vsa_embed.experiments import e9_incontext
+    root, onto = world["root"], world["ontology"]
+    glossary = tmp_path / "verbalized.jsonl.gz"
+    with gzip.open(glossary, "wt") as handle:
+        for e, term in enumerate(TERMS):
+            handle.write(json.dumps({"entry": e, "name": term, "heldout": e in HELDOUT, "text": f"It is item {e} of the glossary."}) + "\n")
+    c5 = e9_plan.model_spec("C5", free_dimension=8, gate_bias=0.0)["channel"]
+    runs = {}
+    for name, channel in (("C5", {**c5, "dimension": 16}), ("C0p", {"mode": "none"})):
+        for seed in (1, 2):
+            run = tmp_path / "runs" / "toy" / f"fake-lora-{name}-s{seed}"
+            config = _config(root, name, channel)
+            config["seed"] = seed
+            lm.train(config, run)
+            runs[(name, seed)] = run
+    outputs = []
+    for (name, seed), run in runs.items():
+        out = tmp_path / "incontext" / "toy" / run.name
+        summary = e9_incontext.score_run(run, out, max_prefix=32, device="cpu", glossary=glossary, tokenizer=world["tokenizer"], log=lambda *_: None)
+        check = summary["own_check"]
+        assert check["paired"] and check["counts_equal"] and check["max_abs_window_sum_diff"] < 1e-3   # `none` replays the run
+        assert summary["prefix"]["frame"]["tokens_mean"] > 0 and 0 < summary["prefix"]["frame"]["entry_coverage"] <= 1
+        assert summary["prefix"]["frame"]["tokens_max"] <= 32 and summary["prefix"]["none"]["tokens_mean"] == 0
+        data = e9_incontext.load_incontext(out)
+        assert not np.array_equal(data["sums"]["frame"], data["sums"]["none"]) and np.array_equal(data["count"], data["count"])
+        outputs.append(out)
+    # positions shift by the row's prefix; nothing else moves
+    spans = {"batch": torch.tensor([0, 1, 1]), "start": torch.tensor([2, 3, 9]), "end": torch.tensor([4, 5, 11]),
+             "inject": torch.tensor([4, 5, 11]), "entry": torch.tensor([7, 1, 2]), "length": torch.tensor([3, 3, 3])}
+    shifted = e9_incontext.shift_spans(spans, torch.tensor([10, 20]))
+    assert shifted["start"].tolist() == [12, 23, 29] and shifted["inject"].tolist() == [14, 25, 31] and torch.equal(shifted["entry"], spans["entry"])
+    with pytest.raises(ValueError, match="positions"):
+        e9_incontext.score_run(runs[("C0p", 1)], tmp_path / "too-long", max_prefix=40, device="cpu", glossary=glossary,
+                               tokenizer=world["tokenizer"], log=lambda *_: None)
+    # the glossary keeps whole lines under the cap, in order of first occurrence
+    ids, used = e9_incontext.build_prefix(["a: x", "b: y", "c: " + "z " * 200], world["tokenizer"], 40)
+    assert used == 2 and len(ids) <= 40
+    summary = e9_incontext.write_report([tmp_path / "incontext"], tmp_path / "report", resamples=200)
+    group = next(iter(summary["groups"].values()))
+    assert "channel (C5 − C0′)" in group["strata"]["all"] and "in-context, C0′ (C0′ frame − C0′)" in group["strata"]["all"]
+    assert group["strata"]["all"]["channel (C5 − C0′)"]["seeds"] == [1, 2]
+    assert (tmp_path / "report" / "report.md").read_text().startswith("# E9 in-context frame baseline")

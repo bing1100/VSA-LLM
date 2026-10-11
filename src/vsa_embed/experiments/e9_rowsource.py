@@ -19,6 +19,12 @@ zero-shot competitors for held-out terms, unlike the free table C2):
   concept (T5 `term:<name>`, T4 `chebi:<id>`, T1 `mesh:<id>`, WordNet `synset:<name>`) is the same entity as that
   concept's single-concept entry, so the graph links terms to each other. Held-out entries' triples are included
   (transductive, like C5's frames at evaluation).
+- `kge_inductive` (C6gi; 2026-10-11 addendum): the same TransE trained **without** the held-out entries — every triple
+  whose head or tail is a held-out entry is left out — and each held-out entry then folded in from its own frame with
+  everything else frozen: the L1 TransE fit `min_h Σ_k ‖h + r_k − t_k‖₁` over its triples whose tail is not held out,
+  solved exactly by the per-dimension median of `t_k − r_k` (`fold_in_transe`). This is the inductive use a deployed KG
+  embedding allows (a new entry gets a vector without retraining), the fair comparator of C5's zero-shot composition;
+  a held-out entry without a usable triple gets the mean non-held-out row (zero after standardization).
 
 Every table is whitened per dimension over the non-held-out entries and unit-normalized per row
 (`row_sources.standardize_rows`), stored in FP16 with the frames digest of the ontology it was built from.
@@ -59,8 +65,9 @@ from ..row_sources import frames_digest, load_source_table, save_source_table, s
 from ..span_channel import AliasTable, normalize_alias
 
 ROOT = Path("~/data/vsa-llm/e9/row-sources").expanduser()
-KINDS = ("subtoken_mean", "definition", "kge")
-ARM_KINDS = {"C6m": "subtoken_mean", "C6d": "definition", "C6g": "kge"}
+KINDS = ("subtoken_mean", "definition", "kge", "kge_inductive")
+KGE_KINDS = ("kge", "kge_inductive")
+ARM_KINDS = {"C6m": "subtoken_mean", "C6d": "definition", "C6g": "kge", "C6gi": "kge_inductive"}
 KGE_DIMENSION = 256
 SUBJECT = "It"
 
@@ -72,13 +79,15 @@ def table_path(track: str, family: str, kind: str, host: str | None = None, *, r
     folder = Path(root or ROOT) / f"{track}-{family}"
     if kind == "kge":
         return folder / f"kge-transe-d{KGE_DIMENSION}.pt"
+    if kind == "kge_inductive":
+        return folder / f"kge-transe-inductive-d{KGE_DIMENSION}.pt"
     if not host:
         raise ValueError(f"{kind} tables are built per host")
     return folder / f"{kind}-{host}.pt"
 
 
 def source_dimension(kind: str, host_width: int) -> int:
-    return KGE_DIMENSION if kind == "kge" else int(host_width)
+    return KGE_DIMENSION if kind in KGE_KINDS else int(host_width)
 
 
 def matched_hidden(budget: int, source_width: int, model_width: int) -> int:
@@ -209,9 +218,10 @@ def definition_rows(model: nn.Module, tokenizer: Any, texts: Sequence[str], *, d
     return out
 
 
-def kge_graph(ontology: dict[str, Any]) -> dict[str, Any]:
+def kge_graph(ontology: dict[str, Any], exclude: set[int] | None = None) -> dict[str, Any]:
     """TransE triples (head entity, relation, tail entity) of the ontology frames; entries are entities `0 … E−1`, and an
-    atomic naming a concept with a single-concept entry is that entry (else a new entity)."""
+    atomic naming a concept with a single-concept entry is that entry (else a new entity). `exclude` (entries): leave out
+    every triple whose head or tail is one of them (the inductive table; the entity numbering is unchanged)."""
     entries = int(ontology["entry_count"])
     names = list(ontology.get("concept_names") or [])
     single: dict[str, int] = {}
@@ -229,14 +239,46 @@ def kge_graph(ontology: dict[str, Any]) -> dict[str, Any]:
     heads = torch.repeat_interleave(torch.arange(entries), offsets[1:] - offsets[:-1])
     tails = torch.as_tensor(atomic_entity, dtype=torch.long)[torch.as_tensor(np.asarray(ontology["fillers"]), dtype=torch.long)]
     relations = torch.as_tensor(np.asarray(ontology["relations"]), dtype=torch.long)
+    excluded = 0
+    if exclude:
+        out = torch.as_tensor(sorted(exclude), dtype=torch.long)
+        keep = ~(torch.isin(heads, out) | torch.isin(tails, out))
+        excluded = int((~keep).sum())
+        heads, relations, tails = heads[keep], relations[keep], tails[keep]
     return {"heads": heads, "relations": relations, "tails": tails, "entities": next_id, "unified_atomics": unified,
-            "relation_count": int(ontology["relation_count"])}
+            "relation_count": int(ontology["relation_count"]), "excluded_triples": excluded}
+
+
+def fold_in_transe(entity: Tensor, relation: Tensor, graph: dict[str, Any], entries: Sequence[int],
+                   reference: Sequence[int]) -> tuple[Tensor, dict[str, Any]]:
+    """Inductive TransE vectors for `entries` from their own triples in `graph` (the full graph), everything else frozen:
+    `argmin_h Σ_k ‖h + r_k − t_k‖₁` = the per-dimension median of `t_k − r_k` over the entry's triples whose tail is not
+    one of `entries`. An entry without such a triple gets the mean of the `reference` rows. Returns (entity table with
+    the folded-in rows, record)."""
+    out = entity.clone()
+    folded = set(int(e) for e in entries)
+    heads, relations, tails = graph["heads"], graph["relations"], graph["tails"]
+    usable = ~torch.isin(tails, torch.as_tensor(sorted(folded), dtype=torch.long)) if folded else torch.ones_like(heads, dtype=torch.bool)
+    fallback = entity[torch.as_tensor(list(reference), dtype=torch.long)].mean(0)
+    counts, empty = [], 0
+    for e in sorted(folded):
+        rows = (heads == e) & usable
+        n = int(rows.sum())
+        counts.append(n)
+        if n == 0:
+            out[e] = fallback
+            empty += 1
+        else:
+            out[e] = (entity[tails[rows]] - relation[relations[rows]]).median(dim=0).values
+    return out, {"folded_entries": len(folded), "folded_without_triple": empty,
+                 "folded_triples_mean": float(np.mean(counts)) if counts else 0.0,
+                 "fold_in": "per-dimension median of t − r (exact L1 TransE fit; tails not folded)"}
 
 
 def train_transe(graph: dict[str, Any], *, dimension: int = KGE_DIMENSION, gamma: float = 12.0, negatives: int = 64,
                  batch: int = 1024, epochs: float = 100.0, min_steps: int = 3000, max_steps: int = 20000, lr: float = 1e-3,
                  temperature: float = 1.0, seed: int = 0, device: torch.device | str = "cpu",
-                 log_every: int = 1000) -> tuple[Tensor, dict[str, Any]]:
+                 log_every: int = 1000, return_relations: bool = False) -> tuple[Tensor, dict[str, Any]] | tuple[Tensor, dict[str, Any], Tensor]:
     """TransE (score `γ − ‖h + r − t‖₁`) with self-adversarial negative sampling (head and tail corruption alternate);
     entity and relation vectors trained with Adam. Returns (entity vectors, record with the loss and a raw MRR / hits@10
     of tail prediction on up to 2,000 training triples)."""
@@ -291,6 +333,8 @@ def train_transe(graph: dict[str, Any], *, dimension: int = KGE_DIMENSION, gamma
               "loss_first_1000": float(np.mean(losses[:1000])), "loss_last_1000": float(np.mean(losses[-1000:])),
               "train_tail_mrr_raw": float((1 / ranks).mean()), "train_tail_hits10_raw": float((ranks <= 10).float().mean()),
               "unified_atomics": int(graph["unified_atomics"]), "seconds": round(time.monotonic() - started, 1)}
+    if return_relations:
+        return entity.weight.detach().float().cpu(), record, relation.weight.detach().float().cpu()
     return entity.weight.detach().float().cpu(), record
 
 
@@ -321,6 +365,14 @@ def build_table(kind: str, *, ontology: dict[str, Any], output: Path, table: Ali
         vectors, info = train_transe(kge_graph(ontology), device=device, **kge)
         raw = vectors[:int(ontology["entry_count"])]
         record.update(kge=info, model="TransE (L1, self-adversarial negative sampling)")
+    elif kind == "kge_inductive":
+        graph = kge_graph(ontology, exclude=heldout)
+        vectors, info, relation_vectors = train_transe(graph, device=device, return_relations=True, **kge)
+        vectors, fold = fold_in_transe(vectors, relation_vectors, kge_graph(ontology), sorted(heldout), reference)
+        raw = vectors[:int(ontology["entry_count"])]
+        record.update(kge=info, fold_in=fold, excluded_triples=graph["excluded_triples"],
+                      model="TransE (L1, self-adversarial negative sampling), trained without held-out entries; "
+                            "held-out rows folded in")
     else:
         raise ValueError(f"kind must be one of {KINDS}")
     rows, stats = standardize_rows(raw, reference)
@@ -342,7 +394,7 @@ def build_for_track(track: str, kind: str, *, host: str | None = None, family: s
     from .cpt_plan import HOSTS
     from .e9_tracks import FAMILY_TOKENIZERS, ensure_alias_table, lexicon_for, track_spec
     from ..evaluation.channel_probes import load_alias_table
-    if kind != "kge" and not host:
+    if kind not in KGE_KINDS and not host:
         raise ValueError(f"{kind} needs --host")
     family = family or (HOSTS[host]["corpus"] if host else "smollm2")
     spec = track_spec(track, family)
@@ -360,7 +412,7 @@ def build_for_track(track: str, kind: str, *, host: str | None = None, family: s
     meta: dict[str, Any] = {"track": track, "family": family, "ontology": str(spec.ontology), "host": host,
                             "alias_table": str(alias_path) if alias_path else None}
     model = tokenizer = None
-    if kind != "kge":
+    if kind not in KGE_KINDS:
         from transformers import AutoTokenizer
         pretrained = HOSTS[host]["pretrained"]
         # The definition encoder runs the frozen host in bf16 on CUDA (inference only; half the memory); FVT rows read the
@@ -408,7 +460,7 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(write_track_texts(args.track, args.family, args.output), indent=2))
         return
     device = args.device if (args.device == "cpu" or torch.cuda.is_available()) else "cpu"
-    extra = {"max_steps": args.kge_max_steps, "epochs": args.kge_epochs} if args.kind == "kge" else {}
+    extra = {"max_steps": args.kge_max_steps, "epochs": args.kge_epochs} if args.kind in KGE_KINDS else {}
     result = build_for_track(args.track, args.kind, host=args.host, family=args.family, output=args.output, device=device,
                              overwrite=args.overwrite, **extra)
     print(json.dumps(result, indent=2, default=str))

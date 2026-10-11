@@ -383,6 +383,18 @@ AFTER_STRATA = ("after", "after_heldout", "after_rare", "after_mid", "after_freq
                 "after_len3plus", "after_unseen", "after_rare_seen")
 
 
+def drop_links(spans: dict[str, torch.Tensor], rate: float, *, seed: int, step: int, micro_step: int) -> dict[str, torch.Tensor]:
+    """Link dropout: drop each linked span (every field of the span table) with probability `rate`, deterministically per
+    (run seed, step, micro-step), so the host sees a term both with and without its injection."""
+    if not 0.0 <= rate < 1.0:
+        raise ValueError("channel.link_dropout must be in [0, 1)")
+    count = int(spans["entry"].shape[0])
+    if not count:
+        return spans
+    keep = torch.from_numpy(np.random.default_rng([seed, step, micro_step, 0x11D]).random(count) >= rate)
+    return {key: value[keep] for key, value in spans.items()}
+
+
 def stratum_masks(ids: torch.Tensor, spans: dict[str, torch.Tensor], frequency: np.ndarray | None,
                   heldout: set[int], fillers: FillerIndex | None = None) -> dict[str, torch.Tensor]:
     """Boolean masks over target positions `j ∈ [1, T)` (shape batch × (T − 1)).
@@ -651,6 +663,9 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     if ontology is not None:
         entry_mask = np.ones(int(ontology["entry_count"]), dtype=bool)
         entry_mask[list(heldout)] = False           # held-out concepts are never linked in training
+    # Opt-in link dropout (`channel.link_dropout`, 2026-10-11 addendum): each linked span of a training batch is dropped
+    # (not injected) with this probability; evaluation always links every span.
+    link_dropout = float(config.get("channel", {}).get("link_dropout", 0.0) or 0.0)
     step, evaluated = 0, set()
     if resume and checkpoint_path.exists():
         state = torch.load(checkpoint_path, weights_only=False, map_location="cpu")
@@ -701,6 +716,8 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         for micro_step in range(accum):
             ids, spans = sample_batch(corpus, seed=config["data"]["seed"], step=step, micro_step=micro_step, batch=micro,
                                       length=seq_len, min_subtokens=config["data"]["min_subtokens"], entry_mask=entry_mask)
+            if link_dropout:
+                spans = drop_links(spans, link_dropout, seed=int(config["seed"]), step=step, micro_step=micro_step)
             ids = ids.to(device)
             spans_d = {k: v.to(device) for k, v in spans.items()} if channel is not None else None
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):

@@ -155,8 +155,15 @@ C5_ABLATIONS: dict[str, dict[str, Any]] = {
     "C5ut": {"operator": "untyped"},                      # no binding: the bundle of filler atomics (attention keys keep relations)
     "C5tr": {"operator": "translation"},                  # TransE-style x + t_r (additive, not a binding)
     "C5sh": {"frames": "shuffled"},                       # every entry reads another entry's frame (a derangement)
+    # 2026-10-11 addendum (experiments/e9-retrofit/preregistration-addendum-2026-10-11.md): link dropout — each linked
+    # span of a training batch is left uninjected with probability 0.3 (`channel.link_dropout`; evaluation links all)
+    "C5ld": {"link_dropout": 0.3},
 }
-ROW_SOURCE_ARMS = {"C6m": "subtoken_mean", "C6d": "definition", "C6g": "kge"}
+ROW_SOURCE_ARMS = {"C6m": "subtoken_mean", "C6d": "definition", "C6g": "kge",
+                   "C6gi": "kge_inductive"}                 # 2026-10-11 addendum: TransE without held-out entries, folded in
+# 2026-10-11 addendum: C2's free table with rows as wide as C5's composed vector (256) instead of the capacity-matched
+# width — separates per-row width from parameter sharing in the "wrong frames beat the free table" reading.
+FREE_ARMS: dict[str, dict[str, Any]] = {"C2w": {"free_dimension": 256}}
 # Decisions 60 (step 2) and 61: the unbinding readout arms (opt-in through --models; pre-registration-binding.md §13): C5's
 # channel plus `readout.UnbindingReadout` (a head that predicts a role from the hidden state at a third of the depth,
 # unbinds it from the most recent linked concept's frame store, cleans up and injects the filler, gated), one operator each.
@@ -173,7 +180,7 @@ READOUT_ARMS: dict[str, dict[str, Any]] = {
     # (does learning the operator matter for the readout?); unbinding by the conjugate, the readout trains around it
     "U5rf": {"operator": "random_fixed:unitary_hrr"},
 }
-ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS)
+ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS, *FREE_ARMS)
 # Every arm planned and evaluated like the WP-PQ1 arms (the `pq` chain, rescoring, no `e4_quant`): those and the readout arms.
 ARM_LIKE = (*ARMS, *READOUT_ARMS)
 ALL_MODELS = MODELS + ARM_LIKE
@@ -300,6 +307,9 @@ def model_spec(model: str, *, free_dimension: int, gate_bias: float, source: dic
         if not source:
             raise ValueError(f"{model} needs its row-source table (source_table, source_hidden)")
         spec = {"channel": {"mode": "source", **source}}
+    elif model in FREE_ARMS:
+        spec = copy.deepcopy(table["C2"])
+        spec["channel"].update(FREE_ARMS[model])
     elif model in {"C2", "C5"}:
         spec = copy.deepcopy(table[model])
     else:
@@ -608,9 +618,10 @@ def rowsource_jobs(configs: dict[Path, dict[str, Any]], track: str, *, python: s
             continue
         kind, host = settings["source_kind"], _config_host(config)
         family = config.get("e9_family", "smollm2")
-        name = f"rowsource-{kind}" + ("" if kind == "kge" else f"-{host}")
+        host_free = kind in ("kge", "kge_inductive")
+        name = f"rowsource-{kind}" + ("" if host_free else f"-{host}")
         jobs[name] = [python, "-m", "vsa_embed.experiments.e9_rowsource", "build", "--track", track, "--kind", kind,
-                      "--family", family, *([] if kind == "kge" else ["--host", host]), "--device", "cuda",
+                      "--family", family, *([] if host_free else ["--host", host]), "--device", "cuda",
                       "--output", settings["source_table"]]
     return sorted(jobs.items())
 

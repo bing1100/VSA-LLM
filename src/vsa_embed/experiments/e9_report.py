@@ -444,10 +444,13 @@ def dimension3(group: Group, *, candidate: str, resamples: int, seed: int, varia
 #   themselves) and the channel's own contribution `(C5 − C5off)@q − (C5 − C5off)@bf16`; Holm over quantizers within
 #   each stratum.
 
-OPERATOR_ARMS = ("C5rf", "C5ut", "C5tr", "C5sh")
-SOURCE_ARMS = ("C6m", "C6d", "C6g")
+OPERATOR_ARMS = ("C5rf", "C5ut", "C5tr", "C5sh", "C5ld")
+SOURCE_ARMS = ("C6m", "C6d", "C6g", "C6gi", "C2w")
 ARM_LABELS = {"C5rf": "fixed random orthogonal operators", "C5ut": "untyped (no binding)", "C5tr": "translation x + r",
-              "C5sh": "shuffled frames", "C6m": "subtoken mean (FVT)", "C6d": "definition encoder", "C6g": "TransE KG embedding"}
+              "C5sh": "shuffled frames", "C6m": "subtoken mean (FVT)", "C6d": "definition encoder", "C6g": "TransE KG embedding",
+              # 2026-10-11 addendum arms
+              "C5ld": "link dropout 0.3 in training", "C6gi": "TransE trained without held-out entries, folded in",
+              "C2w": "free table at C5's width (256)"}
 FILLER_BASES = ("after", "after_heldout", "after_rare_seen", "after_unseen", "after_len3plus")
 CONTROL_QUANTIZERS = ("int4-A", "int4-rtn", "int4-hqq", "int4-nf4", "int4-gptq", "int4-awq", "int4-A-emb", "int4-A-embhead")
 CONTROL_STRATA = ("after_heldout", "after_rare_seen", "after_unseen", "after_len3plus", "inside", "unlinked", "all")
