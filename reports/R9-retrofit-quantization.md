@@ -118,7 +118,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 
 - **Official T4 report** (priority 54): quantization and dimension 3 at 3 seeds, and the 360M filler split.
 - **The official T7 report, then T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
-- **T7 claim-B controls (not queued):** `e9_rescore` with `ref ref-off int4-A int4-A-off int4-gptq int4-awq` on T7's C0′ and C5 (3 seeds). They decide whether T7's INT4 growth is an RTN artefact or a property of the host weights.
+- **T7 claim-B controls** (queued at 53.95; addendum 2026-10-11 §1): the full quantizer and channel-off rescoring on T7's P0, C0′ and C5 (3 seeds). They decide whether T7's INT4 growth is an RTN artefact or a property of the host weights. The same addendum adds C2w, in-context frames, C6gi on T7-ROOD, T4 135M seeds 2–3 and C5ld on T7.
 - **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
 ## T5 controls (WP-PQ1; SmolLM2-360M, 3 seeds, 2026-10-07)
@@ -361,7 +361,7 @@ Every arm that injects a term-specific vector at held-out positions is worse tha
 
 - **The free table moves the other way.** C2's gain shrinks (after any term 0.83×, rare 0.27×), so C5 − C2 grows (after any term 4.9×, rare 2.4×). Variant B (channel quantized too) equals A.
 - **Reading.** On T7, RTN enlarges the composed channel's advantage after seen terms. T4 at seed 1 showed the reverse, and on T5 the advantage was preserved. The direction is track-dependent, so claim B stays a measurement.
-- **Not yet known:** whether the growth is an RTN artefact (GPTQ / AWQ) or belongs to the host weights (channel off). T7 has no such runs: its rescoring covers C5sh and C6d at RTN only (`ref`, `int4-A`). The T5 / T4 control set (`ref-off`, `int4-A-off`, `int4-gptq`, `int4-awq`) on T7's C0′ and C5 is not queued.
+- **Not yet known:** whether the growth is an RTN artefact (GPTQ / AWQ) or belongs to the host weights (channel off). The full T5 / T4 control set (channel off, HQQ, NF4, GPTQ, AWQ, quantized embedding) on T7's P0, C0′ and C5 is queued at priority 53.95 (pre-registered in `preregistration-addendum-2026-10-11.md` §1). The official `t7-report-s1-2-3-pq` (priority 54) reads it.
 
 ## T1-open — MeSH terms in PubMed (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
