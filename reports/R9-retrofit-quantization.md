@@ -347,7 +347,7 @@ Every arm that injects a term-specific vector at held-out positions is worse tha
 **The clean zero-shot test is T7-ROOD.** It drops the 15,530 abstracts and refills to the same budget (leakage audit 0). It is pre-registered with P1: C5 − C0′ < 0 after held-out terms.
 
 **Dimension 2 (INT4 / INT8 RTN, group 64, channel FP16; 3 seeds; `quant/t7/report.md`, 2026-10-11).**
-- **Cost of quantization:** INT8 is free (gain retained 0.94–1.04×). INT4 costs the trained hosts about as much as the original host (all tokens +0.209 nats for C0′, +0.227 for P0). On T5 the fine-tuned hosts were far more fragile.
+- **Cost of quantization:** INT8 is free (gain retained 0.94–1.04×). INT4 costs the trained hosts about as much as the original host (all tokens +0.209 nats for C0′, +0.227 for P0). On T5 the fine-tuned hosts were far more fragile. On general text INT4 costs every model the same (+0.183 nats for P0, C0′ and C5; `quant-general/t7`).
 - **C5's gain grows after seen terms and its held-out cost shrinks:**
 
 | Stratum | C5 − C0′ bf16 → INT4 (nats) | retained | DiD [95% CI] |
