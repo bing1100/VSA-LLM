@@ -102,6 +102,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 4. **Copying explains part of T5, little of T4.**
    - **T5:** 86–90% of the rare- and unseen-term gain is on frame-filler tokens, but two thirds of the held-out gain is on other tokens.
    - **T4 (360M, 3 seeds):** 51% of the unseen-term gain, 25% of the rare-term gain and 1% of the held-out gain are on filler tokens (135M seed 1: 42% / 22% / 2%).
+   - **T7 (360M, 3 seeds):** fillers are 0.1–0.5% of the targets and carry about 0% of the gain.
 5. **Quantization: the advantage survives INT4, but its direction depends on the track** (preserved on T5, partly lost on T4, grown after seen terms on T7).
    - **T5 retention (held-out):** 0.58× at 360M and 1.14× at 135M. GPTQ keeps it fully (DiD −0.001).
    - **Channel off at both precisions:** the held-out DiD vanishes. So the RTN loss comes from the quantized host reading the channel less well.
@@ -117,7 +118,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 
 ## Next
 
-- **The official T7 PQ report** (`t7-report-s1-2-3-pq`, priority 54, running): the T7 claim-B controls and filler split. **Then T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
+- **T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
 - **T7 claim-B controls:** done (section "T7", Dimension 2). An open anomaly remains: C2's AWQ rescoring on T7.
 - **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
@@ -398,6 +399,8 @@ Every arm that injects a term-specific vector at held-out positions is worse tha
 **Mechanism.**
 - **The held-out names are in the training text.** They occur, unlinked, in 15,530 of the 68,264 domain training abstracts (22.7%; 6.76M of 57.27M tokens). Source: `experiments/t7-new-vocabulary/preregistration-rood.md` and `ROOD.md` §2–3, committed before these results. Held-out aliases leave the training linker (`AliasTable.without_holdout`), so the host learns the names as plain tokens and never receives an injection at their positions.
 - **Injecting there costs.** On T4 the frame swap showed that injecting a vector at such positions is a net cost (no injection beats the own vector by 0.19%*). On T7 that cost outweighs any gain from the jointly trained host weights.
+
+**Copying plays no role on T7.** Frame-filler tokens are 0.1–0.5% of the targets after terms and carry about 0% of the gain (`report/t7-pq`, filler split).
 
 **The novelty premise was also wrong.** Continued training lowers the loss after T7's held-out names by only 10.2% (T4: 40.1%), close to the 8.3% on ordinary text. Only the names themselves are new to the host (inside −34.1%).
 - By the cross-track ordering, a small gain was the expected size.
