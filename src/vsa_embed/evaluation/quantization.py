@@ -391,7 +391,14 @@ def _collect(linears: list[tuple[str, nn.Linear]], forward: Callable, scheme: st
              seed: int) -> dict[str, dict[str, Any]]:
     """Run the calibration batches (`forward`) with hooks on `linears`: GPTQ accumulates `X Xᵀ`; AWQ the mean |x| per
     input channel, up to `samples` sampled input rows, and the identity of the first input (linears reading the same
-    tensor share AWQ scales). Each batch is cut short once every hooked linear has run."""
+    tensor share AWQ scales). Each batch is cut short once every hooked linear has run.
+
+    The identity is the input tensor *object* of the first batch, held (`input_ref`) until the caller has grouped the
+    linears, so no other tensor can take its place. Until 2026-10-12 it was `(x.data_ptr(), shape)`. A freed input's
+    memory is reused by the allocator, so linears reading *different* tensors could collide: e.g. `o_proj` (attention
+    output) grouped with `gate_proj` / `up_proj` (post-attention norm). Their AWQ scales then came from the wrong
+    activations, with the pattern varying by model, batch size and device (T7 C2 under AWQ: +0.29 nats at 64
+    calibration windows, normal at 8)."""
     stats: dict[str, dict[str, Any]] = {name: {"n": 0} for name, _ in linears}
     fired: set[str] = set()
     generator = torch.Generator().manual_seed(seed)
@@ -401,7 +408,8 @@ def _collect(linears: list[tuple[str, nn.Linear]], forward: Callable, scheme: st
             x = inputs[0].detach()
             entry = stats[name]
             if "input_key" not in entry:
-                entry["input_key"] = (x.data_ptr(), tuple(x.shape))
+                entry["input_ref"] = inputs[0]          # kept alive until grouping: its id cannot be reused meanwhile
+                entry["input_key"] = (id(inputs[0]), tuple(inputs[0].shape))
             x = x.reshape(-1, x.shape[-1]).float()
             # The hooks run inside the forward's autocast region: without this, `x.T @ x` would be computed in bf16
             # (a Gram matrix with negative eigenvalues).
@@ -466,6 +474,7 @@ def simulate_weight_only_(host: nn.Module, scheme: str, *, group_size: int, forw
         for name, module in linears:
             blocks.setdefault(_block_key(name), []).append((name, module))
         chosen: dict[str, float] = {}
+        patterns: dict[str, int] = {}             # AWQ: shared-input groups (by leaf name) and how many blocks have each
         for _, members in sorted(blocks.items()):
             stats = _collect(members, forward, scheme, samples, seed)
             if scheme == "gptq":
@@ -479,6 +488,11 @@ def simulate_weight_only_(host: nn.Module, scheme: str, *, group_size: int, forw
             for name, module in members:
                 if stats[name]["n"]:
                     shared.setdefault(stats[name]["input_key"], []).append((name, module))
+            for entry in stats.values():
+                entry.pop("input_ref", None)
+            for group in shared.values():
+                pattern = "+".join(name.rsplit(".", 1)[-1] for name, _ in group)
+                patterns[pattern] = patterns.get(pattern, 0) + 1
             for group in shared.values():
                 first = stats[group[0][0]]
                 mean_abs = first["abs"] / first["n"]
@@ -500,6 +514,8 @@ def simulate_weight_only_(host: nn.Module, scheme: str, *, group_size: int, forw
         info.update(damp=damp, act_order=act_order)
     else:
         info["awq_alpha_mean"] = float(sum(chosen.values()) / len(chosen)) if chosen else None
+        info["awq_groups"] = dict(sorted(patterns.items()))
+        info["awq_grouping"] = "input tensor object (fixed 2026-10-12; data_ptr before)"
     return info
 
 

@@ -308,6 +308,16 @@ def test_rescore_variants_and_quantizers_on_cpu(world, tmp_path) -> None:
     again =e9_rescore.score_run(tmp_path / "c5", variants=[*variants, "int4-awq-off"], fillers=world["fillers"], device="cpu",
                                  group_size=16, calibration_windows=4, resume=True)
     assert sorted(again["variants"]) == sorted([*variants, "int4-awq-off"])
+    # --redo replaces a variant in place (the 2026-10-12 AWQ grouping fix) and records it; the others are kept
+    before = e9_rescore.load_rescore(tmp_path / "c5" / "rescore")
+    redone = e9_rescore.score_run(tmp_path / "c5", variants=["int4-awq"], fillers=world["fillers"], device="cpu", group_size=16,
+                                  calibration_windows=4, resume=True, redo=["int4-awq"])
+    after = e9_rescore.load_rescore(tmp_path / "c5" / "rescore")
+    assert "int4-awq" in redone["redone"] and redone["redone"]["int4-awq"]["previous_all"] == pytest.approx(losses["int4-awq"])
+    assert sorted(after["sums"]) == sorted(before["sums"]) and np.array_equal(after["sums"]["int4-gptq"], before["sums"]["int4-gptq"])
+    assert redone["variants"]["int4-awq"]["quantization"]["awq_grouping"].startswith("input tensor object")
+    with pytest.raises(ValueError, match="redo needs resume"):
+        e9_rescore.score_run(tmp_path / "c5", variants=["int4-awq"], fillers=world["fillers"], device="cpu", redo=["int4-awq"])
     plain = e9_rescore.score_run(tmp_path / "c0", variants=["ref", "ref-off", "int4-nf4"], fillers=world["fillers"], device="cpu")
     assert sorted(plain["variants"]) == ["int4-nf4", "ref"] and "off_variants" in plain
     with pytest.raises(FileExistsError):
@@ -594,3 +604,59 @@ def test_incontext_glossary_scoring_and_report(world, tmp_path) -> None:
     assert "channel (C5 − C0′)" in group["strata"]["all"] and "in-context, C0′ (C0′ frame − C0′)" in group["strata"]["all"]
     assert group["strata"]["all"]["channel (C5 − C0′)"]["seeds"] == [1, 2]
     assert (tmp_path / "report" / "report.md").read_text().startswith("# E9 in-context frame baseline")
+
+
+# -- 2026-10-12: AWQ shared-input grouping by tensor identity, not by memory address -----------------------------------
+
+class _ReuseBlock(torch.nn.Module):
+    """`lin_a` reads a tensor that is freed before a same-shaped one is made for `lin_b` / `lin_c` (which share it)."""
+
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        self.lin_a, self.lin_b, self.lin_c = (torch.nn.Linear(width, width) for _ in range(3))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h = x * 2.0
+        a = self.lin_a(h)
+        del h
+        h2 = a + 1.0                      # same shape as h: the allocator may hand it h's memory
+        return self.lin_b(h2) + self.lin_c(h2)
+
+
+class _ReuseHost(torch.nn.Module):
+    def __init__(self, width: int = 32, depth: int = 3) -> None:
+        super().__init__()
+        self.layers = torch.nn.ModuleList(_ReuseBlock(width) for _ in range(depth))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+
+def test_awq_groups_linears_by_input_tensor_not_address() -> None:
+    torch.manual_seed(0)
+    host = _ReuseHost(width=64)
+    # (8, 256, 64) under no_grad: the CPU allocator hands h2 the freed h's address in about 9 of 10 calls (measured
+    # 2026-10-12), so the old `data_ptr` key grouped lin_a with lin_b / lin_c
+    batches = [torch.randn(8, 256, 64) for _ in range(3)]
+
+    def forward(step):
+        for x in batches:
+            step(lambda x=x: host(x))
+    info = quant.simulate_weight_only_(host, "awq", group_size=16, forward=forward, samples=64)
+    assert info["awq_groups"] == {"lin_a": 3, "lin_b+lin_c": 3}            # never lin_a+lin_b+lin_c, whatever the addresses
+
+
+def test_awq_groups_on_a_llama_block() -> None:
+    config = transformers.LlamaConfig(vocab_size=128, hidden_size=64, intermediate_size=128, num_hidden_layers=2,
+                                      num_attention_heads=4, num_key_value_heads=2, max_position_embeddings=64)
+    torch.manual_seed(0)
+    host = transformers.LlamaForCausalLM(config).eval()
+    ids = [torch.randint(0, 128, (2, 32)) for _ in range(3)]
+
+    def forward(step):
+        for x in ids:
+            step(lambda x=x: host(x))
+    info = quant.simulate_weight_only_(host, "awq", group_size=32, forward=forward, samples=64)
+    assert info["awq_groups"] == {"down_proj": 2, "gate_proj+up_proj": 2, "o_proj": 2, "q_proj+k_proj+v_proj": 2}

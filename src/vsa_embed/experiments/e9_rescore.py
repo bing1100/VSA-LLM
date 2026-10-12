@@ -294,9 +294,14 @@ def load_rescore(folder: Path) -> dict[str, Any] | None:
 
 def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[str] = ("ref",), fillers: Path | None | str = "auto",
               device: str = "cuda", group_size: str | int = "auto", calibration_windows: int = 64, calibration_corpus: str = "train",
-              eval_batch: int | None = None, resume: bool = False, overwrite: bool = False) -> dict[str, Any]:
-    """Evaluate `run_dir` under each variant on its evaluation windows with the old and the filler strata."""
+              eval_batch: int | None = None, resume: bool = False, overwrite: bool = False,
+              redo: Sequence[str] = ()) -> dict[str, Any]:
+    """Evaluate `run_dir` under each variant on its evaluation windows with the old and the filler strata. `redo` (with
+    `resume`): drop these variants from the existing output and score them again (e.g. `int4-awq` after the
+    2026-10-12 AWQ grouping fix); the record keeps when and why (`redone`)."""
     from .e4_quant import reference_check
+    if redo and not resume:
+        raise ValueError("redo needs resume (it replaces variants in an existing rescoring)")
     run_dir = Path(run_dir)
     output = Path(output) if output else run_dir / "rescore"
     final = torch.load(run_dir / "final.pt", weights_only=False, map_location="cpu")
@@ -330,6 +335,13 @@ def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[s
     sums: dict[str, np.ndarray] = dict(existing["sums"]) if existing else {}
     record: dict[str, Any] = existing["record"] if existing and existing["record"] else {
         "run": str(run_dir), "id": f"{run_dir.parent.name}__{run_dir.name}", "variants": {}}
+    for name in redo:
+        if name in sums or name in record.get("variants", {}):
+            sums.pop(name, None)
+            previous = record["variants"].pop(name, None)
+            record.setdefault("redone", {})[name] = {
+                "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "git_sha": git_at_start.get("git_sha"),
+                "previous_all": (previous or {}).get("strata", {}).get("all", {}).get("loss")}
     has_channel = config["channel"]["mode"] != "none"
     record.update(channel=config["channel"]["mode"], fillers=str(fillers) if fillers else None,
                   frames_sha256=frames_digest(ontology), windows=len(starts))
@@ -439,6 +451,7 @@ def main(argv: list[str] | None = None) -> None:
     score.add_argument("--calibration-corpus", default="train", help="train | general | a corpus folder")
     score.add_argument("--eval-batch", type=int, default=None)
     score.add_argument("--resume", action="store_true"); score.add_argument("--overwrite", action="store_true")
+    score.add_argument("--redo", nargs="*", default=[], help="with --resume: score these variants again (replacing them)")
     queue = sub.add_parser("queue", help="queue one rescoring job per config of a stage")
     queue.add_argument("--stage", required=True); queue.add_argument("--priority", type=int, default=51)
     queue.add_argument("--profile", default="auto"); queue.add_argument("--models", nargs="*", default=None)
@@ -452,7 +465,7 @@ def main(argv: list[str] | None = None) -> None:
         group_size: str | int = args.group_size if args.group_size == "auto" else int(args.group_size)
         record = score_run(args.run, args.output, variants=variants, fillers=fillers, device=args.device, group_size=group_size,
                            calibration_windows=args.calibration_windows, calibration_corpus=args.calibration_corpus,
-                           eval_batch=args.eval_batch, resume=args.resume, overwrite=args.overwrite)
+                           eval_batch=args.eval_batch, resume=args.resume, overwrite=args.overwrite, redo=args.redo)
         print(json.dumps({"run": record["id"], "variants": sorted(record["variants"]), "ref_check": record.get("ref_check")}, default=str))
     else:
         print(json.dumps({"queued": queue_stage(args.stage, priority=args.priority, profile=args.profile, models=args.models,
