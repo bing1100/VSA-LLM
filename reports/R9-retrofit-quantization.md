@@ -107,8 +107,8 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
    - **T5 retention (held-out):** 0.58× at 360M and 1.14× at 135M. GPTQ keeps it fully (DiD −0.001).
    - **Channel off at both precisions:** the held-out DiD vanishes. So the RTN loss comes from the quantized host reading the channel less well.
    - **All-token robustness (1.26–1.32×):** a property of the C5-trained host weights, not of the channel.
-   - **T4 (360M, 3 seeds):** INT4 shrinks the gain on every term stratum (0.65–0.94×; significant only inside and after long terms). GPTQ does not keep it (held-out DiD +0.0040*). The loss sits in the host weights (channel-off DiD +0.0036), not the channel. So "preserved" and "fully under GPTQ" are T5 results.
-   - **T7 (360M, 3 seeds):** the reverse under RTN. The gain after seen terms grows (1.63×, rare 1.65×) and the held-out cost shrinks (0.41×), while the free table's gain shrinks. The controls show the growth is an RTN effect carried by the channel. With the channel off there is none, and under GPTQ, AWQ, HQQ or NF4 at most about two fifths of it remains (after rare terms none is significant; GPTQ −0.0022). So the direction depends on the track and on the quantizer.
+   - **T4 (360M, 3 seeds):** INT4 shrinks the gain on every term stratum (0.65–0.94×; significant only inside and after long terms). GPTQ does not keep it (held-out DiD +0.0040*), but AWQ does (−0.0010, n.s.). The RTN loss sits in the host weights (channel-off DiD +0.0036), not the channel. So "preserved" and "fully under GPTQ" are T5 results.
+   - **T7 (360M, 3 seeds):** the reverse under RTN. The gain after seen terms grows (1.63×, rare 1.65×) and the held-out cost shrinks (0.41×), while the free table's gain shrinks. The controls show the growth is an RTN effect carried by the channel. With the channel off there is none. Under AWQ about half of it remains (rare −0.0039*), under NF4 and GPTQ at most two fifths (rare GPTQ −0.0022, n.s.), and under HQQ none. So the direction depends on the track and on the quantizer.
    - **Paper wording:** "survives INT4; the direction depends on the track (fully kept under GPTQ only on T5)". Never "the gap grows" as a general claim.
 6. **Zero-shot learning by ontology editing is real but modest on T5, null on T4 (3 seeds), and not frame-specific on T7.**
    - **New words:** adding a frame for an unseen word improves property selection by 4–7 points on SmolLM2 and 9–16 points on Qwen3. It also improves paraphrase consistency by up to 8 points.
@@ -119,7 +119,6 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 ## Next
 
 - **T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
-- **AWQ re-scoring after the grouping-bug fix** (b6c0f0b; 44 jobs at 54.2998, reports `report/{t5,t4,t7}-awqfix` at 54.2999): replace every AWQ value (T5 and T4 controls tables, T7 column, claims E9.B1, §5.8). T5's all-token AWQ DiD (−0.047, an outlier among quantizers) may change most.
 - **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
 ## T5 controls (WP-PQ1; SmolLM2-360M, 3 seeds, 2026-10-07)
@@ -168,12 +167,12 @@ The composed vector beats all three by wide margins (claim A's refutation readin
 | HQQ | +0.055* | +0.026* | −0.003* |
 | NF4 | +0.033* | +0.004* | −0.002* |
 | GPTQ | **−0.001 (n.s.)** | −0.005* | +0.002* |
-| AWQ† | +0.025* | +0.005* | −0.047* |
+| AWQ† | +0.017* | +0.003 (n.s.) | −0.006* |
 | RTN with the input embedding quantized too | +0.043* | +0.009* | −0.009* |
 
-† AWQ values predate the fix of an AWQ grouping bug (b6c0f0b, 2026-10-12): linears reading different tensors could share scales. They are being re-scored (`*-awqfix`, priority 54.2998); `report/{t5,t4,t7}-awqfix` replaces them.
+† AWQ re-scored after the fix of an AWQ grouping bug (b6c0f0b, 2026-10-12; `report/{t5,t4,t7}-awqfix`). Before the fix, linears reading different tensors could share AWQ scales.
 
-- With GPTQ the held-out advantage is fully kept; with the other quantizers 20–50% of it is lost. Variant B and a quantized embedding change little.
+- With GPTQ the held-out advantage is fully kept; with the other quantizers 15–47% of it is lost (AWQ 15% after the bug fix; its all-token −0.047 before the fix was an artefact). Variant B and a quantized embedding change little.
 - **Channel off at both precisions**: the held-out DiD disappears (−0.001, n.s.), so the held-out loss under RTN comes from the channel's contribution being read less well by the quantized host. The all-token robustness of the C5-trained host is a property of its weights (DiD with the channel off −0.012*), not of the channel at inference: the "separate module survives PTQ" mechanism, not a structure effect.
 - Claim B therefore stays at "the gain is largely preserved under 4-bit PTQ, fully under GPTQ", with the robustness on ordinary text attributed to the host weights.
 
@@ -237,12 +236,12 @@ C5 − C2 is negative on every term stratum (−0.22% after held-out to −2.06%
 | HQQ | +0.0009 (n.s.) | +0.0002 (n.s.) | +0.0087* | +0.0005 | −0.0014* |
 | NF4 | +0.0059* | +0.0033* | +0.0034 | +0.0043* | +0.0011* |
 | GPTQ | **+0.0040*** | +0.0036* | +0.0041 | +0.0022* | +0.0010* |
-| AWQ† | +0.0051* | −0.0017 | +0.0140* | +0.0045* | +0.0019* |
+| AWQ† | −0.0010 (n.s.) | −0.0039* | −0.0043 (n.s.) | −0.0008 (n.s.) | −0.0012* |
 | RTN, embedding quantized too | +0.0017 | +0.0011 | +0.0040 | +0.0017* | +0.0010* |
 
-† AWQ values predate the fix of an AWQ grouping bug (b6c0f0b, 2026-10-12): linears reading different tensors could share scales. They are being re-scored (`*-awqfix`, priority 54.2998); `report/{t5,t4,t7}-awqfix` replaces them.
+† AWQ re-scored after the fix of an AWQ grouping bug (b6c0f0b, 2026-10-12; `report/{t5,t4,t7}-awqfix`). Before the fix, linears reading different tensors could share AWQ scales.
 
-- **GPTQ does not keep the advantage on T4.** On T5 GPTQ kept the held-out advantage fully (DiD −0.001). On T4 it loses about 70% of it (+0.0040*, more than RTN). "Fully kept under GPTQ" is a T5 result.
+- **GPTQ does not keep the advantage on T4; AWQ does.** On T5 GPTQ kept the held-out advantage fully (DiD −0.001). On T4 it loses about 70% of it (+0.0040*, more than RTN), and NF4 loses all of it (+0.0059*). AWQ keeps it (held-out −0.0010, n.s.), and after rare terms it even grows (−0.0039*). So which quantizer preserves the advantage depends on the track.
 - **The loss sits in the host weights, not the channel.** At RTN with the channel off at both precisions the held-out DiD is +0.0036 [+0.0021, +0.0051]. The channel's own contribution is unchanged (channel DiD −0.0016 [−0.0038, +0.0006]). T5 was the reverse: there the channel was read less well (channel DiD +0.050) and the host weights were more robust.
 
 **Dimension 3 (C5 − C0′, seeds 1–3 averaged): still null on T4.**
@@ -431,18 +430,18 @@ Every arm that injects a term-specific vector at held-out positions is worse tha
 
 | Stratum | RTN | HQQ | NF4 | GPTQ | AWQ† | RTN, channel off | channel's own (RTN) |
 |---|---|---|---|---|---|---|---|
-| after rare terms | **−0.0077*** | +0.0006 | −0.0001 | −0.0022 | +0.0018 | −0.0003 | −0.0074 |
-| after 3+-subtoken terms | **−0.0080*** | −0.0006 | −0.0034* | −0.0018* | +0.0003 | +0.0027 | −0.0107 |
-| after held-out terms (a cost) | −0.0062* | −0.0026* | −0.0039* | −0.0026* | −0.0015 | −0.0000 | −0.0062 |
-| inside terms | +0.0017* | −0.0037* | +0.0012* | −0.0022* | +0.0004 | +0.0004 | +0.0013 |
-| all tokens | −0.0004* | −0.0006* | −0.0001* | −0.0006* | +0.0022* | +0.0002 | −0.0006 |
+| after rare terms | **−0.0077*** | +0.0006 | −0.0001 | −0.0022 | −0.0039* | −0.0003 | −0.0074 |
+| after 3+-subtoken terms | **−0.0080*** | −0.0006 | −0.0034* | −0.0018* | −0.0043* | +0.0027 | −0.0107 |
+| after held-out terms (a cost) | −0.0062* | −0.0026* | −0.0039* | −0.0026* | −0.0073* | −0.0000 | −0.0062 |
+| inside terms | +0.0017* | −0.0037* | +0.0012* | −0.0022* | −0.0008 | +0.0004 | +0.0013 |
+| all tokens | −0.0004* | −0.0006* | −0.0001* | −0.0006* | −0.0011* | +0.0002 | −0.0006 |
 
-† AWQ values predate the fix of an AWQ grouping bug (b6c0f0b, 2026-10-12): linears reading different tensors could share scales. They are being re-scored (`*-awqfix`, priority 54.2998); `report/{t5,t4,t7}-awqfix` replaces them.
+† AWQ re-scored after the fix of an AWQ grouping bug (b6c0f0b, 2026-10-12; `report/{t5,t4,t7}-awqfix`). Before the fix, linears reading different tensors could share AWQ scales.
 
   - **Predictions:** (a) "GPTQ removes most of the growth" holds. After rare terms GPTQ's DiD is −0.0022, not significant, against −0.0077; after 3+-subtoken terms it is −0.0018*, against −0.0080. (b) "With the channel off the DiD keeps its sign" fails: −0.0003 and +0.0027.
-  - **Reading.** The T7 growth is mostly a round-to-nearest effect, and it is carried by the channel. Under RTN the quantized host's own prediction after seen terms degrades more than the channel's contribution, so the channel matters more. The host weights alone show no growth, and they lose a little after long terms. HQQ, NF4, GPTQ and AWQ keep at most about two fifths of it (the most is NF4 after 3+-subtoken terms, −0.0034 against −0.0080; after rare terms none is significant). Quantizing the input embedding too gives RTN's numbers (after rare terms −0.0081*). The shrinking held-out cost also goes through the channel (channel off −0.0000).
-  - **So for claim B:** under the quantizer a deployment would use (GPTQ / AWQ), T7's advantage is preserved (rare −0.0022 / +0.0018, n.s.), not enlarged. With T5 (GPTQ keeps the held-out advantage) and T4 (GPTQ does not, +0.0040*, and the loss sits in the host weights), the measurement reads: the advantage roughly survives 4-bit PTQ, with track-dependent losses, and grows only under plain RTN on T7.
-  - **Anomaly (explained 2026-10-12): an AWQ grouping bug.** `quantization._collect` keyed shared inputs by `data_ptr`, and freed memory was reused, so e.g. `o_proj` shared AWQ scales with `gate_proj` / `up_proj`. Fixed in b6c0f0b; every AWQ rescoring is being redone (`*-awqfix`). History: C2's AWQ rescoring on T7 damaged every token: all tokens +0.26 to +0.36 nats per seed, against +0.10 for C0′ and C5. The AWQ calibration records look normal (α mean 0.38, 224 linears). C2 under AWQ is normal on T4 and T5. The C5 − C2 AWQ rows of `report/t7` (−0.27 nats after held-out terms) are therefore not interpreted. A CPU check (seed 1, fp32, 8 calibration and 24 evaluation windows) shows C2 itself is not AWQ-fragile. Its all-token loss rises by +0.109 with the channel live and +0.111 with it off during calibration, the same as C0′'s +0.107. A GPU rerun of C2 s1 (`e9-awqdiag-*`) reproduces the damage with the default 64 calibration windows (+0.288) but not with 8 (+0.103, against C0′'s +0.096 on the GPU). So AWQ's 64-window calibration goes wrong on T7's C2 model; bf16 is not the cause. The per-layer cause is being investigated.
+  - **Reading.** The T7 growth is mostly a round-to-nearest effect, and it is carried by the channel. Under RTN the quantized host's own prediction after seen terms degrades more than the channel's contribution, so the channel matters more. The host weights alone show no growth, and they lose a little after long terms. AWQ keeps about half of it (−0.0039* after rare and −0.0043* after 3+-subtoken terms, against −0.0077 / −0.0080). NF4 and GPTQ keep at most two fifths (after rare terms neither is significant), and HQQ keeps none. Quantizing the input embedding too gives RTN's numbers (after rare terms −0.0081*). The shrinking held-out cost also goes through the channel (channel off −0.0000).
+  - **So for claim B:** under GPTQ T7's advantage is preserved (rare −0.0022, n.s.), not enlarged. Under AWQ it grows by about half as much as under RTN (rare −0.0039*). T5 and T4 differ: on T5 GPTQ keeps the held-out advantage and AWQ loses 15%; on T4 GPTQ loses most of it (+0.0040*, with the loss in the host weights) and AWQ keeps it. The measurement therefore reads: the advantage roughly survives 4-bit PTQ, with losses that depend on the track and the quantizer, and it grows under RTN and AWQ on T7.
+  - **Anomaly (explained 2026-10-12): an AWQ grouping bug.** `quantization._collect` keyed shared inputs by `data_ptr`, and freed memory was reused, so e.g. `o_proj` shared AWQ scales with `gate_proj` / `up_proj`. Fixed in b6c0f0b. Every AWQ rescoring was redone (44 runs, `report/{t5,t4,t7}-awqfix`). After the fix, AWQ costs T7's C2 +0.094 nats on all tokens in every seed, the same as C0′ (+0.095) and C5 (+0.094). History: C2's AWQ rescoring on T7 damaged every token: all tokens +0.26 to +0.36 nats per seed, against +0.10 for C0′ and C5. The AWQ calibration records look normal (α mean 0.38, 224 linears). C2 under AWQ is normal on T4 and T5. The C5 − C2 AWQ rows of `report/t7` (−0.27 nats after held-out terms) are therefore not interpreted. A CPU check (seed 1, fp32, 8 calibration and 24 evaluation windows) shows C2 itself is not AWQ-fragile. Its all-token loss rises by +0.109 with the channel live and +0.111 with it off during calibration, the same as C0′'s +0.107. A GPU rerun of C2 s1 (`e9-awqdiag-*`) reproduces the damage with the default 64 calibration windows (+0.288) but not with 8 (+0.103, against C0′'s +0.096 on the GPU). So AWQ's 64-window calibration went wrong on T7's C2 model; bf16 was not the cause. A per-layer log then found the grouping bug.
 
 **Dimension 3 (C5 − C0′, seeds 1–3 averaged; T7 has no track zero-shot items).**
 - **New words:** entailment rises, **+0.038 [+0.019, +0.057]*** (C5 − C2 +0.028*), but not at INT4 (+0.015, n.s.). Property −0.004 and new-word property −0.006 do not move. Paraphrase +0.022 is n.s.
