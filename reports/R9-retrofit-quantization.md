@@ -4,8 +4,8 @@
 
 - **T5 synthetic enterprise glossary:** SmolLM2-360M and SmolLM2-135M at **3 seeds** (1–3; P0 has no training randomness). The PQ1 controls are at 360M, 3 seeds (section "T5 controls"). Qwen3 hosts are at seeds 1–2 (section "Qwen3 on T5 at 2 seeds"); seed 3 is queued.
 - **T4 chemistry (natural text):**
-  - 360M dimension 1 and the PQ1 controls at 3 seeds (section "T4 chemistry — seeds 1–3"; preliminary report `report/t4-arms-prelim`).
-  - T4 quantization, dimension 3 and 135M are still seed 1. The official 3-seed report is queued.
+  - 360M at 3 seeds for every dimension, the arms, the filler split and the claim-B controls (section "T4 chemistry — seeds 1–3"; official report `report/t4`, which reproduces `report/t4-arms-prelim` cell for cell).
+  - 135M is still seed 1 (seeds 2–3 queued by the 2026-10-11 addendum).
 - **T1-open and the WordNet negative control:** seed 1, both null. The cross-track section shows the gain following the novelty of the vocabulary.
 - **T7** (MeSH 2026 names, natural text): 360M at 3 seeds for P0, C0′, C2, C5, C5sh and C6d (preliminary; section "T7"). After held-out terms the embedding hurts (+0.48%*). Under INT4 its gain after seen terms grows (1.6×), the reverse of T4.
 
@@ -82,7 +82,7 @@ Same against C2 (360M property +0.063*, paraphrase +0.068*). Controls inside C5:
 
 Editing works on seen terms at both sizes; on held-out terms it works at 135M but not at 360M. Absolute edit success stays low (ES ≈ 0.40 → 0.46 on seen terms at 360M seed 1); the ROME/MEMIT/AlphaEdit/IKE baselines on the same items are queued (dimension-3 baselines, priority 60–61).
 
-## Findings and implications (updated 2026-10-09)
+## Findings and implications (updated 2026-10-11)
 
 1. **On vocabulary that is genuinely new to the host, retrofitting works and replicates.**
    - **T5:** a jointly trained, ontology-composed embedding lowers a pretrained model's loss after new and held-out glossary terms by 3–13%, with no locality cost. Held-out terms: −13.3% at 360M, −9.2% at 135M (3 seeds; SD across seeds ≤ 1.7 points). On Qwen3 with LoRA the gain is larger: −17.7% and −20.2% (2 seeds).
@@ -101,23 +101,23 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
    - **Open question:** is the natural-text zero-shot benefit specific to composition? T7 and the decision-64 controls (C5sh and C6d on T7, T7-ROOD and T8) decide it.
 4. **Copying explains part of T5, little of T4.**
    - **T5:** 86–90% of the rare- and unseen-term gain is on frame-filler tokens, but two thirds of the held-out gain is on other tokens.
-   - **T4 (135M, seed 1):** 42% of the unseen-term gain and 2% of the held-out gain are on filler tokens. The 360M rescoring at 3 seeds is queued.
-5. **Quantization: the advantage survives INT4, but its direction depends on the track** (preserved on T5, partly lost on T4 at seed 1, grown after seen terms on T7).
+   - **T4 (360M, 3 seeds):** 51% of the unseen-term gain, 25% of the rare-term gain and 1% of the held-out gain are on filler tokens (135M seed 1: 42% / 22% / 2%).
+5. **Quantization: the advantage survives INT4, but its direction depends on the track** (preserved on T5, partly lost on T4, grown after seen terms on T7).
    - **T5 retention (held-out):** 0.58× at 360M and 1.14× at 135M. GPTQ keeps it fully (DiD −0.001).
    - **Channel off at both precisions:** the held-out DiD vanishes. So the RTN loss comes from the quantized host reading the channel less well.
    - **All-token robustness (1.26–1.32×):** a property of the C5-trained host weights, not of the channel.
-   - **T4 (seed 1):** INT4 shrinks the gain on every term stratum, so "preserved" is a T5 result until the 3-seed T4 report says otherwise.
+   - **T4 (360M, 3 seeds):** INT4 shrinks the gain on every term stratum (0.65–0.94×; significant only inside and after long terms). GPTQ does not keep it (held-out DiD +0.0040*). The loss sits in the host weights (channel-off DiD +0.0036), not the channel. So "preserved" and "fully under GPTQ" are T5 results.
    - **T7 (360M, 3 seeds):** the reverse. Under INT4 the gain after seen terms grows (1.63×, rare 1.65×) and the held-out cost shrinks (0.41×), while the free table's gain shrinks. So the direction depends on the track.
-   - **Paper wording:** "survives INT4, fully under GPTQ on T5; the direction depends on the track". Never "the gap grows" as a general claim.
-6. **Zero-shot learning by ontology editing is real but modest on T5, and null on T4 (seed 1).**
+   - **Paper wording:** "survives INT4; the direction depends on the track (fully kept under GPTQ only on T5)". Never "the gap grows" as a general claim.
+6. **Zero-shot learning by ontology editing is real but modest on T5, null on T4 (3 seeds), and not frame-specific on T7.**
    - **New words:** adding a frame for an unseen word improves property selection by 4–7 points on SmolLM2 and 9–16 points on Qwen3. It also improves paraphrase consistency by up to 8 points.
    - **Fact edits:** editing an existing fact moves seen terms reliably, and held-out terms only at 135M.
    - **Absolute accuracies stay low:** 0.26 vs chance 0.20 for new-word properties at 360M.
+   - **Natural text:** on T4 new words, track items and edits do not move. On T7 new-word entailment rises (+0.038*), but a random frame gives the same rise, so it is an injection effect, not the frame's content.
 
 ## Next
 
-- **Official T4 report** (priority 54): quantization and dimension 3 at 3 seeds, and the 360M filler split.
-- **The official T7 report, then T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
+- **The official T7 PQ report** (`t7-report-s1-2-3-pq`, priority 54, running): the T7 claim-B controls and filler split. **Then T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
 - **T7 claim-B controls** (queued at 53.95; addendum 2026-10-11 §1): the full quantizer and channel-off rescoring on T7's P0, C0′ and C5 (3 seeds). They decide whether T7's INT4 growth is an RTN artefact or a property of the host weights. The same addendum adds C2w, in-context frames, C6gi on T7-ROOD, T4 135M seeds 2–3 and C5ld on T7.
 - **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
@@ -176,7 +176,7 @@ The composed vector beats all three by wide margins (claim A's refutation readin
 
 ## T4 chemistry — seeds 1–3 and the PQ1 controls (SmolLM2-360M, 2026-10-09)
 
-Full tables: `experiments/e9-retrofit/report/t4-arms-prelim/report.md` (`e9_report` on `runs/t4` without quantization inputs, 10,000 resamples). It is preliminary: the official `t4-report-s1-2-3-pq-SmolLM2-360M` (priority 54) adds quantization, dimension 3 at 3 seeds and the 360M filler split, and should reproduce these numbers. Seeds 1–3 for C0′, C2, C5 and every arm; P0 is seed-independent. Relative loss differences, 95% window bootstraps pooled over seeds, Holm within stratum.
+Full tables: `experiments/e9-retrofit/report/t4/report.md` (official `t4-report-s1-2-3-pq-SmolLM2-360M`, 2026-10-11; 10,000 resamples). Its dimension-1 and arm tables are identical, cell for cell, to the preliminary `report/t4-arms-prelim` these sections were first written from. It adds quantization, dimension 3 and the filler split at 3 seeds (subsection below). Seeds 1–3 for C0′, C2, C5 and every arm; P0 is seed-independent. Relative loss differences, 95% window bootstraps pooled over seeds, Holm within stratum.
 
 **Dimension 1 at 3 seeds** (C5 − C0′; the seed-1 values of the next section hold):
 
@@ -208,6 +208,53 @@ C5 − C2 is negative on every term stratum (−0.22% after held-out to −2.06%
 - **T5 versus T4.** On T5 the same controls go the other way: C5sh is 4.6% worse than no channel, and C5 is ahead of every same-site vector by 10.8–15.3%.
   - "The frame's content is necessary" holds on T5, and on T4 after seen, rare and unseen terms.
   - "Composition beats same-site vectors" is a T5 result. On T4 it holds only against the subtoken mean, plus the definition encoder on long terms.
+
+### T4 at 3 seeds: quantization, dimension 3 and the filler split (360M, official report, 2026-10-11)
+
+**Dimension 2 (INT4 RTN, group 64, channel FP16).** The advantage shrinks on every term stratum, as at seed 1. C5 − C0′ in nats, bf16 → INT4:
+
+| Stratum | C5 − C0′ bf16 → INT4 | retained | DiD [95% CI] |
+|---|---|---:|---|
+| after held-out terms | −0.0057 → −0.0037 | 0.65× | +0.0020 [−0.0002, +0.0042] |
+| after unseen terms | −0.0355 → −0.0306 | 0.86× | +0.0049 [−0.0006, +0.0105] |
+| after rare terms | −0.0143 → −0.0135 | 0.94× | +0.0008 [−0.0018, +0.0034] |
+| after 3+-subtoken terms | −0.0161 → −0.0145 | 0.90× | +0.0016 [+0.0006, +0.0026]* |
+| inside terms | −0.0138 → −0.0106 | 0.76× | +0.0033 [+0.0022, +0.0044]* |
+| all tokens | −0.0035 → −0.0026 | 0.74× | +0.0009 [+0.0006, +0.0012]* |
+
+- **Significance:** the loss is significant only inside and after long terms. After held-out, unseen and rare terms the DiD intervals include 0.
+- **Other variants:** C5 vs C2 is similar (held-out 0.32×, DiD +0.0021). Variant B equals A. INT8 retains 0.99–1.03×.
+- **Fragility:** on all tokens INT4 costs the trained hosts about what it costs the original host: +0.220 nats vs +0.229, or +11.7% vs +9.7% relative to their lower starting loss. On general text every model loses the same (+7.6%).
+
+**Claim-B controls on T4** (C5 vs C0′ DiD in nats; positive = the advantage shrinks):
+
+| Quantizer | held-out | rare | unseen | 3+-subtoken | all tokens |
+|---|---|---|---|---|---|
+| RTN (torchao) | +0.0020 (n.s.) | +0.0009 (n.s.) | +0.0049 (n.s.) | +0.0017* | +0.0009* |
+| HQQ | +0.0009 (n.s.) | +0.0002 (n.s.) | +0.0087* | +0.0005 | −0.0014* |
+| NF4 | +0.0059* | +0.0033* | +0.0034 | +0.0043* | +0.0011* |
+| GPTQ | **+0.0040*** | +0.0036* | +0.0041 | +0.0022* | +0.0010* |
+| AWQ | +0.0051* | −0.0017 | +0.0140* | +0.0045* | +0.0019* |
+| RTN, embedding quantized too | +0.0017 | +0.0011 | +0.0040 | +0.0017* | +0.0010* |
+
+- **GPTQ does not keep the advantage on T4.** On T5 GPTQ kept the held-out advantage fully (DiD −0.001). On T4 it loses about 70% of it (+0.0040*, more than RTN). "Fully kept under GPTQ" is a T5 result.
+- **The loss sits in the host weights, not the channel.** At RTN with the channel off at both precisions the held-out DiD is +0.0036 [+0.0021, +0.0051]. The channel's own contribution is unchanged (channel DiD −0.0016 [−0.0038, +0.0006]). T5 was the reverse: there the channel was read less well (channel DiD +0.050) and the host weights were more robust.
+
+**Dimension 3 (C5 − C0′, seeds 1–3 averaged): still null on T4.**
+- **New words:** property +0.002 [−0.006, +0.010], new-word property +0.002, entailment +0.018 [+0.004, +0.032] (Holm p 0.07), paraphrase −0.000. Statement margin +0.014* and statement loss −0.027* move, but statement accuracy does not (+0.007, n.s.). INT4 is the same.
+- **Track zero-shot items:** C5 is slightly worse on entailment (−0.009 [−0.016, −0.003]*). Property −0.003 and paraphrase −0.009 are n.s.
+- **Edits:** log-odds change beyond the control edit per seed is −0.003 / −0.009 / +0.055, and every interval includes 0. Held-out terms: −0.020 / −0.028 / +0.063. The edit moves nothing beyond the control edit on T4.
+
+**Filler split at 360M** (`e9_rescore`, seeds 1–3; share of the C5 − C0′ gain that falls on frame-filler tokens):
+
+| Stratum | filler tokens | gain on fillers | gain on other tokens | share on fillers |
+|---|---:|---|---|---:|
+| after held-out terms | 0.7% | −0.65% (n.s.) | −0.39%* | 1% |
+| after unseen terms | 26.6% | −3.50%* | −1.70%* | 51% |
+| after rare terms | 10.0% | −2.30%* | −0.76%* | 25% |
+| after 3+-subtoken terms | 4.4% | −2.69%* | −1.01%* | 12% |
+
+This confirms the 135M seed-1 split (2% / 42% / 22% / 10%): on natural text copying the frame's fillers carries at most half the gain after unseen terms and little elsewhere. On T5 it carried 75–90%.
 
 ## Frame swap: does the trained model use a term's own frame? (decision 64, 2026-10-09)
 
@@ -284,13 +331,13 @@ The unlinked text moves by ≤ 0.06% on T4 and T7, and by 0.9–1.9% on T5.
 - **Each linked term's own vector carries the multi-token gain inside its trained model.** Another term's vector is at least as bad as none, and on T4 worse.
 - **Removal measures dependence, not benefit.** Removing the vectors costs more than C5's whole advantage over C0′ (T4: 1.95% vs 1.09%; T7: 0.97% vs 0.57%). So the C5-trained host co-adapts to the channel, and within-model removal measures how much the host depends on the vectors. The benefit is the across-model comparison, C5 − C0′.
 - **The shuffled-frames model depends on its per-term code just as much** (T4 C5sh empty +1.59%, T7 +0.91%). What the host relies on is a consistent per-term code, whatever frame it was composed from. The definition encoder's model depends less on removal (empty T4 +1.69%, T7 +0.76%) but as much on swapping (other +2.42% / +0.94%).
-- **The relations' content is the across-model C5 − C5sh.** It is −0.20%* after 3+-subtoken terms on T4, and −0.00% on T7 (point estimate from the final evaluations; T7 report pending; C5 − C6d on T7 −0.12%).
+- **The relations' content is the across-model C5 − C5sh.** It is −0.20%* after 3+-subtoken terms on T4, and −0.00% (n.s.) on T7 (official report; C5 − C6d on T7 −0.12%*).
 - **Sharing atoms carries most of the natural-text gain.** A consistent code composed from the *wrong* frame still beats the free per-entry table on T4 (C0′ comparison after 3+-subtoken terms: C5sh −0.89%*, C2 −0.23%, C5 −1.09%). So most of the natural-text gain comes from sharing atoms across entries (compositional parameter sharing), not from the frame's truth. On T7, C5sh (−0.56%) and C2 (−0.46%) are close.
 - **The other reports agree.** In the held-out reports above, after held-out terms, removing their vectors helps (T4 −0.19%*). The linked set swaps the neighbouring seen terms too, so its `after_heldout` rows mix both effects. They still show the same sign for T7: empty −0.34%* (C6d −0.17%*).
 
 ## T4 chemistry — natural text (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
-*360M dimension 1 is now at 3 seeds (previous section; the seed-1 values below hold). Dimensions 2 and 3 and the 135M results are still seed 1.*
+*360M is now at 3 seeds in every dimension (previous section; the seed-1 conclusions below hold). The 135M results are still seed 1. `report/t4` now holds the official 3-seed report; the seed-1 tables quoted here are in its 135M section and in git history.*
 
 Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entities (IUPAC and trivial names as multi-token aliases) in ChEBI entry texts and PubMed chemistry abstracts, half general text (FineWeb-Edu); same recipe, design and test protocol as T5. This is the test of the copy concern: T5 text is generated from the ontology the channel reads, T4 text is not (except the ChEBI entry texts, which are curated definitions). Seed 1 only; intervals are over windows/items.
 
@@ -309,38 +356,42 @@ Full tables: `experiments/e9-retrofit/report/t4/report.md`. T4 links ChEBI entit
 - **The gain is largest after unseen terms** (−2.3 / −3.7%) and **inside terms** (−1.6 / −2.0%; zero on T5). The inside gain is consistent with nested chemical names, where a shorter linked name ends inside a longer one and its injected vector helps predict the rest (not yet checked).
 - **On T4 the smaller host gains more** (135M > 360M on every stratum), the reverse of T5.
 
-**Dimension 2 (INT4 RTN, channel FP16):** the advantage shrinks under INT4 on every term stratum (retained 0.50–0.99×; DiD significant at 135M on inside, 3+-subtoken, rare and held-out). At 135M the held-out-term advantage reverses (C5 0.009 nats worse than C0′ at INT4). On natural text quantization does not enlarge the gap; it partly erases it.
+**Dimension 2 (INT4 RTN, channel FP16):** the advantage shrinks under INT4 on every term stratum (retained 0.50–0.90× at 135M, 0.65–0.94× at 360M over 3 seeds; DiD significant at 135M on inside, 3+-subtoken, rare and held-out). At 135M the held-out-term advantage reverses (C5 0.009 nats worse than C0′ at INT4). On natural text quantization does not enlarge the gap; it partly erases it.
 
 **Dimension 3 (zero-shot by ontology editing): no effect on T4.** New invented words: property selection +0.003 [−0.011, +0.015] (135M) / +0.003 (360M), entailment +0.005 / +0.025 (Holm n.s.), paraphrase −0.020 / −0.006; the WP-C7 track zero-shot items do not move either (360M property 0.626 → 0.622). Edits: log-odds change beyond the control edit +0.01 to +0.10, none significant. Probes sit far above floor here (track property 0.58–0.63), so this is a null, not a floor effect.
 
-**What T4 means for the paper (seed 1; seeds 2–3 are in the PQ1 block):**
+**What T4 means for the paper (seed 1, confirmed at 360M by seeds 1–3):**
 1. Claim A survives in direction but must be stated at natural-text size: about 1–4% after unseen, rare and multi-subtoken terms, under 1% after held-out terms; T5 is a synthetic upper bound.
-2. Claim B (quantization) is weaker still: the gain is partly lost under INT4 on natural text.
-3. Claim C (zero-shot learning by editing the ontology) does not transfer to natural text at seed 1: it is a synthetic-glossary result (T5 SmolLM2 and Qwen3) until a natural-text track shows it.
+2. Claim B (quantization) is weaker still: the gain is partly lost under INT4 on natural text, under GPTQ too, and the loss sits in the host weights.
+3. Claim C (zero-shot learning by editing the ontology) does not transfer to natural text (3 seeds at 360M): it is a synthetic-glossary result (T5 SmolLM2 and Qwen3) until a natural-text track shows it.
 
-## T7 — new MeSH 2026 vocabulary in PubMed 2025–26 (SmolLM2-360M, 3 seeds, 2026-10-10; preliminary)
+## T7 — new MeSH 2026 vocabulary in PubMed 2025–26 (SmolLM2-360M, 3 seeds, 2026-10-11)
 
 **Sources and status.**
-- **Point estimates:** from the runs' final evaluations (checked here).
-- **Intervals:** from a scratchpad `e9_report` (2,000 resamples) run by the peer session. The official `t7` report (priority 54, with C5sh and C6d once trained) supersedes them.
+- **Report:** the official `report/t7/report.md` (`t7-report-s1-2-3`, 2026-10-11; 10,000 resamples). It matches the earlier scratchpad intervals and final-evaluation point estimates to within 0.02 points. The filler split and claim-B controls come in `report/t7-pq` (running).
 - **Track:** T7 links MeSH 2026 supplementary-concept names in PubMed 2025–26 abstracts (decision 55). It has no unseen stratum.
 
 | Stratum | C5 − C0′ | C2 − C0′ | C0′ − P0 (novelty) |
 |---|---|---|---|
-| after held-out | **+0.48% [+0.36, +0.61]*** (worse) | −0.02% | −10.2% [−10.6, −9.8] |
+| after held-out | **+0.48% [+0.35, +0.62]*** (worse) | −0.02% | −10.2% [−10.6, −9.8] |
 | after rare | −0.50% [−0.65, −0.36]* | −0.18% | −7.2% |
-| after 3+-subtoken | −0.57%* | −0.46% | −9.9% |
-| inside | −0.28%* | −0.25% | −34.1% |
-| unlinked | −0.01% | −0.01% | −8.3% |
+| after 3+-subtoken | −0.57% [−0.62, −0.51]* | −0.46% | −9.9% |
+| inside | −0.28% [−0.34, −0.22]* | −0.25% | −34.1% |
+| unlinked | −0.01%* | −0.01% | −8.3% |
 
 After held-out terms C5 is also worse than the free table (C5 − C2 +0.50%*).
 
-**Controls (C5sh and C6d, 3 seeds; point estimates from the final evaluations, intervals pending the official report).** Relative to C0′, after held-out / rare / 3+-subtoken terms:
-- **Shuffled frames (C5sh):** +0.31% / −0.42% / −0.56%.
-- **Definition encoder (C6d):** +0.26% / −0.35% / −0.45%.
+**Controls (C5sh and C6d, 3 seeds).** Relative to C0′, after held-out / rare / 3+-subtoken terms:
+- **Shuffled frames (C5sh):** +0.31% [+0.21, +0.41]* / −0.42% [−0.55, −0.29]* / −0.56%*.
+- **Definition encoder (C6d):** +0.26% [+0.15, +0.38]* / −0.35% [−0.51, −0.21]* / −0.45%*.
 - **Free table (C2):** −0.02% / −0.18% / −0.46%.
 
-Every arm that injects a term-specific vector at held-out positions is worse than C0′ there. The free table has no trained row for a held-out term and injects the mean of its trained rows (`span_channel.py`), and it is neutral. This fits the mechanism below and T4's frame swap, where a constant mean row was no worse than the own row. After 3+-subtoken terms C5 ties C5sh (−0.00%) and is ahead of C6d and C2 by about 0.1%.
+C5 against each, after held-out / rare / 3+-subtoken terms:
+- **C5 − C5sh:** +0.18% [+0.08, +0.27]* / −0.08%* / −0.00% (n.s.).
+- **C5 − C6d:** +0.22% [+0.14, +0.30]* / −0.15%* / −0.12%*.
+- **C5 − C2:** +0.50%* / −0.32%* / −0.11%*.
+
+Every arm that injects a term-specific vector at held-out positions is worse than C0′ there. The free table has no trained row for a held-out term and injects the mean of its trained rows (`span_channel.py`), and it is neutral. This fits the mechanism below and T4's frame swap, where a constant mean row was no worse than the own row. After held-out terms C5 is the worst of the four (significantly worse than C5sh and C6d). After rare terms it is the best, ahead of C5sh by 0.08%*. After 3+-subtoken terms it ties C5sh and is ahead of C6d and C2 by about 0.1%*.
 
 **The recorded prediction fails on the primary stratum.** Before running, the prediction (decision 55; section "Across tracks") was a gain at least T4's and below T5's. After held-out terms the composed embedding makes the loss **worse**.
 
@@ -369,7 +420,12 @@ Every arm that injects a term-specific vector at held-out positions is worse tha
 
 - **The free table moves the other way.** C2's gain shrinks (after any term 0.83×, rare 0.27×), so C5 − C2 grows (after any term 4.9×, rare 2.4×). Variant B (channel quantized too) equals A.
 - **Reading.** On T7, RTN enlarges the composed channel's advantage after seen terms. T4 at seed 1 showed the reverse, and on T5 the advantage was preserved. The direction is track-dependent, so claim B stays a measurement.
-- **Not yet known:** whether the growth is an RTN artefact (GPTQ / AWQ) or belongs to the host weights (channel off). The full T5 / T4 control set (channel off, HQQ, NF4, GPTQ, AWQ, quantized embedding) on T7's P0, C0′ and C5 is queued at priority 53.95 (pre-registered in `preregistration-addendum-2026-10-11.md` §1). The official `t7-report-s1-2-3-pq` (priority 54) reads it.
+- **Not yet known:** whether the growth is an RTN artefact (GPTQ / AWQ) or belongs to the host weights (channel off). The full T5 / T4 control set (channel off, HQQ, NF4, GPTQ, AWQ, quantized embedding) on T7's P0, C0′ and C5 is queued at priority 53.95 (pre-registered in `preregistration-addendum-2026-10-11.md` §1). The official `t7-report-s1-2-3-pq` (priority 54, now running) reads it.
+
+**Dimension 3 (C5 − C0′, seeds 1–3 averaged; T7 has no track zero-shot items).**
+- **New words:** entailment rises, **+0.038 [+0.019, +0.057]*** (C5 − C2 +0.028*), but not at INT4 (+0.015, n.s.). Property −0.004 and new-word property −0.006 do not move. Paraphrase +0.022 is n.s.
+- **The entailment rise is not the frame's content.** Inside C5, entailment with the own frame is 0.530 / 0.528 / 0.538 per seed and with a random frame 0.532 / 0.523 / 0.532. The mean row gives 0.510–0.537 and no injection 0.480–0.493 (chance 0.50). Injecting any row shifts the answer, so this is not zero-shot learning from the ontology.
+- **Edits:** log-odds change beyond the control edit per seed is +0.010, **+0.101 [+0.028, +0.170]** and +0.053. Only seed 2 is significant (INT4 the same). Held-out-term edits do not move.
 
 ## T1-open — MeSH terms in PubMed (SmolLM2-360M / 135M, seed 1, 2026-10-05)
 
