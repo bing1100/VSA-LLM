@@ -1,0 +1,248 @@
+{
+  "run": "/home/bhux/workplace/VSA-LLM/experiments/e9-retrofit/runs/t7/SmolLM2-360M-frozen-P0-s1",
+  "id": "t7__SmolLM2-360M-frozen-P0-s1",
+  "windows": 4096,
+  "channel": "none",
+  "variants": {
+    "ref": {
+      "strata": {
+        "all": {
+          "loss": 2.5783698453931163,
+          "tokens": 4190208
+        },
+        "inside": {
+          "loss": 1.301060305722311,
+          "tokens": 414
+        },
+        "after": {
+          "loss": 2.3422390029584763,
+          "tokens": 1112
+        },
+        "after_heldout": {
+          "loss": 2.253867406111497,
+          "tokens": 208
+        },
+        "after_rare": {
+          "loss": 2.339345596454762,
+          "tokens": 162
+        },
+        "after_mid": {
+          "loss": 2.5276849006043105,
+          "tokens": 488
+        },
+        "after_frequent": {
+          "loss": 2.0601617407611035,
+          "tokens": 254
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.7150436639785767,
+          "tokens": 64
+        },
+        "after_len3plus": {
+          "loss": 2.319472304282298,
+          "tokens": 1048
+        },
+        "after_unseen": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_rare_seen": {
+          "loss": 2.339345596454762,
+          "tokens": 162
+        },
+        "unlinked": {
+          "loss": 2.578551045395702,
+          "tokens": 4188695
+        }
+      },
+      "ppl": 13.175642309629449,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 629145600,
+        "lora": 0,
+        "other": 124800,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 723642240,
+        "linear_nominal": 629145600,
+        "total_nominal": 723642240
+      },
+      "seconds": 93.81
+    },
+    "int8-A": {
+      "strata": {
+        "all": {
+          "loss": 2.5804558378277402,
+          "tokens": 4190208
+        },
+        "inside": {
+          "loss": 1.3109295807220942,
+          "tokens": 414
+        },
+        "after": {
+          "loss": 2.341367914951105,
+          "tokens": 1112
+        },
+        "after_heldout": {
+          "loss": 2.2364798142359805,
+          "tokens": 208
+        },
+        "after_rare": {
+          "loss": 2.346877204047309,
+          "tokens": 162
+        },
+        "after_mid": {
+          "loss": 2.527809163586038,
+          "tokens": 488
+        },
+        "after_frequent": {
+          "loss": 2.0655444287878324,
+          "tokens": 254
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.7120987325906754,
+          "tokens": 64
+        },
+        "after_len3plus": {
+          "loss": 2.318727852278993,
+          "tokens": 1048
+        },
+        "after_unseen": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_rare_seen": {
+          "loss": 2.346877204047309,
+          "tokens": 162
+        },
+        "unlinked": {
+          "loss": 2.5806370191446857,
+          "tokens": 4188695
+        }
+      },
+      "ppl": 13.203155285762099,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 315955200,
+        "lora": 0,
+        "other": 124800,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 410451840,
+        "linear_nominal": 315125760,
+        "total_nominal": 409622400
+      },
+      "bits": 8,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 224,
+      "linear_skipped": [],
+      "seconds": 116.28
+    },
+    "int4-A": {
+      "strata": {
+        "all": {
+          "loss": 2.762210858066294,
+          "tokens": 4190208
+        },
+        "inside": {
+          "loss": 1.635772285339589,
+          "tokens": 414
+        },
+        "after": {
+          "loss": 2.548108115899477,
+          "tokens": 1112
+        },
+        "after_heldout": {
+          "loss": 2.4712526614849386,
+          "tokens": 208
+        },
+        "after_rare": {
+          "loss": 2.604505827397476,
+          "tokens": 162
+        },
+        "after_mid": {
+          "loss": 2.737904870119251,
+          "tokens": 488
+        },
+        "after_frequent": {
+          "loss": 2.210425767372912,
+          "tokens": 254
+        },
+        "after_len1": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_len2": {
+          "loss": 2.950785666704178,
+          "tokens": 64
+        },
+        "after_len3plus": {
+          "loss": 2.523517122250477,
+          "tokens": 1048
+        },
+        "after_unseen": {
+          "loss": NaN,
+          "tokens": 0
+        },
+        "after_rare_seen": {
+          "loss": 2.604505827397476,
+          "tokens": 162
+        },
+        "unlinked": {
+          "loss": 2.7623712009348975,
+          "tokens": 4188695
+        }
+      },
+      "ppl": 15.834812800935095,
+      "bytes": {
+        "embedding": 94371840,
+        "head": 0,
+        "linear": 194641920,
+        "lora": 0,
+        "other": 124800,
+        "channel": 0,
+        "channel_schedule": 0,
+        "total": 289138560,
+        "linear_nominal": 176947200,
+        "total_nominal": 271443840
+      },
+      "bits": 4,
+      "group_size": 64,
+      "lora_merged": 0,
+      "head_tied": true,
+      "linear_quantized": 224,
+      "linear_skipped": [],
+      "seconds": 261.68
+    }
+  },
+  "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t7-newvocab/v1/eval-general",
+  "condition": "P0",
+  "seed": 1,
+  "model": "HuggingFaceTB/SmolLM2-360M/frozen",
+  "cohort": [
+    "HuggingFaceTB/SmolLM2-360M/frozen",
+    50000000,
+    4096,
+    1024,
+    "/home/bhux/data/vsa-llm/tracks/t7-newvocab/v1/eval-pubmed",
+    "/home/bhux/data/vsa-llm/tracks/t7-newvocab/v1/ontology.pt",
+    2
+  ],
+  "ref_check": {
+    "available": true,
+    "paired": false,
+    "detail": "different evaluation windows"
+  }
+}
