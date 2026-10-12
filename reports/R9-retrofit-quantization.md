@@ -107,7 +107,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
    - **Channel off at both precisions:** the held-out DiD vanishes. So the RTN loss comes from the quantized host reading the channel less well.
    - **All-token robustness (1.26–1.32×):** a property of the C5-trained host weights, not of the channel.
    - **T4 (360M, 3 seeds):** INT4 shrinks the gain on every term stratum (0.65–0.94×; significant only inside and after long terms). GPTQ does not keep it (held-out DiD +0.0040*). The loss sits in the host weights (channel-off DiD +0.0036), not the channel. So "preserved" and "fully under GPTQ" are T5 results.
-   - **T7 (360M, 3 seeds):** the reverse. Under INT4 the gain after seen terms grows (1.63×, rare 1.65×) and the held-out cost shrinks (0.41×), while the free table's gain shrinks. So the direction depends on the track.
+   - **T7 (360M, 3 seeds):** the reverse under RTN. The gain after seen terms grows (1.63×, rare 1.65×) and the held-out cost shrinks (0.41×), while the free table's gain shrinks. The controls show the growth is an RTN effect carried by the channel. With the channel off there is none, and under GPTQ, AWQ, HQQ or NF4 at most about two fifths of it remains (after rare terms none is significant; GPTQ −0.0022). So the direction depends on the track and on the quantizer.
    - **Paper wording:** "survives INT4; the direction depends on the track (fully kept under GPTQ only on T5)". Never "the gap grows" as a general claim.
 6. **Zero-shot learning by ontology editing is real but modest on T5, null on T4 (3 seeds), and not frame-specific on T7.**
    - **New words:** adding a frame for an unseen word improves property selection by 4–7 points on SmolLM2 and 9–16 points on Qwen3. It also improves paraphrase consistency by up to 8 points.
@@ -118,7 +118,7 @@ Editing works on seen terms at both sizes; on held-out terms it works at 135M bu
 ## Next
 
 - **The official T7 PQ report** (`t7-report-s1-2-3-pq`, priority 54, running): the T7 claim-B controls and filler split. **Then T7-ROOD** (held-out documents removed from training: the clean zero-shot test), and the decision-64 controls (C5sh and C6d, 3 seeds, on T7, T7-ROOD, T8 and T1c-ROOD) with the frame swap on those tracks.
-- **T7 claim-B controls** (queued at 53.95; addendum 2026-10-11 §1): the full quantizer and channel-off rescoring on T7's P0, C0′ and C5 (3 seeds). They decide whether T7's INT4 growth is an RTN artefact or a property of the host weights. The same addendum adds C2w, in-context frames, C6gi on T7-ROOD, T4 135M seeds 2–3 and C5ld on T7.
+- **T7 claim-B controls:** done (section "T7", Dimension 2). An open anomaly remains: C2's AWQ rescoring on T7.
 - **Remaining E9 batches:** dimension 3 on the v2 items (≈ 700 per arm), Qwen3 seed 3, the Qwen3.5 block (2B, 0.8B), and the dimension-3 knowledge-editing baselines.
 
 ## T5 controls (WP-PQ1; SmolLM2-360M, 3 seeds, 2026-10-07)
@@ -420,7 +420,20 @@ Every arm that injects a term-specific vector at held-out positions is worse tha
 
 - **The free table moves the other way.** C2's gain shrinks (after any term 0.83×, rare 0.27×), so C5 − C2 grows (after any term 4.9×, rare 2.4×). Variant B (channel quantized too) equals A.
 - **Reading.** On T7, RTN enlarges the composed channel's advantage after seen terms. T4 at seed 1 showed the reverse, and on T5 the advantage was preserved. The direction is track-dependent, so claim B stays a measurement.
-- **Not yet known:** whether the growth is an RTN artefact (GPTQ / AWQ) or belongs to the host weights (channel off). The full T5 / T4 control set (channel off, HQQ, NF4, GPTQ, AWQ, quantized embedding) on T7's P0, C0′ and C5 is queued at priority 53.95 (pre-registered in `preregistration-addendum-2026-10-11.md` §1). The official `t7-report-s1-2-3-pq` (priority 54, now running) reads it.
+- **Controls (claim B; addendum 2026-10-11 §1; 3 seeds; `report/t7`, claim-B section).** C5 − C0′ difference in differences, bf16 → 4-bit, nats/token; negative means the advantage grows. "Channel off" switches the channel off at both precisions (what the C5-trained host weights do alone). "Channel's own" is `(C5 − C5off)@q − (C5 − C5off)@bf16`.
+
+| Stratum | RTN | HQQ | NF4 | GPTQ | AWQ | RTN, channel off | channel's own (RTN) |
+|---|---|---|---|---|---|---|---|
+| after rare terms | **−0.0077*** | +0.0006 | −0.0001 | −0.0022 | +0.0018 | −0.0003 | −0.0074 |
+| after 3+-subtoken terms | **−0.0080*** | −0.0006 | −0.0034* | −0.0018* | +0.0003 | +0.0027 | −0.0107 |
+| after held-out terms (a cost) | −0.0062* | −0.0026* | −0.0039* | −0.0026* | −0.0015 | −0.0000 | −0.0062 |
+| inside terms | +0.0017* | −0.0037* | +0.0012* | −0.0022* | +0.0004 | +0.0004 | +0.0013 |
+| all tokens | −0.0004* | −0.0006* | −0.0001* | −0.0006* | +0.0022* | +0.0002 | −0.0006 |
+
+  - **Predictions:** (a) "GPTQ removes most of the growth" holds. After rare terms GPTQ's DiD is −0.0022, not significant, against −0.0077; after 3+-subtoken terms it is −0.0018*, against −0.0080. (b) "With the channel off the DiD keeps its sign" fails: −0.0003 and +0.0027.
+  - **Reading.** The T7 growth is mostly a round-to-nearest effect, and it is carried by the channel. Under RTN the quantized host's own prediction after seen terms degrades more than the channel's contribution, so the channel matters more. The host weights alone show no growth, and they lose a little after long terms. HQQ, NF4, GPTQ and AWQ keep at most about two fifths of it (the most is NF4 after 3+-subtoken terms, −0.0034 against −0.0080; after rare terms none is significant). Quantizing the input embedding too gives RTN's numbers (after rare terms −0.0081*). The shrinking held-out cost also goes through the channel (channel off −0.0000).
+  - **So for claim B:** under the quantizer a deployment would use (GPTQ / AWQ), T7's advantage is preserved (rare −0.0022 / +0.0018, n.s.), not enlarged. With T5 (GPTQ keeps the held-out advantage) and T4 (GPTQ does not, +0.0040*, and the loss sits in the host weights), the measurement reads: the advantage roughly survives 4-bit PTQ, with track-dependent losses, and grows only under plain RTN on T7.
+  - **Anomaly (open):** C2's AWQ rescoring on T7 damages every token: all tokens +0.26 to +0.36 nats per seed, against +0.10 for C0′ and C5. The AWQ calibration records look normal (α mean 0.38, 224 linears). C2 under AWQ is normal on T4 and T5. The C5 − C2 AWQ rows of `report/t7` (−0.27 nats after held-out terms) are therefore not interpreted. A check (AWQ calibration with C2's channel off) is pending.
 
 **Dimension 3 (C5 − C0′, seeds 1–3 averaged; T7 has no track zero-shot items).**
 - **New words:** entailment rises, **+0.038 [+0.019, +0.057]*** (C5 − C2 +0.028*), but not at INT4 (+0.015, n.s.). Property −0.004 and new-word property −0.006 do not move. Paraphrase +0.022 is n.s.
