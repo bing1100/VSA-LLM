@@ -444,13 +444,22 @@ def dimension3(group: Group, *, candidate: str, resamples: int, seed: int, varia
 #   themselves) and the channel's own contribution `(C5 − C5off)@q − (C5 − C5off)@bf16`; Holm over quantizers within
 #   each stratum.
 
-OPERATOR_ARMS = ("C5rf", "C5ut", "C5tr", "C5sh", "C5ld")
-SOURCE_ARMS = ("C6m", "C6d", "C6g", "C6gi", "C2w")
+OPERATOR_ARMS = ("C5rf", "C5ut", "C5tr", "C5sh", "C5ld", "C5isa", "C5comp", "C5half", "C5w512",
+                 "C5mesh", "C5meshsh", "C5tch", "C5tchsh", "C5host", "C5hostsh")
+SOURCE_ARMS = ("C6m", "C6d", "C6g", "C6gi", "C2w", "H5add", "C1h")
 ARM_LABELS = {"C5rf": "fixed random orthogonal operators", "C5ut": "untyped (no binding)", "C5tr": "translation x + r",
               "C5sh": "shuffled frames", "C6m": "subtoken mean (FVT)", "C6d": "definition encoder", "C6g": "TransE KG embedding",
               # 2026-10-11 addendum arms
               "C5ld": "link dropout 0.3 in training", "C6gi": "TransE trained without held-out entries, folded in",
-              "C2w": "free table at C5's width (256)"}
+              "C2w": "free table at C5's width (256)",
+              # 2026-10-15 addendum 2 arms
+              "H5add": "HRRBERT hybrid (half-width composition + free row, C5's parameters)",
+              "C1h": "hashed span memory (C5's parameters; structureless sharing)",
+              "C5isa": "thinned ontology: is-a edges only", "C5comp": "thinned ontology: is-a + composition (element, charge, branch)",
+              "C5half": "thinned ontology: half of every entry's edges", "C5w512": "full ontology, composed width 512",
+              "C5mesh": "enriched ontology: MeSH heading facts", "C5meshsh": "enriched ontology (MeSH), shuffled frames",
+              "C5tch": "enriched ontology: facts Claude read from the notes", "C5tchsh": "enriched (Claude), shuffled frames",
+              "C5host": "enriched ontology: facts the model read from the notes", "C5hostsh": "enriched (model), shuffled frames"}
 FILLER_BASES = ("after", "after_heldout", "after_rare_seen", "after_unseen", "after_len3plus")
 CONTROL_QUANTIZERS = ("int4-A", "int4-rtn", "int4-hqq", "int4-nf4", "int4-gptq", "int4-awq", "int4-A-emb", "int4-A-embhead")
 CONTROL_STRATA = ("after_heldout", "after_rare_seen", "after_unseen", "after_len3plus", "inside", "unlinked", "all")

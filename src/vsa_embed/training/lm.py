@@ -137,7 +137,7 @@ import math
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 import torch
@@ -288,7 +288,8 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
                               semantic_dimension=width if config["train"]["semantic_weight"] else 0)
     else:
         schedule = frame_variant(FrameSchedule(ontology["offsets"], ontology["relations"], ontology["fillers"]),
-                                 settings["frames"], int(ontology["relation_count"]), seed=int(config["seed"]))
+                                 settings["frames"], int(ontology["relation_count"]), seed=int(config["seed"]),
+                                 relation_names=ontology.get("relation_names"))
         atomic_count = int(ontology["relation_count"]) if settings["frames"] == "relation_only" else int(ontology["atomic_count"])
         context_window = int(settings["context_window"])
         composer = FrameComposer(
@@ -354,12 +355,44 @@ def host_records(config: dict[str, Any], model: ChannelLM) -> dict[str, Any]:
     return records
 
 
-def frame_variant(schedule: FrameSchedule, variant: str, relation_count: int, *, seed: int) -> FrameSchedule:
+def frame_variant(schedule: FrameSchedule, variant: str, relation_count: int, *, seed: int,
+                  relation_names: Sequence[str] | None = None) -> FrameSchedule:
     """`ontology` (as is); `relation_only` (C3t: each edge's filler is its relation type, so the
     concept is a bag of relation types — no fillers, and with `untyped`, no binding); `shuffled`
-    (C1s: entries receive other entries' frames — matched parameters, wrong structure)."""
+    (C1s: entries receive other entries' frames — matched parameters, wrong structure).
+
+    Thinned ontologies (2026-10-15 addendum 2, the richness dose-response; pair with `channel.skip_empty_frames`):
+    `relations:<a>,<b>,…` keeps only the edges of the named relation types (`relation_names`); `edge_fraction:<p>` keeps
+    `max(1, round(p·n))` of each concept's `n` edges, drawn with a fixed generator (seed 4243, independent of the run seed:
+    the thinned ontology is the treatment, the same for every training seed)."""
     if variant == "ontology":
         return schedule
+    if variant.startswith(("relations:", "edge_fraction:")):
+        offsets, relations, fillers = schedule.offsets.tolist(), schedule.relations.tolist(), schedule.fillers.tolist()
+        frames = [list(zip(relations[a:b], fillers[a:b])) for a, b in zip(offsets[:-1], offsets[1:])]
+        if variant.startswith("relations:"):
+            if relation_names is None:
+                raise ValueError("relations:<names> needs the ontology's relation_names")
+            wanted = [n for n in variant.split(":", 1)[1].split(",") if n]
+            missing = sorted(set(wanted) - set(relation_names))
+            if missing or not wanted:
+                raise ValueError(f"unknown relation types {missing} (ontology has {list(relation_names)})")
+            keep = {list(relation_names).index(n) for n in wanted}
+            frames = [[(r, f) for r, f in frame if r in keep] for frame in frames]
+        else:
+            fraction = float(variant.split(":", 1)[1])
+            if not 0.0 < fraction <= 1.0:
+                raise ValueError("edge_fraction must be in (0, 1]")
+            generator = torch.Generator().manual_seed(4243)
+            thinned = []
+            for frame in frames:
+                if not frame:
+                    thinned.append(frame); continue
+                k = max(1, round(fraction * len(frame)))
+                order = torch.randperm(len(frame), generator=generator)[:k].sort().values.tolist()
+                thinned.append([frame[i] for i in order])
+            frames = thinned
+        return FrameSchedule.from_frames(frames)
     if variant == "relation_only":
         return FrameSchedule(schedule.offsets, schedule.relations, schedule.relations.clone())
     if variant == "shuffled":
@@ -369,7 +402,7 @@ def frame_variant(schedule: FrameSchedule, variant: str, relation_count: int, *,
         frames = [list(zip(schedule.relations[schedule.offsets[j]:schedule.offsets[j + 1]].tolist(),
                            schedule.fillers[schedule.offsets[j]:schedule.offsets[j + 1]].tolist())) for j in order.tolist()]
         return FrameSchedule.from_frames(frames)
-    raise ValueError("frames must be ontology, relation_only or shuffled")
+    raise ValueError("frames must be ontology, relation_only, shuffled, relations:<names> or edge_fraction:<p>")
 
 
 def _lr(step: int, total_steps: int, warmup_steps: int, peak: float, floor_ratio: float) -> float:

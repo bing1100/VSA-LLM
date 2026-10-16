@@ -196,17 +196,28 @@ def test_definition_and_kge_tables(world) -> None:
 @pytest.mark.parametrize("arm", e9_plan.ARMS)
 def test_each_arm_builds_and_trains(world, arm, tmp_path) -> None:
     root = world["root"]
-    source = None
+    source = hybrid = buckets = None
+    if arm in e9_plan.HYBRID_ARMS:
+        from vsa_embed.experiments.e4_plan import matched_hybrid_widths
+        hybrid = {**matched_hybrid_widths(world["ontology"], 32, 16, 8)[e9_plan.HYBRID_ARMS[arm]]["channel"]}
+    if arm in e9_plan.HASHED_ARMS:
+        buckets = 64
     if arm in e9_plan.ROW_SOURCE_ARMS:
         kind = e9_plan.ROW_SOURCE_ARMS[arm]
         source = {"source_kind": kind, "source_table": str(world["tables"][kind]),
                   "source_hidden": e9_rowsource.matched_hidden(e9_plan.channel_budget(world["ontology"], 32, 16),
                                                                32 if kind not in e9_rowsource.KGE_KINDS else 256, 32)}
-    spec = e9_plan.model_spec(arm, free_dimension=8, gate_bias=0.0, source=source)["channel"]
-    config = _config(root, arm, {**spec, "dimension": 16})
+    spec = e9_plan.model_spec(arm, free_dimension=8, gate_bias=0.0, source=source, hybrid=hybrid, buckets=buckets)["channel"]
+    if str(spec.get("frames", "")).startswith("relations:"):                     # T4 relation names → the toy world's
+        spec["frames"] = "relations:" + ",".join(n for n in spec["frames"].split(":", 1)[1].split(",") if n in RELATIONS) + \
+                         ("" if arm == "C5isa" else ",area")
+    config = _config(root, arm, {**spec, **({} if arm in e9_plan.HYBRID_ARMS else {"dimension": 16})})
     lm.train(config, tmp_path / arm)
     model = lm.load_final(tmp_path / arm / "final.pt")
     channel = model.channel
+    if arm in e9_plan.HASHED_ARMS:                                                           # C1h: rows keyed by token sequence
+        assert channel.mode == "hashed" and channel.hashed_buckets == 64
+        return
     rows = channel.rows({"entry": torch.arange(world["ontology"]["entry_count"])})
     assert rows.shape == (world["ontology"]["entry_count"], 32) and torch.isfinite(rows).all()
     if arm in e9_plan.ROW_SOURCE_ARMS:
@@ -220,17 +231,22 @@ def test_each_arm_builds_and_trains(world, arm, tmp_path) -> None:
         new = channel.add_entries(2)                                                         # new words: mean source row
         assert torch.allclose(channel.source_rows[new[0]], table.mean(0), atol=1e-6)
         return
+    if arm in e9_plan.HYBRID_ARMS:                                                           # H5add: composed + free row
+        assert channel.mode == "compose_add" and channel.composer is not None
+        return
     if arm in e9_plan.FREE_ARMS:                                                             # C2w: a free table at C5's width
         assert channel.mode == "free" and channel.table.weight.shape[1] == e9_plan.FREE_ARMS[arm]["free_dimension"]
         return
     composer = channel.composer
-    family = {"C5rf": "unitary_hrr", "C5ut": "additive", "C5tr": "translation", "C5sh": "hrr", "C5ld": "hrr"}[arm]
+    family = {"C5rf": "unitary_hrr", "C5ut": "additive", "C5tr": "translation", "C5sh": "hrr", "C5ld": "hrr", "C5isa": "hrr",
+              "C5comp": "hrr", "C5half": "hrr", "C5w512": "hrr", **{a: "hrr" for a in e9_plan.ONTOLOGY_ARMS}}[arm]
     assert composer.transform.family == family
     if arm == "C5rf":
         assert not any(p.requires_grad for p in composer.transform.parameters())
     onto = world["ontology"]
     same = torch.equal(composer.schedule.fillers.cpu(), onto["fillers"]) and torch.equal(composer.schedule.offsets.cpu(), onto["offsets"])
-    assert same == (arm != "C5sh")
+    shuffled = arm == "C5sh" or (arm in e9_plan.ONTOLOGY_ARMS and e9_plan.ONTOLOGY_ARMS[arm][1] == "C5sh")
+    assert same == (not shuffled and arm not in {"C5isa", "C5comp", "C5half"})
 
 
 # -- 4. filler strata -----------------------------------------------------------------------------------------------------
@@ -378,7 +394,8 @@ def _plan(plan_root: dict, **kw) -> list[Path]:
 
 def test_e9_plan_arms_configs(plan_root, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(e9_rowsource, "ROOT", tmp_path / "row-sources")
-    paths = _plan(plan_root, models=["C5", *e9_plan.ARMS], seeds=[1, 2])
+    arms = [a for a in e9_plan.ARMS if a not in e9_plan.HYBRID_ARMS]       # hybrids need a full ontology (frames) to match widths
+    paths = _plan(plan_root, models=["C5", *arms], seeds=[1, 2])
     configs = {p.stem: yaml.safe_load(p.read_text()) for p in paths}
     c5 = configs["SmolLM2-360M-full-C5-s1"]
     for arm, change in e9_plan.C5_ABLATIONS.items():
@@ -403,7 +420,7 @@ def test_e9_plan_arms_configs(plan_root, tmp_path, monkeypatch) -> None:
 
 def test_e9_plan_arms_queue(plan_root, tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(e9_rowsource, "ROOT", tmp_path / "row-sources")               # no table exists yet
-    paths = _plan(plan_root, seeds=[1])
+    paths = _plan(plan_root, models=[a for a in e9_plan.ARMS if a not in e9_plan.HYBRID_ARMS], seeds=[1])
     queue = tmp_path / "jobs"
     queued = e9_plan.queue_jobs(paths, "main", 51, root=plan_root["root"], queue_dir=queue, track="t5", alias_table=Path("t5.json"))
     jobs = {p.stem: json.loads(p.read_text()) for p in queue.glob("*.json")}
@@ -415,6 +432,7 @@ def test_e9_plan_arms_queue(plan_root, tmp_path, monkeypatch) -> None:
     rescore = jobs[f"main-{stem}-rescore"]["command"]
     assert rescore[2] == "vsa_embed.experiments.e9_rescore" and rescore[rescore.index("--variants") + 1:][:2] == ["ref", "int4-A"]
     assert jobs[f"main-{stem}-rescore"]["priority"] == 52 and "--quantize" not in jobs[f"main-{stem}-edit"]["command"]
+    assert {n for n in jobs if n.startswith("main-SmolLM2-360M-full-C1h-s1-")} == {"main-SmolLM2-360M-full-C1h-s1-rescore"}  # no frames
     shuffled = jobs["main-SmolLM2-360M-full-C5sh-s1-zeroshot"]["command"]
     assert shuffled[shuffled.index("--sources") + 1] == "own,none,mean_row"
     assert "--edit-items" not in jobs["main-SmolLM2-360M-full-C5sh-s1-edit"]["command"]
@@ -660,3 +678,33 @@ def test_awq_groups_on_a_llama_block() -> None:
             step(lambda x=x: host(x))
     info = quant.simulate_weight_only_(host, "awq", group_size=32, forward=forward, samples=64)
     assert info["awq_groups"] == {"down_proj": 2, "gate_proj+up_proj": 2, "o_proj": 2, "q_proj+k_proj+v_proj": 2}
+
+
+def test_thinned_frame_variants() -> None:
+    frames = [[(0, 5), (1, 6), (2, 7), (0, 8)], [(1, 9)], [], [(2, 1), (2, 2), (2, 3)]]
+    schedule = FrameSchedule.from_frames(frames)
+    names = ["is_a", "has_role", "contains_element"]
+    def as_frames(s):
+        o, r, f = s.offsets.tolist(), s.relations.tolist(), s.fillers.tolist()
+        return [list(zip(r[a:b], f[a:b])) for a, b in zip(o[:-1], o[1:])]
+    kept = as_frames(lm.frame_variant(schedule, "relations:is_a,contains_element", 3, seed=1, relation_names=names))
+    assert kept == [[(0, 5), (2, 7), (0, 8)], [], [], [(2, 1), (2, 2), (2, 3)]]
+    half = as_frames(lm.frame_variant(schedule, "edge_fraction:0.5", 3, seed=1, relation_names=names))
+    again = as_frames(lm.frame_variant(schedule, "edge_fraction:0.5", 3, seed=99, relation_names=names))
+    assert half == again                                            # fixed thinning, independent of the run seed
+    assert [len(f) for f in half] == [2, 1, 0, 2] and all(set(h) <= set(f) for h, f in zip(half, frames))
+    with pytest.raises(ValueError, match="unknown relation"):
+        lm.frame_variant(schedule, "relations:charge", 3, seed=1, relation_names=names)
+    with pytest.raises(ValueError, match="edge_fraction"):
+        lm.frame_variant(schedule, "edge_fraction:0", 3, seed=1, relation_names=names)
+
+
+def test_ontology_arms_read_the_enriched_copy(plan_root) -> None:
+    data = plan_root["data"]
+    _, config = e9_plan.run_config(stage="s", host="SmolLM2-360M", mode="train", model="C5mesh", seed=1, data_root=data, tokens=1000,
+                                   lora_rank=64, host_lr=None, gate_bias=0.0, free_dimension=8)
+    assert config["data"]["ontology"] == str(data.parent / "rood-v1-meshrich" / "ontology.pt")
+    assert config["data"]["train"] == str(data / "train") and config["channel"]["mode"] == "compose"
+    _, shuffled = e9_plan.run_config(stage="s", host="SmolLM2-360M", mode="train", model="C5tchsh", seed=1, data_root=data, tokens=1000,
+                                     lora_rank=64, host_lr=None, gate_bias=0.0, free_dimension=8)
+    assert shuffled["channel"]["frames"] == "shuffled" and shuffled["data"]["ontology"].endswith("rood-v1-teacher/ontology.pt")

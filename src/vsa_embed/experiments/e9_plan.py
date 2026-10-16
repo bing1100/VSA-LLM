@@ -158,12 +158,33 @@ C5_ABLATIONS: dict[str, dict[str, Any]] = {
     # 2026-10-11 addendum (experiments/e9-retrofit/preregistration-addendum-2026-10-11.md): link dropout — each linked
     # span of a training batch is left uninjected with probability 0.3 (`channel.link_dropout`; evaluation links all)
     "C5ld": {"link_dropout": 0.3},
+    # 2026-10-15 addendum 2, the ontology-richness dose-response at a fixed model (T4 ChEBI relation names; stage 1):
+    # thinner ontologies (taxonomy only; taxonomy + composition; half of every entry's edges) and the full one at twice
+    # the composed width (capacity); `training.lm.frame_variant`
+    "C5isa": {"frames": "relations:is_a", "skip_empty_frames": True},
+    "C5comp": {"frames": "relations:is_a,contains_element,charge,branch", "skip_empty_frames": True},
+    "C5half": {"frames": "edge_fraction:0.5", "skip_empty_frames": True},
+    "C5w512": {"dimension": 512},
 }
 ROW_SOURCE_ARMS = {"C6m": "subtoken_mean", "C6d": "definition", "C6g": "kge",
                    "C6gi": "kge_inductive"}                 # 2026-10-11 addendum: TransE without held-out entries, folded in
 # 2026-10-11 addendum: C2's free table with rows as wide as C5's composed vector (256) instead of the capacity-matched
 # width — separates per-row width from parameter sharing in the "wrong frames beat the free table" reading.
 FREE_ARMS: dict[str, dict[str, Any]] = {"C2w": {"free_dimension": 256}}
+# 2026-10-15 addendum 2 (experiments/e9-retrofit/preregistration-addendum-2026-10-15.md): HRRBERT's hybrid (C5's composer at
+# half width plus a free per-entry row, the pair matched to C5's channel parameters, `e4_plan.matched_hybrid_widths`; the
+# from-scratch screen's best arm) and a hashed span memory (one bucket per term's token sequence, buckets matched to C5's
+# budget, `e4_plan.matched_sizes`): structureless sharing at C5's parameters and a 960-wide row.
+HYBRID_ARMS: dict[str, str] = {"H5add": "HRRAdd"}
+HASHED_ARMS = ("C1h",)
+# Richness stages 2–3 (addendum 2): C5 or C5sh on an enriched copy of the track's ontology, read from
+# `<corpus root>/../<folder>/ontology.pt` (`t7_enrich`: MeSH heading facts; facts Claude or the trained model read from
+# each term's MeSH note); the text, entries, alias table and held-out set are the track's own.
+ONTOLOGY_ARMS: dict[str, tuple[str, str]] = {
+    "C5mesh": ("rood-v1-meshrich", "C5"), "C5meshsh": ("rood-v1-meshrich", "C5sh"),
+    "C5tch": ("rood-v1-teacher", "C5"), "C5tchsh": ("rood-v1-teacher", "C5sh"),
+    "C5host": ("rood-v1-hostread", "C5"), "C5hostsh": ("rood-v1-hostread", "C5sh"),
+}
 # Decisions 60 (step 2) and 61: the unbinding readout arms (opt-in through --models; pre-registration-binding.md §13): C5's
 # channel plus `readout.UnbindingReadout` (a head that predicts a role from the hidden state at a third of the depth,
 # unbinds it from the most recent linked concept's frame store, cleans up and injects the filler, gated), one operator each.
@@ -180,7 +201,7 @@ READOUT_ARMS: dict[str, dict[str, Any]] = {
     # (does learning the operator matter for the readout?); unbinding by the conjugate, the readout trains around it
     "U5rf": {"operator": "random_fixed:unitary_hrr"},
 }
-ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS, *FREE_ARMS)
+ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS, *FREE_ARMS, *HYBRID_ARMS, *HASHED_ARMS, *ONTOLOGY_ARMS)
 # Every arm planned and evaluated like the WP-PQ1 arms (the `pq` chain, rescoring, no `e4_quant`): those and the readout arms.
 ARM_LIKE = (*ARMS, *READOUT_ARMS)
 ALL_MODELS = MODELS + ARM_LIKE
@@ -290,9 +311,11 @@ def _merge(config: dict[str, Any], part: dict[str, Any]) -> None:
             config[key] = copy.deepcopy(value)
 
 
-def model_spec(model: str, *, free_dimension: int, gate_bias: float, source: dict[str, Any] | None = None) -> dict[str, Any]:
+def model_spec(model: str, *, free_dimension: int, gate_bias: float, source: dict[str, Any] | None = None,
+               hybrid: dict[str, Any] | None = None, buckets: int | None = None) -> dict[str, Any]:
     """Channel keys of a model; the row-source arms (C6m / C6d / C6g) need `source` (`source_table`, `source_hidden`,
-    `source_kind`; `write_stage` fills it)."""
+    `source_kind`; `write_stage` fills it), the hybrid arms their matched channel (`hybrid`), the hashed arm its matched
+    bucket count (`buckets`)."""
     table = conditions("hrr", 8, 256, free_dimension, 256, {})
     if model in {"P0", "C0p"}:
         return {"channel": {"mode": "none"}}
@@ -310,6 +333,18 @@ def model_spec(model: str, *, free_dimension: int, gate_bias: float, source: dic
     elif model in FREE_ARMS:
         spec = copy.deepcopy(table["C2"])
         spec["channel"].update(FREE_ARMS[model])
+    elif model in ONTOLOGY_ARMS:
+        base = ONTOLOGY_ARMS[model][1]
+        spec = copy.deepcopy(table["C5"])
+        spec["channel"].update(C5_ABLATIONS.get(base, {}))
+    elif model in HYBRID_ARMS:
+        if not hybrid:
+            raise ValueError(f"{model} needs its matched hybrid channel (e4_plan.matched_hybrid_widths)")
+        spec = {"channel": copy.deepcopy(hybrid)}
+    elif model in HASHED_ARMS:
+        if not buckets:
+            raise ValueError(f"{model} needs its matched bucket count (e4_plan.matched_sizes)")
+        spec = {"channel": {"mode": "hashed", "hashed_buckets": int(buckets)}}
     elif model in {"C2", "C5"}:
         spec = copy.deepcopy(table[model])
     else:
@@ -390,7 +425,8 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
                host_lr: float | None, gate_bias: float, free_dimension: int, sequences_per_step: int = 64,
                windows: int = MIN_WINDOWS, channel_lr: float = 1.0e-3, eval_split: str = "eval",
                overrides: dict[str, Any] | None = None, plan: dict[str, Any] | None = None,
-               channel_extra: dict[str, Any] | None = None, source: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
+               channel_extra: dict[str, Any] | None = None, source: dict[str, Any] | None = None,
+               hybrid: dict[str, Any] | None = None, buckets: int | None = None) -> tuple[str, dict[str, Any]]:
     """(file stem, config) of one run; P0 ignores the host mode (frozen, evaluation only). `plan` (`host_plan`)
     sets micro-batches, host model keys and evaluation batch (default: the tables); `channel_extra` is merged
     into the channel of every model with a channel (C2, C5 and the WP-PQ1 arms; Qwen3: `scale_to_host`); `source`
@@ -416,7 +452,7 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
                   "save_trainable_only": host_mode != "train"},
         "eval": {"windows": int(windows), "batch": plan["eval_batch"]},
     })
-    _merge(config, model_spec(model, free_dimension=free_dimension, gate_bias=gate_bias, source=source))
+    _merge(config, model_spec(model, free_dimension=free_dimension, gate_bias=gate_bias, source=source, hybrid=hybrid, buckets=buckets))
     if model not in {"P0", "C0p"} and channel_extra:
         _merge(config, {"channel": channel_extra})
     if model == "P0":
@@ -426,6 +462,8 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
     _merge(config, overrides or {})
     config["seed"] = int(seed)
     config["data"].update(train=str(data_root / "train"), eval=str(data_root / eval_split), ontology=str(data_root / "ontology.pt"))
+    if model in ONTOLOGY_ARMS:                              # an enriched copy of the track's ontology (t7_enrich)
+        config["data"]["ontology"] = str(Path(data_root).parent / ONTOLOGY_ARMS[model][0] / "ontology.pt")
     if config.get("channel", {}).get("mode") == "compose" and _has_empty_frames(str(data_root / "ontology.pt")):
         config["channel"]["skip_empty_frames"] = True      # e.g. T1-open: 2 MeSH entries without edges get no injection
     stem = f"{host}-{MODE_LABELS[host_mode]}-{model}-s{seed}"
@@ -459,9 +497,13 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
     if counts is None:
         raise FileNotFoundError(f"no ontology under {corpus_root} (build the track's {family} corpus, or pass counts_ontology)")
     paths = []
-    sizes = torch.load(counts, weights_only=False) if any(m in ROW_SOURCE_ARMS for m in models) else None
+    sizes = torch.load(counts, weights_only=False) if any(m in ROW_SOURCE_ARMS or m in HYBRID_ARMS for m in models) else None
     for host in hosts:
-        free_dimension, _ = matched_sizes(counts, CPT_HOSTS[host]["width"], 256)
+        free_dimension, buckets = matched_sizes(counts, CPT_HOSTS[host]["width"], 256)
+        hybrids = None
+        if any(m in HYBRID_ARMS for m in models):
+            from .e4_plan import matched_hybrid_widths
+            hybrids = matched_hybrid_widths(sizes, int(CPT_HOSTS[host]["width"]), 256, 8)
         plan = host_plan(host, mode, memory=memory, micro_batch=micro_batch)
         for model in models:
             source = (row_source(model, track=spec.name, family=family, host=host,
@@ -473,7 +515,9 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
                                           free_dimension=free_dimension, sequences_per_step=sequences_per_step,
                                           windows=windows, channel_lr=channel_lr,
                                           eval_split=spec.eval_split, overrides=overrides, plan=plan, channel_extra=channel_extra,
-                                          source=source)
+                                          source=source,
+                                          hybrid=(hybrids[HYBRID_ARMS[model]]["channel"] if model in HYBRID_ARMS else None),
+                                          buckets=buckets if model in HASHED_ARMS else None)
                 config["e9_track"] = spec.name
                 if family != "smollm2":            # new key only where it applies (SmolLM2 configs as before)
                     config["e9_family"] = family
@@ -490,7 +534,8 @@ def edit_job(run_dir: Path, spec: TrackSpec, *, python: str = sys.executable, al
     version `version` into `RUN/<edit_folder(version, quantize)>`; the shuffled-frame arm C5sh gets the new words only
     (its entries read other entries' frames, so an edit of an entry's own frame does not apply)."""
     new_items, edit_items = dimension3_items(spec.name, spec.family, version)
-    shuffled = model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled"
+    shuffled = ((model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled")
+                or (model in ONTOLOGY_ARMS and ONTOLOGY_ARMS[model][1] == "C5sh"))
     folder = edit_folder(version, quantize)
     command = [python, "-m", "vsa_embed.experiments.e9_ontology_edit", "evaluate", "--run", str(run_dir),
                "--new-items", str(new_items), *([] if shuffled else ["--edit-items", str(edit_items)]),
@@ -520,7 +565,8 @@ def evaluation_jobs(run_dir: Path, spec: TrackSpec, *, python: str = sys.executa
                                        model=model if profile == "pq" else None, version=v, quantize=quantize)
                               for v in item_versions]
     if profile == "pq":
-        shuffled = (model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled")
+        shuffled = ((model in C5_ABLATIONS and C5_ABLATIONS[model].get("frames") == "shuffled")
+                    or (model in ONTOLOGY_ARMS and ONTOLOGY_ARMS[model][1] == "C5sh"))
         jobs = []
         if spec.name == "wordnet":
             jobs.append(("zeroshot", [python, "-m", "vsa_embed.experiments.e5_zeroshot", "evaluate", "--run", run,
@@ -691,9 +737,9 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
             quant_dirs.append(run_dir)
         if evals:
             batch = EVAL_JOB_BATCH.get(_config_host(configs[path]) or "")
-            for suffix, command, retry in evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
+            for suffix, command, retry in ([] if model in HASHED_ARMS else evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
                                                           int4_probes=int4_probes, batch_size=batch, model=model,
-                                                          profile="pq" if model in ARM_LIKE else "full", item_versions=item_versions):
+                                                          profile="pq" if model in ARM_LIKE else "full", item_versions=item_versions)):
                 submit(f"{stage}-{path.stem}-{suffix}", command, level(1), min_free_gb=5, resume_args=retry)
             if rescore == "all" or (rescore == "arms" and model in ARM_LIKE):
                 submit(f"{stage}-{path.stem}-rescore", rescore_command(run_dir, profile_variants("auto", model), python=python,
