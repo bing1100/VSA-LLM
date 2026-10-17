@@ -1273,7 +1273,7 @@ PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-report-e12 --priority 51 
   --twins role-twins-t5-smollm2-v1 --understanding understanding-t5-smollm2-v1 --new-words new-words-t5-smollm2-v2 --overwrite \
   --title "E12 T5 — self-query (Q1) and faithfulness of decoding (F1)"
 PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t5-qwen3-report-e12 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
-  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5-qwen3 --output experiments/e12-self-query/report/t5-qwen3 \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t5-qwen3 --output experiments/e12-self-query/report/t5-qwen3-e12 \
   --twins role-twins-t5-qwen3-v1 --overwrite --title "E12 T5 Qwen3 — self-query and faithfulness"
 PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-e12-s1 --priority 51 --lane cpu --min-free-gb 0 --no-resume -- \
   $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e12-self-query/report/t4-s1 \
@@ -1283,7 +1283,7 @@ PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --mo
 PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t4 --models C5rf C5tr C5sh C2 C0p C6m C6d C6g --core \
   --items $I/role-natural-t4-smollm2-v1 --priority 54
 PYTHONPATH=src $PY -m vsa_embed.jobqueue add --name t4-report-e12 --priority 55 --lane cpu --min-free-gb 0 --no-resume -- \
-  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e12-self-query/report/t4 \
+  $PY -m vsa_embed.experiments.e12_report --runs experiments/e9-retrofit/runs/t4 --output experiments/e12-self-query/report/t4-s1-2-3 \
   --natural role-natural-t4-smollm2-v1 --understanding understanding-t4-smollm2-v1 --overwrite --title "E12 T4 — self-query"
 # --- readout arms (decision 60 step 2) once trained: priority 54 (author: 54.4927); report at 55 ---
 PYTHONPATH=src $PY -m vsa_embed.experiments.e12_self_query queue --stage t5 --models U5 U5u U5sb U5bu U5sl U5tr U5ut --core \
