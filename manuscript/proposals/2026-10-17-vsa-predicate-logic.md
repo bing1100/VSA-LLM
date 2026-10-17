@@ -246,6 +246,12 @@ needs E12-style recall. That is the simplest first design, and it costs store ca
   - This is the soft, "k of n" form typical of hyperdimensional classifiers. It suits fuzzy inputs, not exact
     execution.
 - **(iv) A decision list.** An ordered list of rule records ("if A then X, else if B then Y, …"), executed in order.
+- **(v) Concatenation by the tree's structure** (the author's idea; tested 17 Oct, X8).
+  - **Heap layout:** node i in block i, children 2i+1 and 2i+2. Navigation is index arithmetic and nothing is
+    superposed.
+  - **Result:** **exact at every depth 2–12, even with 64-wide blocks.** Node memory needs blocks ≥ 256. Level
+    concatenation holds until a level holds about L/8 nodes. One nested vector fails at any width.
+  - **This is the recommended layout for stored trees.**
 - **Numeric tests.**
   - Fractional power encoding (`B^x`) makes similarity a smooth kernel of distance, so "x is near 5" is native.
   - "x ≤ t" is not native. It can be encoded as a bundle over the allowed range, or done as a compare step after
@@ -1289,7 +1295,15 @@ queued.
 - **E13** (queued) runs one read–learn–write cycle. The author's pattern is E13 repeated for N rounds, with relation
   discovery added.
 
-**Tier P (RD-11, running 17 Oct):** the active rounds alone, with Claude as the reader. Three rounds of read twice,
+**Tier P results (RD-11, 17 Oct;** `manuscript/findings/2026-10-17-e14-concat-trees-reading-cycle.md` §3**):**
+- **T4:** the reflect step rediscovered 2 of 4 hidden gold relations by name (`has_functional_parent`, `has_part`), but
+  their edges match gold only partly (recall 0.33 / 0.13, precision 0.23 / 0.12). Gold recall rose 0.157 → 0.162,
+  against a ceiling of 0.232.
+- **T1:** six new relation types cut the share of inexpressible facts from 0.72 to 0.32, and captured facts per note
+  rose from 2.04 to 2.40.
+- **Consolidation by two readings** added little precision (+0.002 / +0.037).
+
+**Tier P design (RD-11, run 17 Oct):** the active rounds alone, with Claude as the reader. Three rounds of read twice,
 consolidate, reflect.
 - **Tracks:** T4 (160 ChEBI definitions) and T1 (120 MeSH scope notes).
 - **The gold test (T4):** **four of T4's 13 relations are hidden at the start** (`has_functional_parent`, the two

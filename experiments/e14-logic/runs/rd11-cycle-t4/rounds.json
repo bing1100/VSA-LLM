@@ -1,0 +1,156 @@
+{
+  "track": "t4",
+  "style": "chebi",
+  "definitions": 160,
+  "hidden": [
+    "has_functional_parent",
+    "is_conjugate_acid_of",
+    "is_conjugate_base_of",
+    "has_part"
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "relations": 6,
+      "facts_per_definition_single": 1.9,
+      "facts_per_definition_consolidated": 1.7125,
+      "new_share": 0.4473684210526316,
+      "unresolved_share": 0.23684210526315788,
+      "visible_precision_single": 0.7430555555555556,
+      "visible_recall_single": 0.18043844856661045,
+      "visible_precision_consolidated": 0.7446808510638298,
+      "visible_recall_consolidated": 0.17706576728499157,
+      "gold_recall_all": 0.15486725663716813,
+      "ceiling_recall": 0.23156342182890854,
+      "hidden_mapping": {
+        "has_functional_parent": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 27
+        },
+        "is_conjugate_acid_of": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 25
+        },
+        "is_conjugate_base_of": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 18
+        },
+        "has_part": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 15
+        }
+      },
+      "seconds": 366.9,
+      "accepted": [
+        {
+          "name": "has_functional_parent",
+          "description": "X is formally or structurally derived from parent compound Y, by substitution or other modification.",
+          "support": 26
+        },
+        {
+          "name": "found_in_organism",
+          "description": "X occurs naturally in, is produced by, or was isolated from organism or source Y.",
+          "support": 10
+        },
+        {
+          "name": "is_metabolite_of",
+          "description": "X is produced by metabolism of Y.",
+          "support": 9
+        },
+        {
+          "name": "has_part",
+          "description": "X contains Y as a part: a mixture component, a constituent residue, or a repeating unit.",
+          "support": 22
+        }
+      ],
+      "teacher_spent_usd": 1.999
+    },
+    {
+      "round": 1,
+      "relations": 10,
+      "facts_per_definition_single": 2.0375,
+      "facts_per_definition_consolidated": 1.81875,
+      "new_share": 0.09815950920245399,
+      "unresolved_share": 0.25153374233128833,
+      "visible_precision_single": 0.5161290322580645,
+      "visible_recall_single": 0.18887015177065766,
+      "visible_precision_consolidated": 0.5294117647058824,
+      "visible_recall_consolidated": 0.1821247892074199,
+      "gold_recall_all": 0.17551622418879056,
+      "ceiling_recall": 0.23156342182890854,
+      "hidden_mapping": {
+        "has_functional_parent": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 27
+        },
+        "is_conjugate_acid_of": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 25
+        },
+        "is_conjugate_base_of": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 18
+        },
+        "has_part": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 15
+        }
+      },
+      "seconds": 347.7,
+      "accepted": [],
+      "teacher_spent_usd": 3.942
+    },
+    {
+      "round": 2,
+      "relations": 10,
+      "facts_per_definition_single": 1.98125,
+      "facts_per_definition_consolidated": 1.83125,
+      "new_share": 0.08201892744479496,
+      "unresolved_share": 0.2555205047318612,
+      "visible_precision_single": 0.5094339622641509,
+      "visible_recall_single": 0.1821247892074199,
+      "visible_precision_consolidated": 0.526829268292683,
+      "visible_recall_consolidated": 0.1821247892074199,
+      "gold_recall_all": 0.17551622418879056,
+      "ceiling_recall": 0.23156342182890854,
+      "hidden_mapping": {
+        "has_functional_parent": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 27
+        },
+        "is_conjugate_acid_of": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 25
+        },
+        "is_conjugate_base_of": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 18
+        },
+        "has_part": {
+          "relation": "is_metabolite_of",
+          "jaccard": 0.0,
+          "gold_edges": 15
+        }
+      },
+      "seconds": 362.2,
+      "accepted": [],
+      "teacher_spent_usd": 5.822
+    }
+  ],
+  "teacher": {
+    "spent_usd": 5.822311799999999,
+    "calls": 98,
+    "cached": 0
+  }
+}

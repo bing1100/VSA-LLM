@@ -261,6 +261,66 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     return {"rounds": rounds}
 
 
+def reanalyze(args: argparse.Namespace) -> dict[str, Any]:
+    """Recompute the per-round measures from `facts.jsonl`, treating every relation outside the round-0 visible set as
+    discovered — including discovered relations whose names coincide with hidden gold relations — and mapping each
+    hidden gold relation to the discovered relation of best edge Jaccard."""
+    folder = Path(args.output)
+    meta = json.loads((folder / "rounds.json").read_text())
+    read_set = e11.load_read_set(args.items)
+    ctx = e11.track_context(read_set.manifest["track"])
+    names = list(ctx.ontology["relation_names"])
+    concepts = {c["concept"]: c for c in read_set.concepts}
+    hidden = list(meta.get("hidden", []))
+    structural = {"contains_element", "charge", "branch"}
+    visible0 = {r for r in names if r not in hidden and r not in structural}
+    facts = [json.loads(l) for l in (folder / "facts.jsonl").read_text().splitlines()]
+    read = sorted({f["concept"] for f in facts} | set())
+    defs = [d for d in read_set.definitions if d["concept"] in concepts]
+    ids = {f["concept"] for f in facts}
+    gold = {(c, names[r], int(a)) for c in ids for r, a in (ctx.ids(concepts[c]["frame"]) or []) if names[r] not in structural}
+    gvis = {e for e in gold if e[1] in visible0}
+    out = []
+    for rnd in sorted({f["round"] for f in facts}):
+        fs = [f for f in facts if f["round"] == rnd and f.get("atom") is not None and f.get("relation") != "NEW"]
+        vis = {(f["concept"], f["relation"], int(f["atom"])) for f in fs if f["relation"] in visible0}
+        disc: dict[str, set] = defaultdict(set)
+        for f in fs:
+            if f["relation"] not in visible0:
+                disc[f["relation"]].add((f["concept"], int(f["atom"])))
+        tp = len(vis & gvis)
+        row = {"round": rnd, "visible_precision": tp / len(vis) if vis else None, "visible_recall": tp / len(gvis) if gvis else None,
+               "discovered_relations": {k: len(v) for k, v in disc.items()}, "hidden": {}}
+        recovered = set(vis & gold)
+        for h in hidden:
+            gh = {(c, a) for c, r, a in gold if r == h}
+            best = max(((n, len(e & gh) / max(1, len(e | gh)), len(e & gh) / max(1, len(e))) for n, e in disc.items()),
+                       key=lambda x: x[1], default=(None, 0.0, 0.0))
+            row["hidden"][h] = {"relation": best[0], "jaccard": best[1], "precision": best[2], "gold_edges": len(gh),
+                                "recall": (len(disc[best[0]] & gh) / len(gh)) if best[0] and gh else 0.0}
+            if best[0] and best[1] >= 0.2:
+                recovered |= {(c, h, a) for c, a in disc[best[0]] if (c, h, a) in gold}
+        row["gold_recall_all"] = len(recovered) / max(1, len(gold))
+        out.append(row)
+    write_json(folder / "reanalysis.json", {"visible0": sorted(visible0), "hidden": hidden, "rounds": out})
+    f2 = lambda x: "—" if x is None else f"{x:.3f}"  # noqa: E731
+    lines = ["", "## Re-analysis (discovered relations = every relation outside the round-0 visible set)", "",
+             "| round | visible P / R | gold recall, all relations | discovered relations (edges) |", "|---:|---|---:|---|"]
+    for r in out:
+        lines.append(f"| {r['round']} | {f2(r['visible_precision'])} / {f2(r['visible_recall'])} | {r['gold_recall_all']:.3f} | "
+                     + ", ".join(f"{k} ({v})" for k, v in sorted(r["discovered_relations"].items(), key=lambda kv: -kv[1])) + " |")
+    if hidden:
+        lines += ["", "Hidden gold relations — best discovered relation by round (Jaccard; precision; recall):", ""]
+        for h in hidden:
+            lines.append(f"- {h} ({out[0]['hidden'][h]['gold_edges']} gold edges): " + "; ".join(
+                f"r{r['round']}: {r['hidden'][h]['relation'] or '—'} (J {r['hidden'][h]['jaccard']:.2f}; P {r['hidden'][h]['precision']:.2f}; "
+                f"R {r['hidden'][h]['recall']:.2f})" for r in out))
+    report = folder / "report.md"
+    text = report.read_text().split("\n## Re-analysis")[0]
+    report.write_text(text.rstrip("\n") + "\n" + "\n".join(lines) + "\n")
+    return {"rounds": out}
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -271,7 +331,10 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--max-proposals", type=int, default=250); r.add_argument("--max-usd", type=float, default=7.5)
     r.add_argument("--model", default="claude-opus-5-5"); r.add_argument("--seed", type=int, default=0)
     r.add_argument("--cache", type=Path, default=Path("experiments/e14-logic/teacher-cache/rd11"))
-    run(parser.parse_args(argv))
+    a = sub.add_parser("reanalyze", help="recompute the measures from facts.jsonl (discovered = outside the round-0 set)")
+    a.add_argument("--items", type=Path, required=True); a.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args(argv)
+    (reanalyze if args.command == "reanalyze" else run)(args)
 
 
 if __name__ == "__main__":
