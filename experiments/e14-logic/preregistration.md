@@ -186,4 +186,20 @@ As plan §8. **No confirmatory primary;** the outcomes are reported with interva
 
 ## 9. Changes after this commit
 
-(none)
+- **2026-10-17, before any non-smoke RD-3 run: `mc-rel` uses the relation prior.**
+  - **Reason:** a labelled smoke (`experiments/e14-logic/smoke/rd3-t4-h135`) showed that choosing among a partner's
+    10 type-level candidate relations by the language model alone picks `has_part` for every T4 partner. It ignores how
+    often the partner fills each relation.
+  - **Change:** `mc-rel` now chooses the argmax of the text evidence plus log P(relation | partner).
+    - Text evidence: log p(statement | definition) − log p(statement | null prompt), un-normalised.
+    - The prior uses add-0.5 counts from the ontology.
+    - The evidence-only choice is kept as the ablation `mc-rel-lm`.
+    - `react` uses the combined choice.
+  - **Unchanged:** the primary (`react − linker`, `react − typeprior` on stated F1).
+- **2026-10-17: RD-4 cost.** The smoke shows each C5 job is about 20 conditions (11 with prompt text), so the estimate
+  is about 1–1.5 GPU-h per C5 job and about 8 GPU-h for RD-4/7, not 3. The design is unchanged.
+- **2026-10-17: RD-1a, RD-2 and RD-6 ran** (descriptive, CPU; `experiments/e14-logic/runs/rd1a-audit`, `rd2-dictionary`,
+  `rd6-structure`).
+  - RD-6's gold for `contains_element`, `charge` and `branch` was built by the T4 ontology from the same ChEBI fields, so
+    its recall is 1.00 by construction. It is reported as the share of the frame that structured data supplies.
+  - T1 has no E11 frames, so RD-1a covers T4 and T5 only.
