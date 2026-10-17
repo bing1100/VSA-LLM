@@ -1,0 +1,102 @@
+{
+  "track": "t4",
+  "style": "chebi",
+  "definitions": 8,
+  "hidden": [
+    "has_functional_parent",
+    "is_conjugate_acid_of",
+    "is_conjugate_base_of",
+    "has_part"
+  ],
+  "rounds": [
+    {
+      "round": 0,
+      "relations": 6,
+      "facts_per_definition_single": 1.75,
+      "facts_per_definition_consolidated": 1.75,
+      "new_share": 0.42857142857142855,
+      "unresolved_share": 0.07142857142857142,
+      "visible_precision_single": 0.75,
+      "visible_recall_single": 0.375,
+      "visible_precision_consolidated": 0.75,
+      "visible_recall_consolidated": 0.375,
+      "gold_recall_all": 0.35294117647058826,
+      "ceiling_recall": 0.47058823529411764,
+      "hidden_mapping": {
+        "has_functional_parent": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 1
+        },
+        "is_conjugate_acid_of": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 0
+        },
+        "is_conjugate_base_of": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 0
+        },
+        "has_part": {
+          "relation": null,
+          "jaccard": 0.0,
+          "gold_edges": 0
+        }
+      },
+      "seconds": 22.7,
+      "accepted": [
+        {
+          "name": "has_skeleton",
+          "description": "X has a molecular skeleton of Y.",
+          "support": 2
+        }
+      ],
+      "teacher_spent_usd": 0.186
+    },
+    {
+      "round": 1,
+      "relations": 7,
+      "facts_per_definition_single": 1.75,
+      "facts_per_definition_consolidated": 1.75,
+      "new_share": 0.2857142857142857,
+      "unresolved_share": 0.07142857142857142,
+      "visible_precision_single": 0.75,
+      "visible_recall_single": 0.375,
+      "visible_precision_consolidated": 0.75,
+      "visible_recall_consolidated": 0.375,
+      "gold_recall_all": 0.35294117647058826,
+      "ceiling_recall": 0.47058823529411764,
+      "hidden_mapping": {
+        "has_functional_parent": {
+          "relation": "has_skeleton",
+          "jaccard": 0.0,
+          "gold_edges": 1
+        },
+        "is_conjugate_acid_of": {
+          "relation": "has_skeleton",
+          "jaccard": 0.0,
+          "gold_edges": 0
+        },
+        "is_conjugate_base_of": {
+          "relation": "has_skeleton",
+          "jaccard": 0.0,
+          "gold_edges": 0
+        },
+        "has_part": {
+          "relation": "has_skeleton",
+          "jaccard": 0.0,
+          "gold_edges": 0
+        }
+      },
+      "seconds": 25.9,
+      "accepted": [],
+      "teacher_spent_usd": 0.319
+    }
+  ],
+  "teacher": {
+    "spent_usd": 0.3185952,
+    "calls": 5,
+    "cached": 0
+  }
+}

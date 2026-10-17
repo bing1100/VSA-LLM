@@ -324,3 +324,6 @@ All are descriptive CPU experiments, with no Holm family. The predictions are re
 
 **Budget:** `--max-usd 15` for both tracks, within the tier-P teacher cap of $25 ($4.15 spent). Open-licence text only
 (decision 58).
+- **2026-10-17, before the RD-11 runs: sizes reduced to fit the cap.** A labelled smoke (8 T4 definitions, 2 rounds) cost
+  $0.32, about $0.065 per call. Runs: T4 160 definitions and T1 120, 10 per call, 3 rounds; `--max-usd` 8 (T4) and 7
+  (T1). The design, measures and predictions are unchanged.

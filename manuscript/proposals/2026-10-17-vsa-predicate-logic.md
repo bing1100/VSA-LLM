@@ -1253,6 +1253,62 @@ queued.
    - **Proposed amendment** (not made): add `store:typeprior`, `store:teacher` and an explicit-recall use condition to
      the T7-ROOD write and reason stages, before those jobs run.
 
+### 9.6 Reading as an iterative cycle: passive → active reading → passive → active reading …
+
+*Added 2026-10-17 at the author's direction:*
+> "we may need to read multiple times — plus do some kind of reasoning search — reflecting on the relations that are
+> available … the gold may not be possible without the relationships existing — this is an iterative process where even
+> an iterative increase is good … multiple rounds of reading to condense and refine the knowledge learned … passive
+> learning (gradient descent) — active learning reading — passive learning — active reading …"
+
+**Why this is the right shape, given §9.4b:**
+- **Gold is partly unreachable at the start.** What a text says can only be stored if a relation exists for it (54% of
+  T4 statements, 30% of T1). A one-pass reader is capped by the relation set it starts with.
+- **Growing the dictionary does not snowball** (RD-5). **Growing the relation set** is the lever that one-pass reading
+  lacks.
+- **"Even an iterative increase is good"** sets the right success criterion: monotone improvement over rounds, not
+  reaching gold in one pass.
+
+**The cycle:**
+
+| Phase | What happens | What it changes |
+|---|---|---|
+| passive | gradient training on the domain's text with the current ontology (the E9 channel) | the composed vectors; the model's familiarity with the domain's language |
+| active reading, pass 1 | read each text with the available relations, by reasoning search over them (the ReAct reader of §9.5); facts that fit no relation are marked `NEW` with a proposed relation | candidate facts |
+| active reading, pass 2 | re-read, checking each fact against the text; keep the facts both readings agree on (consolidate) | precision |
+| reflect | cluster the `NEW` proposals into relation types; accept those with enough support; flag duplicates of existing relations (condense) | **the relation set** |
+| commit | write consolidated facts (and new relation slots) into the store | the ontology |
+| passive | train again: the new slots and facts get learned roles; the next reading starts from a richer ontology | … |
+
+**Relation to earlier work in the program:**
+- **E10.9a** (synthetic) paired passive learning with self-reflection on the model's own vectors. It was not faster than
+  passive alone: AULC H − P −0.003 [−0.019, +0.013]. The content of the reflection mattered (+0.030 over random), and
+  false commitments were never retracted (0 of 19).
+- **The difference here is external evidence.** The active step re-reads text and may create relations. It is not a
+  reinterpretation of internal vectors.
+- **E13** (queued) runs one read–learn–write cycle. The author's pattern is E13 repeated for N rounds, with relation
+  discovery added.
+
+**Tier P (RD-11, running 17 Oct):** the active rounds alone, with Claude as the reader. Three rounds of read twice,
+consolidate, reflect.
+- **Tracks:** T4 (160 ChEBI definitions) and T1 (120 MeSH scope notes).
+- **The gold test (T4):** **four of T4's 13 relations are hidden at the start** (`has_functional_parent`, the two
+  conjugate relations, `has_part`). The cycle should rediscover them, and gold recall over all relations should rise
+  round by round.
+- **T1:** measures how much of the uncovered 42% the discovered relations absorb.
+
+**Tier F (RD-12):** the full interleaved cycle, with gradient rounds between reading rounds:
+- **Model:** 135M and 360M C5 on T7-ROOD (clean held-out) and T4.
+- **Rounds:** passive 1 → active 1 → passive 2 → … → active 3 (E13's machinery extended to N rounds, with new relation
+  slots initialised as in E10).
+- **Readers:** Claude, and the host itself (Qwen3-1.7B), which tests whether passive rounds make the model a better
+  reader over time.
+- **Measures per round:**
+  - gold recall;
+  - loss after held-out terms;
+  - E11 items through explicit recall (RD-4's route);
+  - tokens to criterion against passive-only training at matched compute (E10.9's AULC design).
+
 ---
 
 ## 10. Risks and how to frame this honestly

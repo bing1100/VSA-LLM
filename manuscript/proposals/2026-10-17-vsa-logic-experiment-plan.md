@@ -752,6 +752,48 @@ precision that self-learning needs.
 No runs. The proposal's §9.5 item 6 amendment is drafted only if RD-4's decision rule fires, and needs the author's
 approval before E13's T7-ROOD jobs (54.4996–54.49979) run.
 
+### RD-11. Multi-round active reading with relation discovery (P; pre-registration §11)
+
+*Author, 17 Oct: read multiple times, reason over the available relations, reflect, condense.*
+
+- **Rounds:** 3 rounds of read twice → consolidate (agreement of the two readings) → reflect (cluster `NEW`
+  proposals into relation types; accept those with ≥ 8 supporting proposals) → next round with the new relations.
+- **Tracks:**
+  - T4: 160 ChEBI definitions, with **4 gold relations hidden at the start** (`has_functional_parent`,
+    `is_conjugate_acid_of`, `is_conjugate_base_of`, `has_part`);
+  - T1: 120 MeSH scope notes.
+- **Reader:** Claude, capped at $8 + $7.
+- **Measures per round:**
+  - facts per definition;
+  - visible-relation precision and recall (single pass against consolidated);
+  - **gold recall over all relations** (new relations mapped to hidden gold relations by edge Jaccard);
+  - each hidden relation's best Jaccard;
+  - the reachable ceiling;
+  - the `NEW` and unresolved shares.
+- **Predictions:**
+  - (a) gold recall rises over rounds;
+  - (b) at least 2 of the 4 hidden relations are rediscovered (Jaccard ≥ 0.3);
+  - (c) consolidation adds ≥ 0.05 precision;
+  - (d) the T1 `NEW` share falls.
+
+### RD-12. The interleaved passive ↔ active cycle (F)
+
+- **Design:** passive (gradient) 1 → active reading 1 (RD-11's step) → commit (facts and new relation slots) →
+  passive 2 → … → active 3.
+- **Machinery:** E13 extended to N rounds; new slots initialised as in E10's learnable ontology.
+- **Models:** 135M and 360M C5 on T7-ROOD and T4.
+- **Readers:** Claude, and Qwen3-1.7B. With the host as reader, the cycle tests whether passive rounds make the model a
+  better reader.
+- **Measures per round:**
+  - gold recall;
+  - loss after held-out terms;
+  - E11 items through explicit recall;
+  - **tokens to criterion against passive-only training at matched compute** (E10.9's AULC design, with the content
+    control of random commits).
+- **Cost:** to be estimated from E13's measured cost once its T7-ROOD cycle reports. E13 budgets about 46 GPU-h for one
+  T7-ROOD cycle at SmolLM2-360M plus Qwen3-1.7B. A 135M pilot with shortened passive rounds would be a fraction of
+  that. Teacher ≤ $40.
+
 ### RD-9. Is a larger model a better reader? (F)
 
 - **Readers:** generative extraction and `react-gen` across H-135, H-360, H-q06, H-q17, H-q35 and the teacher, on T4,

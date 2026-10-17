@@ -363,14 +363,14 @@ def perm(v: torch.Tensor) -> torch.Tensor:
     return v[..., _PERM[d]]
 
 
-def a4(seed: int, *, quick: bool = False) -> list[dict[str, Any]]:
+def a4(seed: int, *, quick: bool = False, widths: Sequence[int] = (256, 1024), depths: Sequence[int] = (1, 2, 3, 4)) -> list[dict[str, Any]]:
     rows = []
-    for width in (256, 1024):
+    for width in widths:
         g = torch.Generator().manual_seed(seed * 31 + width)
         funcs = torch.randn(30, width, generator=g) / math.sqrt(width)
         atoms = torch.randn(200, width, generator=g) / math.sqrt(width)
         FUNC, ARG = (UnitaryHRRAlgebra.make_role(torch.randn(2, width, generator=g)))
-        for depth in (1, 2, 3, 4):
+        for depth in depths:
             trials = 200
             rng = random.Random(f"a4:{seed}:{width}:{depth}")
             ok_nc = ok_cl = 0
@@ -442,10 +442,10 @@ def ece(conf: np.ndarray, correct: np.ndarray, bins: int = 10) -> float:
     return float(out)
 
 
-def a5(seed: int, *, quick: bool = False) -> list[dict[str, Any]]:
+def a5(seed: int, *, quick: bool = False, widths: Sequence[int] = (256, 1024), loads: Sequence[int] = (8, 16)) -> list[dict[str, Any]]:
     rows = []
-    for width in (256, 1024):
-        for load in (8, 16):
+    for width in widths:
+        for load in loads:
             g = torch.Generator().manual_seed(seed * 17 + width + load)
             atoms = torch.randn(500, width, generator=g) / math.sqrt(width)
             rng = random.Random(f"a5:{seed}:{width}:{load}")
@@ -494,10 +494,10 @@ def a5(seed: int, *, quick: bool = False) -> list[dict[str, Any]]:
 
 # -- A6: numbers --------------------------------------------------------------------------------------------------------------
 
-def a6(seed: int, *, quick: bool = False) -> list[dict[str, Any]]:
+def a6(seed: int, *, quick: bool = False, widths: Sequence[int] = (256, 1024), level_set: Sequence[int] = (10, 100)) -> list[dict[str, Any]]:
     rows = []
-    for width in (256, 1024):
-        for levels in (10, 100):
+    for width in widths:
+        for levels in level_set:
             g = torch.Generator().manual_seed(seed * 13 + width + levels)
             phases = torch.rand(width // 2 + 1, generator=g) * 2 * math.pi
             phases[0] = 0
@@ -528,13 +528,14 @@ def a6(seed: int, *, quick: bool = False) -> list[dict[str, Any]]:
 
 # -- A7: trees and lists --------------------------------------------------------------------------------------------------
 
-def a7(seed: int, *, quick: bool = False) -> list[dict[str, Any]]:
+def a7(seed: int, *, quick: bool = False, widths: Sequence[int] = (256, 1024), noises: Sequence[float] = (0.0, 0.1),
+       numerics: Sequence[bool] = (False, True)) -> list[dict[str, Any]]:
     from ..logic import store as S
     from ..logic import world as W
     rows = []
-    for width in (256, 1024):
-        for numeric in (False, True):
-            for noise in (0.0, 0.1):
+    for width in widths:
+        for numeric in numerics:
+            for noise in noises:
                 namer = W.Namer(seed * 100 + width, forbidden=set())
                 world = W.trees(seed * 10 + width, depths=(1, 2, 3, 4, 6, 8) if not quick else (2, 4), inputs_per_depth=40 if not quick else 10,
                                 list_lengths=(3, 6, 12), inputs_per_list=30 if not quick else 8, edits=0, namer=namer)["items"]
@@ -632,11 +633,10 @@ def _nested_tree(item: dict[str, Any], width: int, seed: int) -> str:
 
 # -- A8: resonator networks ---------------------------------------------------------------------------------------------
 
-def a8(seed: int, *, quick: bool = False) -> list[dict[str, Any]]:
+def a8(seed: int, *, quick: bool = False, widths: Sequence[int] = (1024,), sizes: Sequence[int] = (50, 200, 1000)) -> list[dict[str, Any]]:
     rows = []
-    width = 1024
-    for factors in (2, 3):
-        for size in ((50, 200, 1000) if not quick else (50, 200)):
+    for width, factors, size in [(w, f, z) for w in widths for f in (2, 3) for z in (sizes if not quick else sizes[:2])]:
+        if True:
             g = torch.Generator().manual_seed(seed * 101 + factors * 7 + size)
             books = [torch.randint(0, 2, (size, width), generator=g).float() * 2 - 1 for _ in range(factors)]   # bipolar (MAP)
             trials, ok, iters_used = 50 if not quick else 15, 0, []
