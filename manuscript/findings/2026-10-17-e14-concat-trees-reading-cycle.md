@@ -6,7 +6,7 @@
 **Status:** descriptive results, pre-registered in `experiments/e14-logic/preregistration.md` §10 (addendum 1, with
 the X8 note) and §11 (addendum 2), each before its runs. All CPU; RD-11 used Claude as the reader ($11.22).
 
-**Pending:** X2 (chains under each layout) and X3 (joins) are still running and will be appended.
+**X2 and X3** (chains and joins under each layout) are included below, in §1.
 
 **Sources:** `experiments/e14-logic/runs/{lga-concat, lga-concat-x8, rd11-cycle-t4, rd11-cycle-t1}/`.
 
@@ -73,6 +73,50 @@ Three independently trained 256-wide stores, combined, remove most of the decode
 - **Resonator (our implementation):**
   - 2 factors × 1,000 codewords: 0.54 / 0.91 / 0.99 at 2,048 / 4,096 / 8,192;
   - 3 factors: ≤ 0.30. This is below published capacities, so the implementation should be checked before tier F.
+
+### X2: chains under each layout (2 seeds; 4,000 entities; 24 relations)
+
+**Accuracy after 8 hops on the single-filler chain relation:**
+
+| Load, profile | Width | Wide | Redundant ×4 | **One block per relation** | 8 balanced groups |
+|---|---:|---:|---:|---:|---:|
+| 32, fixed | 1,024 | 0.83 | 0.84 | **1.00** | 0.68 |
+| 64, fixed | 1,024 | 0.03 | 0.03 | **1.00** | 0.09 |
+| 64, heavy-tailed | 4,096 | 0.83 | 0.81 | **1.00** | 0.86 |
+| 64, heavy-tailed | 16,384 | 1.00 | 1.00 | 1.00 | 1.00 |
+
+**Recall of a heavy relation** (a quarter of the frame's edges), fixed load:
+
+| Load | Width | Wide | **One block per relation** | 8 balanced groups |
+|---|---:|---:|---:|---:|
+| 32 | 1,024 | 0.97 | **0.26** | 0.79 |
+| 64 | 4,096 | 1.00 | **0.63** | 0.98 |
+| 64 | 16,384 | 1.00 | 1.00 | 1.00 |
+
+**Against the predictions:**
+- (X-P4) confirmed. One block per relation keeps a light relation exact at any load, but costs heavy relations at equal
+  width.
+- (X-P1) confirmed: redundant blocks equal the wide vector.
+- (X-P5) confirmed: the wide vector at load 64 reaches 1.00 at 4,096 (fixed load) and at 16,384 (heavy-tailed).
+
+**Layout rule:**
+- give light, single-filler relations their own blocks;
+- keep heavy relations in wide or balanced blocks;
+- otherwise, buy width.
+
+### X3: joins (Datalog fragment), wide against one block per relation (3 seeds)
+
+| Load | Width | Closure F1, wide (mean over 6 rule shapes) | One block per relation |
+|---|---:|---:|---:|
+| 8 | 256 | 0.92 | 0.74 |
+| 8 | 1,024 | 1.00 | 0.99 |
+| 16 | 256 | 0.67 | 0.63 |
+| 16 | 1,024 | 1.00 | 0.98 |
+| 8 or 16 | 4,096 | 1.00 | 1.00 |
+
+- **At small widths** per-relation blocks are too narrow (32 dims at 256) for clean-up among 1,000 entities.
+- **From 1,024** the two layouts are equal.
+- **Recursion at load 16, width 256:** blocks 0.77, wide 0.70. This is the only cell where the blocks win.
 
 ## 2. Trees stored by their structure (X8; the author's idea)
 
