@@ -1,0 +1,63 @@
+{
+  "source": {
+    "host": "Qwen/Qwen3-0.6B-Base",
+    "device": "cpu",
+    "dtype": "torch.float32",
+    "max_length": 32768
+  },
+  "items": 6,
+  "policies": [
+    "score",
+    "react",
+    "unsound",
+    "cot",
+    "random"
+  ],
+  "budgets": [
+    10
+  ],
+  "smoke": true,
+  "seconds": 249.3,
+  "cells": {
+    "cot|10": {
+      "accuracy": 0.5,
+      "found_within_budget": 0.5,
+      "soundness": 1.0,
+      "mean_steps_found": 0.0,
+      "calls": 1.0,
+      "n": 6
+    },
+    "random|10": {
+      "accuracy": 0.8333333333333334,
+      "found_within_budget": 0.8333333333333334,
+      "soundness": 1.0,
+      "mean_steps_found": 4.0,
+      "calls": 0.0,
+      "n": 6
+    },
+    "react|10": {
+      "accuracy": 0.6666666666666666,
+      "found_within_budget": 0.6666666666666666,
+      "soundness": 1.0,
+      "mean_steps_found": 3.25,
+      "calls": 3.6666666666666665,
+      "n": 6
+    },
+    "score|10": {
+      "accuracy": 1.0,
+      "found_within_budget": 1.0,
+      "soundness": 1.0,
+      "mean_steps_found": 4.833333333333333,
+      "calls": 2.0,
+      "n": 6
+    },
+    "unsound|10": {
+      "accuracy": 1.0,
+      "found_within_budget": 1.0,
+      "soundness": 1.0,
+      "mean_steps_found": 3.3333333333333335,
+      "calls": 3.3333333333333335,
+      "n": 6
+    }
+  }
+}

@@ -58,7 +58,9 @@ class HostLM:
     @torch.no_grad()
     def score(self, prompts: Sequence[str], continuations: Sequence[str]) -> Scores:
         """log p(continuation | prompt) for each pair (prompt and continuation tokenized separately and joined, so the
-        continuation's tokens are the same under every prompt). Over-long inputs keep their right end."""
+        continuation's tokens are the same under every prompt). Over-long inputs keep their right end. Sequences are
+        left-padded (explicit position ids), so every continuation ends at the last position and only the last positions'
+        logits are computed (`logits_to_keep`): memory stays small for large vocabularies."""
         if len(prompts) != len(continuations):
             raise ValueError("prompts and continuations differ in length")
         pairs = [(self._ids(p), self._ids(c)) for p, c in zip(prompts, continuations)]
@@ -67,27 +69,33 @@ class HostLM:
         order = sorted(range(len(pairs)), key=lambda i: -(len(pairs[i][0]) + len(pairs[i][1])))
         for start in range(0, len(order), self.batch_size):
             batch = order[start:start + self.batch_size]
-            seqs, spans = [], []
+            seqs, cont = [], []
             for i in batch:
                 p, c = pairs[i]
                 ids = (bos + p + c)[-self.max_length:]
-                spans.append((len(ids) - len(c), len(ids)))
                 seqs.append(ids)
+                cont.append(min(len(c), len(ids) - 1))
             width = max(len(s) for s in seqs)
             input_ids = torch.full((len(seqs), width), self.tokenizer.pad_token_id, dtype=torch.long)
             mask = torch.zeros((len(seqs), width), dtype=torch.long)
             for row, s in enumerate(seqs):
-                input_ids[row, :len(s)] = torch.tensor(s)
-                mask[row, :len(s)] = 1
-            logits = self.model(input_ids=input_ids.to(self.device), attention_mask=mask.to(self.device)).logits.float()
-            logp = torch.log_softmax(logits[:, :-1], dim=-1)
-            targets = input_ids[:, 1:].to(self.device)
+                input_ids[row, width - len(s):] = torch.tensor(s)
+                mask[row, width - len(s):] = 1
+            positions = (mask.cumsum(-1) - 1).clamp_min(0)
+            keep = max(cont) + 1
+            kwargs = {"input_ids": input_ids.to(self.device), "attention_mask": mask.to(self.device),
+                      "position_ids": positions.to(self.device)}
+            try:
+                logits = self.model(**kwargs, logits_to_keep=keep).logits
+            except TypeError:
+                logits = self.model(**kwargs).logits[:, -keep:]
+            logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)          # predicts the last keep-1 tokens
+            targets = input_ids[:, width - keep + 1:].to(self.device)
             token_lp = logp.gather(-1, targets.unsqueeze(-1)).squeeze(-1).cpu().numpy()
             for row, i in enumerate(batch):
-                lo, hi = spans[row]
-                lo = max(lo, 1)
-                out_lp[i] = float(token_lp[row, lo - 1:hi - 1].sum())
-                out_n[i] = hi - lo
+                n = cont[row]
+                out_lp[i] = float(token_lp[row, token_lp.shape[1] - n:].sum()) if n else 0.0
+                out_n[i] = n
         return Scores(out_lp, out_n)
 
     def choose(self, prompt: str, options: Sequence[str], *, normalize: bool = True, null: str | None = None) -> tuple[int, np.ndarray]:

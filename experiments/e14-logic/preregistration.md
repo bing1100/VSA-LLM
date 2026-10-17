@@ -203,3 +203,22 @@ As plan §8. **No confirmatory primary;** the outcomes are reported with interva
   - RD-6's gold for `contains_element`, `charge` and `branch` was built by the T4 ontology from the same ChEBI fields, so
     its recall is 1.00 by construction. It is reported as the share of the frame that structured data supplies.
   - T1 has no E11 frames, so RD-1a covers T4 and T5 only.
+- **2026-10-17, before any non-smoke LG run: LG items and harness.**
+  - **Edits (C5) are a two-way choice.** A labelled smoke showed every C5 item labelled "true", so a yes-biased model
+    scored 1.0 with no context. Propagation items now ask "which is E: a D_h or a C_h?" (new chain against old); locality
+    items ask the same for another entity of the old class.
+  - **Traces trimmed.** The VSA taxonomy trace is cut at the line that establishes the conclusion, as the symbolic trace
+    is (format parity).
+  - **Two added conditions:** `exec-vsa-stressed` (width 512 with 10 extra edges per class frame, about 16 edges, the T4
+    large-frame load) and the B7 cloze variant.
+  - **Prover decoys.** Each rule head gets, with probability 0.5, a dead-end rule; without them backward chaining has no
+    choice points.
+  - **Host scoring** left-pads and computes only the continuation's logits (memory); checked against unbatched scoring
+    (≤ 7e-6).
+  - **Item sets** (seed 1; `experiments/e14-logic/items/manifest-s1.json`):
+    - taxonomy 1,800 (1,200 true/false + 600 cloze);
+    - rulebase 600; edits 1,200; prop-rp 600; prop-lp 600; composition 500; fewshot 1,600; trees 1,100.
+  - **LG cost:** about 8.5 GPU-h (B/C ≈ 3, D ≈ 0.8, P ≈ 4.3).
+  - **A finding from building the items:** a mapping vector "solves" the chain rule of C4. It rewrites roles (first
+    premise's subject → conclusion subject, second premise's object → conclusion object) without checking that the
+    shared middle entity matches. A join test with mismatched middles belongs to tier F.
