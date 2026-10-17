@@ -33,7 +33,9 @@ band, so with the current queue they start in about 3.5 days:
 | 54.49598 | LG-D: trees, lists and edits × 4 hosts = 4 jobs | ≈ 0.9 |
 | 54.49599 | LG-P: 4 hosts (all policies; the generative ones on Qwen3) | ≈ 4.7 |
 | 54.495995 | reports: RD-4, RD-3, LG, LG-P (CPU lane) | — |
-| | **total** | **≈ 18** |
+| 54.495996 | **RD-12 pilot** (author's go-ahead, 17 Oct): interleaved passive ↔ active reading; T4 360M C5 s1; arms cycle, single, gold, passive × 3 rounds | ≈ 4 |
+| 54.4959969 | RD-12 report (CPU lane) | — |
+| | **total** | **≈ 22** |
 
 **Already run on the CPU (descriptive):**
 - RD-1a: the coverage audit;
