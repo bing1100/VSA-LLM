@@ -222,3 +222,61 @@ As plan §8. **No confirmatory primary;** the outcomes are reported with interva
   - **A finding from building the items:** a mapping vector "solves" the chain rule of C4. It rewrites roles (first
     premise's subject → conclusion subject, second premise's object → conclusion object) without checking that the
     shared middle entity matches. A join test with mismatched middles belongs to tier F.
+
+## 10. Addendum 1 (2026-10-17, before any run of it): concatenation layouts and higher widths (LG-A, CPU)
+
+**Origin:** the author, after the LG-A results: "we may need to use something like HRR cat to combine multiple to reduce
+noise — also do these tests with higher dimensions — and with concatenation".
+- HRRCat in the author's HRRBERT paper (`resources/vsa-paper.md`) concatenates an HRR part with a free part rather than
+  superposing them.
+- Here the same principle, concatenate instead of superpose, is tested on the logic store against one wide HRR of equal
+  total width D.
+
+**Layouts:**
+- `wide`: one HRR of width D. Every binding is superposed (the tier-P layout).
+- `cat-redundant`: k = 4 independent HRR codes of width D/4 carrying the same content; similarities averaged over blocks
+  (an ensemble).
+- `cat-role`: a fact is the concatenation [predicate | arg1 | arg2 (| arg3)] of raw fillers, one block per role (no
+  binding). A rule is estimated as a block-circulant map, per-frequency least squares over the blocks.
+- `cat-fact`: a frame is the concatenation of its 8 facts, one block per fact (each block a wide HRR of width D/8). A
+  rule applies blockwise.
+- `cat-slot`: one block per relation (the repository's slotted layout, decision 61c); `cat-slot8`: 8 groups of
+  relations, balanced by expected load.
+- `ensemble-3`: the three trained T4 C5 stores (seeds 1–3), cosine scores averaged (concatenated stores).
+
+**Experiments:**
+- **X1 rules:**
+  - layouts `wide`, `cat-redundant`, `cat-role`; frames `wide` against `cat-fact`;
+  - D ∈ {1,024, 4,096, 8,192, 16,384}; rule kinds as A1; k ∈ {3, 10, 30};
+  - trained T5 rows in `cat-role` (native 256 per block) against `wide` 256.
+- **X2 chains:**
+  - layouts `wide`, `cat-redundant`, `cat-slot`, `cat-slot8`;
+  - D ∈ {1,024, 4,096, 8,192, 16,384}; load ∈ {16, 32, 64}; fixed and heavy-tailed loads;
+  - two queries: the single-filler chain relation (hops 1–8), and recall of a heavy relation that holds a quarter of the
+    frame's edges.
+- **X3 joins:** A3 with `wide` against `cat-slot` (8 base relations), D ∈ {256, 1,024, 4,096}, loads 8 and 16.
+- **X4–X6 higher widths:**
+  - A4 nested decode to depth 8;
+  - A7 nested-vector trees at D ∈ {4,096, 8,192, 16,384};
+  - A5 negation as failure at loads 32 and 64;
+  - A6 numbers at 100 and 1,000 levels;
+  - A8 resonator at D ∈ {2,048, 4,096, 8,192}.
+- **X7 trained ensemble:** A11's rules and per-slot decode on T4 held-out and seen entries, single store against
+  `ensemble-3`.
+
+**Predictions:**
+- (X-P1) `cat-redundant` ≈ `wide` at equal total width (|difference| ≤ 0.03). Averaging k codes of width D/k has the
+  noise of one code of width D, so redundancy buys nothing beyond width.
+- (X-P2) `cat-role` makes the fixed-point rules expressible: symmetric and sub-relation ≥ 0.95 at D ≥ 4,096 with
+  k ≥ 10, against ≤ 0.16 for `wide`.
+- (X-P3) `cat-fact` frames: rule application on 8-fact frames ≥ 0.95 at D ≥ 8,192, against ≤ 0.02 for `wide`.
+- (X-P4) Chains:
+  - `cat-slot` keeps the single-filler chain relation at ≥ 0.99 at every load for D ≥ 4,096;
+  - it is worse than `wide` for the heavy relation at equal total width (isolation helps light relations and hurts heavy
+    ones).
+- (X-P5) Width:
+  - `wide` chains at load 64 reach ≥ 0.95 at D = 16,384;
+  - nested-vector trees still decay with depth (≤ 0.8 at depth 8 even at 16,384).
+- (X-P6) `ensemble-3` raises T4 decode accuracy over the mean single store. Exploratory, no size predicted.
+
+All are descriptive CPU experiments, with no Holm family. The predictions are read as stated.
