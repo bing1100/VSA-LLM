@@ -1,0 +1,86 @@
+{
+  "arm": "cycle",
+  "run": "experiments/e9-retrofit/runs/t4/SmolLM2-135M-full-C5-s1",
+  "tokens_per_round": 4096,
+  "terms": 6,
+  "smoke": true,
+  "rounds": [
+    {
+      "round": 0,
+      "arm": "cycle",
+      "relations": [
+        "has_parent_hydride",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 1.0,
+      "gold_recall": 0.3333333333333333,
+      "loss_after_read_terms": 1.5730477867486603,
+      "terms_with_windows": 5,
+      "items": {
+        "implicit": {
+          "property": 0.5,
+          "paraphrase": 1.0,
+          "entailment": 0.6666666666666666
+        },
+        "explicit": {
+          "property": 0.49999999999999994,
+          "paraphrase": 0.16666666666666666,
+          "entailment": 0.8333333333333334
+        },
+        "none": {
+          "property": 0.5555555555555556,
+          "paraphrase": 0.8333333333333334,
+          "entailment": 0.6666666666666666
+        }
+      },
+      "general_loss": 2.5730602741241455,
+      "utility": {},
+      "accepted_next": [],
+      "retracted": [],
+      "teacher_spent_usd": 0.149,
+      "seconds": 154.3
+    },
+    {
+      "round": 1,
+      "arm": "cycle",
+      "relations": [
+        "has_parent_hydride",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 1.0,
+      "gold_recall": 0.3333333333333333,
+      "loss_after_read_terms": 1.574179274928279,
+      "terms_with_windows": 5,
+      "items": {
+        "implicit": {
+          "property": 0.5,
+          "paraphrase": 1.0,
+          "entailment": 0.6666666666666666
+        },
+        "explicit": {
+          "property": 0.5,
+          "paraphrase": 0.16666666666666666,
+          "entailment": 0.8333333333333334
+        },
+        "none": {
+          "property": 0.5555555555555556,
+          "paraphrase": 0.8333333333333334,
+          "entailment": 0.6666666666666666
+        }
+      },
+      "general_loss": 2.5786001682281494,
+      "utility": {},
+      "retracted": [],
+      "teacher_spent_usd": 0.242,
+      "seconds": 142.9
+    }
+  ]
+}

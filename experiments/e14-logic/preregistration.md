@@ -392,3 +392,5 @@ All are descriptive CPU experiments, with no Holm family. The predictions are re
 **Cost and placement:**
 - About 1.5 GPU-h per arm (≈ 6 GPU-h); teacher ≤ $6 for `cycle` rounds 1–2 (round 0 is RD-11's cache).
 - Queued after tier P (54.495996; report 54.4959969). Tier F scales seeds, the 135M model and T7-ROOD.
+- **2026-10-17, smoke fix (before the RD-12 runs):** in evaluation, read terms with an empty frame get no row
+  (`channel.skip_empty_frames`, E11's "none"). The `passive` arm needs this.
