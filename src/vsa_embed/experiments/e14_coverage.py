@@ -474,7 +474,9 @@ def run_bootstrap(args: argparse.Namespace) -> dict[str, Any]:
     out.mkdir(parents=True, exist_ok=True)
     write_json(out / "bootstrap.json", doc)
     lines = [f"# E14 RD-5 — does reading pick up steam? (simulation over {len(tasks)} T4 ChEBI definitions)", "",
-             "Relation accuracy `type prior` = the type prior's own choice; 0.6 / 0.95 = a simulated reader. Mean of 3 seeds.", "",
+             "Relation: `type prior` = the type prior's choice for every found partner; 0.6 / 0.95 = the type prior's choice kept with "
+             "that probability, else replaced by the partner's next candidate relation (a weaker simulated reader). Mean of 3 seeds. "
+             "The dictionary grows by the atoms of the entries read (an entry whose own atom is a partner elsewhere).", "",
              "| start | relation | round | dictionary | partners found (of the full-dictionary ceiling) | edge precision | edge recall (all gold) |",
              "|---:|---|---:|---:|---:|---:|---:|"]
     grouped: dict[tuple, list] = defaultdict(list)
