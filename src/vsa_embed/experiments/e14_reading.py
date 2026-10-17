@@ -632,6 +632,42 @@ def run_relations(args: argparse.Namespace) -> dict[str, Any]:
     return document
 
 
+def run_relations_report(args: argparse.Namespace) -> dict[str, Any]:
+    """RD-3's primary family per track: `react − linker` and `react − typeprior` (stated F1) over the hosts, Holm."""
+    present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
+    missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
+    by_track: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    tables = []
+    for folder in present:
+        s = json.loads((folder / "summary.json").read_text())
+        track = f"{s['set']['track']} {s['set']['kind']}"
+        for c in s["contrasts"]:
+            if c["a"] == "react" and c["b"] in {"linker", "typeprior"}:
+                by_track[track].append({**c, "host": s["source"]["host"]})
+        tables.append((track, s["source"]["host"], s["readers"]))
+    for rows in by_track.values():
+        for row, p in zip(rows, holm_adjust([r["p_value"] for r in rows])):
+            row["p_holm_family"] = p
+    lines = ["# E14 RD-3 — pooled report (Holm per track over hosts × {react − linker, react − typeprior})", ""]
+    if missing:
+        lines += [f"Missing: {', '.join(missing)}", ""]
+    f = lambda x: "—" if x is None else f"{x:.3f}"  # noqa: E731
+    for track, host, readers in sorted(tables):
+        lines += [f"## {track} — {host}", "", "| reader | stated F1 | precision | stated recall | ambiguous accuracy |", "|---|---:|---:|---:|---:|"]
+        lines += [f"| {n} | {f(r['stated_f1'])} | {f(r['precision'])} | {f(r['stated_recall'])} | {f(r['ambiguous_accuracy'])} |"
+                  for n, r in readers.items()]
+        lines.append("")
+    lines += ["## Primary", "", "| track | host | a − b | stated F1 difference [95% CI] | p (Holm, family) | n |", "|---|---|---|---|---:|---:|"]
+    for track, rows in sorted(by_track.items()):
+        lines += [f"| {track} | {r['host']} | {r['a']} − {r['b']} | {fmt_ci(r)} | {r['p_holm_family']:.4f} | {r['n']} |" for r in rows]
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    doc = {"primary": by_track, "missing": missing}
+    write_json(output / "report.json", doc)
+    (output / "report.md").write_text("\n".join(lines) + "\n")
+    return doc
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -676,9 +712,15 @@ def main(argv: list[str] | None = None) -> None:
     rl.add_argument("--seed", type=int, default=0)
     rl.add_argument("--smoke", action="store_true")
     rl.add_argument("--overwrite", action="store_true")
+    rr2 = sub.add_parser("relations-report", help="pool RD-3 run folders (Holm per track)")
+    rr2.add_argument("--runs", nargs="+", required=True)
+    rr2.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.command == "relations":
         run_relations(args)
+        return
+    if args.command == "relations-report":
+        run_relations_report(args)
         return
     if args.command == "recall":
         run_recall(args)
