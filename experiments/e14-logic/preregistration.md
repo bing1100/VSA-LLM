@@ -280,3 +280,47 @@ noise — also do these tests with higher dimensions — and with concatenation"
 - (X-P6) `ensemble-3` raises T4 decode accuracy over the mean single store. Exploratory, no size predicted.
 
 All are descriptive CPU experiments, with no Holm family. The predictions are read as stated.
+
+## 11. Addendum 2 (2026-10-17, before any run of it): multi-round active reading with relation discovery (RD-11)
+
+**Origin:** the author:
+> "for reading — we may need to read multiple times — plus do some kind of reasoning search — reflecting on the
+> relations that are available … the gold may not be possible without the relationships existing — this is an
+> iterative process where even an iterative increase is good … multiple rounds of reading to condense and refine the
+> knowledge learned … passive learning (gradient descent) — active learning reading — passive learning — active
+> reading …"
+
+- **Tier P (here) covers the active reading rounds.** The interleaved passive gradient rounds are tier F (plan RD-12).
+- **Prior evidence:** E10.9a (synthetic) paired passive learning with self-reflection on the model's own vectors and was
+  not faster than passive alone.
+- **What differs here:** the active step re-reads external text and may create relations.
+
+**Design (T4 held-out, 200 ChEBI definitions; T1 MeSH scope notes, 150):**
+- **Round 0:** the reader (Claude, `claude -p`) starts with the track's relations, minus, on T4, four **hidden**
+  relations: `has_functional_parent`, `is_conjugate_acid_of`, `is_conjugate_base_of`, `has_part`.
+- **Each round r = 0, 1, 2:**
+  - **Read twice** (two passes; relation order shuffled differently). Each fact is a partner copied from the text plus a
+    listed relation, or `NEW` with a proposed name and description when no listed relation fits.
+  - **Consolidate:** facts proposed in both passes (same relation, same resolved partner atom) are kept.
+  - **Reflect:** one call clusters the round's `NEW` proposals into at most 6 relation types (name, description,
+    members) and flags proposals that duplicate an existing relation. A type with at least 8 supporting proposals is
+    accepted and listed, with its description, from the next round on.
+- **Measured per round:**
+  - (i) edges per definition, single pass against consolidated;
+  - (ii) precision of visible-relation edges against gold;
+  - (iii) **gold recall over all 13 T4 relations**. Each accepted new relation is mapped to the hidden gold relation of
+    best edge Jaccard over the read terms, if that Jaccard is ≥ 0.2;
+  - (iv) the Jaccard of each hidden relation's best match;
+  - (v) the reachable ceiling (gold edges whose partner the text names);
+  - (vi) the share of proposals that are `NEW`, and of partners the dictionary cannot resolve.
+  - On T1, (i), (vi) and the accepted relation types are descriptive.
+
+**Predictions:**
+- (a) T4 gold recall over all relations rises from round 0 to round 2. Each later round is at least as good as the one
+  before, within 0.01.
+- (b) At least 2 of the 4 hidden relations are rediscovered (Jaccard ≥ 0.3) by round 2.
+- (c) Consolidation raises visible-relation precision over a single pass by ≥ 0.05.
+- (d) On T1, the `NEW` share falls across rounds.
+
+**Budget:** `--max-usd 15` for both tracks, within the tier-P teacher cap of $25 ($4.15 spent). Open-licence text only
+(decision 58).
