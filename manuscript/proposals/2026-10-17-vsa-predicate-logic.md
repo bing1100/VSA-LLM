@@ -1184,6 +1184,29 @@ The model clearly *can* use the information when it is in its context.
   - **Testable directly:** a bootstrap curve of recall and precision over rounds of reading, as a function of starting
     dictionary size and reader precision (RD-5).
 
+### 9.4b First evidence from the preliminary reading experiments (CPU, 17 Oct)
+
+These ran the same day as part of E14 tier P (`experiments/e14-logic/runs/`). They are descriptive; RD-3 and RD-4 are
+queued.
+
+| Question | Experiment | Result |
+|---|---|---|
+| Do synonyms or paraphrases hide the missing partners? | RD-2: the T4 finder with ChEBI 255 synonyms, hyphen and case variants, de-hyphenated text | **No.** Gold partners found 0.116 → 0.117. The shrinking curve is linear (25% of atoms 0.028; 50% 0.057; 75% 0.088; 100% 0.116): recall is just the share of gold partners the text names |
+| How much of what the text says can the ontology express? | RD-1b: Claude labels each statement of 100 T4 and 100 T1 definitions | **T4: 54%** expressible by the 13 relations (77% of those with the partner in the dictionary), so about 41% usable; 22.5% structural (substitution, configuration). **T1 (MeSH): 30%** expressible; **42%** are properties no relation covers |
+| Can the structural part be read without language? | RD-6: elements from the ChEBI formula, charge from the charge field, branch from the is-a root | All of it: 42% of the T4 frame, recall 1.00 at precision 1.00. This is by construction, since the ontology was built from the same fields |
+| Does reading pick up steam? | RD-5: a 5-round simulation over 5,000 T4 definitions; each read entry joins the dictionary | **No.** The linkable dictionary grows 0.25 → 0.28 (0.75 → 0.76) and stalls after round 2, because read entries are rarely the partners of other entries. Edge precision is 0.22–0.28 even with the type prior: definitions mention many concepts their frames do not link |
+
+**What this changes in §9.4:**
+- **"A larger ontology"** should mean **more relation types**, so that what text says can be expressed, especially for
+  MeSH. A larger dictionary does not help: synonyms add nothing.
+- **"Picks up steam"** does not happen by growing the dictionary from read entries. The bottleneck is what the text
+  states and what the relation set can express, not which names are known.
+- **Mentions are not facts.** Most concepts a definition names are not in its frame, so a reader needs a relation
+  choice with a "not a fact" option and a precision gate (the ReAct reader's `check` step).
+- **Still open, and queued:**
+  - whether the model can use read facts at all through explicit recall (RD-4, the decisive one);
+  - whether explicit, ReAct-style matching chooses relations well (RD-3).
+
 ### 9.5 What to do, in order of expected value
 
 1. **Change the route by which read facts are used: from implicit injection to explicit recall.**

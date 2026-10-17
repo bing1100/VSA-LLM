@@ -20,6 +20,45 @@ numbers below refer to it).
 
 ---
 
+## Status of tier P (2026-10-17)
+
+**Queued GPU jobs** (`experiments/e14-logic/queue-commands-rd.sh`, `queue-commands-lg.sh`). All are before the toolkit
+band, so with the current queue they start in about 3.5 days:
+
+| Priority | Jobs | GPU-h (estimate) |
+|---|---|---:|
+| 54.49595 | RD-4/7: T4 held-out and T5 new × (360M C5 s1–3, C0′ s1) = 8 | ≈ 8 |
+| 54.49596 | RD-3: T4 and T5 × (SmolLM2-360M, Qwen3-1.7B) = 4 | ≈ 1.4 |
+| 54.49597 | LG-B/C: 7 item sets × 4 hosts = 4 jobs | ≈ 3.3 |
+| 54.49598 | LG-D: trees, lists and edits × 4 hosts = 4 jobs | ≈ 0.9 |
+| 54.49599 | LG-P: 4 hosts (all policies; the generative ones on Qwen3) | ≈ 4.7 |
+| 54.495995 | reports: RD-4, RD-3, LG, LG-P (CPU lane) | — |
+| | **total** | **≈ 18** |
+
+**Already run on the CPU (descriptive):**
+- RD-1a: the coverage audit;
+- RD-1b: the teacher audit, $2.19;
+- RD-2: dictionary breadth;
+- RD-5: the bootstrap simulation;
+- RD-6: structure readers;
+- LG-P3: retrieval;
+- the RD-3 teacher frames ($1.96).
+
+The results are in `experiments/e14-logic/runs/` and summarised in proposal §9.4b. **LG-A** (all algebra grids and the
+LG-C CPU parts, 3 seeds) is running on the CPU.
+
+**Teacher spend:** $4.15 of the $25 cap.
+
+**Deviations from the plan's tier-P column**, recorded in pre-registration §9:
+- `mc-rel` uses a relation prior;
+- edits are two-way choices;
+- decoys were added to the first-order problems;
+- `exec-vsa-stressed` was added;
+- the RD-4 cost estimate is about 8 GPU-h rather than 3;
+- LG-A3 runs forward chaining only; the backward mode and rule records stored as vectors move to tier F.
+
+---
+
 ## 0. How this plan is organised
 
 **Two tiers:**
