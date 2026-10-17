@@ -392,8 +392,9 @@ class TreeStore:
         return torch.fft.irfft(spectrum, n=self.cb.width) / math.sqrt(self.cb.width) * math.sqrt(self.cb.width)
 
     def decode_number(self, v: torch.Tensor) -> float:
-        grid = torch.stack([self.number(x) for x in range(self.grid)])
-        return float(int((F.normalize(grid, dim=-1) @ F.normalize(v, dim=-1)).argmax()))
+        if getattr(self, "_grid", None) is None:                          # the B^x codebook, built once per store
+            self._grid = F.normalize(torch.stack([self.number(x) for x in range(self.grid)]), dim=-1)
+        return float(int((self._grid @ F.normalize(v, dim=-1)).argmax()))
 
     def _encode_record(self, record: dict[str, Any]) -> torch.Tensor:
         parts = []
@@ -404,6 +405,13 @@ class TreeStore:
         return torch.stack(parts).sum(0)
 
     def read_value(self, attr: str, numeric: bool) -> tuple[Any, float]:
+        cache = self.__dict__.setdefault("_reads", {})
+        if attr in cache:
+            return cache[attr]
+        cache[attr] = self._read_value(attr, numeric)
+        return cache[attr]
+
+    def _read_value(self, attr: str, numeric: bool) -> tuple[Any, float]:
         v = ALG.unbind(self.record, self.cb.role("ATTR:" + attr))
         if numeric:
             return self.decode_number(v), float(F.cosine_similarity(v, self.number(self.decode_number(v)), dim=0))

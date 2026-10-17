@@ -619,7 +619,9 @@ def _nested_tree(item: dict[str, Any], width: int, seed: int) -> str:
             break
         name, _ = cb.cleanup(HRR.unbind(v, cb.role("TEST")), ["attr:" + a for a in attrs])
         attr = name.split(":", 1)[1]
-        test_vals = sorted({str(x) for a in item["attributes"] for x in (a["values"] or [])} | {str(x) for x in range(101)})
+        # the test value is cleaned up among values of the decoded attribute's kind (numbers or that attribute's categories)
+        spec = next(a for a in item["attributes"] if a["name"] == attr)
+        test_vals = [str(x) for x in range(101)] if spec["values"] is None else [str(x) for x in spec["values"]]
         val, _ = cb.cleanup(HRR.unbind(v, cb.role("VAL")), test_vals)
         value, _ = st.read_value(attr, numeric[attr])
         ok = (str(value) == val) if not numeric[attr] else float(value) <= float(val)
@@ -993,14 +995,39 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     return doc
 
 
+def rebuild_report(args: argparse.Namespace) -> None:
+    out = Path(args.output)
+    report = ["# E14 LG-A (algebra, CPU) and LG-C CPU parts", "",
+              "Means over seeds. Pre-registration `experiments/e14-logic/preregistration.md` §3; plan §3, §5.", ""]
+    for name in EXPERIMENTS:
+        path = out / f"{name}.csv"
+        if not path.exists():
+            continue
+        rows = []
+        for r in csv.DictReader(path.open()):
+            row = {}
+            for k, v in r.items():
+                try:
+                    row[k] = float(v) if v not in ("", None) and k not in {"seed"} and not v.lower() in {"true", "false"} else v
+                except ValueError:
+                    row[k] = v
+            rows.append(row)
+        report += summarize(name, rows)
+    (out / "report.md").write_text("\n".join(report) + "\n")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
+    rp = sub.add_parser("report"); rp.add_argument("--output", type=Path, required=True)
     r = sub.add_parser("run")
     r.add_argument("--output", type=Path, required=True); r.add_argument("--experiments", default=None)
     r.add_argument("--seeds", default="1,2,3"); r.add_argument("--quick", action="store_true"); r.add_argument("--threads", type=int, default=4)
     args = parser.parse_args(argv)
-    run(args)
+    if args.command == "report":
+        rebuild_report(args)
+    else:
+        run(args)
 
 
 if __name__ == "__main__":
