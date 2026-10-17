@@ -345,3 +345,50 @@ All are descriptive CPU experiments, with no Holm family. The predictions are re
     - (a) as X4.
   - **Smoke fix:** the input record is encoded at a fixed 4,096 for every layout. At block width it confounded record
     reading with tree storage.
+
+## 12. Addendum 3 (2026-10-17, before any run of it): RD-12, the interleaved passive ↔ active reading cycle (pilot)
+
+**Origin:** the author's go-ahead ("please go ahead") for the passive → active reading → passive → … cycle (proposal
+§9.6; plan RD-12).
+
+**Pilot scope:** one track, one model, one seed.
+
+**Design:**
+- **Model:** T4, SmolLM2-360M C5 s1, continued from its final checkpoint (`train.init_mode: continue`; a grown relation
+  count keeps the trained rows).
+- **Read terms:** RD-11's 160 held-out T4 definitions (same selection).
+- **Rounds:** 3, each a passive phase then evaluation.
+- **Passive phase:** 2M tokens of continued training on a fixed mix, shared by every arm:
+  - the 160 definitions, repeated (10% of tokens);
+  - T4 training-domain abstracts (90%), which never name a held-out term.
+  - The read terms are linked (full T4 alias table) and composed from the arm's frames.
+
+**Arms (the frames of the 160 read terms in round r):**
+
+| Arm | Frames |
+|---|---|
+| `cycle` | RD-11's active step on the current relation set (read twice → consolidate → reflect), written as frames, new relations as new relation ids. **Feedback:** after passive round r, each discovered relation is retracted from the relation set if removing its edges lowers the loss after the read terms by > 0.5% (relative). Reflection adds new proposals. |
+| `single` | round-0 consolidated facts with the initial relations only, every round (one reading, no discovery) |
+| `gold` | the gold frames (the knowledge ceiling) |
+| `passive` | no frames for the read terms (passive learning only; matched compute) |
+
+**Measures after each round's passive phase:**
+- (i) mean token loss after the read terms in T4's evaluation windows;
+- (ii) E11 items for the 160 terms (property, paraphrase, entailment):
+  - implicit (frames composed);
+  - explicit (the arm's frames written as recall lines before each item);
+- (iii) general loss (forgetting) on 64 general windows;
+- (iv) the arm's gold recall;
+- (v) retractions.
+
+**Primary** (one seed; pilot):
+- `cycle − passive` and `cycle − single` on (i) at round 3, by a window bootstrap over terms.
+- Predictions:
+  - `cycle` < `passive` (lower loss after the read terms);
+  - `cycle` ≤ `single`;
+  - `gold` lowest.
+- **Secondary:** explicit-recall property accuracy, `cycle − passive` > 0.
+
+**Cost and placement:**
+- About 1.5 GPU-h per arm (≈ 6 GPU-h); teacher ≤ $6 for `cycle` rounds 1–2 (round 0 is RD-11's cache).
+- Queued after tier P (54.495996; report 54.4959969). Tier F scales seeds, the 135M model and T7-ROOD.
