@@ -327,3 +327,21 @@ All are descriptive CPU experiments, with no Holm family. The predictions are re
 - **2026-10-17, before the RD-11 runs: sizes reduced to fit the cap.** A labelled smoke (8 T4 definitions, 2 rounds) cost
   $0.32, about $0.065 per call. Runs: T4 160 definitions and T1 120, 10 per call, 3 rounds; `--max-usd` 8 (T4) and 7
   (T1). The design, measures and predictions are unchanged.
+- **2026-10-17, before it runs: X8, tree layouts by the tree's structure** (author: "use an algorithm on how to
+  concatenate the vector based on the tree structure").
+  - **Trees:** complete binary trees, depth ∈ {2, 4, 6, 8, 10, 12}; 20 features × 8 values; 10 classes; 5 trees × 100
+    inputs per depth; 3 seeds.
+  - **Layouts:**
+    - (a) one nested vector, D ∈ {4,096, 16,384};
+    - (b) node memory (associative addresses, clean-up per step), block b ∈ {64, 256};
+    - (c) **heap concatenation**: node i in block i, children 2i+1 and 2i+2 (positional; no address clean-up), b ∈ {64, 256};
+    - (d) **level concatenation**: one block of width L ∈ {1,024, 4,096} per depth, the level's nodes superposed under
+      position keys.
+  - **Reported:** accuracy and total width.
+  - **Predictions:**
+    - (c) ≥ 0.99 at every depth with b = 256;
+    - (b) degrades at large depth when b is small, from address collisions among 2^d nodes;
+    - (d) degrades with depth once 2^depth approaches L / 8;
+    - (a) as X4.
+  - **Smoke fix:** the input record is encoded at a fixed 4,096 for every layout. At block width it confounded record
+    reading with tree storage.

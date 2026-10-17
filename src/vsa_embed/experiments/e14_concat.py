@@ -469,7 +469,118 @@ def x7(seed: int, *, quick: bool = False, track: str = "t4") -> list[dict[str, A
     return rows
 
 
-EXPERIMENTS: dict[str, Callable[..., list[dict[str, Any]]]] = {"x1": x1, "x2": x2, "x3": x3, "x4": x4, "x5": x5, "x6": x6, "x7": x7}
+# -- X8: tree layouts chosen by the tree's structure -------------------------------------------------------------------------
+
+def x8(seed: int, *, quick: bool = False, depths: Sequence[int] = (2, 4, 6, 8, 10, 12)) -> list[dict[str, Any]]:
+    """Complete binary trees stored (a) in one nested vector, (b) in a node memory (associative addresses, clean-up per
+    step), (c) heap-concatenated (node i in block i, children 2i+1 / 2i+2: positional), (d) level-concatenated (one block
+    per depth, that level's nodes superposed under position keys). Accuracy of the leaf reached, and total width."""
+    rows = []
+    n_feat, n_val, n_cls = 20, 8, 10
+    for depth in (depths if not quick else depths[:3]):
+        rng = random.Random(f"x8:{seed}:{depth}")
+        trees = []
+        for _ in range(5 if not quick else 2):
+            n_int = 2 ** depth - 1
+            f = [rng.randrange(n_feat) for _ in range(n_int)]
+            v = [rng.randrange(n_val) for _ in range(n_int)]
+            leaf = [rng.randrange(n_cls) for _ in range(2 ** depth)]
+            inputs = [[rng.randrange(n_val) for _ in range(n_feat)] for _ in range(100 if not quick else 30)]
+            truth = []
+            for x in inputs:
+                i = 0
+                while i < n_int:
+                    i = 2 * i + 1 if x[f[i]] == v[i] else 2 * i + 2
+                truth.append(leaf[i - n_int])
+            trees.append((f, v, leaf, inputs, truth))
+        n_nodes = 2 ** (depth + 1) - 1
+
+        def codes(width: int, g: torch.Generator) -> dict[str, torch.Tensor]:
+            TEST, VAL, YES, NO = unitary(4, width, g)
+            return {"TEST": TEST, "VAL": VAL, "YES": YES, "NO": NO, "feat": gauss(n_feat, width, g), "frole": unitary(n_feat, width, g),
+                    "val": gauss(n_val, width, g), "cls": gauss(n_cls, width, g)}
+
+        rc = codes(4096, torch.Generator().manual_seed(seed * 7 + depth))   # the input record: same encoding for every layout
+
+        def record(c, x):
+            return HRR.bind(rc["frole"], rc["val"][torch.tensor(x)]).sum(0)
+
+        def test_step(c, node_vec, rec):
+            fi = int(cos_argmax(HRR.unbind(node_vec, c["TEST"])[None], c["feat"])[0])
+            want = int(cos_argmax(HRR.unbind(node_vec, c["VAL"])[None], c["val"])[0])
+            have = int(cos_argmax(HRR.unbind(rec, rc["frole"][fi])[None], rc["val"])[0])
+            return have == want
+
+        for layout, widths in (("nested", (4096, 16384)), ("node-memory", (64, 256)), ("heap-concat", (64, 256)), ("level-concat", (1024, 4096))):
+            if layout == "nested" and depth > 10:
+                continue                                              # 2^depth recursive bindings at width D: impractical and at chance
+            for width in widths:
+                g = torch.Generator().manual_seed(seed * 1009 + depth * 31 + width)
+                c = codes(width, g)
+                correct = total = 0
+                for f, v, leaf, inputs, truth in trees:
+                    n_int = len(f)
+                    node_test = lambda i: HRR.bind(c["TEST"], c["feat"][f[i]]) + HRR.bind(c["VAL"], c["val"][v[i]])  # noqa: E731
+                    if layout == "heap-concat":
+                        blocks = torch.stack([node_test(i) if i < n_int else c["cls"][leaf[i - n_int]] for i in range(n_nodes)])
+                    elif layout == "node-memory":
+                        addr = gauss(n_nodes, width, g)
+                        child = lambda j: addr[j] if j < n_int else c["cls"][leaf[j - n_int]]  # noqa: E731
+                        mem = torch.stack([node_test(i) + HRR.bind(c["YES"], child(2 * i + 1)) + HRR.bind(c["NO"], child(2 * i + 2))
+                                           for i in range(n_int)])
+                        book = torch.cat([addr[:n_int], c["cls"]])
+                    elif layout == "level-concat":
+                        pos = {lv: unitary(2 ** lv, width, g) for lv in range(depth + 1)}
+                        levels = []
+                        for lv in range(depth + 1):
+                            first = 2 ** lv - 1
+                            items = [node_test(first + j) if lv < depth else c["cls"][leaf[j]] for j in range(2 ** lv)]
+                            levels.append(HRR.bind(pos[lv], torch.stack(items)).sum(0))
+                    else:
+                        def enc(i):
+                            if i >= n_int:
+                                return F.normalize(c["cls"][leaf[i - n_int]], dim=0)
+                            t = node_test(i) + HRR.bind(c["YES"], enc(2 * i + 1)) + HRR.bind(c["NO"], enc(2 * i + 2))
+                            return F.normalize(t, dim=0)
+                        tree_vec = enc(0)
+                    for x, want_leaf in zip(inputs, truth):
+                        rec = record(c, x)
+                        if layout == "heap-concat":
+                            i = 0
+                            while i < n_int:
+                                i = 2 * i + 1 if test_step(c, blocks[i], rec) else 2 * i + 2
+                            got = int(cos_argmax(blocks[i][None], c["cls"])[0])
+                        elif layout == "node-memory":
+                            vec, got = mem[0], None
+                            for _ in range(depth):
+                                nxt = HRR.unbind(vec, c["YES"] if test_step(c, vec, rec) else c["NO"])
+                                j = int(cos_argmax(nxt[None], book)[0])
+                                if j >= n_int:
+                                    got = j - n_int
+                                    break
+                                vec = mem[j]
+                            got = -1 if got is None else got
+                        elif layout == "level-concat":
+                            j = 0
+                            for lv in range(depth):
+                                node = HRR.unbind(levels[lv], pos[lv][j])
+                                j = 2 * j + (0 if test_step(c, node, rec) else 1)
+                            got = int(cos_argmax(HRR.unbind(levels[depth], pos[depth][j])[None], c["cls"])[0])
+                        else:
+                            vec = tree_vec
+                            for _ in range(depth):
+                                vec = HRR.unbind(vec, c["YES"] if test_step(c, vec, rec) else c["NO"])
+                            got = int(cos_argmax(vec[None], c["cls"])[0])
+                        correct += got == want_leaf
+                        total += 1
+                total_width = {"nested": width, "node-memory": width * (2 ** depth - 1), "heap-concat": width * n_nodes,
+                               "level-concat": width * (depth + 1)}[layout]
+                rows.append({"exp": "x8", "seed": seed, "depth": depth, "layout": layout, "block_width": width,
+                             "total_width": total_width, "accuracy": correct / total})
+    return rows
+
+
+EXPERIMENTS: dict[str, Callable[..., list[dict[str, Any]]]] = {"x1": x1, "x2": x2, "x3": x3, "x4": x4, "x5": x5, "x6": x6, "x7": x7, "x8": x8}
 SINGLE_SEED = {"x7"}
 
 
