@@ -116,3 +116,18 @@ def test_score_and_report_on_a_tiny_host(tmp_path) -> None:
     e14_score.main(["report", "--runs", str(out), "--output", str(tmp_path / "report"), "--resamples", "50"])
     report = json.loads((tmp_path / "report" / "report.json").read_text())
     assert report["hosts"] and "B1_primary" in next(iter(report["hosts"].values()))
+
+
+def test_algebra_experiments_quick() -> None:
+    from vsa_embed.experiments import e14_algebra as A
+    order = {r["encoding"]: r["accuracy"] for r in A.a4(1, quick=True) if r["test"] == "order" and r["width"] == 1024}
+    assert order["perm"] > 0.95 and 0.35 < order["conv"] < 0.65                 # convolution is commutative; a permutation is not
+    assert all(r["auc"] > 0.9 for r in A.a5(1, quick=True) if r["width"] == 1024)
+    assert all(r["le_decode_compare"] > 0.95 for r in A.a6(1, quick=True))
+    c4 = A.c4(1, quick=True)
+    assert all(r["accuracy"] == 1.0 for r in c4 if r["method"] == "amie-mining" and r["k"] >= 3)
+    facts = A.a3_world(1, n_ent=200)
+    rules = A.a3_rules("chain", 2, 8, __import__("random").Random(0))
+    assert A.apply_rules(facts, rules)["h0"] == R.datalog(facts, rules)["h0"]
+    p, r, f = A.prf({1, 2}, {2, 3})
+    assert (p, r, f) == (0.5, 0.5, 0.5)
