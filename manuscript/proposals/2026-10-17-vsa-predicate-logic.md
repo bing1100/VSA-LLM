@@ -10,7 +10,7 @@ algebra encode *logic* (predicates, rules, decision trees), so that a model can 
 zero-shot, which statistical learning does poorly?
 
 **Status:** exploration and proposal.
-- Nothing here is pre-registered or queued, and nothing goes on the queue until the author decides (§9).
+- Nothing here is pre-registered or queued, and nothing goes on the queue until the author decides (§11).
 - The only new numbers are a CPU illustration of the algebra on random vectors, with no language model (§6,
   `vsa_logic_demo.py`, `vsa_logic_demo.json`). It checks the mechanics. It is **not a result for the paper**.
 - All other numbers are our existing results, with their sources.
@@ -52,8 +52,19 @@ zero-shot, which statistical learning does poorly?
     - An exact symbolic engine (Datalog or Prolog) is the obvious baseline, and on clean symbolic data it wins.
     - The VSA must earn its place where symbols fail: entities known only by a composed vector, noisy or paraphrased
       mentions, rules induced from a few examples, and one compact store shared with the model.
-- **Recommended first step:** stage L0 (§7). It is a CPU-only fidelity study of rule execution at the widths and loads of
-  our real ontologies, with its own short pre-registration. The deeper stages are decided by its outcome.
+- **Full first-order logic (§8):** the language model can be the prover's *search policy*, through ReAct-style tool
+  calls, if sound tools perform and check every step. A weak policy then costs search time, not correctness.
+- **Reading facts from real text (§9) fails for four separate reasons,** and only one is "the model is too small":
+  - the definitions state only 12% of the ontology's facts;
+  - the reader's relation choice relies on role sensitivity the model does not have;
+  - even gold facts do not help through the implicit route;
+  - the 360M model cannot extract facts generatively.
+- **Recommended first steps:**
+  - the reading diagnostics of §9 (most urgent for self-learning);
+  - stage L0 (§7), a CPU-only fidelity study of rule execution at the widths and loads of our real ontologies, with its
+    own short pre-registration. The deeper stages are decided by its outcome.
+- **The run-by-run plan** (a preliminary tier and a full-scale tier) is in
+  [`2026-10-17-vsa-logic-experiment-plan.md`](2026-10-17-vsa-logic-experiment-plan.md).
 
 ---
 
@@ -863,14 +874,16 @@ the nearest real-rule sets; MedCalc-Bench uses public PMC patients, not MIMIC.
 
 ### L4 (later, only after G1). The model runs the steps itself
 
-- **(a) Tool use:**
-  - extend the E12 agent harness with `apply[rule, entity]` and `tree[name, entity]` tools;
-  - test whether Qwen3 hosts choose and chain the right calls on held-out rules and at depths beyond the
-    demonstrations.
+- **(a) Tool use, and full first-order logic with the model as the prover's search policy:** see §8 for the design. It
+  replaces the earlier tool-use sketch.
 - **(b) Internal execution:**
   - after the readout arms report (models trained to unbind), train a model to chain unbind and clean-up steps;
   - test whether it extrapolates to unseen rules and depths.
   - This is the only stage where "the model reasons" would be the claim, and the highest-risk one.
+
+**The complete run-by-run plan** for L0–L4, §8 and §9 is the companion document
+[`2026-10-17-vsa-logic-experiment-plan.md`](2026-10-17-vsa-logic-experiment-plan.md). It has a preliminary tier now and a
+full-scale tier later.
 
 ### Summary of stages
 
@@ -884,7 +897,342 @@ the nearest real-rule sets; MedCalc-Bench uses public PMC patients, not MIMIC.
 
 ---
 
-## 8. Risks and how to frame this honestly
+## 8. Full first-order logic: the language model as the prover's search policy
+
+*Added 2026-10-17 at the author's question: "For full first-order logic — can the prover be the LLM itself using some
+kind of ReAct-style call or otherwise?"*
+
+**Short answer:** yes, provided the model *chooses* the proof steps and something exact *performs and checks* them. The
+model on its own should not be the prover.
+
+### 8.1 Why the model alone cannot be the prover
+
+- **Chain-of-thought proofs carry no validity guarantee.** One bad step makes the conclusion wrong, and the chance of a
+  bad step grows with proof length. PrOntoQA and "Faith and Fate" (§3.9) both show accuracy falling with depth, and
+  SimpleLogic shows models learning shortcuts instead of rules.
+- **Our hosts are small.** In the E12 agent pilot, frozen Qwen3-1.7B:
+  - made well-formed tool calls 0.81 of the time;
+  - scored 0.61 on two-hop questions, against 0.81 when the same lookups were made for it by a fixed pipeline;
+  - managed well-formed reverse-lookup calls only 0.43 of the time.
+
+  A 10-step first-order proof run by such a model, unaided, would usually contain a bad step.
+
+### 8.2 The division of labour
+
+A first-order prover does three different kinds of work. They suit different components:
+
+| Part | What it is | Who does it | Why |
+|---|---|---|---|
+| **Choosing** | which goal to expand; which rule or premise to try; which entity to use for an existential ("there is an x such that…"); when to split into cases; when to argue by contradiction | **the language model** | mistakes cost only search time, never correctness; guessing what is worth trying is where statistical learning is good |
+| **Executing** | matching symbols and filling in variables (unification, including nested function terms); applying a rule; forming the conclusion; putting formulas into clause form (Skolemization) | **exact code and the algebra** | must be exact and must work the same for any argument |
+| **Certifying** | checking that every step follows | **the tools themselves** | if the tools implement only sound inference rules, every state they reach is sound; nothing the model writes in free text is ever treated as a proven fact |
+
+**Consequences:**
+- **Answers stay correct however weak the model is.** A poor model fails to find a proof within budget, and the answer
+  is reported as "unknown". It never reports a wrong "proved".
+- **Search is unavoidable.** First-order logic has no procedure that always terminates: proof search may run forever, so
+  some heuristic must decide what to try. That is the part a learned model can improve. Learned guidance has improved
+  classical first-order provers and proof assistants. Examples *(from memory, not checked in this session's research
+  passes; verify before citing)*:
+  - ENIGMA and rlCoP for first-order provers;
+  - GPT-f, HTPS and LeanDojo/ReProver, where a model proposes each step and Lean checks it;
+  - DeepMath, for premise selection.
+- **Closest language-model precedents among the verified works (§3.9):**
+  - LAMBADA (backward chaining with modules built from language models);
+  - Selection-Inference (alternating between selecting facts and inferring a step);
+  - LINC and Logic-LM (translation into logic, then an exact solver).
+
+### 8.3 ReAct-style design: an extension of the E12 agent harness
+
+**Tools** (each implements one sound step; the harness keeps the proof tree):
+
+| Tool | Does | Implemented by |
+|---|---|---|
+| `goal[formula]` | parses the question into clause form (negated goal for refutation) | symbolic (Skolemization, normal form) |
+| `rules_for[goal]` | candidate clauses whose conclusion could match the goal | **VSA retrieval** (unbind the predicate role; similarity ranking), every candidate re-checked exactly |
+| `facts[pattern]` | stored facts matching a pattern with variables | VSA store plus clean-up (E12 recall), exact check |
+| `apply[clause, goal]` | unifies and returns the new subgoals with their variable bindings, or rejects the step | symbolic unifier (with the occurs check) |
+| `cases[disjunction]` | opens one branch per disjunct; every branch must close | symbolic |
+| `assume_not[goal]` | starts a proof by contradiction | symbolic |
+| `witness[variable, entity]` | proposes a value for an existential variable | the model proposes; `apply` checks |
+| `done[]` | stops when every branch is closed, or answers "unknown" when the budget runs out | symbolic |
+
+**Design choices that matter for small hosts:**
+- **The harness runs routine steps automatically.** Forward chaining over the Horn (simple if–then) part runs to
+  completion before the model is asked anything. The model is consulted only at real choice points. That keeps calls
+  per proof small: the pilot was capped at 3 calls, and small models slip on long call chains.
+- **Grammar-constrained decoding** makes every call well-formed, which removes the pilot's 19% of format failures. The
+  policy then only has to choose *which* well-formed call to make.
+- **Choices can be scored instead of generated.** At each choice point, the harness lists up to k legal next steps and
+  the model ranks them by likelihood. This is the forced-choice reading E12 already uses, and it suits 135M–360M models
+  that cannot generate calls reliably.
+- **Budgets.** A fixed maximum number of steps per question, reported. Running out answers "unknown", which is scored
+  separately from "wrong".
+
+### 8.4 What the VSA adds here, and what it does not
+
+**Adds:**
+- **The clause memory:** facts and rules stored compactly, readable by any host.
+- **Fast candidate retrieval** (premise selection). With large ontologies this is the bottleneck of classical provers:
+  thousands of clauses, of which a handful are relevant.
+- **Soft matching:** for entities with no exact symbol (aliases, composed held-out terms), similar to the "soft
+  unification" of Neural Theorem Provers. Every soft match is marked as such in the proof.
+
+**Does not add:**
+- **Exact unification of nested function terms** is cheap and exact in symbolic code. It should not be done in the
+  algebra: §2.3's noise and commutativity problems would make it unreliable.
+
+**So in the full first-order setting, the VSA's role narrows to memory, retrieval and soft matching.** The paper should
+say so.
+
+### 8.5 What "zero-shot" means here
+
+- **A new rule is a new clause in the store.** The tools apply it soundly the moment it is written, with no training.
+- **The model only has to generalise "what's worth trying next"** to a rule it has not seen. This is a much more
+  forgiving skill than doing the logic. A bad choice wastes a step; it does not produce a wrong answer.
+
+### 8.6 The honest limit, and when this is worth it
+
+**On small, clean problems a classical prover after translation will beat any language-model loop.** LINC with Prover9
+already does this on ProofWriter. The model-guided version is worth it only when one of the following holds:
+1. the search space is large (a big ontology, many premises), so blind search is too slow;
+2. the inputs are not cleanly symbolic, so soft matching and translation errors matter;
+3. the scientific question is whether a small model can *learn* the search policy, with the tools acting as the teacher.
+   - **Expert iteration:** proofs the tools accept become training data for the policy, with no human labels.
+   - This links to the E13 learning cycle.
+
+### 8.7 How to test it
+
+The full run list is in the plan's work package LG-P. In brief:
+- **Items:**
+  - problems that need cases and contradiction, from FLD/FLDx2 (Apache-2.0, depth 1–8) or PrOntoQA-OOD's
+    proof-by-cases and proof-by-contradiction splits;
+  - regenerated with invented words;
+  - plus large-ontology items where premise selection matters (T4/T7 closure questions with distractor clauses).
+- **Conditions:**
+  - chain-of-thought only;
+  - the model with tools but no soundness checks (it may assert facts);
+  - **the model with sound tools (ours)**;
+  - a random policy with sound tools;
+  - a fixed classical strategy with sound tools (breadth-first; set of support);
+  - Prover9 after gold translation (the clean-symbol ceiling);
+  - and the same with VSA retrieval replaced by exhaustive or keyword retrieval.
+- **Measures, by depth:**
+  - accuracy;
+  - soundness (the share of "proved" answers that are entailed; 1.0 is expected with sound tools);
+  - proofs found within budget;
+  - steps per proof;
+  - tokens per proof.
+- **Hosts:**
+  - frozen Qwen3-0.6B and 1.7B with worked examples;
+  - SmolLM2-360M with scored choices;
+  - then a 360M policy fine-tuned on generated proofs, tested on held-out rules, entities and depths.
+- **Key result:** does the model's policy find proofs in fewer steps than random or fixed search, at equal budget, on
+  rules it has never seen?
+
+---
+
+## 9. Reading facts from real text: why it fails, and what it means for self-learning
+
+*Added 2026-10-17 at the author's request: "explore the failure mode here — what is the intuition on why it fails — do
+we need a larger ontology? is the model not smart enough? Is the coverage of the ontology too weak and not broad enough?
+Do we need to build up the ontology more before it picks up steam? This one will be critical for the self-learning
+piece."*
+
+**Sources:**
+- the E11 report (`experiments/e11-read-to-learn/report/report.md`, 3 seeds);
+- the E11 many-words report (`report-many/report.md`);
+- the per-term frames of `runs/t4/SmolLM2-360M-full-C5-s1/e11-t4-heldout/frames.jsonl` and
+  `runs/t5/SmolLM2-360M-full-C5-s1/e11-t5-new/summary.json` (seed 1; frames are deterministic given the run);
+- addendum 2 §7 (the T7 readers).
+
+**The per-relation breakdown in §9.2 was computed for this document** from those frames. It is not in a report, and
+should be recomputed by the report code before it is cited.
+
+### 9.1 What was tried
+
+**E11 setup:**
+- **Task:** a new word is learned by reading its definition once, with no weight change.
+- **Reading:** a reader turns the definition into a frame (relation, partner pairs), and the frame is composed into the
+  word's vector, which the model then sees in its input.
+- **Readers compared:**
+  - `linker`: a concept finder locates known concepts in the text; the model picks each one's relation by which choice
+    makes the definition most likely;
+  - `host`: few-shot extraction by the host's own weights;
+  - `typeprior`: the most likely relation for the found concept's type;
+  - `pattern`: regular expressions;
+  - `stated`: gold edges whose partner is mentioned in the text;
+  - `oracle`: the full gold frame;
+  - `random`: controls.
+
+**What happened:**
+- **Synthetic text (T5): a small gain.** The linker improves property questions by +0.031 [+0.025, +0.038].
+- **Real ChEBI definitions (T4): nothing.** The linker gives +0.006 (n.s.), and the pre-registered specificity test P2
+  failed.
+- **MeSH notes (T7):**
+  - the 360M host reader produced 0 edges on 4 notes (degenerate completions);
+  - a Claude teacher read 1 edge from 2 notes in the smoke;
+  - only 49% of T7-ROOD terms have a usable note at all.
+
+### 9.2 The failure, stage by stage
+
+To be used, a fact must pass four stages. Each has its own failure:
+
+| Stage | Question | T5 (synthetic definitions) | T4 (real ChEBI definitions) |
+|---|---|---|---|
+| **1. Stated** | does the text state the fact? | **all** gold partners are mentioned (by construction) | **15%** of gold partners are mentioned; **12%** of gold edges are stated (322 of 2,744 over 341 terms) |
+| **2. Found** | does the finder link the mention to a known concept? | 1.00 of mentioned partners | (same as 1: the text is searched only for known names) |
+| **3. Labelled** | is the right relation chosen for a found partner? | linker 0.80 (**0.37** where the partner could fill more than one relation); host 0.99; type prior 0.92 | linker **0.17**; host 0.83; type prior **0.86** |
+| **4. Used** | does the model's answer improve when the frame is in its input? | gold frame +0.070; **type-prior frame +0.069** (the same); linker +0.031 | **gold frame +0.002 [−0.004, +0.009], n.s.**: even perfect facts do not help |
+
+**For comparison, the definition itself in the prompt:**
+- T5: +0.42 over the linker frame;
+- T4: +0.11 over the linker frame.
+
+The model clearly *can* use the information when it is in its context.
+
+**Which facts real definitions state** (T4, 341 held-out terms):
+
+| Relation | Gold edges | Stated in the definition | Linker recovers | Host recovers | Type prior recovers |
+|---|---:|---:|---:|---:|---:|
+| `has_role` | 719 | 5.0% | 0.8% | 0.0% | 4.9% |
+| `is_a` | 650 | 35.1% | 5.7% | 33.2% | 32.2% |
+| `contains_element` | 598 | **0%** | 0% | 0% | 0% |
+| `branch` | 341 | **0%** | 0% | 0% | 0% |
+| `charge` | 216 | **0%** | 0% | 0% | 0% |
+| `has_functional_parent` | 52 | 51.9% | 1.9% | 0% | 34.6% |
+| `is_tautomer_of` | 18 | 44.4% | 0% | 11.1% | 5.6% |
+| conjugate acid / base | 98 | 10.2% | 2.0% | 1.0% | 1.0% |
+| all 13 types | 2,744 | **11.7%** | **1.7%** | **8.0%** | **9.7%** |
+
+**Two examples** (ChEBI release 255; CC BY 4.0):
+- **(4R)-limonene.** Definition: "*An optically active form of limonene having (4R)-configuration.*"
+  - The gold frame has 6 edges: is a limonene; enantiomer of (4S)-limonene; a role; contains carbon; neutral; a root
+    branch.
+  - The text names one partner (limonene).
+  - The enantiomer is implied by "optically active form… (4R)" but not named. The role, the element, the charge and the
+    branch are absent.
+- **(R)-lipoic acid.** Definition: "*The (R)-enantiomer of lipoic acid. A vitamin-like, C8 thia fatty acid with
+  anti-oxidant properties.*"
+  - Several gold facts are present, but **paraphrased**: "anti-oxidant properties" is the role *antioxidant*; "C8"
+    means it contains carbon; "thia" means it contains sulfur.
+  - A string-matching finder misses all three. A reader that understands chemistry prose would not.
+
+### 9.3 The intuition: four separate reasons, not one
+
+1. **The text and the ontology describe different things.**
+   - A ChEBI definition says what makes a compound *distinct* (its configuration, its parent, its class).
+   - The ontology records *everything*: elements, charge, every role, every class.
+   - 42% of the T4 gold frame (`contains_element`, `charge`, `branch`) comes from the chemical **structure**, and no
+     definition states it. Roles are rarely stated (5%).
+   - **So a perfect reader of the definition could recover only a minority of the gold frame,** and E11's items test
+     gold-frame facts. Much of the "failure" is a mismatch between what is read and what is graded.
+   - **Implication:** facts of this kind need a structured reader (formula → elements and charge; the MeSH tree → its
+     parents), not a language reader.
+2. **The linker uses a signal the model does not provide.**
+   - It chooses a relation by asking which frame makes the definition most likely under the model. That only works if
+     the model is sensitive to *which role* a partner is bound to. P1 showed it is not: role-swapped twins score at
+     chance (0.494).
+   - So the linker's choices follow the partner's *type*, not the text:
+     - on T5, 0.80 overall but 0.37 where the type does not decide the relation;
+     - on T4, 0.17, far below the trivial type prior (0.86).
+   - **This is a method failure that a bigger model would not fix**, because it rests on implicit role use, which is
+     null at every size tested.
+3. **Even perfect facts are not used through the implicit route.**
+   - On T4 the gold frame helps no more than no frame (+0.002, n.s., at every vocabulary size from 25 to 242 words in
+     the many-words report).
+   - On T5 the gold frame helps exactly as much as a frame holding only type information (+0.070 against +0.069).
+   - **The injected vector acts as a type signal, not as a carrier of specific facts.** That is again the P1 result.
+   - On T4 the word's own name often already carries its type (chemical names are compositional: "(R)-lipoic acid"
+     contains "lipoic acid"), so the type signal adds little there. This last point is a hypothesis to test (RD-4 in
+     the plan).
+   - **Explicit recall works** (E12: 0.55 → 0.88 on T4). But nobody has yet tried *reading* a definition into the store
+     and then using it by explicit recall.
+4. **The small model cannot extract facts by generating them.**
+   - The 360M host reader works on templated synthetic text (T5 precision 0.99).
+   - It recovers stated `is_a` facts on T4 almost perfectly (33.2% of `is_a` edges, against 35.1% stated).
+   - It produces nothing on open MeSH prose (0 edges from 4 notes).
+   - For open-ended generative extraction, **the 360M model is not capable enough.** A Claude teacher is. Qwen3-1.7B is
+     untested.
+
+### 9.4 The author's questions, answered
+
+- **Do we need a larger ontology?**
+  - **Not a denser one** (more edges per entry). That widens the gap between what the text says and what the gold frame
+    contains. T4 already has 8.1 edges per entry, and only 12% are in the text.
+  - **Probably a broader dictionary.** That means more concept names, synonyms and the vocabulary definitions actually
+    use: functional groups ("chloro group"), properties ("anti-oxidant"), formula shorthand ("C8", "thia").
+  - This raises how much of the text can be linked, and it is measurable (RD-2).
+- **Is the model not smart enough?**
+  - **For generative extraction at 360M: yes.**
+  - **For the linker: no.** Its method depends on implicit role use, which fails at every size tested.
+  - **For using the facts: no.** The implicit pathway fails even with gold facts, while explicit recall works at 135M
+    (E12: 0.894).
+  - So "smarter model" fixes only one of the four stages.
+- **Is the ontology's coverage too weak or too narrow?**
+  - **In one direction it is the reverse:** the ontology is far richer than the text, and the text covers about 12% of
+    it.
+  - **The other direction is unmeasured:** how much of what the text says can the ontology's 13 relation types and its
+    dictionary express? Structural descriptions ("in which one hydrogen is replaced by…") have no relation type. This
+    is the first thing to measure (RD-1).
+- **Do we need to build the ontology up before it picks up steam?**
+  - **Plausible, but unproven, and it has a precondition.**
+  - **The mechanism:** the finder can link only partners it already knows. Each word read adds a new concept, which
+    makes later definitions more linkable, so recall could grow over rounds.
+  - **But wrong edges also compound.** A snowball needs reader precision high enough that errors do not poison later
+    reading. At the linker's T4 precision (0.06), it would snowball errors.
+  - **Testable directly:** a bootstrap curve of recall and precision over rounds of reading, as a function of starting
+    dictionary size and reader precision (RD-5).
+
+### 9.5 What to do, in order of expected value
+
+1. **Change the route by which read facts are used: from implicit injection to explicit recall.**
+   - Read → store → decode into the prompt (E12), instead of composing the read frame into the input vector.
+   - **Test it first with the gold and stated frames** on E11's held-out T4 and T5 items (scoring only, existing runs).
+     If explicit recall of *gold* frames helps where implicit injection did not, the route is fixed independently of
+     any reader.
+   - This is the most important single experiment for self-learning (RD-4).
+2. **Grade readers on what the text states,** and split the frame into text facts and structure facts.
+   - Language readers are scored on stated edges.
+   - Structure facts (elements, charge, tree position) come from structured parsers. For ChEBI, the formula and
+     structure are in the release.
+3. **Replace the linker's relation choice, and read ReAct-style.** Candidates:
+   - the type prior (0.86);
+   - explicit multiple-choice questions to the model ("in this definition, how is X related to Y?"), scored E12-style;
+   - a larger host (Qwen3-1.7B);
+   - the Claude teacher as an upper bound.
+
+   All are scored on stated edges, including ambiguous ones (RD-3).
+
+   **The ReAct-style reader (author's question, 17 Oct).** It answers yes to "do we need the model to match the best
+   relations and connections via ReAct-style framing?":
+   - Both fixable reading failures (2: finding paraphrased partners; 3: choosing the relation) are *matching*
+     problems.
+   - A tool loop makes each match an explicit choice:
+     - `find[span]`: candidate concepts from the dictionary, aliases and fuzzy matching;
+     - `relations_for[x, y]`: the relations the ontology allows for the pair's types;
+     - `propose[x, r, y, evidence]`;
+     - `check[edge]`: typing, inverse and cardinality rules from §2;
+     - `commit[]`.
+   - The model only chooses among listed candidates. That is explicit reading, which works (E12), rather than implicit
+     role sensitivity, which does not (P1).
+   - For 135M–360M models the choices are scored, not generated.
+   - The `check` step is the reading analogue of §8's sound tools: an edge that breaks the ontology's rules is never
+     committed. This is what keeps errors from compounding in the bootstrap (RD-5).
+4. **Broaden the dictionary** with ChEBI synonyms, functional groups and formula shorthand, and measure the gain in
+   linked mentions (RD-2).
+5. **Measure the bootstrap curve, with a precision gate** (RD-5).
+6. **Flag for E13 (the self-learning cycle).**
+   - E13's write stage uses `store:linker` and the implicit route, so on T7-ROOD's real notes it will inherit failures 2
+     and 3.
+   - E13 is pre-registered and queued (T5 at 54.4985–54.4989, T7-ROOD at 54.4996–54.49979), so any change needs an
+     amendment and the author's decision.
+   - **Proposed amendment** (not made): add `store:typeprior`, `store:teacher` and an explicit-recall use condition to
+     the T7-ROOD write and reason stages, before those jobs run.
+
+---
+
+## 10. Risks and how to frame this honestly
 
 - **Overclaiming reasoning.** Say "the store executes rules; the model uses the conclusions" unless L4 shows otherwise.
   The result is a neurosymbolic system, not a network that learned logic.
@@ -901,8 +1249,12 @@ the nearest real-rule sets; MedCalc-Bench uses public PMC patients, not MIMIC.
 
 ---
 
-## 9. Recommended next steps
+## 11. Recommended next steps
 
+0. **Reading (§9), independent of the logic line, and the most urgent for self-learning:**
+   - run RD-4 (explicit recall of gold, stated and read frames on E11's items; scoring only);
+   - run RD-1 and RD-3 (coverage audit; relation-choice methods on stated edges);
+   - decide on the E13 amendment before E13's T7-ROOD jobs reach the front of the queue.
 1. **Author decision:** pursue L0 now (CPU, no queue impact), or park the whole line until the manuscript's current
    experiments are written up.
 2. **If L0:**
