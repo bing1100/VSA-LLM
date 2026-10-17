@@ -44,8 +44,11 @@ band, so with the current queue they start in about 3.5 days:
 - LG-P3: retrieval;
 - the RD-3 teacher frames ($1.96).
 
-The results are in `experiments/e14-logic/runs/` and summarised in proposal §9.4b. **LG-A** (all algebra grids and the
-LG-C CPU parts, 3 seeds) is running on the CPU.
+**LG-A** (all algebra grids) and the **LG-C CPU parts** (3 seeds) are also done. **Gate G0 passes.** The soft settings
+only tie fair symbolic baselines on the CPU.
+
+The results are in `experiments/e14-logic/runs/` and summarised in proposal §9.4b and in the finding record
+`manuscript/findings/2026-10-17-e14-tier-p-cpu.md`.
 
 **Teacher spend:** $4.15 of the $25 cap.
 
