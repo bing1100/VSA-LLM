@@ -955,9 +955,17 @@ def concept_representations(run_dir: Path, *, device: str = "cpu", alias_table: 
     channel = model.channel
     if channel is not None:
         if channel.mode == "compose":
-            parts = [channel.composer.compose(part.to(next(channel.parameters()).device), None).float().cpu() for part in entries.split(4096)]
-            reps["table"] = torch.cat(parts).numpy()
+            # entries without any edge (e.g. some T1 descriptors) get a zero row, as `channel.skip_empty_frames` gives them
+            degrees = np.diff(np.asarray(ontology["offsets"]))
+            framed = entries[torch.as_tensor(degrees > 0)]
+            parts = [channel.composer.compose(part.to(next(channel.parameters()).device), None).float().cpu() for part in framed.split(4096)]
+            table = torch.zeros(len(entries), parts[0].shape[1]) if parts else torch.zeros(len(entries), 1)
+            if parts:
+                table[framed] = torch.cat(parts)
+            reps["table"] = table.numpy()
             info["table"] = "composed vector (before the projector)"
+            info["entries_without_edges"] = int((degrees == 0).sum())
+            channel.skip_empty_frames = True
         elif channel.mode == "free":
             reps["table"] = channel.table.weight.detach().float().cpu().numpy()
             info["table"] = "free row (before the projector)"
