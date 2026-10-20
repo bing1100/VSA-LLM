@@ -399,6 +399,10 @@ All are descriptive CPU experiments, with no Holm family. The predictions are re
   round 0's training (`every composed concept needs at least one edge`) as soon as a read term without a frame was linked.
   The `gold` arm had a frame for every read term, so the change cannot touch its run; it is not repeated. Round 0's
   teacher reads came from RD-11's cache ($0). The design is unchanged.
+- **2026-10-20, second run fix (before any RD-12 result is read):** the retry failed because each failed round's
+  model folder still held a config file, and the trainer refuses a non-empty folder. The passive phase now empties
+  the folder first; it holds only that round's weights, which are recomputed on every attempt. The design is
+  unchanged.
 
 ## 13. Addendum 4a (2026-10-20, before any run of it): RD-4b, selective recall and a context-free null (tier F block)
 

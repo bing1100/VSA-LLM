@@ -22,6 +22,7 @@ import argparse
 import gc
 import json
 import random
+import shutil
 import subprocess
 import sys
 import time
@@ -180,6 +181,8 @@ def passive_phase(base_config: dict[str, Any], *, init_from: Path, ontology: Pat
     if smoke:
         cfg["train"].update({"micro_batch": 1, "grad_accum": 1})
         cfg["model"]["seq_len"] = 256
+    if out_dir.exists():                    # a failed or earlier attempt's folder: the trainer needs an empty one
+        shutil.rmtree(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir.parent / f"{out_dir.name}.yaml"
     path.write_text(yaml.safe_dump(cfg, sort_keys=False))
