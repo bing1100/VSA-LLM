@@ -284,6 +284,61 @@ def read_set(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in handle]
 
 
+# -- LG-B verdict format (pre-registration §14): the same recall, the conclusion written as a verdict on the question's claim
+
+VERDICT_SOURCES = ("exec-vsa", "exec-sym", "exec-vsa-conclusion")
+_CONCLUSION = re.compile(r"^Conclusion: (?P<ent>.+?) is (?P<neg>not )?a (?P<cls>.+?)\.(?P<conf> \(\d\.\d\d\))?$")
+_NO_CONCLUSION = re.compile(r"^Conclusion: no conclusion about whether (?P<ent>.+?) is a (?P<cls>.+?)\.(?P<conf> \(\d\.\d\d\))?$")
+
+
+def verdict_text(context: str) -> str:
+    """`context` with its conclusion line rewritten as a verdict: "Conclusion: X is not a Y. (0.74)" → "Conclusion: the claim
+    "X is a Y" is False. (0.74)"; "X is a Y" → "… is True."; no conclusion → "… is unknown.". Every other line is kept."""
+    out = []
+    for line in context.split("\n"):
+        m = _NO_CONCLUSION.match(line)
+        if m:
+            out.append(f'Conclusion: the claim "{m["ent"]} is a {m["cls"]}" is unknown.{m["conf"] or ""}')
+            continue
+        m = _CONCLUSION.match(line)
+        if m:
+            out.append(f'Conclusion: the claim "{m["ent"]} is a {m["cls"]}" is {"False" if m["neg"] else "True"}.{m["conf"] or ""}')
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def verdict_set(rows: Sequence[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+    """True/false items of a set with `<source>-verdict` contexts added for each source in `VERDICT_SOURCES` (and the
+    baselines `none`, `text` and the sources kept), set name `name`."""
+    out = []
+    for r in rows:
+        if r.get("format") != "tf":
+            continue
+        keep = {c: r["contexts"][c] for c in ("none", "text", *VERDICT_SOURCES) if c in r["contexts"]}
+        for c in VERDICT_SOURCES:
+            if c in r["contexts"]:
+                keep[f"{c}-verdict"] = verdict_text(r["contexts"][c])
+        out.append({**r, "set": name, "contexts": keep})
+    return out
+
+
+def run_verdict(args: argparse.Namespace) -> dict[str, Any]:
+    manifest = {"seed": args.seed, "from": str(args.output), "sets": {}}
+    for base in ("taxonomy", "rulebase"):
+        rows = read_set(Path(args.output) / f"{base}-s{args.seed}.jsonl.gz")
+        name = f"{base}-verdict"
+        new = verdict_set(rows, name)
+        changed = sum(r["contexts"].get("exec-vsa-verdict") != r["contexts"].get("exec-vsa") for r in new if "exec-vsa" in r["contexts"])
+        sha = write_set(new, Path(args.output) / f"{name}-s{args.seed}.jsonl.gz")
+        manifest["sets"][name] = {"items": len(new), "sha256": sha, "conclusions_rewritten": changed,
+                                  "conditions": sorted({c for r in new for c in r["contexts"]})}
+        print(f"{name}: {len(new)} items, {changed} conclusions rewritten")
+    Path(args.manifest_dir).mkdir(parents=True, exist_ok=True)
+    (Path(args.manifest_dir) / f"manifest-verdict-s{args.seed}.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    return manifest
+
+
 def run_build(args: argparse.Namespace) -> dict[str, Any]:
     sets = [s.strip() for s in args.sets.split(",")] if args.sets else list(BUILDERS)
     namer = W.Namer(args.seed)
@@ -312,8 +367,12 @@ def main(argv: list[str] | None = None) -> None:
     b.add_argument("--output", type=Path, default=OUT)
     b.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
     b.add_argument("--tag", default="")
+    v = sub.add_parser("verdict", help="LG-B verdict-format sets from the built taxonomy and rulebase sets (pre-registration §14)")
+    v.add_argument("--seed", type=int, default=1)
+    v.add_argument("--output", type=Path, default=OUT)
+    v.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
     args = parser.parse_args(argv)
-    run_build(args)
+    {"build": run_build, "verdict": run_verdict}[args.command](args)
 
 
 if __name__ == "__main__":

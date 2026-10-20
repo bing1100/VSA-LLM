@@ -348,14 +348,16 @@ def tree_text(tree: dict[str, Any], indent: int = 0) -> list[str]:
 # -- first-order problems (LG-P) -----------------------------------------------------------------------------------------
 
 def fol(seed: int, *, depths: Sequence[int] = (1, 2, 3, 4), per_depth: int = 100, distractors: Sequence[int] = (3, 30),
-        decoy: float = 0.5, namer: Namer | None = None) -> dict[str, Any]:
+        decoy: float = 0.5, decoy_depth: int = 1, decoy_fanout: int = 1, namer: Namer | None = None) -> dict[str, Any]:
     """Problems about one entity. Clauses: {"kind": "rule", "body": A, "head": B, "neg": bool} (every A is [not] a B),
     {"kind": "fact", "cls": A, "neg": bool}, {"kind": "or", "cls": [A, B]}. Kinds: `horn` (backward chaining), `cases`
     (a disjunctive fact whose two branches both reach the goal), `contra` (modus tollens: A → … → G and not G; goal not A).
     Unprovable variants: `horn` and `contra` ask about an unrelated class; `cases` drops the last rule of one branch. Decoys:
     with probability `decoy`, each class that is a rule head (or the goal) also gets a rule from an unsupported class — a
-    dead end that backward chaining may try (the choice points a search policy must handle). Labels come from the exact
-    reference (`reference.prove`, DPLL)."""
+    dead end that backward chaining may try (the choice points a search policy must handle). Harder problems (pre-registration
+    §15): `decoy_fanout` such draws per head, each a chain of `decoy_depth` rules (unsupported → … → head), so a dead end is
+    only seen as one after `decoy_depth` steps; the defaults (1, 1) give exactly the tier-P problems. Labels come from the
+    exact reference (`reference.prove`, DPLL)."""
     from .reference import prove
     rng = random.Random(f"fol:{seed}")
     namer = namer or Namer(seed + 5)
@@ -390,8 +392,13 @@ def fol(seed: int, *, depths: Sequence[int] = (1, 2, 3, 4), per_depth: int = 100
                     goal = {"cls": chain[0] if provable else namer.word(), "neg": True}
                 heads = sorted({c["head"] for c in clauses if c["kind"] == "rule"} | {goal["cls"]})
                 for h in heads:                                              # decoys: dead-end rules into the proof's classes
-                    if rng.random() < decoy:
-                        clauses.append({"kind": "rule", "body": namer.word(), "head": h, "neg": False, "decoy": True})
+                    for _ in range(decoy_fanout):
+                        if rng.random() < decoy:
+                            target = h
+                            for _ in range(decoy_depth):                         # a dead-end chain into h
+                                body = namer.word()
+                                clauses.append({"kind": "rule", "body": body, "head": target, "neg": False, "decoy": True})
+                                target = body
                 for _ in range(nd):
                     clauses.append({"kind": "rule", "body": namer.word(), "head": namer.word(), "neg": rng.random() < 0.2})
                 rng.shuffle(clauses)

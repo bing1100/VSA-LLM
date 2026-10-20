@@ -291,21 +291,39 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if any(p in {"score", "react", "unsound", "cot"} for p in policies):
         from ..logic.hosts import HostLM
         host = HostLM(args.host, device=args.device, batch_size=args.batch_size)
-    items = W.fol(args.seed, per_depth=args.per_depth, namer=W.Namer(args.seed))["items"]
+    hard = {"depths": tuple(int(x) for x in args.depths.split(",")), "decoy": args.decoy, "decoy_depth": args.decoy_depth,
+            "decoy_fanout": args.decoy_fanout} if args.depths else {}
+    config["problems"] = hard or "tier-p"
+    items = W.fol(args.seed, per_depth=args.per_depth, namer=W.Namer(args.seed), **hard)["items"]
+    if args.provable_only:
+        items = [i for i in items if i["label"]]
     if args.limit:
         items = items[: args.limit]
     rows = []
     t0 = time.monotonic()
+    derive = {"score", "random", "sos", "react"} if args.derive_budgets else set()
     for item in items:
         problem = Problem(item)
         for name in policies:
+            base = {"id": item["id"], "kind": item["kind"], "depth": item["depth"], "distractors": item["distractors"],
+                    "label": item["label"], "policy": name}
+            if name in derive:
+                # Depth-first search with a deterministic policy tries the same steps in the same order whatever the
+                # budget, so one run at the largest budget gives every smaller one: found within b ⇔ found in ≤ b steps.
+                r = run_policy(problem, name, max(budgets), host=host, seed=args.seed)
+                for budget in budgets:
+                    hit = bool(r["proved"]) and r["steps"] <= budget
+                    rows.append({**base, "budget": budget, "correct": int(hit == item["label"]), "proved": hit,
+                                 "steps": r["steps"] if hit else budget, "calls": r["calls"] if budget == max(budgets) else None,
+                                 "accepted": r["accepted"], "seconds": r["seconds"] if budget == max(budgets) else None,
+                                 "derived": budget != max(budgets), "trace": r["trace"] if budget == max(budgets) else []})
+                continue
             for budget in (budgets if name not in {"cot", "ceiling"} else budgets[-1:]):
                 r = run_policy(problem, name, budget, host=host, seed=args.seed)
-                rows.append({"id": item["id"], "kind": item["kind"], "depth": item["depth"], "distractors": item["distractors"],
-                             "label": item["label"], "policy": name, "budget": budget,
-                             "correct": int(r["proved"] == item["label"]), **{k: v for k, v in r.items() if k != "trace"},
-                             "trace": r["trace"]})
+                rows.append({**base, "budget": budget, "correct": int(r["proved"] == item["label"]),
+                             **{k: v for k, v in r.items() if k != "trace"}, "trace": r["trace"]})
     summary: dict[str, Any] = {"source": host.describe() if host else {"host": "none"}, "items": len(items), "policies": policies,
+                               "problems": config["problems"], "provable_only": bool(args.provable_only),
                                "budgets": budgets, "smoke": bool(args.smoke), "seconds": round(time.monotonic() - t0, 1), "cells": {}}
     by: dict[tuple, list] = defaultdict(list)
     for r in rows:
@@ -318,7 +336,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             "found_within_budget": float(np.mean([r["proved"] for r in provable])) if provable else None,
             "soundness": float(np.mean([r["label"] for r in proved])) if proved else None,
             "mean_steps_found": float(np.mean([r["steps"] for r in provable if r["proved"]])) if any(r["proved"] for r in provable) else None,
-            "calls": float(np.mean([r["calls"] for r in rs])), "n": len(rs)}
+            "calls": float(np.mean([r["calls"] for r in rs if r["calls"] is not None])) if any(r["calls"] is not None for r in rs) else None,
+            "n": len(rs)}
     with (output / "rows.jsonl").open("w") as handle:
         for r in rows:
             handle.write(json.dumps(r) + "\n")
@@ -329,7 +348,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     f = lambda x: "—" if x is None else f"{x:.3f}"  # noqa: E731
     for key, c in summary["cells"].items():
         p, b = key.split("|")
-        lines.append(f"| {p} | {b} | {f(c['accuracy'])} | {f(c['found_within_budget'])} | {f(c['soundness'])} | {f(c['mean_steps_found'])} | {c['calls']:.1f} |")
+        lines.append(f"| {p} | {b} | {f(c['accuracy'])} | {f(c['found_within_budget'])} | {f(c['soundness'])} | {f(c['mean_steps_found'])} | {'—' if c['calls'] is None else f"{c['calls']:.1f}"} |")
     (output / "report.md").write_text("\n".join(lines) + "\n")
     finish_output(output, config, git_at_start=git_at_start, device=getattr(host, "device", "cpu"), source=summary["source"])
     return summary
@@ -364,10 +383,24 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
                                                                resamples=args.resamples, seed=args.seed)})
         for row, p in zip(prim, holm_adjust([r["p_value"] for r in prim]) if prim else []):
             row["p_holm"] = p
+        secondary = []
+        for x, y in (("score", "sos"), ("react", "random"), ("react", "score")):
+            for b in sorted({r["budget"] for r in rows if r["policy"] == x}):
+                a = {r["id"]: r["proved"] for r in rows if r["policy"] == x and r["budget"] == b and r["label"]}
+                c = {r["id"]: r["proved"] for r in rows if r["policy"] == y and r["budget"] == b and r["label"]}
+                ids = sorted(set(a) & set(c))
+                if ids:
+                    secondary.append({"a": x, "b": y, "budget": b, **paired_difference(
+                        np.array([a[i] for i in ids], float), np.array([c[i] for i in ids], float), resamples=args.resamples, seed=args.seed)})
         summary = json.loads((run_dir / "summary.json").read_text())
-        doc["hosts"][host] = {"primary": prim, "cells": summary["cells"]}
+        doc["hosts"][host] = {"primary": prim, "secondary": secondary, "cells": summary["cells"],
+                              "problems": summary.get("problems", "tier-p")}
         lines += [f"## {host}", "", "Primary — proofs found on provable problems, score − random (Holm over budgets):", ""]
         lines += [f"- budget {r['budget']}: {r['mean']:+.3f} [{r['ci_low']:+.3f}, {r['ci_high']:+.3f}] (Holm p {r['p_holm']:.4f}, n {r['n']})" for r in prim]
+        if secondary:
+            lines += ["", "Secondary (found on provable problems):", ""]
+            lines += [f"- {r['a']} − {r['b']}, budget {r['budget']}: {r['mean']:+.3f} [{r['ci_low']:+.3f}, {r['ci_high']:+.3f}] "
+                      f"(p {r['p_value']:.4f}, n {r['n']})" for r in secondary]
         lines += ["", "| policy · budget | accuracy | found | soundness |", "|---|---:|---:|---:|"]
         f = lambda x: "—" if x is None else f"{x:.3f}"  # noqa: E731
         lines += [f"| {k} | {f(c['accuracy'])} | {f(c['found_within_budget'])} | {f(c['soundness'])} |" for k, c in summary["cells"].items()]
@@ -387,6 +420,12 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--policies", default="score,random,bfs,sos,ceiling"); r.add_argument("--budgets", default="10,30")
     r.add_argument("--seed", type=int, default=1); r.add_argument("--per-depth", type=int, default=100); r.add_argument("--limit", type=int, default=None)
     r.add_argument("--device", default=None); r.add_argument("--batch-size", type=int, default=16); r.add_argument("--smoke", action="store_true")
+    r.add_argument("--depths", default=None, help="harder problems (pre-registration §15): proof depths, e.g. 2,3,4")
+    r.add_argument("--decoy", type=float, default=0.5); r.add_argument("--decoy-depth", type=int, default=1)
+    r.add_argument("--decoy-fanout", type=int, default=1)
+    r.add_argument("--provable-only", action="store_true", help="only provable problems (the primary's population)")
+    r.add_argument("--derive-budgets", action="store_true",
+                   help="deterministic policies run once at the largest budget; smaller budgets are read off its step count")
     q = sub.add_parser("retrieval"); q.add_argument("--output", type=Path, required=True); q.add_argument("--seed", type=int, default=1)
     p = sub.add_parser("report"); p.add_argument("--runs", nargs="+", required=True); p.add_argument("--output", type=Path, required=True)
     p.add_argument("--resamples", type=int, default=4000); p.add_argument("--seed", type=int, default=0)

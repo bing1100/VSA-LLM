@@ -399,3 +399,174 @@ All are descriptive CPU experiments, with no Holm family. The predictions are re
   round 0's training (`every composed concept needs at least one edge`) as soon as a read term without a frame was linked.
   The `gold` arm had a frame for every read term, so the change cannot touch its run; it is not repeated. Round 0's
   teacher reads came from RD-11's cache ($0). The design is unchanged.
+
+## 13. Addendum 4a (2026-10-20, before any run of it): RD-4b, selective recall and a context-free null (tier F block)
+
+**Origin:** tier P's RD-4 result and diagnostics (`manuscript/findings/2026-10-20-e14-tier-p-gpu.md` §1). The author's
+instruction of 2026-10-20, "Fix all of these and queue up failed experiments", given in reply to the three proposed
+follow-ups, is the go-ahead for this block and for §§14–15.
+
+**What tier P left open:**
+- On T4, explicit recall of the gold frame lowered property accuracy (−0.10), although the recall named the gold answer for
+  399 of 407 items.
+- Two explanations were seen after the primaries (exploratory):
+  - the PMI null prompt read the same recall context;
+  - a 15-line list of real ChEBI names dilutes what the 360M model already knows.
+- RD-4b separates the two. Tier P's pre-registered result stands as recorded; RD-4b does not replace it.
+
+**Items:** as tier P §1 (`t4-heldout-smollm2-v1`, `t5-new-smollm2-v1`; property, paraphrase, entailment).
+
+**Scoring:**
+- **The null prompt is read without any context** (`--null plain`): the template with the null surface and the
+  candidate, computed once per run. PMI = log p(candidate | context + item prompt) − that null.
+- Raw (uncalibrated) choices are also recorded.
+
+**Conditions** (`--family rd4b`):
+- `none`;
+- `explicit-sym:oracle` (tier P's whole-frame recall, now with the plain null);
+- **`explicit-rel:<reader>`** for oracle, stated, typeprior and linker: before each item, only the reader's edges of
+  **that item's relation**, as recall lines;
+- **`explicit-rel-wrong:oracle`:** the same lines with every partner replaced by another filler of that relation. This
+  is the content control;
+- `definition`;
+- `implicit:oracle` (compose hosts).
+
+**Hosts:**
+- SmolLM2-360M C5 on T4 and T5, seeds 1–3;
+- C0′ s1 on both tracks (explicit conditions only; C5 s1's frames, as in tier P).
+
+**Primary** (per track, C5 hosts; Holm over 3 contrasts × 3 tests):
+- (a) `explicit-rel:oracle − none`;
+- (b) `explicit-rel:oracle − explicit-sym:oracle`;
+- (c) `explicit-rel:oracle − implicit:oracle`.
+
+**Secondary:**
+- `explicit-sym:oracle − none` with the plain null;
+- `explicit-rel-wrong:oracle − none` (predicted negative);
+- `explicit-rel:oracle − explicit-rel-wrong:oracle`;
+- `explicit-rel:<reader> − none` for stated, typeprior and linker;
+- `definition − explicit-rel:oracle` and `definition − none`;
+- the primary contrasts on raw choices.
+
+**Stated-only items (RD-4b proper; descriptive, with intervals):**
+- The items whose gold answer is in the `stated` reader's frame. In the smoke run that was about 5% of T4's property
+  items, roughly 20 per seed, too few for a confirmatory test.
+- Contrasts: `explicit-rel:stated − none`, `definition − none` and `explicit-rel:stated − definition`.
+
+**Predictions:**
+- T4: (a), (b) and (c) are positive on property.
+- T5: (a) and (c) are positive. (b) is about 0, since T5 frames are short.
+- `explicit-rel-wrong:oracle` is below `none` on both tracks.
+- With the plain null, `explicit-sym:oracle − none` on T4 is above tier P's −0.10.
+
+**Decision rule:**
+- **If (a) and (c) are positive (Holm) on T4 property,** the recommended self-learning route becomes read → store →
+  **selective** explicit recall (the item's relation lines). An E13 amendment is then drafted for the author. It is not
+  queued.
+- **Otherwise,** explicit recall is reported as useful for new terms only (T5).
+
+**Smokes seen before this registration** (labelled; not results): 6 T4 and 5 T5 concepts on CPU, used to check the code
+paths.
+
+**Cost:** about 0.1–0.4 GPU-h per job; 8 jobs, about 2 GPU-h.
+
+## 14. Addendum 4b (2026-10-20, before any run of it): LG-B with conclusions written as verdicts
+
+**Origin:** gate G1 failed for both SmolLM2 hosts. The exploratory split by label showed why:
+- SmolLM2-360M with `exec-vsa` scored 0.987 on true items and 0.152 on false items, whose conclusion reads "X is not a
+  Y";
+- in cloze format every host scored 1.000.
+
+This block tests whether the failure is only the wording.
+
+**Items** (`e14_items verdict`):
+- `taxonomy-verdict` (1,200 true/false items of `taxonomy-s1`) and `rulebase-verdict` (600 items of `rulebase-s1`);
+- contexts byte-identical to tier P's, except that the conclusion line is rewritten:
+  - "Conclusion: X is not a Y. (0.74)" becomes "Conclusion: the claim "X is a Y" is False. (0.74)";
+  - a positive conclusion becomes "… is True.";
+  - no conclusion becomes "… is unknown.";
+  - every trace line is kept.
+
+**Conditions:**
+- `none`, `text`;
+- `exec-vsa`, `exec-sym` and `exec-vsa-conclusion`, as in tier P;
+- `exec-vsa-verdict`, `exec-sym-verdict` and `exec-vsa-conclusion-verdict`.
+
+**Hosts:** the four frozen hosts of §4.
+
+**Primary** (per host; Holm over depths 1–5): `exec-vsa-verdict − text` on `taxonomy-verdict`.
+
+**Gate G1′:**
+- both SmolLM2 hosts positive (Holm) at every depth ≥ 3;
+- and |`exec-vsa-verdict − exec-sym-verdict`| ≤ 0.03.
+
+**Secondary:**
+- the format effect `<source>-verdict − <source>`, on all items and on false items only;
+- accuracy by gold label;
+- the same contrasts on `rulebase-verdict`.
+
+**Predictions:**
+- **If the SmolLM2 failure is only a negation-reading failure,** false-item accuracy rises to ≥ 0.8 while true-item
+  accuracy stays ≥ 0.9, and G1′ passes.
+- **Stated in advance as the alternative:** SmolLM2-scale hosts cannot relay an executor's verdict in true/false form at
+  all. Then G1′ fails, and the conclusion is that small hosts need a cloze or multiple-choice interface to an executor.
+- **The Qwen3 hosts** are unchanged (≥ 0.99).
+
+**Smoke seen before this registration** (labelled; not a result): SmolLM2-135M, 60 depth-0 items per set, on CPU. The
+verdict format moved its answers toward "False" (`exec-vsa-conclusion-verdict`: 0.07 on true items, 0.97 on false
+items). It shows the test can go either way; it is not evidence for either prediction.
+
+**Cost:** about 0.1–0.3 GPU-h per host; 4 jobs.
+
+## 15. Addendum 4c (2026-10-20, before any run of it): LG-P on problems hard enough for search guidance to matter
+
+**Origin:** tier P's problems were too shallow. Uninformed search found 92% of proofs within 30 steps, and set of
+support found 100%, so `score − random` could not show guidance.
+
+**Problems:**
+- `logic.world.fol`, seed 1, proof depths 2–4, 50 per depth and kind, distractors 3 and 30;
+- **decoy chains:** each head of the proof (and the goal) gets 3 dead-end chains of 4 rules (`decoy 1.0`,
+  `decoy_depth 4`, `decoy_fanout 3`);
+- provable problems only: **156 problems**, about 70 clauses plus distractors.
+- With the defaults (`decoy_depth = decoy_fanout = 1`) the generator gives tier P's 800 problems byte-identically
+  (sha256 prefix `0ed986f0` before and after the change).
+
+**How the difficulty was chosen** (on non-model policies only, before any model ran on these problems):
+
+| Decoy depth, fanout | random @10 / @30 / @100 | bfs @10 / @30 / @100 | sos @10 / @30 / @100 |
+|---|---|---|---|
+| 2, 2 | 0.38 / 0.71 / 0.86 | 0.31 / 0.65 / 0.78 | 0.52 / 0.87 / 1.00 |
+| 3, 3 | 0.12 / 0.67 / 0.77 | 0.17 / 0.65 / 0.77 | 0.27 / 0.74 / 1.00 |
+| **4, 3 (chosen)** | **0.12 / 0.51 / 0.75** | 0.19 / 0.65 / 0.77 | 0.20 / 0.64 / 0.99 |
+
+The pre-set target was random at budget 30 within 0.3–0.6, and set of support at budget 30 below 0.9.
+
+**Policies:**
+- `score` on all four hosts;
+- `random`, `bfs`, `sos`, `ceiling`;
+- `react` on the Qwen3 hosts.
+
+**Budgets:** 10, 30 and 100.
+- Deterministic policies (`score`, `random`, `sos`, `react`) run once at 100. Found within b means found in ≤ b steps.
+  This is exact for depth-first search with a fixed step order; checked on the 156 problems for `random` and `sos` at 10
+  and 30 against direct runs, with 0 mismatches.
+
+**Primary** (per host; Holm over 3 budgets): `score − random`, proofs found within the budget.
+
+**Secondary:** `score − sos`; `react − random`; `react − score`.
+
+**Not measured:** soundness. Only provable problems run, and every policy here uses the sound tools; tier P measured
+1.00.
+
+**Predictions:**
+- `score > random` at budgets 10 and 30 for both Qwen3 hosts;
+- about 0 for the SmolLM2 hosts;
+- `score < sos` for the SmolLM2 hosts;
+- `react ≤ score`, as in tier P.
+
+**Smoke seen before this registration** (labelled; not a result): SmolLM2-135M, 4 problems, on CPU.
+
+**Cost:** about 0.1 GPU-h (SmolLM2) to 1.5 GPU-h (Qwen3-1.7B) per host; 4 jobs.
+
+**Placement for §§13–15:** GPU jobs at 54.4959975–54.4959977, after RD-12 and before the toolkit band (54.496). Reports
+at 54.4959979 (CPU lane).

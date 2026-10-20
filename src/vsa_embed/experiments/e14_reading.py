@@ -170,6 +170,117 @@ def condition_inputs(name: str, concepts: Sequence[str], frames: dict[str, dict[
     raise ValueError(f"unknown condition {name!r}")
 
 
+# -- RD-4b (pre-registration §13): recall of the item's relation only, and a null prompt without the context ------------
+
+RD4B_CONDITIONS = ("none", "explicit-sym:oracle", "explicit-rel:oracle", "explicit-rel:stated", "explicit-rel:typeprior",
+                   "explicit-rel:linker", "explicit-rel-wrong:oracle", "definition")
+RD4B_COMPOSE = ("implicit:oracle",)
+PRIMARY_B = (("explicit-rel:oracle", "none"), ("explicit-rel:oracle", "explicit-sym:oracle"),
+             ("explicit-rel:oracle", "implicit:oracle"))
+SECONDARY_B = (("explicit-sym:oracle", "none"), ("explicit-rel:stated", "none"), ("explicit-rel:typeprior", "none"),
+               ("explicit-rel:linker", "none"), ("explicit-rel-wrong:oracle", "none"),
+               ("explicit-rel:oracle", "explicit-rel-wrong:oracle"), ("definition", "explicit-rel:oracle"), ("definition", "none"))
+STATED_B = (("explicit-rel:stated", "none"), ("definition", "none"), ("explicit-rel:stated", "definition"))
+
+
+def _norm_answer(text: str | None) -> str:
+    t = (text or "").strip().lower().rstrip(".").strip()
+    for article in ("a ", "an ", "the "):
+        if t.startswith(article):
+            t = t[len(article):]
+    return t
+
+
+def gold_flags(items: Sequence[dict[str, Any]], frames: dict[str, dict[str, list | None]], ctx: e11.TrackContext
+               ) -> dict[str, dict[str, bool]]:
+    """item id → {reader: the item's gold answer is a partner of the item's relation in that reader's frame} (property and
+    entailment items; answers compared as lower-case text without article or full stop)."""
+    rid = ctx.relation_id
+    out: dict[str, dict[str, bool]] = {}
+    for item in items:
+        if item["test"] not in {"property", "entailment"} or item.get("relation") not in rid:
+            continue
+        r, gold = rid[item["relation"]], _norm_answer(item["candidates"][int(item["gold"])])
+        out[item["id"]] = {reader: any(int(e[0]) == r and _norm_answer(ctx.text(int(e[1]))) == gold for e in (by.get(item["concept"]) or []))
+                           for reader, by in frames.items()}
+    return out
+
+
+def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, list | None]], text: RecallText,
+                          definitions: dict[str, str], pools: dict[int, np.ndarray], ctx: e11.TrackContext, *, seed: int
+                          ) -> tuple[dict[str, list | None], dict[str, str] | None, dict[str, Any]]:
+    """(frames for the term rows, per-item prompt contexts, diagnostics). `explicit-rel:<reader>`: the reader's edges of the
+    item's own relation as recall lines (an item without a relation gets the whole frame); `explicit-rel-wrong:oracle`: the
+    same lines with every partner replaced by another filler of that relation (RD-7's pool, p = 1). Other conditions: the
+    concept's context (`condition_inputs`) for each of its items."""
+    concepts = scorer.concepts
+    kind, _, arg = name.partition(":")
+    if kind not in {"explicit-rel", "explicit-rel-wrong"}:
+        row_frames, contexts, info = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed)
+        if not contexts:
+            return row_frames, None, info
+        return row_frames, {i["id"]: contexts[c] for c in concepts if c in contexts for i in scorer.items_by_concept[c]}, info
+    reader = frames.get(arg)
+    if reader is None:
+        raise KeyError(f"condition {name!r}: no {arg!r} frames")
+    rid = ctx.relation_id
+    out, lines, changed = {}, [], []
+    for c in concepts:
+        frame = list(reader.get(c) or [])
+        for item in scorer.items_by_concept[c]:
+            rel = rid.get(item.get("relation"))
+            edges = [e for e in frame if rel is None or int(e[0]) == rel]
+            if kind == "explicit-rel-wrong":
+                wrong = noisy_frame(edges, 1.0, pools, seed=seed, key=f"{c}:{item['id']}")
+                changed += [float(x != y) for x, y in zip(edges, wrong)]
+                edges = wrong
+            lines.append(len(edges))
+            out[item["id"]] = text.symbolic(scorer.surface[c], edges)
+    info: dict[str, Any] = {"lines_per_item": float(np.mean(lines)) if lines else 0.0,
+                            "items_without_lines": int(sum(n == 0 for n in lines))}
+    if changed:
+        info["corrupted_share"] = float(np.mean(changed))
+    return {c: None for c in concepts}, out, info
+
+
+def plain_null_scores(scorer: Any) -> np.ndarray:
+    """Null-prompt scores of every property / entailment item **without** any context (the template with the null surface,
+    e.g. "this is functionally related to" + candidate), in the item order `score_rows` uses; read with no term frames."""
+    from ..evaluation import channel_probes as cp
+    from . import e5_zeroshot as zs
+    items = [i for c in scorer.concepts for i in scorer.items_by_concept[c] if i["test"] in {"property", "entailment"}]
+    surfaces = {i["concept"]: i.get("null", zs.NULL_SURFACE) for i in items}
+    prefixes, continuations, _ = zs._prompt_texts(items, surfaces)
+    unique = sorted(set(zip(prefixes, continuations)))
+    with scorer.condition({c: None for c in scorer.concepts}), e11.fast_continuations():
+        values = dict(zip(unique, cp.continuation_logprob(scorer.adapter, [u[0] for u in unique], [u[1] for u in unique])))
+    return np.asarray([values[(p, c)] for p, c in zip(prefixes, continuations)])
+
+
+def score_rows(scorer: Any, row_frames: dict[str, list | None], item_contexts: dict[str, str] | None, *,
+               null_scores: np.ndarray | None) -> dict[str, list[dict[str, Any]]]:
+    """`ItemScorer.score` with per-item contexts and, if `null_scores` is given, that (context-free) null for PMI."""
+    from . import e5_zeroshot as zs
+    from .e9_dim3_baselines import with_context
+    items = [i for c in scorer.concepts for i in scorer.items_by_concept[c]]
+    if item_contexts:
+        items = with_context(items, {i: t + "\n" for i, t in item_contexts.items()})
+    prompt_items = [i for i in items if i["test"] in {"property", "entailment"}]
+    statement_items = [i for i in items if i["test"] == "statement"]
+    with scorer.condition(row_frames), e11._smaller(scorer.adapter, 2 if item_contexts else 1), e11.fast_continuations():
+        prompts, _ = (zs.score_prompts(scorer.adapter, prompt_items, scorer.surface, null_scores=null_scores) if prompt_items
+                      else ([], None))
+        statements = e11.edit.score_statements(scorer.adapter, statement_items, scorer.surface) if statement_items else []
+    kinds = {i["id"]: i.get("edge_kind") for i in items}
+    out: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in prompts + statements:
+        row = {k: v for k, v in row.items() if k != "pmi"}
+        row["edge_kind"] = kinds.get(row["id"], row.get("edge_kind"))
+        row.setdefault("consistent", None)
+        out[row["concept"]].append(row)
+    return {c: out.get(c, []) for c in scorer.concepts}
+
+
 def frames_path(run_dir: Path, read_set: e11.ReadSet) -> Path:
     track = read_set.manifest["track"]
     return Path(run_dir) / f"e11-{track}-{read_set.kind}" / "frames.jsonl"
@@ -219,7 +330,9 @@ def context_budget(run: Any, cap: int | None) -> int | None:
 
 def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str, list | None]], *, style: str,
                     conditions: Sequence[str], store: sq.RecallStore | None, seed: int = 0, resamples: int = 2000,
-                    max_context_tokens: int | None = 1024, log=print) -> dict[str, Any]:
+                    max_context_tokens: int | None = 1024, null: str = "context", log=print) -> dict[str, Any]:
+    """`null`: `context` (tier P: the null prompt is read after the same context as the item) or `plain` (RD-4b: the null
+    prompt without any context, computed once). Per-item conditions (`explicit-rel*`) and `plain` use `score_rows`."""
     ctx = e11.run_context(run)
     budget = context_budget(run, max_context_tokens)
     scorer = e11.ItemScorer(run, read_set, ctx)
@@ -232,25 +345,36 @@ def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str,
     tokens: dict[str, float | None] = {}
     samples: dict[str, str] = {}
     timings: dict[str, float] = {}
+    null_scores = plain_null_scores(scorer) if null == "plain" else None
+    flags = gold_flags([i for c in concepts for i in scorer.items_by_concept[c]], frames, ctx)
     for name in conditions:
         t0 = time.monotonic()
-        row_frames, contexts, diag = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed)
-        if contexts:
-            contexts = {c: fit_context(t, run.tokenizer, budget) for c, t in contexts.items()}
         log(f"  {name}")
-        item_rows[name] = scorer.score(row_frames, contexts)
+        if null == "plain" or name.startswith("explicit-rel"):
+            row_frames, contexts, diag = item_condition_inputs(name, scorer, frames, text, definitions, pools, ctx, seed=seed)
+            if contexts:
+                contexts = {i: fit_context(t, run.tokenizer, budget) for i, t in contexts.items()}
+            item_rows[name] = score_rows(scorer, row_frames, contexts, null_scores=null_scores)
+        else:
+            row_frames, contexts, diag = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed)
+            if contexts:
+                contexts = {c: fit_context(t, run.tokenizer, budget) for c, t in contexts.items()}
+            item_rows[name] = scorer.score(row_frames, contexts)
+        for rows in item_rows[name].values():
+            for row in rows:
+                if row["id"] in flags:
+                    row["gold_in"] = flags[row["id"]]
         info[name] = diag
         if contexts:
-            lengths = [len(run.tokenizer(contexts[c], add_special_tokens=False)["input_ids"]) + 1 for c in concepts if c in contexts]
-            tokens[name] = float(np.mean(lengths)) if lengths else None
-            first = next((c for c in concepts if c in contexts), None)
-            if first is not None:
-                samples[name] = contexts[first]
+            sample = list(contexts.values())[:400]
+            tokens[name] = float(np.mean([len(run.tokenizer(t, add_special_tokens=False)["input_ids"]) + 1 for t in sample]))
+            samples[name] = sample[0]
         else:
             tokens[name] = 0.0
         timings[name] = round(time.monotonic() - t0, 2)
+    gold_share = {r: float(np.mean([f[r] for f in flags.values()])) for r in frames} if flags else {}
     document = {"set": {"kind": read_set.kind, "track": read_set.manifest["track"], "concepts": len(concepts),
-                        "items": len(read_set.items)},
+                        "items": len(read_set.items)}, "null": null, "gold_in_frame_share": gold_share,
                 "style": style, "conditions": list(conditions), "compose": bool(run.channel is not None and run.channel.mode == "compose"),
                 "vsa": store is not None, "context_budget": budget, "readers": {r: sum(f is not None for f in v.values()) for r, v in frames.items()},
                 "diagnostics": info, "context_tokens": tokens, "context_samples": samples, "timings": timings,
@@ -299,7 +423,7 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
     config = {"experiment": "e14-rd4-recall", "run": str(args.run), "items": str(args.items), "style": style, "limit": args.limit,
               "frames": str(args.frames) if args.frames else None, "conditions": args.conditions, "noise": list(noise),
               "seed": args.seed, "resamples": args.resamples, "max_context_tokens": args.max_context_tokens, "alias_table": str(args.alias_table) if args.alias_table else None,
-              "smoke": bool(args.smoke)}
+              "smoke": bool(args.smoke), "null": args.null, "family": args.family}
     output = Path(args.output)
     if args.overwrite:
         clear_output(output)
@@ -317,15 +441,20 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
     missing = [r for r in READERS if r not in frames]
     if missing:
         raise SystemExit(f"{path}: no frames for readers {missing} (style {style})")
-    conditions = [c.strip() for c in args.conditions.split(",") if c.strip()] if args.conditions else \
-        default_conditions(compose, store is not None, noise)
+    if args.conditions:
+        conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
+    elif args.family == "rd4b":
+        conditions = list(RD4B_CONDITIONS) + (list(RD4B_COMPOSE) if compose else [])
+    else:
+        conditions = default_conditions(compose, store is not None, noise)
     if not compose:
         bad = [c for c in conditions if c.split(":")[0] in {"implicit", "both", "noisy-implicit", "explicit-vsa"}]
         if bad:
             raise SystemExit(f"run has no compose channel: conditions {bad} need one")
     result = evaluate_recall(run, read_set, frames, style=style, conditions=conditions, store=store, seed=args.seed,
-                             resamples=args.resamples, max_context_tokens=args.max_context_tokens)
-    document = {"source": run.describe(), "frames_from": str(path), "smoke": bool(args.smoke), **result["document"]}
+                             resamples=args.resamples, max_context_tokens=args.max_context_tokens, null=args.null)
+    document = {"source": run.describe(), "frames_from": str(path), "smoke": bool(args.smoke), "family": args.family,
+                **result["document"]}
     with (output / "predictions.jsonl").open("w") as handle:
         for cond, by_concept in result["item_rows"].items():
             for concept, rows in by_concept.items():
@@ -339,7 +468,74 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
 
 # -- pooled report ----------------------------------------------------------------------------------------------------
 
+def _prediction_values(folder: Path, *, field: str = "correct", where=lambda row: True) -> dict[str, dict[str, dict[str, float]]]:
+    """condition → test → item id → value, from a run folder's `predictions.jsonl` (paraphrase: the property items'
+    `consistent`; with `field="raw_correct"` there is no paraphrase value)."""
+    out: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
+    for line in (folder / "predictions.jsonl").open():
+        row = json.loads(line)
+        if not where(row):
+            continue
+        if row["test"] in {"property", "entailment"} and row.get(field) is not None:
+            out[row["condition"]][row["test"]][row["id"]] = float(row[field])
+        if row["test"] == "property" and field == "correct" and row.get("consistent") is not None:
+            out[row["condition"]]["paraphrase"][row["id"]] = float(row["consistent"])
+    return out
+
+
+def pooled_contrast(folders: Sequence[Path], a: str, b: str, test: str, *, field: str = "correct", where=lambda row: True,
+                    resamples: int, seed: int) -> dict[str, Any] | None:
+    """a − b on one test, paired over items, the item differences of every seed pooled (as `e11.pooled_item_contrast`),
+    restricted to the rows `where` keeps."""
+    from .e5_zeroshot import paired_difference
+    diffs = []
+    for folder in folders:
+        values = _prediction_values(folder, field=field, where=where)
+        va, vb = values.get(a, {}).get(test, {}), values.get(b, {}).get(test, {})
+        diffs += [va[i] - vb[i] for i in sorted(set(va) & set(vb))]
+    if not diffs:
+        return None
+    return {**paired_difference(np.asarray(diffs), np.zeros(len(diffs)), resamples=resamples, seed=seed), "seeds": len(folders)}
+
+
+def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed: int) -> dict[str, Any]:
+    """RD-4b (pre-registration §13): primary (Holm over contrasts × tests), secondary, the stated-only subset, and the same
+    contrasts on raw (uncalibrated) choices."""
+    stated = lambda row: bool((row.get("gold_in") or {}).get("stated"))  # noqa: E731
+    out: dict[str, Any] = {}
+    blocks = (("primary", PRIMARY_B, "correct", lambda row: True), ("secondary", SECONDARY_B, "correct", lambda row: True),
+              ("stated_only", STATED_B, "correct", stated), ("raw_primary", PRIMARY_B, "raw_correct", lambda row: True))
+    for key, pairs, field, where in blocks:
+        rows = []
+        for a, b in pairs:
+            if a not in conds or b not in conds:
+                continue
+            for test in PRIMARY_TESTS:
+                r = pooled_contrast(folders, a, b, test, field=field, where=where, resamples=resamples, seed=seed)
+                if r is not None:
+                    rows.append({"a": a, "b": b, "test": test, **r})
+        if key == "primary" and rows:
+            for row, p in zip(rows, holm_adjust([r["p_value"] for r in rows])):
+                row["p_holm"] = p
+        out[key] = rows
+    means: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    for f in folders:
+        for field, suffix in (("correct", ""), ("raw_correct", " raw")):
+            for cond, by_test in _prediction_values(f, field=field).items():
+                for test, values in by_test.items():
+                    means[cond][test + suffix].append(float(np.mean(list(values.values()))))
+            for cond, by_test in _prediction_values(f, field=field, where=stated).items():
+                for test, values in by_test.items():
+                    means[cond][test + suffix + " (stated)"].append(float(np.mean(list(values.values()))))
+    out["means"] = {c: {t: float(np.mean(v)) for t, v in by.items()} for c, by in means.items()}
+    out["stated_items"] = int(sum(1 for line in (folders[0] / "predictions.jsonl").open()
+                                  if (r := json.loads(line))["condition"] == "none" and r["test"] == "property" and stated(r)))
+    return out
+
+
 def run_recall_report(args: argparse.Namespace) -> dict[str, Any]:
+    if getattr(args, "family", "tier-p") == "rd4b":
+        return run_rd4b_report(args)
     present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
     missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
     groups: dict[tuple[str, str, str], list[Path]] = defaultdict(list)
@@ -381,6 +577,43 @@ def run_recall_report(args: argparse.Namespace) -> dict[str, Any]:
         for title, rows in (("Primary (Holm)", primary), ("Secondary", secondary)):
             lines += ["", f"### {title}", "", "| a − b | test | difference [95% CI] | n |", "|---|---|---|---:|"]
             lines += [f"| {r['a']} − {r['b']} | {r['test']} | {fmt_ci(r)} | {r['n']} |" for r in rows]
+        lines.append("")
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "report.json", out)
+    (output / "report.md").write_text("\n".join(lines) + "\n")
+    return out
+
+
+def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
+    present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
+    missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
+    groups: dict[tuple[str, str, str], list[Path]] = defaultdict(list)
+    for folder in present:
+        s = json.loads((folder / "summary.json").read_text())
+        groups[(s["set"]["track"], s["set"]["kind"], Path(s["source"]["run"]).name.rsplit("-s", 1)[0])].append(folder)
+    out: dict[str, Any] = {"family": "rd4b", "groups": [], "missing": missing}
+    lines = ["# E14 RD-4b — recall of the item's relation, context-free null (pre-registration §13)", "",
+             "PMI choices use the null prompt **without** the context; `raw` columns are uncalibrated choices; `(stated)`: "
+             "items whose gold answer is in the `stated` reader's frame.", ""]
+    if missing:
+        lines += [f"Missing run folders: {', '.join(missing)}", ""]
+    for (track, kind, model), folders in sorted(groups.items()):
+        conds = set.intersection(*(set(json.loads((f / "summary.json").read_text())["conditions"]) for f in folders))
+        g = {"track": track, "kind": kind, "model": model, "seeds": len(folders),
+             **rd4b_group(folders, conds, resamples=args.resamples, seed=args.seed)}
+        out["groups"].append(g)
+        cols = [c for c in ("property", "paraphrase", "entailment", "property raw", "entailment raw", "property (stated)",
+                            "property raw (stated)") if any(c in m for m in g["means"].values())]
+        lines += [f"## {track} {kind} — {model} ({len(folders)} seeds; {g['stated_items']} stated property items per seed)", "",
+                  "| condition | " + " | ".join(cols) + " |", "|---|" + "---:|" * len(cols)]
+        for cond in sorted(g["means"]):
+            m = g["means"][cond]
+            lines.append(f"| {cond} | " + " | ".join(f"{m[c]:.4f}" if c in m else "—" for c in cols) + " |")
+        for title, key in (("Primary (Holm)", "primary"), ("Secondary", "secondary"), ("Stated-only items", "stated_only"),
+                           ("Primary contrasts on raw choices", "raw_primary")):
+            lines += ["", f"### {title}", "", "| a − b | test | difference [95% CI] | n |", "|---|---|---|---:|"]
+            lines += [f"| {r['a']} − {r['b']} | {r['test']} | {fmt_ci(r)} | {r['n']} |" for r in g[key]]
         lines.append("")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -690,9 +923,13 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--resamples", type=int, default=4000)
     r.add_argument("--smoke", action="store_true")
     r.add_argument("--overwrite", action="store_true")
+    r.add_argument("--null", choices=("context", "plain"), default="context",
+                   help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
+    r.add_argument("--family", choices=("tier-p", "rd4b"), default="tier-p", help="default condition list")
     rr = sub.add_parser("recall-report", help="pool RD-4 run folders over seeds")
     rr.add_argument("--runs", nargs="+", required=True)
     rr.add_argument("--output", type=Path, required=True)
+    rr.add_argument("--family", choices=("tier-p", "rd4b"), default="tier-p", help="which pre-registered contrasts")
     rr.add_argument("--resamples", type=int, default=4000)
     rr.add_argument("--seed", type=int, default=0)
     rl = sub.add_parser("relations", help="RD-3: relation choice on stated edges (mc-rel, react, and E11's readers)")

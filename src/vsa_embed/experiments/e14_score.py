@@ -251,6 +251,71 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
     return doc
 
 
+def run_verdict_report(args: argparse.Namespace) -> dict[str, Any]:
+    """LG-B verdict format (pre-registration §14): per host, on `taxonomy-verdict` true/false items, `exec-vsa-verdict − text`
+    by depth 1–5 (Holm over depths; the G1 re-test), `exec-vsa-verdict − exec-sym-verdict`, and the format effect
+    `<source>-verdict − <source>`; accuracy by gold label; the same on `rulebase-verdict`. Gate G1′: both SmolLM2 hosts
+    positive (Holm) at every depth ≥ 3 and |exec-vsa-verdict − exec-sym-verdict| ≤ 0.03."""
+    present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
+    missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
+    doc: dict[str, Any] = {"hosts": {}, "missing": missing}
+    lines = ["# E14 LG-B verdict format — pooled report (pre-registration §14)", ""] + ([f"Missing: {', '.join(missing)}", ""] if missing else [])
+    by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for run in present:
+        by_host[json.loads((run / "summary.json").read_text())["source"]["host"]] += load_predictions(run)
+    kw = {"resamples": args.resamples, "seed": args.seed}
+    for host, rows in by_host.items():
+        tax = lambda r: r["set"] == "taxonomy-verdict"  # noqa: E731
+        primary = []
+        for d in range(1, 6):
+            c = contrast(rows, "exec-vsa-verdict", "text", where=lambda r, d=d: tax(r) and r.get("depth") == d, **kw)
+            if c:
+                primary.append({**c, "depth": d})
+        for c, p in zip(primary, holm_adjust([c["p_value"] for c in primary]) if primary else []):
+            c["p_holm"] = p
+        rep: dict[str, Any] = {"primary": primary,
+                               "vsa_vs_sym": contrast(rows, "exec-vsa-verdict", "exec-sym-verdict", where=tax, **kw),
+                               "format": {f"{s}-verdict − {s}": contrast(rows, f"{s}-verdict", s, where=tax, **kw)
+                                          for s in ("exec-vsa", "exec-sym", "exec-vsa-conclusion")},
+                               "format_false": contrast(rows, "exec-vsa-verdict", "exec-vsa", where=lambda r: tax(r) and not r["label"], **kw),
+                               "rulebase": {"exec-vsa-verdict − text": contrast(rows, "exec-vsa-verdict", "text",
+                                                                                where=lambda r: r["set"] == "rulebase-verdict", **kw),
+                                            "exec-vsa-verdict − exec-vsa": contrast(rows, "exec-vsa-verdict", "exec-vsa",
+                                                                                    where=lambda r: r["set"] == "rulebase-verdict", **kw)}}
+        acc: dict[tuple, list[int]] = defaultdict(list)
+        for r in rows:
+            if r["set"] in ("taxonomy-verdict", "rulebase-verdict"):
+                acc[(r["set"], r["condition"], bool(r["label"]))].append(r["correct"])
+        rep["by_label"] = {f"{s}|{c}|{'true' if lab else 'false'}": {"acc": float(np.mean(v)), "n": len(v)} for (s, c, lab), v in acc.items()}
+        doc["hosts"][host] = rep
+        lines += [f"## {host}", "", "**Primary: exec-vsa-verdict − text (taxonomy, by depth; Holm)**", ""]
+        lines += [f"- depth {c['depth']}: {fmt(c)}" for c in primary]
+        lines += [f"- exec-vsa-verdict − exec-sym-verdict: {fmt(rep['vsa_vs_sym'])}", "", "Format effect (taxonomy):", ""]
+        lines += [f"- {k}: {fmt(v)}" for k, v in rep["format"].items()]
+        lines += [f"- exec-vsa-verdict − exec-vsa, false items only: {fmt(rep['format_false'])}", "", "Rulebase:", ""]
+        lines += [f"- {k}: {fmt(v)}" for k, v in rep["rulebase"].items()]
+        lines += ["", "| set · condition | true items | false items |", "|---|---:|---:|"]
+        for s in ("taxonomy-verdict", "rulebase-verdict"):
+            for c in sorted({k.split("|")[1] for k in rep["by_label"] if k.startswith(s + "|")}):
+                t, f = rep["by_label"].get(f"{s}|{c}|true"), rep["by_label"].get(f"{s}|{c}|false")
+                lines.append(f"| {s} · {c} | {t['acc']:.3f} ({t['n']}) | {f['acc']:.3f} ({f['n']}) |" if t and f else f"| {s} · {c} | — | — |")
+        lines.append("")
+    small = [h for h in doc["hosts"] if "SmolLM2" in h]
+    if small:
+        def passes(h: str) -> bool:
+            rep = doc["hosts"][h]
+            deep = [c for c in rep["primary"] if c["depth"] >= 3]
+            return bool(deep) and all(c["mean"] > 0 and c.get("p_holm", 1) < 0.05 for c in deep) and \
+                rep["vsa_vs_sym"] is not None and abs(rep["vsa_vs_sym"]["mean"]) <= 0.03
+        doc["gate_G1_verdict"] = {h: passes(h) for h in small}
+        lines += ["## Gate G1′ (pre-registration §14)", "", *[f"- {h}: {'pass' if v else 'fail'}" for h, v in doc["gate_G1_verdict"].items()]]
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    write_json(out / "report.json", doc)
+    (out / "report.md").write_text("\n".join(lines) + "\n")
+    return doc
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -262,8 +327,11 @@ def main(argv: list[str] | None = None) -> None:
     r = sub.add_parser("report")
     r.add_argument("--runs", nargs="+", required=True); r.add_argument("--output", type=Path, required=True)
     r.add_argument("--resamples", type=int, default=4000); r.add_argument("--seed", type=int, default=0)
+    v = sub.add_parser("verdict-report", help="LG-B verdict format (pre-registration §14)")
+    v.add_argument("--runs", nargs="+", required=True); v.add_argument("--output", type=Path, required=True)
+    v.add_argument("--resamples", type=int, default=4000); v.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
-    {"score": run_score, "report": run_report}[args.command](args)
+    {"score": run_score, "report": run_report, "verdict-report": run_verdict_report}[args.command](args)
 
 
 if __name__ == "__main__":
