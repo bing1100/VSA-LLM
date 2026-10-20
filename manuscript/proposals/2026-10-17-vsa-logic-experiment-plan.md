@@ -24,6 +24,13 @@ numbers below refer to it).
   - **G2 fails** on C1–C4.
   - **RD-4's rule** gives no E13 amendment: explicit recall is −0.10 on T4 property and +0.31 on T5. RD-4b comes next.
   - **RD-12** is retried after a fix: three of its four arms are pending.
+  - **Follow-ups queued** (pre-registration §§13–15; the author's go-ahead, 20 Oct):
+    - RD-4b, selective recall with a context-free null (8 jobs, 54.4959975);
+    - LG-B verdict format, gate G1′ (4 jobs, 54.4959976);
+    - LG-P hard problems (4 jobs, 54.4959977);
+    - reports at 54.4959979.
+    - Script: `experiments/e14-logic/queue-commands-followup.sh`; about 4 GPU-h.
+  - **Every finished experiment explained:** `manuscript/findings/2026-10-20-e14-experiments-explained.md`.
 
 ---
 
