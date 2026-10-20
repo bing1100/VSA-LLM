@@ -82,7 +82,8 @@ learn:
 write: {reader: linker, secondary_readers: [linker-joint, typeprior], style: scr}
 
 reason:
-  conditions: none,recall:own,symbolic,definition   # amendment 2: + definition (amendment 1 had none: E12 has no T7 writer)
+  conditions: none,recall:own,recall-rel:own,symbolic,definition   # amendment 2: + definition; amendment 3: + recall-rel:own (L5b)
+  secondary_frames: [typeprior]      # amendment 3 (secondary): recall-rel:own again with the type prior's frames written
   definition_source: read_set        # the read set's SCR notes (the reader's input); anchors without one: not scored under it
   max_anchors: 600                   # a seeded sample of the round-2 anchors
 

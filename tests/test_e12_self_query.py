@@ -197,6 +197,42 @@ def test_chain_and_reverse_contexts(world, understanding_dir, stores) -> None:
         builder.build(sqx.Condition("wrong", "own"))
 
 
+def test_recall_rel_keeps_only_the_asked_relation_on_relation_items(world, understanding_dir, stores, tmp_path) -> None:
+    """E13 amendment 3: `recall-rel` gives a relation item only the asked relation's lines; two-hop and reverse items
+    (which already recall only their relations) get the same text as under `recall`."""
+    import gzip
+    import shutil
+    root = tmp_path / "understanding-toy-v1"
+    shutil.copytree(understanding_dir, root)
+    with gzip.open(root / "items.jsonl.gz", "rt") as handle:
+        items = [json.loads(line) for line in handle]
+    items.append({"id": "u-bl-negation-owned_by", "family": "negation", "test": "negation", "subset": "seen", "anchor": "u-bl",
+                  "slots": {"x": "u-bl"}, "text": {}, "null": {"x": "this"}, "templates": ["{x} is owned by the"],
+                  "candidates": [" Zash Team", " sales area"], "gold": 0, "relation": "owned_by:affirm", "pair": None,
+                  "chance": 0.5, "meta": {}})
+    und.write_jsonl_gz(root / "items.jsonl.gz", items)
+    item_set = sqx.load_item_set(root, families=("two_hop", "reverse", "negation", "affirm"))     # as E13 loads them
+    builder = sqx.ContextBuilder(item_set, world["ontology"], _lexicon(), stores)
+    whole, _ = builder.build(sqx.Condition("recall", "own"))
+    selective, _ = builder.build(sqx.Condition("recall-rel", "own"))
+    lines = selective["u-bl-negation-owned_by"].splitlines()
+    assert len(lines) == 2 and "owned by" in lines[1]                      # the call line and the one owned_by line
+    assert len(whole["u-bl-negation-owned_by"].splitlines()) > len(lines)  # the whole frame has the other relations too
+    for item in ("u-bl-two_hop-owned_by-area", "u-bl-reverse-owned_by"):
+        assert selective[item] == whole[item]
+    with pytest.raises(ValueError):                                         # not defined for the frame item sets
+        sqx.ContextBuilder.__dict__["_frames"](builder, sqx.Condition("recall-rel", "own"))
+    from vsa_embed.experiments import e13_cycle as e13                       # E13's own builder (the stage-3 path)
+    store_frames = {c["concept"]: _frame(c["surface"]) for c in item_set.concepts}
+    cycle = e13.CycleContextBuilder(item_set, world["ontology"], _lexicon(), stores, store_frames=store_frames)
+    whole13, _ = cycle.build(sqx.Condition("recall", "own"))
+    selective13, _ = cycle.build(sqx.Condition("recall-rel", "own"))
+    lines13 = selective13["u-bl-negation-owned_by"].splitlines()
+    assert len(lines13) == 2 and "owned by" in lines13[1]
+    assert len(whole13["u-bl-negation-owned_by"].splitlines()) > 2
+    assert selective13["u-bl-two_hop-owned_by-area"] == whole13["u-bl-two_hop-owned_by-area"]
+
+
 def test_evaluate_understanding_and_new_words(world, understanding_dir, new_dir, stores) -> None:
     run = _open(world, "C5")
     # scored: the reverse item (a two-block chain overflows the fake host's 64 positions; its text is tested above)

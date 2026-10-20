@@ -384,3 +384,59 @@ not frame-specific, hence the L1 gate.
   time.
 - **New totals:** T5 75 jobs ≈ 38.4 GPU-h; T7-ROOD 73 jobs ≈ 48.2 GPU-h. The T7-ROOD reason jobs grow by ≈ 0.05 GPU-h
   each.
+
+### Amendment 3 (2026-10-20; the author's approval): selective recall in stage 3 (L5b) — T5 and T7-ROOD
+
+**Written before any E13 run.** On 2026-10-20 all 148 queued E13 jobs were `pending`, so the amendment covers every E13
+result on both tracks. The draft is `amendment-proposal-2026-10-20.md`. The author approved it as written ("go ahead
+with all of this work", 2026-10-20), so the type-prior secondary (change 3) is included.
+
+**Configuration:** `t5.yaml`, `t7-rood.yaml` (`reason.conditions`, `reason.secondary_frames`).
+
+**Code:**
+- `e12_self_query`: the condition kind `recall-rel`;
+- `e13_cycle`: `CycleContextBuilder`, `reason`, `_l5b`, `report`.
+
+Everything not stated here is as registered.
+
+**Why:** E14's pre-registered RD-4b rule fired (`manuscript/findings/2026-10-20-e14-followups.md` §1). With
+SmolLM2-360M C5, 3 seeds:
+- **Recall of only the asked relation's lines** raised property accuracy from 0.614 to 0.862 on T4 (+0.248*), and from
+  0.190 to 0.845 on T5 (+0.655*).
+- **Whole-frame recall did worse:** −0.284* (T4) and −0.158* (T5) against selective recall.
+- **The frames' source mattered:** the type prior's frames recovered +0.62 of the oracle's +0.66 on T5. The linker's,
+  E13's read arm, recovered +0.28.
+- E12's scorer already uses a context-free null, so E14's scoring artefact does not apply to E13.
+
+**Changes (stage 3 only).** Stages 0–2 and 4–5, endpoints L1–L4 and every arm's frames are unchanged.
+1. **`recall-rel:own`** is the recall tool on the read store with:
+   - a relation item (`negation/affirm`) given only the lines of the asked relation;
+   - two-hop and reverse items as under `recall:own`, since they already recall only their relations.
+
+   Scored with E12's scorer.
+2. **L5b**, `recall-rel:own − none` per anchor, is a co-primary with L5's statistic (anchors × seeds, two-way cluster
+   bootstrap).
+   - It is met iff Holm p < 0.05 and the lower CI > 0.
+   - **The Holm family is now seven tests:** L1, L1 (random), L2, L3, L4, L5, L5b. A test that is not evaluable counts as
+     p = 1, as before.
+   - L5 is kept unchanged.
+3. **Secondary:**
+   - `recall-rel:own − recall:own` (selective against whole frame);
+   - stage 3 scored again with the type prior's stage-2 frames written (`recall-rel:own@typeprior`), against `none` and
+     against `recall-rel:own`. No new stage-4 arm.
+
+**Predictions:**
+- L5b > 0 on T5;
+- L5b ≥ L5;
+- `recall-rel:own@typeprior` ≥ `recall-rel:own`, because the linker's frame F1 on T5 new words is 0.55.
+
+**Checks:**
+- `tests/test_e12_self_query.py::test_recall_rel_keeps_only_the_asked_relation_on_relation_items` and
+  `tests/test_e13_amendment3.py`; all E12/E13 tests pass.
+- A CPU smoke of the whole T5 cycle with the amended configuration, in `smoke-amendment3/` (SMOKE; not a result).
+
+**Queue:**
+- No command line changes and nothing is cancelled. The reason and report jobs read the amended configuration and code
+  at run time.
+- The stage-3 jobs grow by about 50% (one more condition, plus the type-prior pass): about +0.25 GPU-h per reason job,
+  about +2 GPU-h per track.

@@ -71,8 +71,11 @@ E12_ROOT = Path("experiments/e12-self-query")
 OUTPUT_PREFIX = "self-query-"
 RESULT_FILES = ("summary.json", "predictions.jsonl.gz", "recalls.jsonl.gz", "report.md", "resolved_config.yaml", "manifest.json")
 RUN_NAME = re.compile(r"^(?P<host>.+)-(?P<mode>full|lora|frozen)-(?P<model>[^-]+)-s(?P<seed>\d+)$")
-KINDS = ("none", "recall", "roleless", "wrong", "symbolic", "definition", "recall-all", "recall-free", "fields", "noconf")
-STORE_KINDS = frozenset({"recall", "roleless", "wrong", "recall-all", "recall-free", "fields", "noconf"})
+KINDS = ("none", "recall", "roleless", "wrong", "symbolic", "definition", "recall-all", "recall-free", "fields", "noconf",
+         "recall-rel")
+# `recall-rel` (E13 amendment 3, from E14 RD-4b): as `recall`, but a relation item gets only the asked relation's lines
+# (two-hop and reverse items already recall only their relations, so they are the same as under `recall`).
+STORE_KINDS = frozenset({"recall", "roleless", "wrong", "recall-all", "recall-free", "fields", "noconf", "recall-rel"})
 UNDERSTANDING_FAMILIES = ("two_hop", "reverse")
 # Opt-in (`--families`; T7-ROOD, decision 63: no role-swap twins and no two-hop items on T7): the WP-UB families that ask
 # about one relation of the anchor's own frame. Their context is the anchor's whole-frame recall (slot-aware, as for new
@@ -435,6 +438,8 @@ class ContextBuilder:
         return self._frames(condition)
 
     def _frames(self, condition: Condition) -> tuple[dict[str, str], list[dict[str, Any]]]:
+        if condition.kind == "recall-rel":
+            raise ValueError("condition 'recall-rel' is defined for the understanding items only")
         style = "fields" if condition.kind == "fields" else "statements"
         # `roleless` prints no confidences: a filler's cleanup score comes from unbinding its role
         writer = self.writer(style=style, confidence=condition.kind not in {"noconf", "roleless"})
@@ -557,9 +562,12 @@ class ContextBuilder:
                     continue
                 if item["anchor"] not in whole:
                     lines = self._frame_lines(condition, item["anchor"])
-                    whole[item["anchor"]] = (writer.render(anchor["surface"], lines), sq.slot_accuracy(lines, self.frames[item["anchor"]]))
-                text, accuracy = whole[item["anchor"]]
+                    whole[item["anchor"]] = (lines, sq.slot_accuracy(lines, self.frames[item["anchor"]]))
+                lines, accuracy = whole[item["anchor"]]
                 relation = self.relation_id.get(item["relation"].split(":", 1)[0])
+                if condition.kind == "recall-rel":                     # only the asked relation's lines
+                    lines = [line for line in lines if line.relation == relation]
+                text = writer.render(anchor["surface"], lines)
                 texts[prompt.id] = text
                 records.append({"condition": condition.name, "item": prompt.id, "store": condition.store, "text": text,
                                 "slot_correct": accuracy.get(relation) if relation is not None else None})

@@ -19,11 +19,11 @@ torch.set_num_threads(1)
 # -- L1: the co-primary gate and the Holm family --------------------------------------------------------------------------
 
 def test_family_holm_counts_every_registered_test() -> None:
-    assert e13.HOLM_FAMILY == ("L1", "L1_random", "L2", "L3", "L4", "L5")
-    full = e13.family_holm({"L1": 0.001, "L1_random": 0.004, "L2": 0.5, "L3": 0.02, "L4": 0.9, "L5": 0.01})
-    assert full["L1"] == pytest.approx(0.006) and full["L1_random"] == pytest.approx(0.02)       # 6 × p, then 5 × p
+    assert e13.HOLM_FAMILY == ("L1", "L1_random", "L2", "L3", "L4", "L5", "L5b")          # amendment 3: + L5b
+    full = e13.family_holm({"L1": 0.001, "L1_random": 0.004, "L2": 0.5, "L3": 0.02, "L4": 0.9, "L5": 0.01, "L5b": 0.3})
+    assert full["L1"] == pytest.approx(0.007) and full["L1_random"] == pytest.approx(0.024)      # 7 × p, then 6 × p
     missing = e13.family_holm({"L1": 0.001, "L1_random": None, "L2": None, "L3": None, "L4": None, "L5": None})
-    assert missing == {"L1": pytest.approx(0.006)}                                                 # never a family of one
+    assert missing == {"L1": pytest.approx(0.007)}                                                 # never a family of one
     assert e13.family_holm({k: None for k in e13.HOLM_FAMILY}) == {}
 
 
@@ -153,7 +153,7 @@ def test_report_gates_l1_and_keeps_l5s_margin_apart_from_l3s(tmp_path: Path) -> 
     block, verdicts = result["hosts"]["H"], result["verdicts"]
     assert block["L1"]["mean"] == pytest.approx(-0.5) and block["L1_random"]["mean"] == pytest.approx(-0.2)
     assert verdicts["L1_vs_noread"] and verdicts["L1_vs_random"] and verdicts["L1"] is True
-    assert result["holm_family"]["tests"] == list(e13.HOLM_FAMILY) and result["holm_family"]["not_evaluable"] == ["L4"]
+    assert result["holm_family"]["tests"] == list(e13.HOLM_FAMILY) and result["holm_family"]["not_evaluable"] == ["L4", "L5b"]
     assert block["L1_definition"]["read_minus_definition"]["mean"] == pytest.approx(-0.3)        # −0.5 − (2.3 − 2.5)
     assert block["L1_definition"]["tokens"]["read_one_off_forward_tokens_per_term"] == 100
     assert block["L3"]["rtn"]["vs_qlora_end"]["margin"] == pytest.approx(0.01 * 1.95)

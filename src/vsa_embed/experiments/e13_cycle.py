@@ -76,7 +76,7 @@ HOST_MODE_TAG = {"train": "full", "lora": "lora", "frozen": "frozen"}
 # read set's own definition of the anchor (`read_set`; T7-ROOD: the SCR note the stage-2 reader reads).
 DEFINITION_SOURCES = ("writer", "read_set")
 # Amendment 2: the primary Holm family of a track (L1 has two co-primaries: read − noread and read − random).
-HOLM_FAMILY = ("L1", "L1_random", "L2", "L3", "L4", "L5")
+HOLM_FAMILY = ("L1", "L1_random", "L2", "L3", "L4", "L5", "L5b")     # amendment 3: L5b (selective recall) co-primary
 L5_MARGIN = 0.05                                    # δ of L5's cost criterion (`statistics.l5_noninferiority_margin`)
 
 
@@ -985,6 +985,14 @@ def score_round2_items(config: dict[str, Any], run: Any, entries: set[int], outp
     return record
 
 
+def reader_frames(written: Path, reader: str, store_names: tuple[dict[str, int], dict[str, int]]) -> dict[int, list[tuple[int, int]]]:
+    """Amendment 3: the round-2 frames one stage-2 reader wrote (`frames.json` → `readers`; e.g. `typeprior`), as ids."""
+    relation_id, atomic_id = store_names
+    frames = json.loads((Path(written) / "frames.json").read_text())["readers"][reader]
+    return {int(e): [(relation_id[r], atomic_id[a]) for r, a in (f or []) if r in relation_id and a in atomic_id]
+            for e, f in frames.items()}
+
+
 def arm_frames(written: Path, arm: str, store_names: tuple[dict[str, int], dict[str, int]]) -> dict[int, list[tuple[int, int]]]:
     """The round-2 frames of an arm (ids in the given relation / atom maps; unknown names dropped)."""
     key = ARM_FRAMES[arm]
@@ -1042,6 +1050,18 @@ def reason(config: dict[str, Any], run_dir: Path, learned: Path | None, written:
                                  store.relation_id, store.atomic_id)
         store_frames = {c["concept"]: store.frame(int(c["entry"])) for c in item_set.concepts if c.get("entry") is not None}
         result = evaluate_items(run, item_set, conditions, {"own": loaded}, store_frames, definitions=definitions, log=log)
+    # Amendment 3 (secondary): the same store with another stage-2 reader's frames written, scored under
+    # `reason.secondary_conditions` (default `recall-rel:own`); results named `<condition>@<reader>`.
+    for reader in settings.get("secondary_frames") or []:
+        extra = e12.parse_conditions(settings.get("secondary_conditions", "recall-rel:own"))
+        other = reader_frames(written, reader, (store.relation_id, store.atomic_id))
+        with store.written({e: other.get(e) for e in entries}):
+            loaded = e12.LoadedStore("own", Path(run_dir), RecallStore(run.composer), run.ontology, run.composer.operator,
+                                     store.relation_id, store.atomic_id)
+            frames_other = {c["concept"]: store.frame(int(c["entry"])) for c in item_set.concepts if c.get("entry") is not None}
+            more = evaluate_items(run, item_set, extra, {"own": loaded}, frames_other, definitions=definitions, log=log)
+        for key in ("results", "records", "timings", "added_tokens"):
+            result[key].update({f"{name}@{reader}": value for name, value in more[key].items()})
     summary = e12.summarize(item_set, result["results"], result["records"], result["resolved"])
     output.mkdir(parents=True, exist_ok=True)
     units = summary["conditions"]
@@ -1136,7 +1156,14 @@ class CycleContextBuilder(_cycle_builder_base()):          # type: ignore[misc]
                 continue
             concept = prompt.item["anchor"]
             surface = self.concepts[concept]["surface"]
-            text = self._definition(concept) if condition.kind == "definition" else writer.render(surface, self._frame_lines(condition, concept))
+            if condition.kind == "definition":
+                text = self._definition(concept)
+            else:
+                lines = self._frame_lines(condition, concept)
+                if condition.kind == "recall-rel":                   # amendment 3: only the asked relation's lines
+                    asked = self.relation_id.get(str(prompt.item.get("relation", "")).split(":", 1)[0])
+                    lines = [line for line in lines if line.relation == asked]
+                text = writer.render(surface, lines)
             if text is None:                              # no definition of this anchor: not scored (never scored without context)
                 continue
             texts[prompt.id] = text
@@ -1644,13 +1671,16 @@ def report(config: dict[str, Any], output: Path, *, log: Callable[[str], None] =
                    if (cycle_dir(config, host, s) / "reason" / "summary.json").exists()]
         if reasons and all("recall:own" in r["units"] and "none" in r["units"] for r in reasons):
             block["L5"] = _l5(reasons, resamples, margin=l5_margin)
+        if reasons and all("recall-rel:own" in r["units"] and "none" in r["units"] for r in reasons):
+            block["L5b"] = _l5b(reasons, resamples)
         result["hosts"][host] = block
     primary_host = next(iter(config["hosts"]))
     p = result["hosts"].get(primary_host, {})
     tests = {"L1": p.get("L1", {}).get("p_value"), "L1_random": p.get("L1_random", {}).get("p_value"),
              "L2": p.get("L2", {}).get("p_value"),
              "L3": (p.get("L3", {}).get("rtn", {}).get("read_vs_noread_end") or {}).get("p_value"),
-             "L4": p.get("L4", {}).get("p_value"), "L5": p.get("L5", {}).get("p_value")}
+             "L4": p.get("L4", {}).get("p_value"), "L5": p.get("L5", {}).get("p_value"),
+             "L5b": p.get("L5b", {}).get("p_value")}
     present = {k: v for k, v in tests.items() if v is not None}
     adjusted = family_holm(tests)
     result["holm_family"] = {"tests": list(HOLM_FAMILY), "alpha": float(stats_cfg.get("holm_alpha", 0.05)),
@@ -1769,6 +1799,20 @@ def _l5(reasons: list[dict[str, Any]], resamples: int, *, margin: float = L5_MAR
     return out
 
 
+def _l5b(reasons: list[dict[str, Any]], resamples: int) -> dict[str, Any]:
+    """Amendment 3: L5b (recall-rel:own − none per anchor, anchors × seeds; L5's statistic) and its secondaries: against
+    the whole-frame recall (`recall-rel:own − recall:own`) and, if stage 3 scored them, other readers' frames
+    (`recall-rel:own@<reader>` − none, and − `recall-rel:own`)."""
+    out = _bootstrap(anchor_table(reasons, "recall-rel:own", "none"), resamples)
+    if all("recall:own" in r["units"] for r in reasons):
+        out["vs_whole_frame"] = _bootstrap(anchor_table(reasons, "recall-rel:own", "recall:own"), resamples)
+    extra = set.intersection(*(set(k for k in r["units"] if k.startswith("recall-rel:own@")) for r in reasons))
+    out["readers"] = {name.split("@", 1)[1]: {"vs_none": _bootstrap(anchor_table(reasons, name, "none"), resamples),
+                                               "vs_read": _bootstrap(anchor_table(reasons, name, "recall-rel:own"), resamples)}
+                      for name in sorted(extra)}
+    return out
+
+
 def l1_definition(read: list, noread: list, contexts: list[dict[str, np.ndarray]], resamples: int, *,
                   writes: Sequence[dict[str, Any]] = ()) -> dict[str, Any]:
     """Amendment 2, L1's definition comparator (secondary): per window and seed, (read − noread at step 0, from the
@@ -1829,6 +1873,8 @@ def verdicts(block: dict[str, Any], adjusted: dict[str, float], stats_cfg: dict[
         vs = block["L5"].get("vs_definition") or {}
         if "tokens_recall_minus_definition" in vs:
             out["L5_store_advantage"] = bool(out["L5"] and vs["noninferior"] and vs["tokens_recall_minus_definition"]["fewer"])
+    if "L5b" in block:
+        out["L5b"] = bool(ok("L5b") and block["L5b"].get("ci_low") is not None and block["L5b"]["ci_low"] > 0)
     return out
 
 
@@ -1836,17 +1882,18 @@ def render_report(result: dict[str, Any]) -> str:
     label = f"{result['label']} — " if result.get("label") else ""
     lines = [f"# {label}E13 learning cycle — {result['track']}", "", "Pre-registration: `experiments/e13-learning-cycle/preregistration.md` "
              "(amendment 2: L1's co-primaries, the definition comparators, L5's cost criterion).", "",
-             "## Primary endpoints (primary host; Holm across L1 (read − noread), L1 (read − random), L2, L3, L4, L5)", "",
+             "## Primary endpoints (primary host; Holm across L1 (read − noread), L1 (read − random), L2, L3, L4, L5, L5b)", "",
              "| endpoint | estimate | 95% CI | p | p (Holm) | met |", "|---|---:|---|---:|---:|---|"]
     host = next(iter(result["hosts"]), None)
     block = result["hosts"].get(host, {})
     holm, verdict = result["holm"], result["verdicts"]
     fmt = lambda x: "—" if x is None or (isinstance(x, float) and not math.isfinite(x)) else f"{x:.4g}"     # noqa: E731
     rows = {"L1": block.get("L1"), "L1_random": block.get("L1_random"), "L2": block.get("L2"),
-            "L3": ((block.get("L3") or {}).get("rtn") or {}).get("read_vs_noread_end"), "L5": block.get("L5")}
-    labels = {"L1": "L1 read − noread", "L1_random": "L1 read − random (gate)"}
+            "L3": ((block.get("L3") or {}).get("rtn") or {}).get("read_vs_noread_end"), "L5": block.get("L5"),
+            "L5b": block.get("L5b")}
+    labels = {"L1": "L1 read − noread", "L1_random": "L1 read − random (gate)", "L5b": "L5b recall-rel − none (amendment 3)"}
     met = {"L1": verdict.get("L1_vs_noread"), "L1_random": verdict.get("L1_vs_random")}
-    for name in ("L1", "L1_random", "L2", "L3", "L4", "L5"):
+    for name in ("L1", "L1_random", "L2", "L3", "L4", "L5", "L5b"):
         if name == "L4" and "L4" in block:
             b = block["L4"]
             lines.append(f"| L4 precision (null rate) | {fmt(b['precision'])} ({fmt(b['null_rate'])}) | {b['precision_ci']} | "
@@ -1867,6 +1914,15 @@ def render_report(result: dict[str, Any]) -> str:
         secondary.append(f"| L1 read − definition (step-0 loss) | {fmt(b.get('mean'))} | [{fmt(b.get('ci_low'))}, {fmt(b.get('ci_high'))}] | "
                          f"read 0 / definition {fmt(t['definition_added_per_window'])} per window (read: "
                          f"{fmt(t['read_one_off_forward_tokens_per_term'])} forward tokens once per term) |")
+    l5b = block.get("L5b") or {}
+    for key, title in (("vs_whole_frame", "L5b recall-rel − recall (whole frame)"),):
+        if key in l5b:
+            secondary.append(f"| {title} | {fmt(l5b[key].get('mean'))} | [{fmt(l5b[key].get('ci_low'))}, {fmt(l5b[key].get('ci_high'))}] | — |")
+    for reader, r in (l5b.get("readers") or {}).items():
+        secondary.append(f"| L5b with {reader} frames − none | {fmt(r['vs_none'].get('mean'))} | [{fmt(r['vs_none'].get('ci_low'))}, "
+                         f"{fmt(r['vs_none'].get('ci_high'))}] | — |")
+        secondary.append(f"| L5b with {reader} frames − with the read frames | {fmt(r['vs_read'].get('mean'))} | "
+                         f"[{fmt(r['vs_read'].get('ci_low'))}, {fmt(r['vs_read'].get('ci_high'))}] | — |")
     vs = ((block.get("L5") or {}).get("vs_definition")) or {}
     if "mean" in vs:
         tokens = (block.get("L5") or {}).get("tokens") or {}
@@ -1874,7 +1930,7 @@ def render_report(result: dict[str, Any]) -> str:
         secondary.append(f"| L5 recall:own − definition (accuracy; δ {fmt(vs['margin'])}: non-inferior {vs['noninferior']}) | {fmt(vs['mean'])} | "
                          f"[{fmt(vs.get('ci_low'))}, {fmt(vs.get('ci_high'))}] | {cost or '—'} |")
     if secondary:
-        lines += ["", "## Definition comparators (secondary; amendment 2)", "",
+        lines += ["", "## Secondary comparisons (definition comparators, amendment 2; L5b, amendment 3)", "",
                   "| comparison | estimate | 95% CI | added prompt tokens per item / window (accuracy gained over none per 100 tokens) |",
                   "|---|---:|---|---|", *secondary]
         if "L5_store_advantage" in verdict:

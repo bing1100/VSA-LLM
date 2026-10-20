@@ -1,7 +1,8 @@
 # E13 — proposed amendment 3 (draft, 2026-10-20): selective recall in stage 3
 
-**Status:**
-- **A draft for the author's approval.** Not part of the pre-registration until approved, and nothing is queued.
+**Status:** **approved 2026-10-20** ("go ahead with all of this work") as written, change 3 included. It is now amendment
+3 in `preregistration.md` §12, which is authoritative; this draft is kept for the record.
+- Originally: a draft for the author's approval, not part of the pre-registration until approved; nothing queued.
 - It must be approved, implemented and committed **before any E13 stage-3 (`reason`) job runs**.
 - No E13 job has run yet. The T5 block starts at 54.4985, with about 235 jobs ahead of it on 2026-10-20.
 
