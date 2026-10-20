@@ -1,0 +1,1648 @@
+{
+  "source": {
+    "host": "HuggingFaceTB/SmolLM2-135M",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 8192
+  },
+  "sets": [
+    "taxonomy",
+    "rulebase",
+    "edits",
+    "prop-rp",
+    "prop-lp",
+    "composition",
+    "fewshot"
+  ],
+  "smoke": false,
+  "timings": {
+    "taxonomy": 70.3,
+    "rulebase": 9.0,
+    "edits": 15.8,
+    "prop-rp": 13.3,
+    "prop-lp": 12.7,
+    "composition": 63.0,
+    "fewshot": 25.4
+  },
+  "context_tokens": {
+    "taxonomy": {
+      "exec-nobind": 62.55555555555556,
+      "exec-shuffled": 45.333333333333336,
+      "exec-sym": 113.525,
+      "exec-sym@0.1": 92.5925925925926,
+      "exec-sym@0.3": 87.5925925925926,
+      "exec-vsa": 44.65,
+      "exec-vsa-conclusion": 26.77777777777778,
+      "exec-vsa-noconf": 33.333333333333336,
+      "exec-vsa-stressed": 45.333333333333336,
+      "exec-vsa@0.1": 45.333333333333336,
+      "exec-vsa@0.3": 45.2962962962963,
+      "facts": 20.333333333333332,
+      "none": 0.0,
+      "text": 206.775,
+      "text+demo": 449.2962962962963,
+      "text-retrieved": 88.70370370370371
+    },
+    "rulebase": {
+      "exec-vsa": 64.925,
+      "text": 153.6,
+      "text-retrieved": 85.1
+    },
+    "edits": {
+      "exec-stale": 78.675,
+      "exec-vsa": 85.425,
+      "none": 0.0,
+      "text-edited": 239.9
+    },
+    "prop-rp": {
+      "exec-shuffled": 74.075,
+      "exec-sym": 85.45,
+      "exec-vsa": 83.6,
+      "none": 0.0,
+      "text": 445.025
+    },
+    "prop-lp": {
+      "exec-shuffled": 90.95,
+      "exec-sym": 88.15,
+      "exec-vsa": 91.325,
+      "none": 0.0,
+      "text": 428.075
+    },
+    "composition": {
+      "exec-nobind": 107.275,
+      "exec-sym": 193.1,
+      "exec-vsa": 187.1,
+      "facts": 74.35,
+      "none": 0.0,
+      "text": 1284.35
+    },
+    "fewshot": {
+      "exec-vsa": 54.475,
+      "icl": 48.525,
+      "none": 13.95
+    }
+  },
+  "predictions": "/home/bhux/data/vsa-llm/e14/runs/lg/SmolLM2-135M-bc/predictions.jsonl.gz",
+  "accuracy": {
+    "taxonomy|tf|exec-nobind": {
+      "all": {
+        "acc": 0.48333333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.575,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4760845383759733,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5049833887043189,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.455,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.415,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.44,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.525,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.49,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-shuffled": {
+      "all": {
+        "acc": 0.5108333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.64,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5094549499443827,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5149501661129569,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.425,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.525,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.465,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-sym": {
+      "all": {
+        "acc": 0.5358333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.525,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5350389321468298,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5382059800664452,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.485,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.545,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.575,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.55,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-sym@0.1": {
+      "all": {
+        "acc": 0.5191666666666667,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5194660734149055,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5182724252491694,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.455,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.54,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.52,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-sym@0.3": {
+      "all": {
+        "acc": 0.49583333333333335,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4872080088987764,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.521594684385382,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.445,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.455,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa": {
+      "all": {
+        "acc": 0.5683333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.64,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5672969966629589,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5714285714285714,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.555,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.565,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.59,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.555,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa-conclusion": {
+      "all": {
+        "acc": 0.5225,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.63,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5228031145717463,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.521594684385382,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.425,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.465,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.585,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.525,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa-noconf": {
+      "all": {
+        "acc": 0.5183333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.54,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5161290322580645,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5249169435215947,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.48,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.525,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.525,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa-stressed": {
+      "all": {
+        "acc": 0.5483333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.64,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5406006674082313,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5714285714285714,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.565,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.48,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.56,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.495,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa@0.1": {
+      "all": {
+        "acc": 0.55,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.645,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5483870967741935,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5548172757475083,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.56,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.49,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.545,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.51,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa@0.3": {
+      "all": {
+        "acc": 0.5175,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.645,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5183537263626251,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5149501661129569,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.545,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.44,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.445,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|facts": {
+      "all": {
+        "acc": 0.5016666666666667,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.51,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5016685205784205,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5016611295681063,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.505,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|none": {
+      "all": {
+        "acc": 0.49833333333333335,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4972191323692992,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5016611295681063,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.495,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|text": {
+      "all": {
+        "acc": 0.49083333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.47,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4838709677419355,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5116279069767442,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.47,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.455,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|text+demo": {
+      "all": {
+        "acc": 0.5083333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5061179087875417,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5149501661129569,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.54,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.49,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|text-retrieved": {
+      "all": {
+        "acc": 0.5066666666666667,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5072302558398221,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5049833887043189,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.47,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.505,
+        "n": 200
+      }
+    },
+    "taxonomy|cloze|exec-sym": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 100
+      }
+    },
+    "taxonomy|cloze|exec-vsa": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 100
+      }
+    },
+    "taxonomy|cloze|none": {
+      "all": {
+        "acc": 0.2866666666666667,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 0.26,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 0.25892857142857145,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 0.3684210526315789,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 0.3,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 0.32,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.32,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 0.26,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.26,
+        "n": 100
+      }
+    },
+    "taxonomy|cloze|text": {
+      "all": {
+        "acc": 0.295,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 0.79,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 0.37276785714285715,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 0.06578947368421052,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 0.27,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 0.18,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.15,
+        "n": 100
+      }
+    },
+    "rulebase|tf|exec-vsa": {
+      "all": {
+        "acc": 0.5683333333333334,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.645,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.5666666666666667,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.545,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.57,
+        "n": 300
+      }
+    },
+    "rulebase|tf|text": {
+      "all": {
+        "acc": 0.5166666666666667,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.5233333333333333,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.51,
+        "n": 300
+      }
+    },
+    "rulebase|tf|text-retrieved": {
+      "all": {
+        "acc": 0.5133333333333333,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.555,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.51,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.485,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.5166666666666667,
+        "n": 300
+      }
+    },
+    "edits|mc|exec-stale": {
+      "all": {
+        "acc": 0.5266666666666666,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.5354330708661418,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.5711111111111111,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.5192307692307693,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.5260545905707196,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.3933333333333333,
+        "n": 300
+      }
+    },
+    "edits|mc|exec-vsa": {
+      "all": {
+        "acc": 0.5125,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.5485564304461942,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.5522222222222222,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.4831730769230769,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.5086848635235732,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.3933333333333333,
+        "n": 300
+      }
+    },
+    "edits|mc|none": {
+      "all": {
+        "acc": 0.5308333333333334,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.5564304461942258,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.5822222222222222,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.5288461538461539,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.5086848635235732,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.37666666666666665,
+        "n": 300
+      }
+    },
+    "edits|mc|text-edited": {
+      "all": {
+        "acc": 0.52,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.5590551181102362,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.5355555555555556,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.5048076923076923,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.4987593052109181,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.47333333333333333,
+        "n": 300
+      }
+    },
+    "prop-rp|tf|exec-shuffled": {
+      "all": {
+        "acc": 0.5316666666666666,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.5666666666666667,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.5316666666666666,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.575,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.48333333333333334,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.525,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.5083333333333333,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|exec-sym": {
+      "all": {
+        "acc": 0.5683333333333334,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.55,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.5683333333333334,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.575,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.55,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.625,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.5416666666666666,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|exec-vsa": {
+      "all": {
+        "acc": 0.595,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.6,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.595,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.625,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.55,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.625,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.575,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|none": {
+      "all": {
+        "acc": 0.5,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.5,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|text": {
+      "all": {
+        "acc": 0.49666666666666665,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.49166666666666664,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.49666666666666665,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.49166666666666664,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5083333333333333,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.49166666666666664,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|exec-shuffled": {
+      "all": {
+        "acc": 0.5216666666666666,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.575,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.5216666666666666,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.5083333333333333,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.48333333333333334,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.5333333333333333,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.5083333333333333,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|exec-sym": {
+      "all": {
+        "acc": 0.575,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.6,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.575,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.5416666666666666,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5666666666666667,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.6,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.5666666666666667,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|exec-vsa": {
+      "all": {
+        "acc": 0.575,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.5916666666666667,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.575,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.55,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5583333333333333,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.6,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.575,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|none": {
+      "all": {
+        "acc": 0.49833333333333335,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.49833333333333335,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.49166666666666664,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|text": {
+      "all": {
+        "acc": 0.505,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.5083333333333333,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.505,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.5083333333333333,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.49166666666666664,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.525,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.49166666666666664,
+        "n": 120
+      }
+    },
+    "composition|mc|exec-nobind": {
+      "all": {
+        "acc": 0.214,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.2391304347826087,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.16,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.2,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.23,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.16853932584269662,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.29,
+        "n": 100
+      }
+    },
+    "composition|mc|exec-sym": {
+      "all": {
+        "acc": 0.486,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.4,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.5093167701863354,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.54,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.42,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.53,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.4438202247191011,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.54,
+        "n": 100
+      }
+    },
+    "composition|mc|exec-vsa": {
+      "all": {
+        "acc": 0.472,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.39,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.48757763975155277,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.53,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.42,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.48,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.4438202247191011,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.54,
+        "n": 100
+      }
+    },
+    "composition|mc|facts": {
+      "all": {
+        "acc": 0.204,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.2,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.2236024844720497,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.16,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.21,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.16853932584269662,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.26,
+        "n": 100
+      }
+    },
+    "composition|mc|none": {
+      "all": {
+        "acc": 0.268,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.25,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.27639751552795033,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.24,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.28,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.25280898876404495,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.38,
+        "n": 100
+      }
+    },
+    "composition|mc|text": {
+      "all": {
+        "acc": 0.256,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.25,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.2701863354037267,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.21,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.22,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.27,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.2303370786516854,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.33,
+        "n": 100
+      }
+    },
+    "fewshot|mc|exec-vsa": {
+      "all": {
+        "acc": 0.15,
+        "n": 1600
+      },
+      "depth=1": {
+        "acc": 0.1275,
+        "n": 400
+      },
+      "kind=inverse": {
+        "acc": 0.2,
+        "n": 400
+      },
+      "depth=3": {
+        "acc": 0.1475,
+        "n": 400
+      },
+      "depth=5": {
+        "acc": 0.165,
+        "n": 400
+      },
+      "depth=10": {
+        "acc": 0.16,
+        "n": 400
+      },
+      "kind=symmetric": {
+        "acc": 0.1175,
+        "n": 400
+      },
+      "kind=subrelation": {
+        "acc": 0.1,
+        "n": 400
+      },
+      "kind=chain": {
+        "acc": 0.1825,
+        "n": 400
+      }
+    },
+    "fewshot|mc|icl": {
+      "all": {
+        "acc": 0.085,
+        "n": 1600
+      },
+      "depth=1": {
+        "acc": 0.08,
+        "n": 400
+      },
+      "kind=inverse": {
+        "acc": 0.11,
+        "n": 400
+      },
+      "depth=3": {
+        "acc": 0.0775,
+        "n": 400
+      },
+      "depth=5": {
+        "acc": 0.0975,
+        "n": 400
+      },
+      "depth=10": {
+        "acc": 0.085,
+        "n": 400
+      },
+      "kind=symmetric": {
+        "acc": 0.08,
+        "n": 400
+      },
+      "kind=subrelation": {
+        "acc": 0.12,
+        "n": 400
+      },
+      "kind=chain": {
+        "acc": 0.03,
+        "n": 400
+      }
+    },
+    "fewshot|mc|none": {
+      "all": {
+        "acc": 0.046875,
+        "n": 1600
+      },
+      "depth=1": {
+        "acc": 0.05,
+        "n": 400
+      },
+      "kind=inverse": {
+        "acc": 0.0275,
+        "n": 400
+      },
+      "depth=3": {
+        "acc": 0.0375,
+        "n": 400
+      },
+      "depth=5": {
+        "acc": 0.0525,
+        "n": 400
+      },
+      "depth=10": {
+        "acc": 0.0475,
+        "n": 400
+      },
+      "kind=symmetric": {
+        "acc": 0.0175,
+        "n": 400
+      },
+      "kind=subrelation": {
+        "acc": 0.08,
+        "n": 400
+      },
+      "kind=chain": {
+        "acc": 0.0625,
+        "n": 400
+      }
+    }
+  }
+}

@@ -17,6 +17,13 @@ numbers below refer to it).
   experiments".
 - **Tier F (full scale)** is a plan only. Each of its blocks needs a gate from tier P, its own pre-registration
   addendum, and the author's go-ahead.
+- **2026-10-20: tier P's GPU jobs have run** (RD-4/7, RD-3, LG-B/C/D, LG-P). Results are in
+  `manuscript/findings/2026-10-20-e14-tier-p-gpu.md`.
+  - **G1 fails** on the SmolLM2 hosts: they misread negated recall lines. The Qwen3 hosts gain +0.42 to +0.47 at every
+    depth.
+  - **G2 fails** on C1–C4.
+  - **RD-4's rule** gives no E13 amendment: explicit recall is −0.10 on T4 property and +0.31 on T5. RD-4b comes next.
+  - **RD-12** is retried after a fix: three of its four arms are pending.
 
 ---
 

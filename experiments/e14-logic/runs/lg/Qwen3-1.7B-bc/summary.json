@@ -1,0 +1,1648 @@
+{
+  "source": {
+    "host": "Qwen/Qwen3-1.7B-Base",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 32768
+  },
+  "sets": [
+    "taxonomy",
+    "rulebase",
+    "edits",
+    "prop-rp",
+    "prop-lp",
+    "composition",
+    "fewshot"
+  ],
+  "smoke": false,
+  "timings": {
+    "taxonomy": 374.5,
+    "rulebase": 51.1,
+    "edits": 80.4,
+    "prop-rp": 70.7,
+    "prop-lp": 67.6,
+    "composition": 365.9,
+    "fewshot": 130.7
+  },
+  "context_tokens": {
+    "taxonomy": {
+      "exec-nobind": 59.111111111111114,
+      "exec-shuffled": 42.0,
+      "exec-sym": 105.625,
+      "exec-sym@0.1": 85.81481481481481,
+      "exec-sym@0.3": 81.62962962962963,
+      "exec-vsa": 41.25,
+      "exec-vsa-conclusion": 24.77777777777778,
+      "exec-vsa-noconf": 30.0,
+      "exec-vsa-stressed": 42.0,
+      "exec-vsa@0.1": 42.0,
+      "exec-vsa@0.3": 41.96296296296296,
+      "facts": 19.37037037037037,
+      "none": 0.0,
+      "text": 187.2,
+      "text+demo": 404.0740740740741,
+      "text-retrieved": 80.07407407407408
+    },
+    "rulebase": {
+      "exec-vsa": 60.325,
+      "text": 138.725,
+      "text-retrieved": 77.1
+    },
+    "edits": {
+      "exec-stale": 73.35,
+      "exec-vsa": 79.2,
+      "none": 0.0,
+      "text-edited": 217.475
+    },
+    "prop-rp": {
+      "exec-shuffled": 66.75,
+      "exec-sym": 77.925,
+      "exec-vsa": 76.175,
+      "none": 0.0,
+      "text": 415.55
+    },
+    "prop-lp": {
+      "exec-shuffled": 83.1,
+      "exec-sym": 80.55,
+      "exec-vsa": 83.55,
+      "none": 0.0,
+      "text": 400.75
+    },
+    "composition": {
+      "exec-nobind": 100.95,
+      "exec-sym": 180.9,
+      "exec-vsa": 174.9,
+      "facts": 69.775,
+      "none": 0.0,
+      "text": 1223.775
+    },
+    "fewshot": {
+      "exec-vsa": 50.25,
+      "icl": 45.0,
+      "none": 13.375
+    }
+  },
+  "predictions": "/home/bhux/data/vsa-llm/e14/runs/lg/Qwen3-1.7B-bc/predictions.jsonl.gz",
+  "accuracy": {
+    "taxonomy|tf|exec-nobind": {
+      "all": {
+        "acc": 0.5033333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4849833147942158,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5581395348837209,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.47,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-shuffled": {
+      "all": {
+        "acc": 0.6441666666666667,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.99,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.6384872080088988,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.6611295681063123,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.56,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.64,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.565,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.56,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-sym": {
+      "all": {
+        "acc": 1.0,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-sym@0.1": {
+      "all": {
+        "acc": 0.8966666666666666,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.98,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.8976640711902113,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.893687707641196,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.935,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.885,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.91,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.84,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.83,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-sym@0.3": {
+      "all": {
+        "acc": 0.7408333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.975,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.7419354838709677,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.7375415282392026,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.845,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.745,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.62,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.66,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.6,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa": {
+      "all": {
+        "acc": 0.9983333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.99,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.9988876529477196,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.9966777408637874,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa-conclusion": {
+      "all": {
+        "acc": 0.9991666666666666,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.9988876529477196,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.995,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa-noconf": {
+      "all": {
+        "acc": 1.0,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa-stressed": {
+      "all": {
+        "acc": 0.8275,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.99,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.8220244716351501,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.8438538205980066,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.93,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.82,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.775,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.765,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.685,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa@0.1": {
+      "all": {
+        "acc": 0.8966666666666666,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.97,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.896551724137931,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.8970099667774086,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.945,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.885,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.91,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.84,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.83,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|exec-vsa@0.3": {
+      "all": {
+        "acc": 0.7391666666666666,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.965,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.7397107897664071,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.7375415282392026,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.85,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.745,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.62,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.66,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.595,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|facts": {
+      "all": {
+        "acc": 0.5825,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5795328142380423,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5913621262458472,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|none": {
+      "all": {
+        "acc": 0.49916666666666665,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4972191323692992,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5049833887043189,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|text": {
+      "all": {
+        "acc": 0.6933333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.7007786429365962,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.6710963455149501,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.84,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.58,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.595,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.575,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.57,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|text+demo": {
+      "all": {
+        "acc": 0.6966666666666667,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.7130144605116796,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.6478405315614618,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.795,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.62,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.615,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.585,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.565,
+        "n": 200
+      }
+    },
+    "taxonomy|tf|text-retrieved": {
+      "all": {
+        "acc": 0.8025,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.8209121245828699,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.7475083056478405,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.95,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.785,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.74,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.675,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.665,
+        "n": 200
+      }
+    },
+    "taxonomy|cloze|exec-sym": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 100
+      }
+    },
+    "taxonomy|cloze|exec-vsa": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 100
+      }
+    },
+    "taxonomy|cloze|none": {
+      "all": {
+        "acc": 0.25666666666666665,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 0.18,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 0.22098214285714285,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 0.3618421052631579,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 0.26,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 0.25,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.25,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 0.31,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.29,
+        "n": 100
+      }
+    },
+    "taxonomy|cloze|text": {
+      "all": {
+        "acc": 0.31166666666666665,
+        "n": 600
+      },
+      "depth=0": {
+        "acc": 0.75,
+        "n": 100
+      },
+      "counterfactual=False": {
+        "acc": 0.39285714285714285,
+        "n": 448
+      },
+      "counterfactual=True": {
+        "acc": 0.07236842105263158,
+        "n": 152
+      },
+      "depth=1": {
+        "acc": 0.41,
+        "n": 100
+      },
+      "depth=2": {
+        "acc": 0.17,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.21,
+        "n": 100
+      },
+      "depth=4": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.14,
+        "n": 100
+      }
+    },
+    "rulebase|tf|exec-vsa": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 1.0,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 1.0,
+        "n": 300
+      }
+    },
+    "rulebase|tf|text": {
+      "all": {
+        "acc": 0.665,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.85,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.68,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.6,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.545,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.65,
+        "n": 300
+      }
+    },
+    "rulebase|tf|text-retrieved": {
+      "all": {
+        "acc": 0.785,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.975,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.8033333333333333,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.715,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.665,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.7666666666666667,
+        "n": 300
+      }
+    },
+    "edits|mc|exec-stale": {
+      "all": {
+        "acc": 0.2891666666666667,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.2572178477690289,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.07888888888888888,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.3245192307692308,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.28287841191067,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.92,
+        "n": 300
+      }
+    },
+    "edits|mc|exec-vsa": {
+      "all": {
+        "acc": 0.9766666666666667,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.979002624671916,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.9955555555555555,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.9783653846153846,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.9727047146401985,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.92,
+        "n": 300
+      }
+    },
+    "edits|mc|none": {
+      "all": {
+        "acc": 0.5091666666666667,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.5223097112860893,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.5422222222222223,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.49278846153846156,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.5136476426799007,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.41,
+        "n": 300
+      }
+    },
+    "edits|mc|text-edited": {
+      "all": {
+        "acc": 0.6725,
+        "n": 1200
+      },
+      "depth=1": {
+        "acc": 0.821522309711286,
+        "n": 381
+      },
+      "kind=propagation": {
+        "acc": 0.6822222222222222,
+        "n": 900
+      },
+      "depth=2": {
+        "acc": 0.6418269230769231,
+        "n": 416
+      },
+      "depth=3": {
+        "acc": 0.5632754342431762,
+        "n": 403
+      },
+      "kind=locality": {
+        "acc": 0.6433333333333333,
+        "n": 300
+      }
+    },
+    "prop-rp|tf|exec-shuffled": {
+      "all": {
+        "acc": 0.6466666666666666,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.6333333333333333,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.6466666666666666,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.7416666666666667,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.65,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.625,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.5833333333333334,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|exec-sym": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|exec-vsa": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|none": {
+      "all": {
+        "acc": 0.5,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.5,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 120
+      }
+    },
+    "prop-rp|tf|text": {
+      "all": {
+        "acc": 0.5116666666666667,
+        "n": 600
+      },
+      "depth=5": {
+        "acc": 0.49166666666666664,
+        "n": 120
+      },
+      "sampler=rp": {
+        "acc": 0.5116666666666667,
+        "n": 600
+      },
+      "depth=4": {
+        "acc": 0.43333333333333335,
+        "n": 120
+      },
+      "depth=1": {
+        "acc": 0.625,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5416666666666666,
+        "n": 120
+      },
+      "depth=3": {
+        "acc": 0.4666666666666667,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|exec-shuffled": {
+      "all": {
+        "acc": 0.61,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.6333333333333333,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.61,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.65,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.6,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.5666666666666667,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.6,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|exec-sym": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|exec-vsa": {
+      "all": {
+        "acc": 0.9966666666666667,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.9916666666666667,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.9966666666666667,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.9916666666666667,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|none": {
+      "all": {
+        "acc": 0.5,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.5,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 120
+      }
+    },
+    "prop-lp|tf|text": {
+      "all": {
+        "acc": 0.5466666666666666,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.5833333333333334,
+        "n": 120
+      },
+      "sampler=lp": {
+        "acc": 0.5466666666666666,
+        "n": 600
+      },
+      "depth=3": {
+        "acc": 0.6,
+        "n": 120
+      },
+      "depth=2": {
+        "acc": 0.575,
+        "n": 120
+      },
+      "depth=4": {
+        "acc": 0.5333333333333333,
+        "n": 120
+      },
+      "depth=5": {
+        "acc": 0.44166666666666665,
+        "n": 120
+      }
+    },
+    "composition|mc|exec-nobind": {
+      "all": {
+        "acc": 0.186,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.16,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.2111801242236025,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.12,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.18,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.2,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.1404494382022472,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.27,
+        "n": 100
+      }
+    },
+    "composition|mc|exec-sym": {
+      "all": {
+        "acc": 1.0,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 1.0,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 1.0,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 100
+      }
+    },
+    "composition|mc|exec-vsa": {
+      "all": {
+        "acc": 1.0,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 1.0,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 1.0,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 100
+      }
+    },
+    "composition|mc|facts": {
+      "all": {
+        "acc": 0.174,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.17,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.19254658385093168,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.15,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.16,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.18,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.1404494382022472,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.21,
+        "n": 100
+      }
+    },
+    "composition|mc|none": {
+      "all": {
+        "acc": 0.252,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.27639751552795033,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.21,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.26,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.24,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.20786516853932585,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.36,
+        "n": 100
+      }
+    },
+    "composition|mc|text": {
+      "all": {
+        "acc": 0.166,
+        "n": 500
+      },
+      "depth=6": {
+        "acc": 0.14,
+        "n": 100
+      },
+      "uses_heldout=False": {
+        "acc": 0.20186335403726707,
+        "n": 322
+      },
+      "depth=2": {
+        "acc": 0.14,
+        "n": 100
+      },
+      "depth=5": {
+        "acc": 0.19,
+        "n": 100
+      },
+      "depth=3": {
+        "acc": 0.13,
+        "n": 100
+      },
+      "uses_heldout=True": {
+        "acc": 0.10112359550561797,
+        "n": 178
+      },
+      "depth=4": {
+        "acc": 0.23,
+        "n": 100
+      }
+    },
+    "fewshot|mc|exec-vsa": {
+      "all": {
+        "acc": 0.963125,
+        "n": 1600
+      },
+      "depth=1": {
+        "acc": 0.875,
+        "n": 400
+      },
+      "kind=inverse": {
+        "acc": 0.9775,
+        "n": 400
+      },
+      "depth=3": {
+        "acc": 0.9975,
+        "n": 400
+      },
+      "depth=5": {
+        "acc": 0.99,
+        "n": 400
+      },
+      "depth=10": {
+        "acc": 0.99,
+        "n": 400
+      },
+      "kind=symmetric": {
+        "acc": 0.9875,
+        "n": 400
+      },
+      "kind=subrelation": {
+        "acc": 0.9775,
+        "n": 400
+      },
+      "kind=chain": {
+        "acc": 0.91,
+        "n": 400
+      }
+    },
+    "fewshot|mc|icl": {
+      "all": {
+        "acc": 0.961875,
+        "n": 1600
+      },
+      "depth=1": {
+        "acc": 0.9175,
+        "n": 400
+      },
+      "kind=inverse": {
+        "acc": 0.985,
+        "n": 400
+      },
+      "depth=3": {
+        "acc": 0.96,
+        "n": 400
+      },
+      "depth=5": {
+        "acc": 0.9825,
+        "n": 400
+      },
+      "depth=10": {
+        "acc": 0.9875,
+        "n": 400
+      },
+      "kind=symmetric": {
+        "acc": 0.9925,
+        "n": 400
+      },
+      "kind=subrelation": {
+        "acc": 0.985,
+        "n": 400
+      },
+      "kind=chain": {
+        "acc": 0.885,
+        "n": 400
+      }
+    },
+    "fewshot|mc|none": {
+      "all": {
+        "acc": 0.33125,
+        "n": 1600
+      },
+      "depth=1": {
+        "acc": 0.335,
+        "n": 400
+      },
+      "kind=inverse": {
+        "acc": 0.13,
+        "n": 400
+      },
+      "depth=3": {
+        "acc": 0.3025,
+        "n": 400
+      },
+      "depth=5": {
+        "acc": 0.3475,
+        "n": 400
+      },
+      "depth=10": {
+        "acc": 0.34,
+        "n": 400
+      },
+      "kind=symmetric": {
+        "acc": 0.88,
+        "n": 400
+      },
+      "kind=subrelation": {
+        "acc": 0.2375,
+        "n": 400
+      },
+      "kind=chain": {
+        "acc": 0.0775,
+        "n": 400
+      }
+    }
+  }
+}

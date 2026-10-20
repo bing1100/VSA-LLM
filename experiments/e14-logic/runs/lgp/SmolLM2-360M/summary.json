@@ -1,0 +1,96 @@
+{
+  "source": {
+    "host": "HuggingFaceTB/SmolLM2-360M",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 8192
+  },
+  "items": 800,
+  "policies": [
+    "score",
+    "random",
+    "bfs",
+    "sos",
+    "ceiling"
+  ],
+  "budgets": [
+    10,
+    30
+  ],
+  "smoke": false,
+  "seconds": 121.0,
+  "cells": {
+    "bfs|10": {
+      "accuracy": 0.8575,
+      "found_within_budget": 0.7205882352941176,
+      "soundness": 1.0,
+      "mean_steps_found": 4.374149659863946,
+      "calls": 0.0,
+      "n": 800
+    },
+    "bfs|30": {
+      "accuracy": 0.91375,
+      "found_within_budget": 0.8308823529411765,
+      "soundness": 1.0,
+      "mean_steps_found": 6.522123893805309,
+      "calls": 0.0,
+      "n": 800
+    },
+    "ceiling|30": {
+      "accuracy": 1.0,
+      "found_within_budget": 1.0,
+      "soundness": 1.0,
+      "mean_steps_found": 5.338235294117647,
+      "calls": 0.0,
+      "n": 800
+    },
+    "random|10": {
+      "accuracy": 0.87625,
+      "found_within_budget": 0.7573529411764706,
+      "soundness": 1.0,
+      "mean_steps_found": 4.440129449838188,
+      "calls": 0.0,
+      "n": 800
+    },
+    "random|30": {
+      "accuracy": 0.95875,
+      "found_within_budget": 0.9191176470588235,
+      "soundness": 1.0,
+      "mean_steps_found": 6.786666666666667,
+      "calls": 0.0,
+      "n": 800
+    },
+    "score|10": {
+      "accuracy": 0.87375,
+      "found_within_budget": 0.7524509803921569,
+      "soundness": 1.0,
+      "mean_steps_found": 4.420195439739413,
+      "calls": 1.9025,
+      "n": 800
+    },
+    "score|30": {
+      "accuracy": 0.93125,
+      "found_within_budget": 0.8651960784313726,
+      "soundness": 1.0,
+      "mean_steps_found": 6.337110481586402,
+      "calls": 2.95625,
+      "n": 800
+    },
+    "sos|10": {
+      "accuracy": 0.925,
+      "found_within_budget": 0.8529411764705882,
+      "soundness": 1.0,
+      "mean_steps_found": 3.9913793103448274,
+      "calls": 0.0,
+      "n": 800
+    },
+    "sos|30": {
+      "accuracy": 1.0,
+      "found_within_budget": 1.0,
+      "soundness": 1.0,
+      "mean_steps_found": 5.338235294117647,
+      "calls": 0.0,
+      "n": 800
+    }
+  }
+}

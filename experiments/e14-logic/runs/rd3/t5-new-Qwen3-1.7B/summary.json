@@ -1,0 +1,162 @@
+{
+  "source": {
+    "host": "Qwen/Qwen3-1.7B-Base",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 32768
+  },
+  "set": {
+    "track": "t5",
+    "kind": "new"
+  },
+  "style": "prose",
+  "smoke": false,
+  "choices": 1405,
+  "seconds": 94.1,
+  "readers": {
+    "typeprior": {
+      "terms": 300,
+      "precision": 0.9183133718133718,
+      "recall": 0.9145476190476192,
+      "stated_recall": 0.9145476190476192,
+      "stated_f1": 0.9163056131386997,
+      "edges": 7.34,
+      "ambiguous_accuracy": 0.700162074554295,
+      "ambiguous_labelled": 617
+    },
+    "linker": {
+      "terms": 300,
+      "precision": 0.7274165298303229,
+      "recall": 0.432732202982203,
+      "stated_recall": 0.432732202982203,
+      "stated_f1": 0.5181938848904792,
+      "edges": 4.096666666666667,
+      "ambiguous_accuracy": 0.3283261802575107,
+      "ambiguous_labelled": 466
+    },
+    "host": {
+      "terms": 300,
+      "precision": 0.9470000000000001,
+      "recall": 0.6452055074555074,
+      "stated_recall": 0.6452055074555074,
+      "stated_f1": 0.7581355311355312,
+      "edges": 4.786666666666667,
+      "ambiguous_accuracy": 0.17647058823529413,
+      "ambiguous_labelled": 17
+    },
+    "mc-rel": {
+      "terms": 300,
+      "precision": 0.936522607022607,
+      "recall": 0.936522607022607,
+      "stated_recall": 0.936522607022607,
+      "stated_f1": 0.936522607022607,
+      "edges": 7.383333333333334,
+      "ambiguous_accuracy": 0.7761904761904762,
+      "ambiguous_labelled": 630
+    },
+    "mc-rel-lm": {
+      "terms": 300,
+      "precision": 0.9160174362674364,
+      "recall": 0.9160174362674364,
+      "stated_recall": 0.9160174362674364,
+      "stated_f1": 0.9160174362674364,
+      "edges": 7.383333333333334,
+      "ambiguous_accuracy": 0.6936507936507936,
+      "ambiguous_labelled": 630
+    },
+    "react": {
+      "terms": 300,
+      "precision": 0.9412783790283789,
+      "recall": 0.9317010582010583,
+      "stated_recall": 0.9317010582010583,
+      "stated_f1": 0.9361451911347253,
+      "edges": 7.28,
+      "ambiguous_accuracy": 0.7933333333333333,
+      "ambiguous_labelled": 600
+    }
+  },
+  "contrasts": [
+    {
+      "a": "react",
+      "b": "linker",
+      "metric": "stated_f1",
+      "mean": 0.41795130624424603,
+      "ci_low": 0.38743672971889587,
+      "ci_high": 0.4479303352456175,
+      "n": 300,
+      "p_value": 0.0004998750312421895,
+      "p_holm": 0.000999750062484379
+    },
+    {
+      "a": "react",
+      "b": "typeprior",
+      "metric": "stated_f1",
+      "mean": 0.019839577996025697,
+      "ci_low": 0.00699238145826768,
+      "ci_high": 0.03242430148017878,
+      "n": 300,
+      "p_value": 0.0029992501874531365,
+      "p_holm": 0.0029992501874531365
+    },
+    {
+      "a": "mc-rel",
+      "b": "linker",
+      "metric": "stated_f1",
+      "mean": 0.41832872213212774,
+      "ci_low": 0.38731166623480867,
+      "ci_high": 0.4487931266846902,
+      "n": 300,
+      "p_value": 0.0004998750312421895
+    },
+    {
+      "a": "mc-rel",
+      "b": "typeprior",
+      "metric": "stated_f1",
+      "mean": 0.02021699388390733,
+      "ci_low": 0.007360190403957224,
+      "ci_high": 0.033071594318607705,
+      "n": 300,
+      "p_value": 0.0034991252186953262
+    },
+    {
+      "a": "react",
+      "b": "mc-rel",
+      "metric": "stated_f1",
+      "mean": -0.0003774158878816299,
+      "ci_low": -0.0023827350040055324,
+      "ci_high": 0.0015395203618627038,
+      "n": 300,
+      "p_value": 0.7003249187703074
+    },
+    {
+      "a": "mc-rel",
+      "b": "mc-rel-lm",
+      "metric": "stated_f1",
+      "mean": 0.020505170755170752,
+      "ci_low": 0.013341200697450697,
+      "ci_high": 0.027591678691678688,
+      "n": 300,
+      "p_value": 0.0004998750312421895
+    },
+    {
+      "a": "mc-rel-lm",
+      "b": "linker",
+      "metric": "stated_f1",
+      "mean": 0.39782355137695696,
+      "ci_low": 0.3664030400570648,
+      "ci_high": 0.42937729638281114,
+      "n": 300,
+      "p_value": 0.0004998750312421895
+    },
+    {
+      "a": "react",
+      "b": "host",
+      "metric": "stated_f1",
+      "mean": 0.17800965999919427,
+      "ci_low": 0.16332468094935707,
+      "ci_high": 0.19271928057297893,
+      "n": 300,
+      "p_value": 0.0004998750312421895
+    }
+  ]
+}

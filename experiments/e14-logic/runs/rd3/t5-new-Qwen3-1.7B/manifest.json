@@ -1,0 +1,40 @@
+{
+  "schema_version": 2,
+  "created_at": "2026-10-20T01:38:50.550133+00:00",
+  "git_sha": "c6776a7072f64268d9b0d806d565da66feb6e61e",
+  "git_dirty": true,
+  "git_state_recorded_at": "run start",
+  "python": "3.12.4",
+  "platform": "Linux-7.0.0-31-generic-x86_64-with-glibc2.39",
+  "packages": {
+    "torch": "2.11.0+cu128",
+    "transformers": "4.54.0",
+    "nltk": "3.8.1",
+    "PyYAML": "6.0.2",
+    "numpy": "2.2.6",
+    "safetensors": "0.5.3",
+    "vsa-embed": "0.1.0.dev0"
+  },
+  "device": "cuda",
+  "cuda_device": "NVIDIA GeForce RTX 3090",
+  "torch_num_threads": 6,
+  "argv": [
+    "/home/bhux/workplace/VSA-LLM/src/vsa_embed/experiments/e14_reading.py",
+    "relations",
+    "--items",
+    "experiments/e11-read-to-learn/items/t5-new-smollm2-v1",
+    "--frames",
+    "experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5-s1/e11-t5-new/frames.jsonl",
+    "--host",
+    "H-q17",
+    "--output",
+    "experiments/e14-logic/runs/rd3/t5-new-Qwen3-1.7B"
+  ],
+  "config_sha256": "e885aa5d870a76287b38d797e0bcbeb0808019aabe2e857d5d13c24214e73a4d",
+  "source": {
+    "host": "Qwen/Qwen3-1.7B-Base",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 32768
+  }
+}

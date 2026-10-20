@@ -394,3 +394,8 @@ All are descriptive CPU experiments, with no Holm family. The predictions are re
 - Queued after tier P (54.495996; report 54.4959969). Tier F scales seeds, the 135M model and T7-ROOD.
 - **2026-10-17, smoke fix (before the RD-12 runs):** in evaluation, read terms with an empty frame get no row
   (`channel.skip_empty_frames`, E11's "none"). The `passive` arm needs this.
+- **2026-10-20, run fix (after the first attempt, before any RD-12 result is read):** the passive phase sets
+  `channel.skip_empty_frames` as evaluation does. Without it, the `cycle`, `single` and `passive` arms crashed in
+  round 0's training (`every composed concept needs at least one edge`) as soon as a read term without a frame was linked.
+  The `gold` arm had a frame for every read term, so the change cannot touch its run; it is not repeated. Round 0's
+  teacher reads came from RD-11's cache ($0). The design is unchanged.

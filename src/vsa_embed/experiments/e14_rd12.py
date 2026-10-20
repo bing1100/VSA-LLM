@@ -173,6 +173,7 @@ def passive_phase(base_config: dict[str, Any], *, init_from: Path, ontology: Pat
     cfg["train"].update({"init_mode": "continue", "init_from": str(init_from), "total_tokens": int(tokens),
                          "warmup_tokens": int(max(1, tokens // 10)), "checkpoint_minutes": 100000})
     cfg["data"].update({"train": str(corpus), "ontology": str(ontology)})
+    cfg["channel"]["skip_empty_frames"] = True      # held-out terms not (yet) read have no frame: no row, as in evaluation
     cfg["eval"].update({"windows": 8 if smoke else 64, "first_tokens": int(tokens)})
     if device:
         cfg["device"] = device
