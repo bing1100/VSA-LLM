@@ -167,6 +167,35 @@ def sos_policy(problem, goal, assumptions, steps, search):
     return sorted(range(len(steps)), key=lambda i: (rank(steps[i]), i))
 
 
+def sos_rank(problem: Problem, step: Step) -> int:
+    """`sos_policy`'s tier of a step (0 best)."""
+    if step.kind == "accept":
+        return 9
+    premises = [g for g, _ in step.subgoals]
+    if any(g == BOTTOM for g in premises):
+        return 3
+    if all(problem.known(g, a) for g, a in step.subgoals):
+        return 0
+    if step.kind == "cases":
+        return 1
+    return 2 if all(g[0] in problem.heads or problem.known(g, a) for g, a in step.subgoals) else 5
+
+
+def sos_score_policy(host: Any) -> Policy:
+    """Pre-registration §16: set of support's tiers, the host's scores breaking ties within a tier (the host is asked only
+    when a tier holds more than one step)."""
+    scorer = score_policy(host)
+
+    def f(problem, goal, assumptions, steps, search):
+        ranks = [sos_rank(problem, s) for s in steps]
+        if len(set(ranks)) == len(ranks):
+            return sorted(range(len(steps)), key=lambda i: ranks[i])
+        model_order = scorer(problem, goal, assumptions, steps, search)
+        position = {i: k for k, i in enumerate(model_order)}
+        return sorted(range(len(steps)), key=lambda i: (ranks[i], position[i]))
+    return f
+
+
 def score_policy(host: Any) -> Policy:
     def f(problem, goal, assumptions, steps, search):
         if len(steps) == 1:
@@ -233,6 +262,8 @@ def run_policy(problem: Problem, name: str, budget: int, *, host: Any = None, se
     policy = {"random": random_policy(seed), "sos": sos_policy, "ceiling": sos_policy}.get(name)
     if name == "score":
         policy = score_policy(host)
+    elif name == "sos-score":
+        policy = sos_score_policy(host)
     elif name in {"react", "unsound"}:
         policy = generative_policy(host)
     search = Search(budget=1000 if name == "ceiling" else budget)
@@ -288,7 +319,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     output = Path(args.output)
     git_at_start = start_output(output, config)
     host = None
-    if any(p in {"score", "react", "unsound", "cot"} for p in policies):
+    if any(p in {"score", "react", "unsound", "cot", "sos-score"} for p in policies):
         from ..logic.hosts import HostLM
         host = HostLM(args.host, device=args.device, batch_size=args.batch_size)
     hard = {"depths": tuple(int(x) for x in args.depths.split(",")), "decoy": args.decoy, "decoy_depth": args.decoy_depth,
@@ -301,7 +332,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         items = items[: args.limit]
     rows = []
     t0 = time.monotonic()
-    derive = {"score", "random", "sos", "react"} if args.derive_budgets else set()
+    derive = {"score", "random", "sos", "react", "sos-score"} if args.derive_budgets else set()
     for item in items:
         problem = Problem(item)
         for name in policies:
@@ -384,7 +415,7 @@ def run_report(args: argparse.Namespace) -> dict[str, Any]:
         for row, p in zip(prim, holm_adjust([r["p_value"] for r in prim]) if prim else []):
             row["p_holm"] = p
         secondary = []
-        for x, y in (("score", "sos"), ("react", "random"), ("react", "score")):
+        for x, y in (("score", "sos"), ("react", "random"), ("react", "score"), ("sos-score", "sos"), ("sos-score", "score")):
             for b in sorted({r["budget"] for r in rows if r["policy"] == x}):
                 a = {r["id"]: r["proved"] for r in rows if r["policy"] == x and r["budget"] == b and r["label"]}
                 c = {r["id"]: r["proved"] for r in rows if r["policy"] == y and r["budget"] == b and r["label"]}

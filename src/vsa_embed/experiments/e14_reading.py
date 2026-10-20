@@ -182,6 +182,21 @@ SECONDARY_B = (("explicit-sym:oracle", "none"), ("explicit-rel:stated", "none"),
                ("explicit-rel:oracle", "explicit-rel-wrong:oracle"), ("definition", "explicit-rel:oracle"), ("definition", "none"))
 STATED_B = (("explicit-rel:stated", "none"), ("definition", "none"), ("explicit-rel:stated", "definition"))
 
+# RD-4c (pre-registration §16): routing without the item's label, Claude's frames, larger hosts.
+RD4C_CONDITIONS = ("none", "explicit-sym:oracle", "explicit-rel:oracle", "explicit-rel:typeprior", "explicit-rel-wrong:oracle",
+                   *(f"explicit-route:{r}:{reader}" for reader in ("oracle", "typeprior") for r in ("lex", "lm", "top2")),
+                   "definition")
+RD4C_TEACHER = ("explicit-rel:teacher", "explicit-route:lm:teacher")
+PRIMARY_C = (("explicit-route:lm:typeprior", "none"), ("explicit-route:lm:oracle", "explicit-rel:oracle"))
+SECONDARY_C = (("explicit-route:lex:oracle", "explicit-rel:oracle"), ("explicit-route:top2:oracle", "explicit-rel:oracle"),
+               ("explicit-route:lm:oracle", "explicit-sym:oracle"), ("explicit-route:lm:typeprior", "explicit-rel:typeprior"),
+               ("explicit-route:lex:typeprior", "none"), ("explicit-route:top2:typeprior", "none"),
+               ("explicit-route:lm:typeprior", "definition"), ("explicit-rel:teacher", "explicit-rel:typeprior"),
+               ("explicit-rel:teacher", "none"), ("explicit-route:lm:teacher", "none"), ("explicit-route:lm:teacher", "definition"))
+PRIMARY_HOST = (("explicit-rel:oracle", "none"), ("explicit-rel:oracle", "explicit-sym:oracle"))
+SECONDARY_HOST = (("explicit-route:lm:typeprior", "none"), ("explicit-route:lm:typeprior", "definition"),
+                  ("explicit-rel:typeprior", "none"), ("explicit-rel-wrong:oracle", "none"), ("definition", "none"))
+
 
 def _norm_answer(text: str | None) -> str:
     t = (text or "").strip().lower().rstrip(".").strip()
@@ -215,6 +230,30 @@ def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, li
     concept's context (`condition_inputs`) for each of its items."""
     concepts = scorer.concepts
     kind, _, arg = name.partition(":")
+    if kind == "explicit-route":                        # RD-4c: `explicit-route:<router>:<reader>`
+        router, _, reader_name = arg.partition(":")
+        if router not in ROUTERS:
+            raise ValueError(f"condition {name!r}: router must be one of {ROUTERS}")
+        reader = frames.get(reader_name)
+        if reader is None:
+            raise KeyError(f"condition {name!r}: no {reader_name!r} frames")
+        chosen = route_relations(scorer, reader, ctx, router)
+        rid = ctx.relation_id
+        out, lines, hits = {}, [], []
+        for c in concepts:
+            frame = list(reader.get(c) or [])
+            held = {int(r) for r, _ in frame}
+            for item in scorer.items_by_concept[c]:
+                pick = set(chosen.get(item["id"], []))
+                edges = [e for e in frame if int(e[0]) in pick]
+                lines.append(len(edges))
+                asked = rid.get(item.get("relation"))
+                if asked is not None and asked in held:
+                    hits.append(float(asked in pick))
+                out[item["id"]] = text.symbolic(scorer.surface[c], edges)
+        return {c: None for c in concepts}, out, {"lines_per_item": float(np.mean(lines)) if lines else 0.0,
+                                                  "route_accuracy": float(np.mean(hits)) if hits else None,
+                                                  "routable_items": len(hits)}
     if kind not in {"explicit-rel", "explicit-rel-wrong"}:
         row_frames, contexts, info = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed)
         if not contexts:
@@ -241,6 +280,54 @@ def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, li
     if changed:
         info["corrupted_share"] = float(np.mean(changed))
     return {c: None for c in concepts}, out, info
+
+
+# -- RD-4c (pre-registration §16): choosing which relation to recall, without the item's label ---------------------------
+
+ROUTERS = ("lex", "lm", "top2")
+
+
+def _route_phrase(name: str) -> str:
+    from .. import self_query as sqm
+    return sqm.statement_phrase(name)
+
+
+def route_relations(scorer: Any, frames: dict[str, list | None], ctx: e11.TrackContext, router: str) -> dict[str, list[int]]:
+    """item id → the relation ids to recall, chosen from the relations the term's frame holds, without the item's
+    relation label. `lex`: the relation whose phrase (`statement_phrase`, e.g. "has role") shares most words with the item's
+    templates; `lm`: the host's choice — the summed length-normalised log-probability over the item's templates of
+    " <phrase>" after "Question: <template with the term> ...\\nThe fact needed is that <term>"; `top2`: `lm`'s best two."""
+    from ..evaluation import channel_probes as cp
+    names = list(ctx.ontology["relation_names"])
+    out: dict[str, list[int]] = {}
+    jobs: list[tuple[str, int, str, str]] = []
+    for c in scorer.concepts:
+        options = sorted({int(r) for r, _ in (frames.get(c) or [])})
+        for item in scorer.items_by_concept[c]:
+            if len(options) <= 1:
+                out[item["id"]] = options
+                continue
+            if router == "lex":
+                words = set(re.findall(r"[a-z]+", " ".join(item["templates"]).lower()))
+                overlap = [len(words & set(re.findall(r"[a-z]+", _route_phrase(names[r]).lower()))) for r in options]
+                out[item["id"]] = [options[int(np.argmax(overlap))]]
+                continue
+            surface = scorer.surface[c]
+            for t in item["templates"]:
+                question = t.replace("{x}", surface)
+                for r in options:
+                    jobs.append((item["id"], r, f"Question: {question} ...\nThe fact needed is that {surface}", " " + _route_phrase(names[r])))
+    if jobs:
+        with scorer.condition({c: None for c in scorer.concepts}), e11.fast_continuations():
+            values = cp.continuation_logprob(scorer.adapter, [j[2] for j in jobs], [j[3] for j in jobs])
+        lengths = [max(1, len(scorer.run.tokenizer(j[3], add_special_tokens=False)["input_ids"])) for j in jobs]
+        totals: dict[str, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+        for (iid, r, _, _), v, n in zip(jobs, values, lengths):
+            totals[iid][r] += float(v) / n
+        for iid, by in totals.items():
+            ranked = sorted(by, key=lambda r: (-by[r], r))
+            out[iid] = ranked[:2] if router == "top2" else ranked[:1]
+    return out
 
 
 def plain_null_scores(scorer: Any) -> np.ndarray:
@@ -350,7 +437,7 @@ def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str,
     for name in conditions:
         t0 = time.monotonic()
         log(f"  {name}")
-        if null == "plain" or name.startswith("explicit-rel"):
+        if null == "plain" or name.startswith(("explicit-rel", "explicit-route")):
             row_frames, contexts, diag = item_condition_inputs(name, scorer, frames, text, definitions, pools, ctx, seed=seed)
             if contexts:
                 contexts = {i: fit_context(t, run.tokenizer, budget) for i, t in contexts.items()}
@@ -423,7 +510,8 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
     config = {"experiment": "e14-rd4-recall", "run": str(args.run), "items": str(args.items), "style": style, "limit": args.limit,
               "frames": str(args.frames) if args.frames else None, "conditions": args.conditions, "noise": list(noise),
               "seed": args.seed, "resamples": args.resamples, "max_context_tokens": args.max_context_tokens, "alias_table": str(args.alias_table) if args.alias_table else None,
-              "smoke": bool(args.smoke), "null": args.null, "family": args.family}
+              "smoke": bool(args.smoke), "null": args.null, "family": args.family,
+              "teacher_frames": str(args.teacher_frames) if getattr(args, "teacher_frames", None) else None}
     output = Path(args.output)
     if args.overwrite:
         clear_output(output)
@@ -441,10 +529,16 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
     missing = [r for r in READERS if r not in frames]
     if missing:
         raise SystemExit(f"{path}: no frames for readers {missing} (style {style})")
+    if getattr(args, "teacher_frames", None):
+        for row in e11._read_jsonl(Path(args.teacher_frames)):
+            if row.get("style") == style and row.get("frame") is not None:
+                frames["teacher"][row["concept"]] = ctx.ids(row["frame"])
     if args.conditions:
         conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
     elif args.family == "rd4b":
         conditions = list(RD4B_CONDITIONS) + (list(RD4B_COMPOSE) if compose else [])
+    elif args.family == "rd4c":
+        conditions = list(RD4C_CONDITIONS) + (list(RD4C_TEACHER) if args.teacher_frames else [])
     else:
         conditions = default_conditions(compose, store is not None, noise)
     if not compose:
@@ -498,13 +592,14 @@ def pooled_contrast(folders: Sequence[Path], a: str, b: str, test: str, *, field
     return {**paired_difference(np.asarray(diffs), np.zeros(len(diffs)), resamples=resamples, seed=seed), "seeds": len(folders)}
 
 
-def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed: int) -> dict[str, Any]:
+def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed: int, primary: Sequence = PRIMARY_B,
+               secondary: Sequence = SECONDARY_B, stated_pairs: Sequence = STATED_B) -> dict[str, Any]:
     """RD-4b (pre-registration §13): primary (Holm over contrasts × tests), secondary, the stated-only subset, and the same
     contrasts on raw (uncalibrated) choices."""
     stated = lambda row: bool((row.get("gold_in") or {}).get("stated"))  # noqa: E731
     out: dict[str, Any] = {}
-    blocks = (("primary", PRIMARY_B, "correct", lambda row: True), ("secondary", SECONDARY_B, "correct", lambda row: True),
-              ("stated_only", STATED_B, "correct", stated), ("raw_primary", PRIMARY_B, "raw_correct", lambda row: True))
+    blocks = (("primary", primary, "correct", lambda row: True), ("secondary", secondary, "correct", lambda row: True),
+              ("stated_only", stated_pairs, "correct", stated), ("raw_primary", primary, "raw_correct", lambda row: True))
     for key, pairs, field, where in blocks:
         rows = []
         for a, b in pairs:
@@ -534,7 +629,7 @@ def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed
 
 
 def run_recall_report(args: argparse.Namespace) -> dict[str, Any]:
-    if getattr(args, "family", "tier-p") == "rd4b":
+    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c"}:
         return run_rd4b_report(args)
     present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
     missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
@@ -592,16 +687,30 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
     for folder in present:
         s = json.loads((folder / "summary.json").read_text())
         groups[(s["set"]["track"], s["set"]["kind"], Path(s["source"]["run"]).name.rsplit("-s", 1)[0])].append(folder)
-    out: dict[str, Any] = {"family": "rd4b", "groups": [], "missing": missing}
-    lines = ["# E14 RD-4b — recall of the item's relation, context-free null (pre-registration §13)", "",
+    family = getattr(args, "family", "rd4b")
+    out: dict[str, Any] = {"family": family, "groups": [], "missing": missing}
+    title = ("# E14 RD-4b — recall of the item's relation, context-free null (pre-registration §13)" if family == "rd4b" else
+             "# E14 RD-4c — routing without the item's label, Claude's frames, larger hosts (pre-registration §16)")
+    lines = [title, "",
              "PMI choices use the null prompt **without** the context; `raw` columns are uncalibrated choices; `(stated)`: "
              "items whose gold answer is in the `stated` reader's frame.", ""]
     if missing:
         lines += [f"Missing run folders: {', '.join(missing)}", ""]
     for (track, kind, model), folders in sorted(groups.items()):
         conds = set.intersection(*(set(json.loads((f / "summary.json").read_text())["conditions"]) for f in folders))
+        pairs = {}
+        if family == "rd4c":
+            host_group = model.startswith("Qwen") or "-C0p" in model
+            pairs = {"primary": PRIMARY_HOST if host_group else PRIMARY_C, "secondary": SECONDARY_HOST if host_group else SECONDARY_C,
+                     "stated_pairs": STATED_B}
         g = {"track": track, "kind": kind, "model": model, "seeds": len(folders),
-             **rd4b_group(folders, conds, resamples=args.resamples, seed=args.seed)}
+             **rd4b_group(folders, conds, resamples=args.resamples, seed=args.seed, **pairs)}
+        routes: dict[str, list[float]] = defaultdict(list)
+        for f in folders:
+            for cond, diag in json.loads((f / "summary.json").read_text())["diagnostics"].items():
+                if (diag or {}).get("route_accuracy") is not None:
+                    routes[cond].append(diag["route_accuracy"])
+        g["route_accuracy"] = {c: float(np.mean(v)) for c, v in routes.items()}
         out["groups"].append(g)
         cols = [c for c in ("property", "paraphrase", "entailment", "property raw", "entailment raw", "property (stated)",
                             "property raw (stated)") if any(c in m for m in g["means"].values())]
@@ -610,6 +719,9 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
         for cond in sorted(g["means"]):
             m = g["means"][cond]
             lines.append(f"| {cond} | " + " | ".join(f"{m[c]:.4f}" if c in m else "—" for c in cols) + " |")
+        if g["route_accuracy"]:
+            lines += ["", "Router accuracy (the asked relation chosen, among items whose frame holds it): "
+                      + "; ".join(f"{c} {v:.3f}" for c, v in sorted(g["route_accuracy"].items()))]
         for title, key in (("Primary (Holm)", "primary"), ("Secondary", "secondary"), ("Stated-only items", "stated_only"),
                            ("Primary contrasts on raw choices", "raw_primary")):
             lines += ["", f"### {title}", "", "| a − b | test | difference [95% CI] | n |", "|---|---|---|---:|"]
@@ -925,11 +1037,13 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--overwrite", action="store_true")
     r.add_argument("--null", choices=("context", "plain"), default="context",
                    help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
-    r.add_argument("--family", choices=("tier-p", "rd4b"), default="tier-p", help="default condition list")
+    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c"), default="tier-p", help="default condition list")
+    r.add_argument("--teacher-frames", type=Path, default=None,
+                   help="RD-4c: Claude's frames (RD-3's teacher-frames.jsonl), read as the reader `teacher`")
     rr = sub.add_parser("recall-report", help="pool RD-4 run folders over seeds")
     rr.add_argument("--runs", nargs="+", required=True)
     rr.add_argument("--output", type=Path, required=True)
-    rr.add_argument("--family", choices=("tier-p", "rd4b"), default="tier-p", help="which pre-registered contrasts")
+    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c"), default="tier-p", help="which pre-registered contrasts")
     rr.add_argument("--resamples", type=int, default=4000)
     rr.add_argument("--seed", type=int, default=0)
     rl = sub.add_parser("relations", help="RD-3: relation choice on stated edges (mc-rel, react, and E11's readers)")

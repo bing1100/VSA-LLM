@@ -574,3 +574,96 @@ The pre-set target was random at budget 30 within 0.3–0.6, and set of support 
 
 **Placement for §§13–15:** GPU jobs at 54.4959975–54.4959977, after RD-12 and before the toolkit band (54.496). Reports
 at 54.4959979 (CPU lane).
+
+## 16. Addendum 5 (2026-10-20, before any run of it): RD-4c, and LG-P's hybrid policy (tier F blocks)
+
+**Origin:** the author's go-ahead of 2026-10-20, "go ahead with all of this work + queue up any other experiments worth
+doing", after RD-4b. It covers the next steps listed then:
+- choose the relevant lines without the item's label;
+- better readers;
+- larger models.
+
+It also covers one experiment that §15's result suggests, LG-P's hybrid policy.
+
+### RD-4c: routing, Claude's frames, larger hosts
+
+**Items and scoring:** as §13, with the context-free null.
+
+**Conditions** (`--family rd4c`):
+- `none`, `explicit-sym:oracle`, `explicit-rel:oracle`, `explicit-rel:typeprior`, `explicit-rel-wrong:oracle`;
+- **`explicit-route:<router>:<reader>`** for the routers `lex`, `lm` and `top2`, and the readers oracle and typeprior;
+- `definition`;
+- on T4, also `explicit-rel:teacher` and `explicit-route:lm:teacher`. These use Claude's RD-3 frames
+  (`items/t4-heldout-teacher/teacher-frames.jsonl`; already paid for, $0).
+
+**The routers** never see the item's relation label. The candidates are the relations the reader's frame holds for the
+term, each written as a phrase such as "has role".
+- **`lex`:** the phrase with the most words in common with the item's templates.
+- **`lm`:** the host's own choice. For each phrase, the length-normalised log-probability of " <phrase>" after
+  "Question: <template with the term> ...\nThe fact needed is that <term>", summed over the item's templates.
+- **`top2`:** the two best relations under `lm`.
+- The recall then holds the reader's lines for the chosen relations.
+
+**Hosts:**
+- **Main:** SmolLM2-360M C5, s1–3, on T4 and T5.
+- **Larger, explicit conditions only:**
+  - Qwen3-1.7B C0′ T4 s1;
+  - Qwen3-1.7B C0′ T5 s1–2;
+  - Qwen3-0.6B C0′ T5 s1–2.
+
+  The frames are SmolLM2 C5 s1's E11 frames, matched by name. There is no implicit route on the Qwen3 hosts: E11's
+  items are SmolLM2 builds, and the Qwen3 ontologies' entry ids are not aligned with them. C0′ runs have no channel, so
+  this does not matter for them.
+
+**Primary, main hosts** (per track; Holm over 2 contrasts × 3 tests):
+- (a) `explicit-route:lm:typeprior − none`: the realistic pipeline, with a real reader and the model's own routing;
+- (b) `explicit-route:lm:oracle − explicit-rel:oracle`: the cost of routing when the facts are true.
+
+**Primary, larger hosts** (per host and track; Holm over 2 × 3):
+- `explicit-rel:oracle − none`;
+- `explicit-rel:oracle − explicit-sym:oracle`.
+
+**Secondary:**
+- the `lex` and `top2` routers;
+- routing against whole-frame recall;
+- the realistic pipeline against the definition;
+- Claude's frames: `explicit-rel:teacher − explicit-rel:typeprior`, `explicit-route:lm:teacher − none` and `− definition`;
+- router accuracy (the asked relation chosen, among items whose frame holds it).
+
+**Predictions:**
+- (a) is positive on T5 property. On T4 it is positive but below +0.10, the type prior's gain with the label.
+- (b) is ≥ −0.05 on property. **Seen in the smoke run:** on 20 T4 items the 360M host's `lm` router chose the asked
+  relation 0.40 of the time, against 0.70 for `lex`. On 30 T5 items, Qwen3-0.6B C0′'s routers scored 0.23 (`lm`) and
+  0.40 (`lex`). So (b) may fail. If it fails and `lex` holds, `lex` (or a learned router) is the recommended router. If
+  both fail, routing is the next bottleneck after reading.
+- Claude's frames beat the type prior's on T4 (precision 0.67 against 0.37 in RD-3).
+- Larger hosts: `explicit-rel:oracle − none` is positive on both tracks, and `− explicit-sym:oracle` is positive on T4.
+
+### LG-P: set of support with the model breaking ties (`sos-score`)
+
+**Problems, budgets and derived budgets:** as §15.
+
+**Policy:** `sos-score` orders the candidate steps by set of support's tiers, and the host's scores break ties within a
+tier. The host is asked only when a tier holds more than one step. The tier function `sos_rank` reproduces `sos`'s order
+exactly (0 mismatches on 60 problems).
+
+**Hosts:** the four hosts of §4.
+
+**Primary** (per host; Holm over 3 budgets): `sos-score − sos`, proofs found within the budget.
+
+**Secondary:** `sos-score − score`.
+
+**Prediction:** `sos-score > sos` at budgets 10 and 30 for Qwen3-1.7B, and about 0 for the SmolLM2 hosts.
+
+### Common to both
+
+**Smokes seen before this registration** (labelled; not results):
+- RD-4c on 6 T4 concepts, SmolLM2-360M C5 s1;
+- RD-4c on 3 T5 words, Qwen3-0.6B C0′ s1;
+- `sos-score` on 3 problems, SmolLM2-135M.
+
+**Queue:** `queue-commands-addendum5.sh`, 17 jobs, about 8 GPU-h.
+- RD-4c main hosts at 54.4959981;
+- RD-4c larger hosts at 54.4959982;
+- LG-P at 54.4959983;
+- reports at 54.4959989.
