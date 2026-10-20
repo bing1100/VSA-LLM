@@ -1,0 +1,192 @@
+{
+  "arm": "cycle",
+  "run": "experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s1",
+  "tokens_per_round": 2000000,
+  "terms": 160,
+  "smoke": false,
+  "rounds": [
+    {
+      "round": 0,
+      "arm": "cycle",
+      "relations": [
+        "has_parent_hydride",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 0.88125,
+      "gold_recall": 0.15486725663716813,
+      "loss_after_read_terms": 1.7881151192220328,
+      "terms_with_windows": 112,
+      "items": {
+        "implicit": {
+          "property": 0.6074450084602367,
+          "paraphrase": 0.5431472081218274,
+          "entailment": 0.6954314720812182
+        },
+        "explicit": {
+          "property": 0.5532994923857868,
+          "paraphrase": 0.3553299492385787,
+          "entailment": 0.6802030456852792
+        },
+        "none": {
+          "property": 0.6209813874788495,
+          "paraphrase": 0.5685279187817259,
+          "entailment": 0.7055837563451777
+        }
+      },
+      "general_loss": 2.5534210205078125,
+      "utility": {},
+      "accepted_next": [
+        {
+          "name": "has_functional_parent",
+          "description": "X is formally or structurally derived from parent compound Y, by substitution or other modification.",
+          "support": 26
+        },
+        {
+          "name": "found_in_organism",
+          "description": "X occurs naturally in, is produced by, or was isolated from organism or source Y.",
+          "support": 10
+        },
+        {
+          "name": "is_metabolite_of",
+          "description": "X is produced by metabolism of Y.",
+          "support": 9
+        },
+        {
+          "name": "has_part",
+          "description": "X contains Y as a part: a mixture component, a constituent residue, or a repeating unit.",
+          "support": 22
+        }
+      ],
+      "retracted": [],
+      "teacher_spent_usd": 0.0,
+      "seconds": 230.9
+    },
+    {
+      "round": 1,
+      "arm": "cycle",
+      "relations": [
+        "found_in_organism",
+        "has_functional_parent",
+        "has_parent_hydride",
+        "has_part",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_metabolite_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 1.30625,
+      "gold_recall": 0.17551622418879056,
+      "loss_after_read_terms": 1.8000983222778935,
+      "terms_with_windows": 112,
+      "items": {
+        "implicit": {
+          "property": 0.6243654822335024,
+          "paraphrase": 0.5279187817258884,
+          "entailment": 0.7258883248730964
+        },
+        "explicit": {
+          "property": 0.5448392554991539,
+          "paraphrase": 0.36548223350253806,
+          "entailment": 0.6751269035532995
+        },
+        "none": {
+          "property": 0.6294416243654821,
+          "paraphrase": 0.5228426395939086,
+          "entailment": 0.7208121827411168
+        }
+      },
+      "general_loss": 2.5592546463012695,
+      "utility": {
+        "has_functional_parent": {
+          "loss_without": 1.8028171758304343,
+          "loss_with": 1.8000983222778935,
+          "relative": 0.001510391692993945,
+          "retract": false
+        },
+        "has_part": {
+          "loss_without": 1.8003587766763514,
+          "loss_with": 1.8000983222778935,
+          "relative": 0.0001446889846151919,
+          "retract": false
+        },
+        "is_metabolite_of": {
+          "loss_without": 1.7996038758063584,
+          "loss_with": 1.8000983222778935,
+          "relative": -0.00027467748034417614,
+          "retract": false
+        }
+      },
+      "accepted_next": [],
+      "retracted": [],
+      "teacher_spent_usd": 0.0,
+      "seconds": 295.2
+    },
+    {
+      "round": 2,
+      "arm": "cycle",
+      "relations": [
+        "found_in_organism",
+        "has_functional_parent",
+        "has_parent_hydride",
+        "has_part",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_metabolite_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 1.31875,
+      "gold_recall": 0.17551622418879056,
+      "loss_after_read_terms": 1.8181733513501885,
+      "terms_with_windows": 112,
+      "items": {
+        "implicit": {
+          "property": 0.6362098138747885,
+          "paraphrase": 0.49746192893401014,
+          "entailment": 0.7258883248730964
+        },
+        "explicit": {
+          "property": 0.5516074450084603,
+          "paraphrase": 0.37055837563451777,
+          "entailment": 0.6954314720812182
+        },
+        "none": {
+          "property": 0.6429780033840947,
+          "paraphrase": 0.5177664974619289,
+          "entailment": 0.7360406091370558
+        }
+      },
+      "general_loss": 2.5663092136383057,
+      "utility": {
+        "has_functional_parent": {
+          "loss_without": 1.8203580901512812,
+          "loss_with": 1.8181733513501885,
+          "relative": 0.001201611936216263,
+          "retract": false
+        },
+        "has_part": {
+          "loss_without": 1.8178934944842788,
+          "loss_with": 1.8181733513501885,
+          "relative": -0.0001539219930277145,
+          "retract": false
+        },
+        "is_metabolite_of": {
+          "loss_without": 1.81731874896868,
+          "loss_with": 1.8181733513501885,
+          "relative": -0.0004700334986616929,
+          "retract": false
+        }
+      },
+      "retracted": [],
+      "teacher_spent_usd": 0.0,
+      "seconds": 296.1
+    }
+  ]
+}

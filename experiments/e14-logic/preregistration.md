@@ -667,3 +667,57 @@ exactly (0 mismatches on 60 problems).
 - RD-4c larger hosts at 54.4959982;
 - LG-P at 54.4959983;
 - reports at 54.4959989.
+
+## 17. Addendum 6 (2026-10-20, before any run of it): RD-12c, the cycle's read frames under selective recall
+
+**Origin:**
+- **RD-12's pilot result** (report `report/rd12/`, read 2026-10-20). Loss after the read terms at round 3:
+  - cycle − passive +0.003 (n.s.);
+  - cycle − single −0.001 (n.s.);
+  - gold − passive **+0.010** (p 0.04): gold frames were slightly *worse*.
+- Every arm's loss rose over the rounds (1.78 → 1.82), and general loss rose slightly too. The narrow passive mix drifts
+  the model.
+- The cycle added frames (0.88 → 1.32 per term; gold recall 0.155 → 0.176) and retracted nothing.
+- **RD-12's measure is blind to its question.** It measures use through the implicit route, which does nothing on T4
+  even with gold frames (RD-4: `implicit:oracle − none` ≈ 0).
+- **The author's go-ahead of 2026-10-20** ("queue up any other experiments worth doing") covers this re-test under the
+  route that works, selective explicit recall (§13).
+
+**Frames:** RD-12's frames of the 160 read terms, exported from the arms' saved ontologies to
+`items/t4-heldout-rd12/frames.jsonl`.
+- `rd12-single-r2`: single-pass reading. It equals `rd12-cycle-r0` for all 160 terms (checked).
+- `rd12-cycle-r2`: the cycle after 3 rounds; 205 edges. 6 edges of relations the base ontology lacks are dropped.
+- `rd12-gold-r2` equals the oracle frames (checked).
+- E11's `oracle` and `typeprior` frames (SmolLM2 C5 s1), for those terms.
+
+**Items:** E11's T4 held-out items of the 160 terms (394 items; `items/t4-heldout-rd12/`).
+
+**Hosts:** SmolLM2-360M C5 s1–3, the base models. The explicit route needs no training, so the RD-12-trained models are
+not used.
+
+**Scoring:** the context-free null (§13).
+
+**Conditions** (`--family rd12c`):
+- `none`;
+- `explicit-rel` for oracle, typeprior, `rd12-single-r2` and `rd12-cycle-r2`;
+- `explicit-sym` for `rd12-single-r2` and `rd12-cycle-r2`;
+- `definition`.
+
+**Primary** (Holm over 3 tests): `explicit-rel:rd12-cycle-r2 − explicit-rel:rd12-single-r2`.
+
+**Secondary:**
+- each arm − `none`;
+- the cycle − the type prior;
+- oracle − the cycle (the remaining gap);
+- definition − the cycle;
+- the whole-frame versions;
+- property accuracy by the item's relation.
+
+**Predictions:**
+- The cycle ≥ single on property overall; the effect is small.
+- Positive on `has_functional_parent` items, the relation the cycle rediscovered (RD-11: recall 0.33, precision about
+  0.25). Descriptive, since there are few such items.
+
+**Smoke seen before this registration** (labelled; not a result): 6 terms, s1, CPU.
+
+**Queue:** `queue-commands-addendum6.sh`; 3 jobs at 54.4959984, about 0.1 GPU-h each; report at 54.4959989.

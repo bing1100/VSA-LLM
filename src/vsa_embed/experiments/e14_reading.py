@@ -194,6 +194,14 @@ SECONDARY_C = (("explicit-route:lex:oracle", "explicit-rel:oracle"), ("explicit-
                ("explicit-route:lm:typeprior", "definition"), ("explicit-rel:teacher", "explicit-rel:typeprior"),
                ("explicit-rel:teacher", "none"), ("explicit-route:lm:teacher", "none"), ("explicit-route:lm:teacher", "definition"))
 PRIMARY_HOST = (("explicit-rel:oracle", "none"), ("explicit-rel:oracle", "explicit-sym:oracle"))
+# RD-12c (pre-registration §17): the RD-12 cycle's read frames under selective recall (the route that works).
+RD12C_CONDITIONS = ("none", "explicit-rel:oracle", "explicit-rel:typeprior", "explicit-rel:rd12-single-r2",
+                    "explicit-rel:rd12-cycle-r2", "explicit-sym:rd12-single-r2", "explicit-sym:rd12-cycle-r2", "definition")
+RD12C_READERS = ("rd12-single-r2", "rd12-cycle-r0", "rd12-cycle-r2", "rd12-gold-r2")
+PRIMARY_D = (("explicit-rel:rd12-cycle-r2", "explicit-rel:rd12-single-r2"),)
+SECONDARY_D = (("explicit-rel:rd12-cycle-r2", "none"), ("explicit-rel:rd12-single-r2", "none"),
+               ("explicit-rel:rd12-cycle-r2", "explicit-rel:typeprior"), ("explicit-rel:oracle", "explicit-rel:rd12-cycle-r2"),
+               ("definition", "explicit-rel:rd12-cycle-r2"), ("explicit-sym:rd12-cycle-r2", "explicit-sym:rd12-single-r2"))
 SECONDARY_HOST = (("explicit-route:lm:typeprior", "none"), ("explicit-route:lm:typeprior", "definition"),
                   ("explicit-rel:typeprior", "none"), ("explicit-rel-wrong:oracle", "none"), ("definition", "none"))
 
@@ -525,7 +533,10 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         from .e12_self_query import load_store
         store = load_store(Path(args.run), "own").store
     path = Path(args.frames) if args.frames else frames_path(Path(args.run), read_set)
-    frames = load_reader_frames(path, style, READERS, ctx)
+    extra = [r.strip() for r in (getattr(args, "extra_readers", None) or "").split(",") if r.strip()]
+    if args.family == "rd12c" and not extra:
+        extra = list(RD12C_READERS)
+    frames = load_reader_frames(path, style, (*READERS, *extra), ctx)
     missing = [r for r in READERS if r not in frames]
     if missing:
         raise SystemExit(f"{path}: no frames for readers {missing} (style {style})")
@@ -539,6 +550,8 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         conditions = list(RD4B_CONDITIONS) + (list(RD4B_COMPOSE) if compose else [])
     elif args.family == "rd4c":
         conditions = list(RD4C_CONDITIONS) + (list(RD4C_TEACHER) if args.teacher_frames else [])
+    elif args.family == "rd12c":
+        conditions = list(RD12C_CONDITIONS)
     else:
         conditions = default_conditions(compose, store is not None, noise)
     if not compose:
@@ -629,7 +642,7 @@ def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed
 
 
 def run_recall_report(args: argparse.Namespace) -> dict[str, Any]:
-    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c"}:
+    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c", "rd12c"}:
         return run_rd4b_report(args)
     present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
     missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
@@ -689,8 +702,9 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
         groups[(s["set"]["track"], s["set"]["kind"], Path(s["source"]["run"]).name.rsplit("-s", 1)[0])].append(folder)
     family = getattr(args, "family", "rd4b")
     out: dict[str, Any] = {"family": family, "groups": [], "missing": missing}
-    title = ("# E14 RD-4b — recall of the item's relation, context-free null (pre-registration §13)" if family == "rd4b" else
-             "# E14 RD-4c — routing without the item's label, Claude's frames, larger hosts (pre-registration §16)")
+    title = {"rd4b": "# E14 RD-4b — recall of the item's relation, context-free null (pre-registration §13)",
+             "rd4c": "# E14 RD-4c — routing without the item's label, Claude's frames, larger hosts (pre-registration §16)",
+             "rd12c": "# E14 RD-12c — the RD-12 cycle's read frames under selective recall (pre-registration §17)"}[family]
     lines = [title, "",
              "PMI choices use the null prompt **without** the context; `raw` columns are uncalibrated choices; `(stated)`: "
              "items whose gold answer is in the `stated` reader's frame.", ""]
@@ -699,6 +713,8 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
     for (track, kind, model), folders in sorted(groups.items()):
         conds = set.intersection(*(set(json.loads((f / "summary.json").read_text())["conditions"]) for f in folders))
         pairs = {}
+        if family == "rd12c":
+            pairs = {"primary": PRIMARY_D, "secondary": SECONDARY_D, "stated_pairs": ()}
         if family == "rd4c":
             host_group = model.startswith("Qwen") or "-C0p" in model
             pairs = {"primary": PRIMARY_HOST if host_group else PRIMARY_C, "secondary": SECONDARY_HOST if host_group else SECONDARY_C,
@@ -719,6 +735,19 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
         for cond in sorted(g["means"]):
             m = g["means"][cond]
             lines.append(f"| {cond} | " + " | ".join(f"{m[c]:.4f}" if c in m else "—" for c in cols) + " |")
+        if family == "rd12c":                                   # property accuracy by the item's relation
+            by_rel: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+            for f in folders:
+                for line in (f / "predictions.jsonl").open():
+                    row = json.loads(line)
+                    if row["test"] == "property":
+                        by_rel[row["relation"]][row["condition"]].append(float(row["correct"]))
+            g["property_by_relation"] = {r: {c: float(np.mean(v)) for c, v in by.items()} for r, by in by_rel.items()}
+            conds_r = sorted({c for by in g["property_by_relation"].values() for c in by})
+            lines += ["", "Property accuracy by the item's relation:", "", "| relation | " + " | ".join(conds_r) + " |",
+                      "|---|" + "---:|" * len(conds_r)]
+            for r, by in sorted(g["property_by_relation"].items()):
+                lines.append(f"| {r} | " + " | ".join(f"{by[c]:.3f}" if c in by else "—" for c in conds_r) + " |")
         if g["route_accuracy"]:
             lines += ["", "Router accuracy (the asked relation chosen, among items whose frame holds it): "
                       + "; ".join(f"{c} {v:.3f}" for c, v in sorted(g["route_accuracy"].items()))]
@@ -1037,13 +1066,14 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--overwrite", action="store_true")
     r.add_argument("--null", choices=("context", "plain"), default="context",
                    help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
-    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c"), default="tier-p", help="default condition list")
+    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c"), default="tier-p", help="default condition list")
+    r.add_argument("--extra-readers", default=None, help="more reader names to load from --frames (rd12c: the RD-12 arms)")
     r.add_argument("--teacher-frames", type=Path, default=None,
                    help="RD-4c: Claude's frames (RD-3's teacher-frames.jsonl), read as the reader `teacher`")
     rr = sub.add_parser("recall-report", help="pool RD-4 run folders over seeds")
     rr.add_argument("--runs", nargs="+", required=True)
     rr.add_argument("--output", type=Path, required=True)
-    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c"), default="tier-p", help="which pre-registered contrasts")
+    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c"), default="tier-p", help="which pre-registered contrasts")
     rr.add_argument("--resamples", type=int, default=4000)
     rr.add_argument("--seed", type=int, default=0)
     rl = sub.add_parser("relations", help="RD-3: relation choice on stated edges (mc-rel, react, and E11's readers)")
