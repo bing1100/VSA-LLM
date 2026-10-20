@@ -1,0 +1,140 @@
+{
+  "source": {
+    "host": "HuggingFaceTB/SmolLM2-135M",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 8192
+  },
+  "items": 156,
+  "policies": [
+    "score",
+    "random",
+    "bfs",
+    "sos",
+    "ceiling"
+  ],
+  "problems": {
+    "depths": [
+      2,
+      3,
+      4
+    ],
+    "decoy": 1.0,
+    "decoy_depth": 4,
+    "decoy_fanout": 3
+  },
+  "provable_only": true,
+  "budgets": [
+    10,
+    30,
+    100
+  ],
+  "smoke": false,
+  "seconds": 76.2,
+  "cells": {
+    "bfs|10": {
+      "accuracy": 0.1858974358974359,
+      "found_within_budget": 0.1858974358974359,
+      "soundness": 1.0,
+      "mean_steps_found": 6.344827586206897,
+      "calls": 0.0,
+      "n": 156
+    },
+    "bfs|30": {
+      "accuracy": 0.6538461538461539,
+      "found_within_budget": 0.6538461538461539,
+      "soundness": 1.0,
+      "mean_steps_found": 13.490196078431373,
+      "calls": 0.0,
+      "n": 156
+    },
+    "bfs|100": {
+      "accuracy": 0.7692307692307693,
+      "found_within_budget": 0.7692307692307693,
+      "soundness": 1.0,
+      "mean_steps_found": 22.391666666666666,
+      "calls": 0.0,
+      "n": 156
+    },
+    "ceiling|100": {
+      "accuracy": 1.0,
+      "found_within_budget": 1.0,
+      "soundness": 1.0,
+      "mean_steps_found": 30.628205128205128,
+      "calls": 0.0,
+      "n": 156
+    },
+    "random|10": {
+      "accuracy": 0.11538461538461539,
+      "found_within_budget": 0.11538461538461539,
+      "soundness": 1.0,
+      "mean_steps_found": 6.888888888888889,
+      "calls": null,
+      "n": 156
+    },
+    "random|30": {
+      "accuracy": 0.5128205128205128,
+      "found_within_budget": 0.5128205128205128,
+      "soundness": 1.0,
+      "mean_steps_found": 17.8875,
+      "calls": null,
+      "n": 156
+    },
+    "random|100": {
+      "accuracy": 0.75,
+      "found_within_budget": 0.75,
+      "soundness": 1.0,
+      "mean_steps_found": 26.4017094017094,
+      "calls": 0.0,
+      "n": 156
+    },
+    "score|10": {
+      "accuracy": 0.1794871794871795,
+      "found_within_budget": 0.1794871794871795,
+      "soundness": 1.0,
+      "mean_steps_found": 6.392857142857143,
+      "calls": null,
+      "n": 156
+    },
+    "score|30": {
+      "accuracy": 0.6153846153846154,
+      "found_within_budget": 0.6153846153846154,
+      "soundness": 1.0,
+      "mean_steps_found": 14.875,
+      "calls": null,
+      "n": 156
+    },
+    "score|100": {
+      "accuracy": 0.7564102564102564,
+      "found_within_budget": 0.7564102564102564,
+      "soundness": 1.0,
+      "mean_steps_found": 22.966101694915253,
+      "calls": 8.179487179487179,
+      "n": 156
+    },
+    "sos|10": {
+      "accuracy": 0.1987179487179487,
+      "found_within_budget": 0.1987179487179487,
+      "soundness": 1.0,
+      "mean_steps_found": 5.935483870967742,
+      "calls": null,
+      "n": 156
+    },
+    "sos|30": {
+      "accuracy": 0.6410256410256411,
+      "found_within_budget": 0.6410256410256411,
+      "soundness": 1.0,
+      "mean_steps_found": 15.09,
+      "calls": null,
+      "n": 156
+    },
+    "sos|100": {
+      "accuracy": 0.9935897435897436,
+      "found_within_budget": 0.9935897435897436,
+      "soundness": 1.0,
+      "mean_steps_found": 30.148387096774194,
+      "calls": 0.0,
+      "n": 156
+    }
+  }
+}

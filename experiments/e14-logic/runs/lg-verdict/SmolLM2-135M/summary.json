@@ -1,0 +1,419 @@
+{
+  "source": {
+    "host": "HuggingFaceTB/SmolLM2-135M",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 8192
+  },
+  "sets": [
+    "taxonomy-verdict",
+    "rulebase-verdict"
+  ],
+  "smoke": false,
+  "timings": {
+    "taxonomy-verdict": 26.3,
+    "rulebase-verdict": 9.4
+  },
+  "context_tokens": {
+    "taxonomy-verdict": {
+      "exec-sym": 98.4,
+      "exec-sym-verdict": 104.025,
+      "exec-vsa": 45.2,
+      "exec-vsa-conclusion": 26.7,
+      "exec-vsa-conclusion-verdict": 32.325,
+      "exec-vsa-verdict": 50.825,
+      "none": 0.0,
+      "text": 201.525
+    },
+    "rulebase-verdict": {
+      "exec-vsa": 64.925,
+      "exec-vsa-verdict": 70.5,
+      "text": 153.6
+    }
+  },
+  "predictions": "/home/bhux/data/vsa-llm/e14/runs/lg-verdict/SmolLM2-135M/predictions.jsonl.gz",
+  "accuracy": {
+    "taxonomy-verdict|tf|exec-sym": {
+      "all": {
+        "acc": 0.54,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5372636262513905,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5481727574750831,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.54,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.49,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.545,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.58,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.55,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-sym-verdict": {
+      "all": {
+        "acc": 0.48833333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4783092324805339,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5182724252491694,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.49,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.435,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.51,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.48,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa": {
+      "all": {
+        "acc": 0.5675,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.635,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5650723025583982,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.574750830564784,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.51,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.565,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.595,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.55,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-conclusion": {
+      "all": {
+        "acc": 0.5225,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.63,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5228031145717463,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.521594684385382,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.425,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.465,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.585,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.525,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-conclusion-verdict": {
+      "all": {
+        "acc": 0.4775,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4794215795328142,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.4717607973421927,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.46,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.485,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.455,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-verdict": {
+      "all": {
+        "acc": 0.4841666666666667,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.585,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4760845383759733,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5083056478405316,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.485,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.41,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.445,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.46,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|none": {
+      "all": {
+        "acc": 0.49833333333333335,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4972191323692992,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5016611295681063,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.495,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|text": {
+      "all": {
+        "acc": 0.49083333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.48,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4838709677419355,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5116279069767442,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.445,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.495,
+        "n": 200
+      }
+    },
+    "rulebase-verdict|tf|exec-vsa": {
+      "all": {
+        "acc": 0.575,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.66,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.5766666666666667,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.5733333333333334,
+        "n": 300
+      }
+    },
+    "rulebase-verdict|tf|exec-vsa-verdict": {
+      "all": {
+        "acc": 0.4816666666666667,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.58,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.47,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.425,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.44,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.49333333333333335,
+        "n": 300
+      }
+    },
+    "rulebase-verdict|tf|text": {
+      "all": {
+        "acc": 0.51,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.51,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.48,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.51,
+        "n": 300
+      }
+    }
+  }
+}

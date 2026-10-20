@@ -1,0 +1,419 @@
+{
+  "source": {
+    "host": "Qwen/Qwen3-0.6B-Base",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 32768
+  },
+  "sets": [
+    "taxonomy-verdict",
+    "rulebase-verdict"
+  ],
+  "smoke": false,
+  "timings": {
+    "taxonomy-verdict": 64.0,
+    "rulebase-verdict": 25.9
+  },
+  "context_tokens": {
+    "taxonomy-verdict": {
+      "exec-sym": 91.725,
+      "exec-sym-verdict": 97.35,
+      "exec-vsa": 42.075,
+      "exec-vsa-conclusion": 24.85,
+      "exec-vsa-conclusion-verdict": 30.475,
+      "exec-vsa-verdict": 47.7,
+      "none": 0.0,
+      "text": 182.15
+    },
+    "rulebase-verdict": {
+      "exec-vsa": 60.325,
+      "exec-vsa-verdict": 65.95,
+      "text": 138.725
+    }
+  },
+  "predictions": "/home/bhux/data/vsa-llm/e14/runs/lg-verdict/Qwen3-0.6B/predictions.jsonl.gz",
+  "accuracy": {
+    "taxonomy-verdict|tf|exec-sym": {
+      "all": {
+        "acc": 1.0,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-sym-verdict": {
+      "all": {
+        "acc": 1.0,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa": {
+      "all": {
+        "acc": 1.0,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-conclusion": {
+      "all": {
+        "acc": 0.9425,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.905,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.9332591768631813,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.9700996677740864,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.935,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.955,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.945,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.95,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.965,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-conclusion-verdict": {
+      "all": {
+        "acc": 1.0,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-verdict": {
+      "all": {
+        "acc": 1.0,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 1.0,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 1.0,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|none": {
+      "all": {
+        "acc": 0.5,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4983314794215795,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5049833887043189,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|text": {
+      "all": {
+        "acc": 0.56,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.6,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5517241379310345,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.584717607973422,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.555,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.575,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.565,
+        "n": 200
+      }
+    },
+    "rulebase-verdict|tf|exec-vsa": {
+      "all": {
+        "acc": 0.9983333333333333,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 1.0,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.995,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.9966666666666667,
+        "n": 300
+      }
+    },
+    "rulebase-verdict|tf|exec-vsa-verdict": {
+      "all": {
+        "acc": 1.0,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 1.0,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 1.0,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 1.0,
+        "n": 300
+      }
+    },
+    "rulebase-verdict|tf|text": {
+      "all": {
+        "acc": 0.6133333333333333,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.66,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.5433333333333333,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.615,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.565,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.6833333333333333,
+        "n": 300
+      }
+    }
+  }
+}

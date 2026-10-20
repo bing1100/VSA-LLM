@@ -31,6 +31,12 @@ numbers below refer to it).
     - reports at 54.4959979.
     - Script: `experiments/e14-logic/queue-commands-followup.sh`; about 4 GPU-h.
   - **Every finished experiment explained:** `manuscript/findings/2026-10-20-e14-experiments-explained.md`.
+- **2026-10-20 (afternoon): the follow-ups have run** (`manuscript/findings/2026-10-20-e14-followups.md`).
+  - **RD-4b's rule fires.** Selective recall gives T4 +0.25 and T5 +0.66. An E13 amendment is drafted for the
+    author (`experiments/e13-learning-cycle/amendment-proposal-2026-10-20.md`); it is not queued.
+  - **G1′ fails:** small hosts can't relay true/false; cloze works.
+  - **LG-P hard:** Qwen3-1.7B guides search (+0.11 to +0.15 over random); it ties set of support at small budgets.
+  - **RD-12** is retried again after a second run fix.
 
 ---
 

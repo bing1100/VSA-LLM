@@ -1,0 +1,419 @@
+{
+  "source": {
+    "host": "HuggingFaceTB/SmolLM2-360M",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 8192
+  },
+  "sets": [
+    "taxonomy-verdict",
+    "rulebase-verdict"
+  ],
+  "smoke": false,
+  "timings": {
+    "taxonomy-verdict": 48.2,
+    "rulebase-verdict": 18.5
+  },
+  "context_tokens": {
+    "taxonomy-verdict": {
+      "exec-sym": 98.4,
+      "exec-sym-verdict": 104.025,
+      "exec-vsa": 45.2,
+      "exec-vsa-conclusion": 26.7,
+      "exec-vsa-conclusion-verdict": 32.325,
+      "exec-vsa-verdict": 50.825,
+      "none": 0.0,
+      "text": 201.525
+    },
+    "rulebase-verdict": {
+      "exec-vsa": 64.925,
+      "exec-vsa-verdict": 70.5,
+      "text": 153.6
+    }
+  },
+  "predictions": "/home/bhux/data/vsa-llm/e14/runs/lg-verdict/SmolLM2-360M/predictions.jsonl.gz",
+  "accuracy": {
+    "taxonomy-verdict|tf|exec-sym": {
+      "all": {
+        "acc": 0.5183333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5150166852057843,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5282392026578073,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.54,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.515,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.515,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-sym-verdict": {
+      "all": {
+        "acc": 0.47583333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.62,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5228031145717463,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.33554817275747506,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.565,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.425,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.415,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.435,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.395,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa": {
+      "all": {
+        "acc": 0.5675,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.71,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5639599555061179,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5780730897009967,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.53,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.555,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.555,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.535,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.52,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-conclusion": {
+      "all": {
+        "acc": 0.6733333333333333,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.78,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.6985539488320356,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5980066445182725,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.635,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.665,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.685,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.675,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.6,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-conclusion-verdict": {
+      "all": {
+        "acc": 0.5008333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5005561735261401,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5016611295681063,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.495,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|exec-vsa-verdict": {
+      "all": {
+        "acc": 0.5,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.7,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5494994438264739,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.3521594684385382,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.555,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.455,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.41,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.45,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.43,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|none": {
+      "all": {
+        "acc": 0.5,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.4883203559510567,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5348837209302325,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.485,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.51,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.49,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.51,
+        "n": 200
+      }
+    },
+    "taxonomy-verdict|tf|text": {
+      "all": {
+        "acc": 0.5058333333333334,
+        "n": 1200
+      },
+      "depth=0": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "counterfactual=False": {
+        "acc": 0.5050055617352615,
+        "n": 899
+      },
+      "counterfactual=True": {
+        "acc": 0.5083056478405316,
+        "n": 301
+      },
+      "depth=1": {
+        "acc": 0.51,
+        "n": 200
+      },
+      "depth=2": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=3": {
+        "acc": 0.505,
+        "n": 200
+      },
+      "depth=4": {
+        "acc": 0.51,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.505,
+        "n": 200
+      }
+    },
+    "rulebase-verdict|tf|exec-vsa": {
+      "all": {
+        "acc": 0.5466666666666666,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.52,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.5566666666666666,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.55,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.57,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.5366666666666666,
+        "n": 300
+      }
+    },
+    "rulebase-verdict|tf|exec-vsa-verdict": {
+      "all": {
+        "acc": 0.49,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.62,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.5,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.375,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.475,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.48,
+        "n": 300
+      }
+    },
+    "rulebase-verdict|tf|text": {
+      "all": {
+        "acc": 0.5,
+        "n": 600
+      },
+      "depth=1": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "rules=10": {
+        "acc": 0.5,
+        "n": 300
+      },
+      "depth=3": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "depth=5": {
+        "acc": 0.5,
+        "n": 200
+      },
+      "rules=50": {
+        "acc": 0.5,
+        "n": 300
+      }
+    }
+  }
+}
