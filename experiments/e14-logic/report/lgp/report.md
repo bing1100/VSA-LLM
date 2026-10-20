@@ -7,6 +7,11 @@ Primary — proofs found on provable problems, score − random (Holm over budge
 - budget 10: +0.000 [-0.020, +0.020] (Holm p 1.0000, n 408)
 - budget 30: -0.017 [-0.044, +0.010] (Holm p 0.5359, n 408)
 
+Secondary (found on provable problems):
+
+- score − sos, budget 10: -0.096 [-0.125, -0.066] (p 0.0005, n 408)
+- score − sos, budget 30: -0.098 [-0.127, -0.071] (p 0.0005, n 408)
+
 | policy · budget | accuracy | found | soundness |
 |---|---:|---:|---:|
 | bfs|10 | 0.858 | 0.721 | 1.000 |
@@ -26,6 +31,11 @@ Primary — proofs found on provable problems, score − random (Holm over budge
 - budget 10: -0.005 [-0.027, +0.017] (Holm p 0.7653, n 408)
 - budget 30: -0.054 [-0.081, -0.027] (Holm p 0.0010, n 408)
 
+Secondary (found on provable problems):
+
+- score − sos, budget 10: -0.100 [-0.132, -0.071] (p 0.0005, n 408)
+- score − sos, budget 30: -0.135 [-0.169, -0.103] (p 0.0005, n 408)
+
 | policy · budget | accuracy | found | soundness |
 |---|---:|---:|---:|
 | bfs|10 | 0.858 | 0.721 | 1.000 |
@@ -44,6 +54,15 @@ Primary — proofs found on provable problems, score − random (Holm over budge
 
 - budget 10: -0.007 [-0.027, +0.010] (Holm p 0.5359, n 408)
 - budget 30: -0.049 [-0.078, -0.022] (Holm p 0.0010, n 408)
+
+Secondary (found on provable problems):
+
+- score − sos, budget 10: -0.103 [-0.132, -0.074] (p 0.0005, n 408)
+- score − sos, budget 30: -0.130 [-0.164, -0.098] (p 0.0005, n 408)
+- react − random, budget 10: -0.027 [-0.051, -0.005] (p 0.0235, n 408)
+- react − random, budget 30: -0.076 [-0.103, -0.049] (p 0.0005, n 408)
+- react − score, budget 10: -0.020 [-0.039, +0.000] (p 0.0650, n 408)
+- react − score, budget 30: -0.027 [-0.049, -0.007] (p 0.0155, n 408)
 
 | policy · budget | accuracy | found | soundness |
 |---|---:|---:|---:|
@@ -68,6 +87,15 @@ Primary — proofs found on provable problems, score − random (Holm over budge
 
 - budget 10: +0.029 [+0.007, +0.054] (Holm p 0.0270, n 408)
 - budget 30: +0.025 [-0.000, +0.051] (Holm p 0.0755, n 408)
+
+Secondary (found on provable problems):
+
+- score − sos, budget 10: -0.066 [-0.093, -0.039] (p 0.0005, n 408)
+- score − sos, budget 30: -0.056 [-0.081, -0.034] (p 0.0005, n 408)
+- react − random, budget 10: -0.162 [-0.201, -0.125] (p 0.0005, n 408)
+- react − random, budget 30: -0.228 [-0.272, -0.186] (p 0.0005, n 408)
+- react − score, budget 10: -0.191 [-0.230, -0.154] (p 0.0005, n 408)
+- react − score, budget 30: -0.252 [-0.297, -0.211] (p 0.0005, n 408)
 
 | policy · budget | accuracy | found | soundness |
 |---|---:|---:|---:|
