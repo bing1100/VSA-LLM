@@ -721,3 +721,67 @@ not used.
 **Smoke seen before this registration** (labelled; not a result): 6 terms, s1, CPU.
 
 **Queue:** `queue-commands-addendum6.sh`; 3 jobs at 54.4959984, about 0.1 GPU-h each; report at 54.4959989.
+
+## 18. Addendum 7 (2026-10-20, before any run of it): RD-12b, the cycle rerun with a gentler passive phase
+
+**Origin:** the author, 2026-10-20: "queue that rerun". It follows the RD-12 pilot's diagnosis
+(`experiments/e14-logic/report/rd12/`).
+- In every arm, including `passive` (no facts), the training loss on the passive mix fell (2.04 → 1.86 over the rounds),
+  while the held-out loss after the read terms rose (1.783 → 1.815) and general loss rose (2.553 → 2.566).
+- That is drift or overfitting from the passive phase itself, and it is the same in every arm to the third decimal. So
+  no arm could show a gain.
+- The probable causes:
+  - the 160 definitions repeated 40× (10% of tokens);
+  - a learning-rate restart with warm-up to the original rates on a converged model;
+  - a narrow domain mix.
+
+**Design:** RD-12 (§12) unchanged, except for the following.
+- **Passive phase (`--recipe gentle`):**
+  - channel and host learning rates ×0.1 (1e-4 and 3e-6);
+  - constant, with no warm-up and no decay;
+  - the definitions repeated 10× instead of 40×. That is about 1% of the tokens instead of 10%, and about 2 exposures per
+    definition per round instead of about 14. The mix is about 10.8M tokens, of which each round trains on 2M.
+    The smoke run had 4×, which would give under one exposure per round, too few for a passive phase;
+  - the mix adds 8,000 general documents. These are FineWeb-Edu shard 000 from document 2,000, the general text T4's
+    training already read, i.e. rehearsal, not new text.
+  - 2M tokens per round, 3 rounds, as the pilot.
+- **Arms:** `cycle`, `single`, `gold` and `passive`, as the pilot, plus two no-training controls run once:
+  - **`still-none`:** the base model, no frames for the read terms;
+  - **`still-gold`:** the base model with the gold frames swapped in.
+- **Added measure:** each round also scores **selective recall** of the arm's frames (the asked relation's lines, §13)
+  and `none`, both with the context-free null, per item.
+- Data folders: `~/data/vsa-llm/e14/rd12b/`. Outputs: `experiments/e14-logic/runs/rd12b/`.
+
+**Recipe gate:** `passive − still-none` on the loss after the read terms at the last round must be ≤ +0.5% of
+`still-none`'s loss (the passive phase alone must not hurt). If the gate fails, the cycle contrasts are reported as
+uninformative.
+
+**Primary** (pilot, one seed; Holm over the three):
+- (a) `cycle − passive` on the loss after the read terms (last round; paired over terms);
+- (b) `cycle − single` on the same;
+- (c) `cycle − single` on selective-recall property accuracy (last round; paired over items).
+
+**Secondary:**
+- `gold − passive`, `gold − still-gold` (does training with the frames add anything to writing them),
+  `still-gold − still-none`;
+- the selective-recall contrasts of those pairs;
+- general loss per round.
+
+**Predictions:**
+- The gate passes.
+- (a) `cycle < passive`, small. On T4 the implicit route is weak even with gold frames: RD-4's `implicit:oracle − none`
+  is about 0.
+- (b) about 0.
+- (c) > 0, small (the cycle holds 205 usable edges against single's 141).
+- `still-gold − still-none` on the loss is about 0 (T4's implicit route).
+
+**Teacher:** the cycle's reads are cached from the pilot where the prompts repeat. A retraction that changes the
+relation set makes new prompts: `--max-usd 6`.
+
+**Smoke seen before this registration** (labelled; not a result): 8 terms, 1 round, CPU; `passive` (gentle) and both
+still arms, then the report.
+
+**Queue:** `queue-commands-addendum7.sh`.
+- 6 arm jobs at 54.4959985: the four training arms about 0.25 GPU-h each, the two still arms about 0.05 each;
+  about 1.2 GPU-h in all.
+- The report at 54.4959989.
