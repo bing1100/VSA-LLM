@@ -97,7 +97,7 @@ import torch
 
 from ..compose import FrameSchedule
 from ..evaluation import channel_probes as cp
-from ..span_channel import AliasTable, CausalLinker, SpanChannel, normalize_alias
+from ..span_channel import COMPOSED_MODES, HYBRID_MODES, AliasTable, CausalLinker, SpanChannel, normalize_alias
 from ..statistics import holm_adjust
 from . import e5_zeroshot as zs
 from .e5_common import (E5Run, canonical_surfaces, clear_output, finish_output, fmt, fmt_ci, json_ready, open_run,
@@ -953,12 +953,12 @@ def inserted_entries(channel: SpanChannel | None, count: int, frames: Sequence[S
     if channel is None:
         yield None
         return
-    composer = channel.composer if channel.mode == "compose" else None
+    composer = channel.composer if channel.mode in COMPOSED_MODES else None     # the hybrids compose from frames too
     saved: dict[str, Any] = {"entry_count": channel.entry_count}
     if composer is not None:
         saved.update(offsets=composer.frame_offsets, relations=composer.frame_relations, fillers=composer.frame_fillers,
                      delta=getattr(composer, "delta", None))
-    if channel.mode == "free":
+    if channel.mode in {"free", *HYBRID_MODES}:                                  # the hybrids grow the free table too
         saved.update(table=channel.table, unseen=channel.unseen)
     if channel.mode == "random":
         saved["table_fixed"] = channel.table_fixed
@@ -971,7 +971,7 @@ def inserted_entries(channel: SpanChannel | None, count: int, frames: Sequence[S
             composer.frame_offsets, composer.frame_relations, composer.frame_fillers = saved["offsets"], saved["relations"], saved["fillers"]
             if saved["delta"] is not None:
                 composer.delta = saved["delta"]
-        if channel.mode == "free":
+        if channel.mode in {"free", *HYBRID_MODES}:
             channel.table, channel.unseen = saved["table"], saved["unseen"]
         if channel.mode == "random":
             channel.table_fixed = saved["table_fixed"]
@@ -992,7 +992,7 @@ def edited_schedule(schedule: FrameSchedule, edits: Sequence[tuple[int, int, int
 @contextlib.contextmanager
 def applied_edits(channel: SpanChannel | None, edits: Sequence[tuple[int, int, int, int]]) -> Iterator[bool]:
     """Within the block the composer reads the edited schedule; yields False when nothing can be edited."""
-    if channel is None or channel.mode != "compose" or not edits:
+    if channel is None or channel.mode not in COMPOSED_MODES or not edits:
         yield False
         return
     composer = channel.composer
@@ -1106,7 +1106,7 @@ def score_pairs(adapter: cp.ModelAdapter, items: Sequence[dict[str, Any]], surfa
 def available_new_sources(run: E5Run, requested: Sequence[str] | None) -> list[str]:
     mode = run.mode
     allowed = (["own"] if mode in {"none", "hashed"} else ["own", "none"] if mode == "random"
-               else ["own", "none", "mean_row"] + (["random_frame"] if mode == "compose" else []))
+               else ["own", "none", "mean_row"] + (["random_frame"] if mode in COMPOSED_MODES else []))
     return [s for s in (requested or NEW_SOURCES) if s in allowed]
 
 
@@ -1238,7 +1238,7 @@ def evaluate_edits(run: E5Run, items_dir: Path, *, log: Callable[[str], None] = 
 
     started = time.monotonic()
     results: dict[str, dict[str, dict[str, Any]]] = {}
-    applicable = run.channel is not None and run.channel.mode == "compose"
+    applicable = run.channel is not None and run.channel.mode in COMPOSED_MODES
     for condition in EDIT_CONDITIONS:
         if condition != "before" and not applicable:
             results[condition] = results["before"]          # nothing to edit: the model is unchanged

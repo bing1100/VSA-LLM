@@ -173,7 +173,9 @@ class Store:
 
     def unbinder(self, method: str | None = None) -> Callable[[Tensor, Tensor], Tensor]:
         method = method or self.method
-        if method == "exact":
+        if method == "exact" and "exact" in getattr(self.composer.transform, "unbind_methods", ()):
+            pass                        # the family's own exact division (e.g. `spectral_bounded`, decision 61a)
+        elif method == "exact":
             roles = getattr(self.composer.transform, "roles", None)
             if roles is None:
                 raise ValueError("exact division is defined here for learned HRR roles only")
