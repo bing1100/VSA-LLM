@@ -76,7 +76,10 @@ for run in $ALL; do
 done
 # E5.3 grading, LLM judge (claude-opus-5-5 via claude -p): one shared cache and ledger, hard cap USD 25 over all three,
 # in the pre-registered budget order. Non-clinical text only (WordNet aliases, FineWeb-Edu sentences).
-for study in neighbours-rare edges neighbours-heldout; do
+# SKIP_JUDGE=1 queues everything except the three Claude-judge grade jobs (their spend waits for the author; see the
+# 2026-10-20 note in the amendment). Re-run the script without it, or add only these jobs, once the author confirms.
+if [[ "${SKIP_JUDGE:-0}" == 1 ]]; then JUDGE_STUDIES=""; else JUDGE_STUDIES="neighbours-rare edges neighbours-heldout"; fi
+for study in $JUDGE_STUDIES; do
   # exit 4 = cut by the cap: labelled INCOMPLETE in its output, resumable from the cache. The wrapper records it and exits 0,
   # so that one capped study cannot fail the queue job and hold back every later CPU-lane report. Other exits pass through.
   cpu "e5s1-rating-grade-$study-report" bash -c '"$@"; c=$?; if [ "$c" -eq 4 ]; then echo "INCOMPLETE (judge cap): recorded, not a queue failure"; exit 0; fi; exit "$c"' _ \

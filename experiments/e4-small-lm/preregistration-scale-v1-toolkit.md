@@ -206,3 +206,7 @@ was sent to the teacher).
 ## 9. Amendments
 
 None yet.
+
+Status notes (not amendments; §§1–4 unchanged): `preregistration-scale-v1-toolkit-status-2026-10-20.md` covers the
+author's approval of the hybrid teacher spend (about USD 73, 2026-10-20), the cap, the spend so far and the C5teach queue
+script.
