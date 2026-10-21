@@ -262,7 +262,7 @@ def gold_flags(items: Sequence[dict[str, Any]], frames: dict[str, dict[str, list
 
 def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, list | None]], text: RecallText,
                           definitions: dict[str, str], pools: dict[int, np.ndarray], ctx: e11.TrackContext, *, seed: int,
-                          retrieved: dict[str, str] | None = None
+                          retrieved: dict[str, str] | None = None, routes: "RouteCache | None" = None
                           ) -> tuple[dict[str, list | None], dict[str, str] | None, dict[str, Any]]:
     """(frames for the term rows, per-item prompt contexts, diagnostics). `explicit-rel:<reader>`: the reader's edges of the
     item's own relation as recall lines (an item without a relation gets the whole frame); `explicit-rel-wrong:oracle`: the
@@ -270,30 +270,25 @@ def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, li
     concept's context (`condition_inputs`) for each of its items."""
     concepts = scorer.concepts
     kind, _, arg = name.partition(":")
-    if kind == "explicit-route":                        # RD-4c: `explicit-route:<router>:<reader>`
+    if kind in {"explicit-route", "explicit-size"}:     # RD-4c: `explicit-route:<router>:<reader>`; RD-4e: `explicit-size:L:…`
+        limit = None
+        if kind == "explicit-size":
+            limit_text, _, arg = arg.partition(":")
+            limit = int(limit_text)
         router, _, reader_name = arg.partition(":")
         if router not in ROUTERS:
             raise ValueError(f"condition {name!r}: router must be one of {ROUTERS}")
         reader = frames.get(reader_name)
         if reader is None:
             raise KeyError(f"condition {name!r}: no {reader_name!r} frames")
-        chosen = route_relations(scorer, reader, ctx, router)
-        rid = ctx.relation_id
-        out, lines, hits = {}, [], []
-        for c in concepts:
-            frame = list(reader.get(c) or [])
-            held = {int(r) for r, _ in frame}
-            for item in scorer.items_by_concept[c]:
-                pick = set(chosen.get(item["id"], []))
-                edges = [e for e in frame if int(e[0]) in pick]
-                lines.append(len(edges))
-                asked = rid.get(item.get("relation"))
-                if asked is not None and asked in held:
-                    hits.append(float(asked in pick))
-                out[item["id"]] = text.symbolic(scorer.surface[c], edges)
-        return {c: None for c in concepts}, out, {"lines_per_item": float(np.mean(lines)) if lines else 0.0,
-                                                  "route_accuracy": float(np.mean(hits)) if hits else None,
-                                                  "routable_items": len(hits)}
+        if routes is not None:
+            chosen = routes.choose(router, reader_name, reader)
+        elif router in RD4E_FEWSHOT and router != "fewshot":
+            raise ValueError(f"condition {name!r}: router {router!r} needs a RouteCache")
+        else:
+            chosen = route_relations(scorer, reader, ctx, router)
+        out, info = route_diagnostics(scorer, reader, chosen, ctx, text, whole_if_at_most=limit)
+        return {c: None for c in concepts}, out, info
     if kind not in {"explicit-rel", "explicit-rel-wrong"}:
         row_frames, contexts, info = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed,
                                                       retrieved=retrieved)
@@ -325,7 +320,8 @@ def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, li
 
 # -- RD-4c (pre-registration §16): choosing which relation to recall, without the item's label ---------------------------
 
-ROUTERS = ("lex", "lm", "top2", "nb", "fewshot", "memo")      # nb / fewshot / memo: RD-4d's learned routers (§19)
+ROUTERS = ("lex", "lm", "top2", "nb", "fewshot", "memo",       # nb / fewshot / memo: RD-4d's learned routers (§19)
+           "fewshot-para", "fewshot-abstain", "fewshot-top2")  # RD-4e (addendum 12): `RouteCache`
 
 
 def _route_words(text: str) -> list[str]:
@@ -538,10 +534,13 @@ def context_budget(run: Any, cap: int | None) -> int | None:
 def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str, list | None]], *, style: str,
                     conditions: Sequence[str], store: sq.RecallStore | None, seed: int = 0, resamples: int = 2000,
                     max_context_tokens: int | None = 1024, null: str = "context", retrieved: dict[str, str] | None = None,
-                    log=print) -> dict[str, Any]:
+                    routing: dict[str, Any] | None = None, derived: Sequence[str] = (), log=print) -> dict[str, Any]:
     """`null`: `context` (tier P: the null prompt is read after the same context as the item) or `plain` (RD-4b: the null
     prompt without any context, computed once). Per-item conditions (`explicit-rel*`) and `plain` use `score_rows`.
-    `retrieved` (RD-13): concept → retrieved text for the `retrieved` condition."""
+    `retrieved` (RD-13): concept → retrieved text for the `retrieved` condition. `routing` (RD-4e): `scoring` (`prefix` /
+    `brute`) and `calibration` (the abstention calibration items) of the run's `RouteCache`; `derived`: the
+    `derived-size:…` conditions assembled from the scored rows after the loop. Every condition's diagnostics record
+    `truncated_share`, the share of items whose longest prompt exceeds the adapter's `max_length`."""
     ctx = e11.run_context(run)
     budget = context_budget(run, max_context_tokens)
     scorer = e11.ItemScorer(run, read_set, ctx)
@@ -556,21 +555,33 @@ def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str,
     timings: dict[str, float] = {}
     null_scores = plain_null_scores(scorer) if null == "plain" else None
     flags = gold_flags([i for c in concepts for i in scorer.items_by_concept[c]], frames, ctx)
+    routing = routing or {}
+    routes = RouteCache(scorer, ctx, scoring=routing.get("scoring", "prefix"), log=log)
+    calibration: dict[str, Any] = {}
+    if routing.get("calibration"):
+        calibration = calibrate_abstention(scorer, routing["calibration"], scoring=routes.scoring, log=log)
+        routes.threshold = calibration["threshold"]
     for name in conditions:
         t0 = time.monotonic()
         log(f"  {name}")
-        if null == "plain" or name.startswith(("explicit-rel", "explicit-route")):
+        if null == "plain" or name.startswith(("explicit-rel", "explicit-route", "explicit-size")):
             row_frames, contexts, diag = item_condition_inputs(name, scorer, frames, text, definitions, pools, ctx, seed=seed,
-                                                               retrieved=retrieved)
+                                                               retrieved=retrieved, routes=routes)
             if contexts:
                 contexts = {i: fit_context(t, run.tokenizer, budget) for i, t in contexts.items()}
             item_rows[name] = score_rows(scorer, row_frames, contexts, null_scores=null_scores)
+            diag["truncated_share"] = truncated_share(run, scorer, contexts)
         else:
             row_frames, contexts, diag = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed,
                                                           retrieved=retrieved)
             if contexts:
                 contexts = {c: fit_context(t, run.tokenizer, budget) for c, t in contexts.items()}
             item_rows[name] = scorer.score(row_frames, contexts)
+            diag["truncated_share"] = truncated_share(run, scorer, {i["id"]: contexts[c] for c in contexts for i in scorer.items_by_concept[c]}
+                                                      if contexts else None)
+        if name.startswith("explicit-route:fewshot-abstain"):
+            diag.update({"threshold": routes.threshold, "calibration_queries": calibration.get("queries"),
+                         "calibration_accuracy": calibration.get("accuracy")})
         for rows in item_rows[name].values():
             for row in rows:
                 if row["id"] in flags:
@@ -583,14 +594,22 @@ def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str,
         else:
             tokens[name] = 0.0
         timings[name] = round(time.monotonic() - t0, 2)
+    for name in derived:                                   # RD-4e: the size rule assembled from the rows above
+        t0 = time.monotonic()
+        log(f"  {name} (derived)")
+        item_rows[name], info[name] = derived_size_rows(name, item_rows, scorer, frames)
+        tokens[name], timings[name] = None, round(time.monotonic() - t0, 2)
     gold_share = {r: float(np.mean([f[r] for f in flags.values()])) for r in frames} if flags else {}
     document = {"set": {"kind": read_set.kind, "track": read_set.manifest["track"], "concepts": len(concepts),
                         "items": len(read_set.items)}, "null": null, "gold_in_frame_share": gold_share,
-                "style": style, "conditions": list(conditions), "compose": bool(run.channel is not None and run.channel.mode == "compose"),
-                "vsa": store is not None, "context_budget": budget, "readers": {r: sum(f is not None for f in v.values()) for r, v in frames.items()},
+                "style": style, "conditions": [*conditions, *derived], "compose": bool(run.channel is not None and run.channel.mode == "compose"),
+                "vsa": store is not None, "context_budget": budget, "max_length": int(run.adapter.max_length),
+                "readers": {r: sum(f is not None for f in v.values()) for r, v in frames.items()},
+                "routing": {"scoring": routes.scoring, "threshold": routes.threshold, "calibration_queries": calibration.get("queries"),
+                            "calibration_accuracy": calibration.get("accuracy"), "prompts_trimmed": routes.stats.get("trimmed", 0)},
                 "diagnostics": info, "context_tokens": tokens, "context_samples": samples, "timings": timings,
                 "items": summarize(item_rows, read_set.kind, resamples=resamples, seed=seed)}
-    return {"document": document, "item_rows": item_rows}
+    return {"document": document, "item_rows": item_rows, "routing": [*calibration.get("rows", []), *routes.details]}
 
 
 def fmt_ci(row: dict[str, Any] | None) -> str:
@@ -636,13 +655,17 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
               "seed": args.seed, "resamples": args.resamples, "max_context_tokens": args.max_context_tokens, "alias_table": str(args.alias_table) if args.alias_table else None,
               "smoke": bool(args.smoke), "null": args.null, "family": args.family,
               "teacher_frames": str(args.teacher_frames) if getattr(args, "teacher_frames", None) else None,
-              "retrieved": str(args.retrieved) if getattr(args, "retrieved", None) else None}
+              "retrieved": str(args.retrieved) if getattr(args, "retrieved", None) else None,
+              "max_length": args.max_length, "route_scoring": getattr(args, "route_scoring", "prefix"),
+              "calibration_items": str(args.calibration_items) if getattr(args, "calibration_items", None) else None,
+              "calibration_frames": str(args.calibration_frames) if getattr(args, "calibration_frames", None) else None}
     output = Path(args.output)
     if args.overwrite:
         clear_output(output)
         (output / "predictions.jsonl").unlink(missing_ok=True)
     git_at_start = start_output(output, config)
-    run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size, alias_table=args.alias_table)
+    run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size, alias_table=args.alias_table,
+                   max_length=args.max_length)
     ctx = e11.run_context(run)
     compose = run.channel is not None and run.channel.mode == "compose"
     store = None
@@ -677,6 +700,8 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         conditions = list(RD12C_CONDITIONS)
     elif args.family == "rd4d":
         conditions = list(RD4D_CONDITIONS)
+    elif args.family == "rd4e":
+        conditions = list(RD4E_CONDITIONS)
     elif args.family == "rd13":
         if retrieved is None:
             raise SystemExit("--family rd13 needs --retrieved DIR (e14_retrieve build)")
@@ -687,8 +712,19 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         bad = [c for c in conditions if c.split(":")[0] in {"implicit", "both", "noisy-implicit", "explicit-vsa"}]
         if bad:
             raise SystemExit(f"run has no compose channel: conditions {bad} need one")
+    routing: dict[str, Any] = {"scoring": getattr(args, "route_scoring", "prefix")}
+    rd4e = args.family == "rd4e" or any(c.split(":")[1] in RD4E_FEWSHOT for c in conditions if c.startswith(("explicit-route", "explicit-size")))
+    if rd4e:                                                     # RD-4e: the abstention calibration (addendum 12 §4)
+        if getattr(args, "calibration_items", None):
+            routing["calibration"] = load_calibration_set(Path(args.calibration_items), Path(args.calibration_frames),
+                                                          args.calibration_style or style)
+        else:
+            routing["calibration"] = own_calibration_set(read_set, frames["oracle"], ctx)
+    derived = [c for c in RD4E_DERIVED if f"explicit-sym:{c.rsplit(':', 1)[1]}" in conditions
+               and f"explicit-route:{c.split(':', 2)[2]}" in conditions] if rd4e else []
     result = evaluate_recall(run, read_set, frames, style=style, conditions=conditions, store=store, seed=args.seed,
-                             resamples=args.resamples, max_context_tokens=args.max_context_tokens, null=args.null, retrieved=retrieved)
+                             resamples=args.resamples, max_context_tokens=args.max_context_tokens, null=args.null, retrieved=retrieved,
+                             routing=routing, derived=derived)
     document = {"source": run.describe(), "frames_from": str(path), "smoke": bool(args.smoke), "family": args.family,
                 **result["document"]}
     with (output / "predictions.jsonl").open("w") as handle:
@@ -696,10 +732,551 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
             for concept, rows in by_concept.items():
                 for row in rows:
                     handle.write(json.dumps(json_ready({"condition": cond, **row})) + "\n")
+    if result.get("routing"):
+        e11._write_jsonl(output / "routing.jsonl", result["routing"])
     write_json(output / "summary.json", document)
     (output / "report.md").write_text(render(document, smoke=bool(args.smoke)))
     finish_output(output, config, git_at_start=git_at_start, device=run.device, source=run.describe())
     return document
+
+
+# -- RD-4e (addendum 12): routing that generalises — paraphrase demonstrations, abstention, top-2, the size rule --------------
+
+RD4E_FEWSHOT = ("fewshot", "fewshot-para", "fewshot-abstain", "fewshot-top2")   # one few-shot family, scored together
+SIZE_LIMITS = (2, 3, 4, 6, 8)                 # L of "recall the whole frame when it has ≤ L lines, route otherwise"
+SIZE_STAR = 6                                 # L*, fixed from the offline analysis (addendum 12 §2) before any run
+PARA_SHOTS = 5                                # demonstrations per candidate relation in the paraphrase-augmented prompt
+ABSTAIN_QUANTILE = 0.20                       # τ: this quantile of the margins of correctly routed calibration queries
+RD4E_READERS = ("oracle", "typeprior")
+RD4E_CONDITIONS = ("none", "explicit-rel:oracle", "explicit-rel:typeprior", "explicit-sym:oracle", "explicit-sym:typeprior",
+                   "definition",
+                   *(f"explicit-route:{r}:{reader}" for reader in RD4E_READERS for r in ("lex", *RD4E_FEWSHOT)),
+                   *(f"explicit-size:{SIZE_STAR}:fewshot:{reader}" for reader in RD4E_READERS))
+RD4E_DERIVED = tuple(f"derived-size:{L}:{r}:{reader}" for reader in RD4E_READERS for r in ("fewshot", "fewshot-para", "lex")
+                     for L in SIZE_LIMITS)
+RD4E_REALISTIC = ("explicit-route:fewshot-para:typeprior", "explicit-route:fewshot-abstain:typeprior",
+                  "explicit-route:fewshot-top2:typeprior", f"explicit-size:{SIZE_STAR}:fewshot:typeprior", "explicit-route:lex:typeprior")
+PRIMARY_E = (*((p, "explicit-rel:typeprior") for p in RD4E_REALISTIC),                                   # (a), 5 pipelines
+             ("explicit-route:fewshot-para:oracle", "explicit-route:fewshot:oracle"),                   # (b)
+             (f"explicit-size:{SIZE_STAR}:fewshot:oracle", "explicit-route:fewshot:oracle"))            # (c)
+SECONDARY_E = (("explicit-route:fewshot-abstain:oracle", "explicit-route:fewshot:oracle"),
+               ("explicit-route:fewshot-top2:oracle", "explicit-route:fewshot:oracle"),
+               ("explicit-route:fewshot-para:oracle", "explicit-rel:oracle"),
+               ("explicit-route:fewshot-para:oracle", "explicit-sym:oracle"),
+               ("explicit-route:fewshot:typeprior", "explicit-rel:typeprior"),
+               ("explicit-route:fewshot-para:typeprior", "definition"), ("explicit-route:fewshot-para:typeprior", "none"),
+               ("explicit-sym:oracle", "explicit-rel:oracle"), ("explicit-sym:typeprior", "explicit-rel:typeprior"),
+               ("explicit-sym:oracle", "explicit-route:fewshot:oracle"),
+               (f"explicit-size:{SIZE_STAR}:fewshot:oracle", f"derived-size:{SIZE_STAR}:fewshot:oracle"),
+               ("derived-size:8:fewshot:oracle", "explicit-route:fewshot:oracle"),
+               ("derived-size:4:fewshot:oracle", "explicit-route:fewshot:oracle"),
+               (f"derived-size:{SIZE_STAR}:fewshot-para:oracle", "explicit-route:fewshot-para:oracle"),
+               ("explicit-route:lex:oracle", "explicit-route:fewshot-para:oracle"))
+
+# Hand-written question wordings per relation (4–6 each; no model wrote them). Their content-word sets differ from every
+# item template's by more than one word (`near_duplicate`), checked in tests/test_e14_rd4e.py, so they always survive the
+# hold-out filter. Relations without an entry use `grammar_paraphrases`.
+ROUTE_PARAPHRASES: dict[str, list[str]] = {
+    # T4 (ChEBI)
+    "has_functional_parent": ["{x} is a derivative of", "{x} is obtained by modifying", "The compound from which {x} descends is",
+                              "Structurally, {x} comes from", "{x} is built from the parent molecule"],
+    "is_a": ["{x} is an example of a", "By type, {x} counts as a", "What sort of entity is {x}? A", "{x} is categorised as a",
+             "{x} is a particular"],
+    "has_role": ["{x} functions as", "{x} serves as", "In biology, {x} acts as", "{x} is employed as", "The function of {x} is that of"],
+    # T5 (synthetic glossary)
+    "approved_by": ["Who gives {x} the green light:", "{x} gets its approval from", "The approver of {x} is",
+                    "Before {x} goes ahead, it must be cleared by", "{x} needs a sign-off from"],
+    "area": ["{x} falls under the", "The business area of {x} is the", "{x} is the responsibility of the",
+             "Within the company, {x} comes under the", "{x} is a concern of the"],
+    "depends_on": ["{x} requires", "{x} is built on top of", "Before {x} can work, you need", "{x} would break without",
+                   "A prerequisite of {x} is"],
+    "governed_by": ["{x} is subject to", "The policy that applies to {x} is", "{x} has to comply with", "{x} operates under",
+                    "The rules {x} must obey are"],
+    "measured_by": ["The metric for {x} is", "Progress on {x} is tracked by", "{x} is judged by", "The yardstick for {x} is",
+                    "Success of {x} shows up in"],
+    "owned_by": ["{x} is run by", "The team responsible for {x} is", "{x} is looked after by", "Accountability for {x} rests with",
+                 "The owner of {x} is"],
+    "part_of": ["{x} is a component of", "{x} is one piece of", "{x} sits inside", "{x} is a sub-item of", "{x} is included in"],
+    "produces": ["{x} yields", "The result of {x} is", "{x} delivers", "What comes out of {x} is", "{x} creates"],
+    "purpose": ["{x} exists so that it", "The point of {x} is that it", "{x} is there to make sure it", "Put simply, {x}",
+                "The role of {x} is that it"],
+    "reports_to": ["{x} is a unit of", "{x} answers to", "{x} is nested under", "The group above {x} is", "{x} rolls up into"],
+    "uses": ["{x} makes use of", "{x} is done with", "The tool behind {x} is", "{x} is carried out in", "{x} leans on"],
+}
+ROUTE_STOP = frozenset("a an the of in on to for by with from is are was be it its this that as at and or we x what which who".split())
+
+
+def wording_content(template: str) -> frozenset[str]:
+    """The content words of a question wording: its words without `{x}` and the stop list."""
+    return frozenset(_route_words(template)) - ROUTE_STOP
+
+
+def near_duplicate(a: str, b: str) -> bool:
+    """Two wordings are near-duplicates when their content-word sets are equal or differ by one word with one set inside
+    the other ("{x} has a role as" / "{x} has a role as a" / "{x} has a role as an"; "{x} is part of" / "{x} forms part of")."""
+    A, B = wording_content(a), wording_content(b)
+    return A == B or (A < B and len(B - A) <= 1) or (B < A and len(A - B) <= 1)
+
+
+def grammar_paraphrases(relation: str) -> list[str]:
+    """Template-grammar wordings for a relation without a hand-written entry: the statement phrase in five carrier frames."""
+    phrase = _route_phrase(relation)
+    return [f"{{x}} {phrase}", f"It is recorded that {{x}} {phrase}", f"Note that {{x}} {phrase}", f"As documented, {{x}} {phrase}",
+            f"The record says that {{x}} {phrase}"]
+
+
+def demonstration_bank(relation: str, templates: Sequence[str], held_out: str) -> list[str]:
+    """The wordings a paraphrase-augmented router may show for `relation` when `held_out` is the routed wording: the
+    relation's item templates and its paraphrases, minus `held_out` and every near-duplicate of it, without repeats."""
+    out: list[str] = []
+    for t in (*templates, *ROUTE_PARAPHRASES.get(relation, grammar_paraphrases(relation))):
+        if near_duplicate(t, held_out) or any(wording_content(t) == wording_content(u) for u in out):
+            continue
+        out.append(t)
+    assert all(not near_duplicate(t, held_out) for t in out), "held-out wording leaked into the demonstrations"
+    return out
+
+
+def rotate_shots(bank: Sequence[str], key: str, count: int = PARA_SHOTS) -> list[str]:
+    """Up to `count` wordings from `bank`, starting at a stable per-item offset so every wording is used across items."""
+    import zlib
+    if len(bank) <= count:
+        return list(bank)
+    start = zlib.crc32(key.encode()) % len(bank)
+    return [bank[(start + i) % len(bank)] for i in range(count)]
+
+
+def fewshot_prompt(shots: Sequence[tuple[str, str]], question: str, surface: str) -> tuple[str, str]:
+    """(shared demonstrations, the item's own tail) of RD-4d's few-shot prompt; the option continues the tail as " <phrase>"."""
+    head = "Each question asks for one kind of fact.\n" + "".join(f"Question: {t.replace('{x}', 'X')} ...\nFact: X {phrase}\n"
+                                                                 for t, phrase in shots)
+    return head, f"Question: {question.replace('{x}', surface)} ...\nFact: {surface}"
+
+
+def trim_head(head: str, tokenizer: Any, budget: int) -> tuple[str, bool]:
+    """`head` (the instruction line and Question / Fact demonstration pairs) with its first pairs dropped until it fits
+    `budget` tokens; (text, whether anything was dropped). Only a host with few positions (the CPU test world) needs it."""
+    lines = head.rstrip("\n").split("\n")
+    trimmed = False
+    while len(tokenizer("\n".join(lines) + "\n", add_special_tokens=False)["input_ids"]) > budget and len(lines) >= 3:
+        lines = [lines[0], *lines[3:]]
+        trimmed = True
+    return "\n".join(lines) + "\n", trimmed
+
+
+def fewshot_scores(scorer: Any, queries: Sequence[tuple[str, str, Sequence[tuple[int, str]]]], *, scoring: str = "prefix",
+                   stats: dict[str, int] | None = None) -> list[dict[int, float]]:
+    """Per query (head, tail, [(relation, phrase)]): relation → the length-normalised log-probability of " <phrase>" after
+    head + tail. `prefix`: the head is run once per query and cached (`e11.PrefixCache`), the options read after it; `brute`:
+    every option re-reads the whole prompt (RD-4d's path, cut at the adapter's `max_length`). Both are the same quantity
+    (tested close on the CPU world). A head beyond the host's positions is trimmed (`trim_head`; counted in `stats`)."""
+    from ..evaluation import channel_probes as cp
+    tokenizer = scorer.run.tokenizer
+    length = {phrase: max(1, len(tokenizer(" " + phrase, add_special_tokens=False)["input_ids"]))
+              for _, _, options in queries for _, phrase in options}
+    positions = e11.max_positions(scorer.run)
+    out: list[dict[int, float]] = []
+    with scorer.condition({c: None for c in scorer.concepts}), e11.fast_continuations():
+        if scoring == "brute":
+            flat = [(i, r, head + tail, " " + phrase) for i, (head, tail, options) in enumerate(queries) for r, phrase in options]
+            values = cp.continuation_logprob(scorer.adapter, [f[2] for f in flat], [f[3] for f in flat]) if flat else []
+            out = [{} for _ in queries]
+            for (i, r, _, cont), v in zip(flat, values):
+                out[i][r] = float(v) / length[cont[1:]]
+            return out
+        for head, tail, options in queries:
+            if positions:
+                budget = positions - len(tokenizer(tail, add_special_tokens=False)["input_ids"]) - max(length[p] for _, p in options) - 2
+                head, trimmed = trim_head(head, tokenizer, budget)
+                if trimmed and stats is not None:
+                    stats["trimmed"] = stats.get("trimmed", 0) + 1
+            cache = e11.PrefixCache(scorer.run, scorer.adapter, head)
+            sums, _ = e11.continuation_scores(scorer.adapter, [tail] * len(options), [" " + p for _, p in options], prefix=cache)
+            out.append({r: float(v) / length[p] for (r, p), v in zip(options, sums)})
+    return out
+
+
+def ranked(scores: dict[int, float]) -> list[int]:
+    return sorted(scores, key=lambda r: (-scores[r], r))
+
+
+def margin_of(scores: dict[int, float]) -> float:
+    top = sorted(scores.values(), reverse=True)
+    return float(top[0] - top[1]) if len(top) > 1 else float("inf")
+
+
+def abstain_threshold(margins: Sequence[float], correct: Sequence[bool], quantile: float = ABSTAIN_QUANTILE) -> float | None:
+    """τ of `fewshot-abstain`: the `quantile` of the margins of the correctly routed calibration queries (None without any)."""
+    kept = [m for m, c in zip(margins, correct) if c and np.isfinite(m)]
+    return float(np.quantile(kept, quantile)) if kept else None
+
+
+def load_calibration_set(items_dir: Path, frames_file: Path, style: str) -> list[dict[str, Any]]:
+    """The T4 calibration items (addendum 12 §4): per item its id, surface, templates, relation name and the relation names of
+    the concept's oracle frame — text only, so any host can score them (no ontology of the calibration track is needed)."""
+    read_set = e11.load_read_set(items_dir)
+    surface = {c["concept"]: c.get("item_surface") or c["surface"] for c in read_set.concepts}
+    held: dict[str, list[str]] = {}
+    for row in e11._read_jsonl(Path(frames_file)):
+        if row.get("style") == style and row.get("reader") == "oracle" and row.get("frame") is not None:
+            held[row["concept"]] = sorted({str(r) for r, _ in row["frame"]})
+    return [{"id": i["id"], "concept": i["concept"], "surface": surface[i["concept"]], "templates": list(i["templates"]),
+             "relation": i.get("relation"), "options": held.get(i["concept"], [])}
+            for i in read_set.items if i.get("relation") and i["concept"] in held]
+
+
+def calibrate_abstention(scorer: Any, calibration: Sequence[dict[str, Any]], *, scoring: str, log=print) -> dict[str, Any]:
+    """The abstention calibration (addendum 12 §4): every *training* template t ≠ q of a calibration item whose relation is
+    held is routed by the plain few-shot prompt whose demonstrations exclude both q (the routed wording, held out as ever)
+    and t itself (leave-one-out); τ is `abstain_threshold` over the resulting (margin, correct) pairs."""
+    bank: dict[str, list[str]] = defaultdict(list)
+    for item in calibration:
+        for t in item["templates"]:
+            if t not in bank[item["relation"]]:
+                bank[item["relation"]].append(t)
+    queries, meta = [], []
+    for item in calibration:
+        options = item["options"]
+        if len(options) <= 1 or item["relation"] not in options:
+            continue
+        q = question_template(item)
+        for t in item["templates"]:
+            if t == q:
+                continue
+            shots = [(u, _route_phrase(r)) for r in options for u in [v for v in bank[r] if v != q and v != t][:2]]
+            head, tail = fewshot_prompt(shots, t, item["surface"])
+            queries.append((head, tail, [(k, _route_phrase(r)) for k, r in enumerate(options)]))
+            meta.append((item["id"], t, options.index(item["relation"])))
+    scores = fewshot_scores(scorer, queries, scoring=scoring) if queries else []
+    margins = [margin_of(s) for s in scores]
+    correct = [ranked(s)[0] == label for s, (_, _, label) in zip(scores, meta)]
+    tau = abstain_threshold(margins, correct)
+    log(f"  abstention calibration: {len(queries)} training-template queries, accuracy "
+        f"{float(np.mean(correct)) if correct else float('nan'):.3f}, τ {tau}")
+    rows = [{"calibration": True, "id": i, "template": t, "label": label, "chosen": ranked(s)[0], "margin": m, "correct": c}
+            for (i, t, label), s, m, c in zip(meta, scores, margins, correct)]
+    return {"threshold": tau, "queries": len(queries), "accuracy": float(np.mean(correct)) if correct else None, "rows": rows}
+
+
+class RouteCache:
+    """The routers' choices of one run, computed once per (router, reader) and shared by the `explicit-route` and
+    `explicit-size` conditions. The few-shot family (`RD4E_FEWSHOT`) is scored together: `fewshot` with RD-4d's prompt (up to
+    two item templates per candidate relation, the routed wording excluded exactly), `fewshot-para` with `demonstration_bank`
+    (templates and paraphrases, the routed wording and its near-duplicates excluded; `PARA_SHOTS` per relation, rotated),
+    `fewshot-abstain` = `fewshot` unless its margin is below τ (then nothing is recalled), `fewshot-top2` = `fewshot`'s best two."""
+
+    def __init__(self, scorer: Any, ctx: e11.TrackContext, *, threshold: float | None = None, scoring: str = "prefix", log=print) -> None:
+        self.scorer, self.ctx, self.threshold, self.scoring, self.log = scorer, ctx, threshold, scoring, log
+        self.choices: dict[tuple[str, str], dict[str, list[int]]] = {}
+        self.details: list[dict[str, Any]] = []
+        self.margins: dict[tuple[str, str], dict[str, float]] = {}
+        self.stats: dict[str, int] = {}                    # prompts trimmed to the host's positions (none on real hosts)
+
+    def choose(self, router: str, reader: str, frames: dict[str, list | None]) -> dict[str, list[int]]:
+        key = (router, reader)
+        if key not in self.choices:
+            if router in RD4E_FEWSHOT:
+                self._fewshot_family(reader, frames)
+            else:
+                self.choices[key] = route_relations(self.scorer, frames, self.ctx, router)
+        return self.choices[key]
+
+    def _fewshot_family(self, reader: str, frames: dict[str, list | None]) -> None:
+        scorer, names = self.scorer, list(self.ctx.ontology["relation_names"])
+        bank = relation_templates(scorer)
+        plain: dict[str, list[int]] = {}
+        queries: dict[str, list[tuple[str, str, list[tuple[int, str]]]]] = {"fewshot": [], "fewshot-para": []}
+        meta: list[tuple[str, list[int]]] = []
+        for c in scorer.concepts:
+            options = sorted({int(r) for r, _ in (frames.get(c) or [])})
+            for item in scorer.items_by_concept[c]:
+                if len(options) <= 1:
+                    plain[item["id"]] = options
+                    continue
+                q, surface = question_template(item), scorer.surface[c]
+                phrases = [(r, _route_phrase(names[r])) for r in options]
+                shots = [(t, phrase) for r, phrase in phrases for t in [u for u in bank.get(names[r], []) if u != q][:2]]
+                queries["fewshot"].append((*fewshot_prompt(shots, q, surface), phrases))
+                para = [(t, phrase) for r, phrase in phrases
+                        for t in rotate_shots(demonstration_bank(names[r], bank.get(names[r], []), q), item["id"])]
+                queries["fewshot-para"].append((*fewshot_prompt(para, q, surface), phrases))
+                meta.append((item["id"], options))
+        self.log(f"  routing ({reader}, {self.scoring}): {len(meta)} items with ≥ 2 candidate relations")
+        scores = {k: fewshot_scores(scorer, v, scoring=self.scoring, stats=self.stats) for k, v in queries.items()}
+        out = {r: dict(plain) for r in RD4E_FEWSHOT}
+        margins: dict[str, float] = {}
+        for i, (iid, options) in enumerate(meta):
+            s, sp = scores["fewshot"][i], scores["fewshot-para"][i]
+            order, m = ranked(s), margin_of(s)
+            margins[iid] = m
+            out["fewshot"][iid] = order[:1]
+            out["fewshot-top2"][iid] = order[:2]
+            out["fewshot-abstain"][iid] = order[:1] if self.threshold is None or m >= self.threshold else []
+            out["fewshot-para"][iid] = ranked(sp)[:1]
+            self.details.append({"id": iid, "reader": reader, "options": [names[r] for r in options],
+                                 "fewshot": {names[r]: round(v, 4) for r, v in s.items()}, "margin": round(m, 4),
+                                 "fewshot_para": {names[r]: round(v, 4) for r, v in sp.items()},
+                                 "abstained": not out["fewshot-abstain"][iid]})
+        for r in RD4E_FEWSHOT:
+            self.choices[(r, reader)] = out[r]
+        self.margins[("fewshot", reader)] = margins
+
+
+def route_diagnostics(scorer: Any, frames: dict[str, list | None], chosen: dict[str, list[int]], ctx: e11.TrackContext,
+                      text: RecallText, *, whole_if_at_most: int | None = None) -> tuple[dict[str, str], dict[str, Any]]:
+    """Recall lines of the chosen relations per item (the `explicit-route` body), or of the whole frame when it has at most
+    `whole_if_at_most` lines (`explicit-size`); with the router's accuracy, the abstention share and the whole-frame share."""
+    rid = ctx.relation_id
+    out, lines, hits, empty, whole = {}, [], [], 0, 0
+    for c in scorer.concepts:
+        frame = list(frames.get(c) or [])
+        held = {int(r) for r, _ in frame}
+        for item in scorer.items_by_concept[c]:
+            pick = set(chosen.get(item["id"], []))
+            if whole_if_at_most is not None and len(frame) <= whole_if_at_most:
+                edges, whole = frame, whole + 1
+            else:
+                edges = [e for e in frame if int(e[0]) in pick]
+            lines.append(len(edges))
+            asked = rid.get(item.get("relation"))
+            if asked is not None and asked in held:
+                hits.append(float(asked in pick))
+            if len(held) > 1 and not pick:
+                empty += 1
+            out[item["id"]] = text.symbolic(scorer.surface[c], edges)
+    info = {"lines_per_item": float(np.mean(lines)) if lines else 0.0, "route_accuracy": float(np.mean(hits)) if hits else None,
+            "routable_items": len(hits), "abstain_share": empty / len(lines) if lines else 0.0}
+    if whole_if_at_most is not None:
+        info["size_limit"], info["whole_frame_share"] = whole_if_at_most, whole / len(lines) if lines else 0.0
+    return out, info
+
+
+def derived_size_rows(name: str, item_rows: dict[str, dict[str, list[dict[str, Any]]]], scorer: Any,
+                      frames: dict[str, dict[str, list | None]]) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    """`derived-size:L:<router>:<reader>` (addendum 12 §2): per item the already scored row of `explicit-sym:<reader>` when the
+    reader's frame has ≤ L lines, else of `explicit-route:<router>:<reader>` — no new scoring; the combination rule of the
+    offline analysis applied to this run's own rows (checked against the real `explicit-size` condition)."""
+    _, _, arg = name.partition(":")
+    limit, _, rest = arg.partition(":")
+    router, _, reader = rest.partition(":")
+    L = int(limit)
+    sym, routed = item_rows.get(f"explicit-sym:{reader}"), item_rows.get(f"explicit-route:{router}:{reader}")
+    if sym is None or routed is None:
+        raise KeyError(f"{name}: needs explicit-sym:{reader} and explicit-route:{router}:{reader} scored first")
+    out: dict[str, list[dict[str, Any]]] = {}
+    whole = 0
+    for c in scorer.concepts:
+        short = len(frames[reader].get(c) or []) <= L
+        whole += short * len(scorer.items_by_concept[c])
+        out[c] = [{**row, "derived": True} for row in (sym if short else routed).get(c, [])]
+    total = sum(len(v) for v in scorer.items_by_concept.values())
+    return out, {"size_limit": L, "whole_frame_share": whole / total if total else 0.0}
+
+
+def truncated_share(run: Any, scorer: Any, item_contexts: dict[str, str] | None) -> float:
+    """Share of the condition's property / entailment items whose longest prompt (context, template, candidate) exceeds the
+    adapter's `max_length`, i.e. would lose its continuation to `_run_batch`'s truncation. 0 without contexts."""
+    if not item_contexts:
+        return 0.0
+    limit, tokenizer, flags = run.adapter.max_length, run.tokenizer, []
+    for c in scorer.concepts:
+        for item in scorer.items_by_concept[c]:
+            if item["test"] not in {"property", "entailment"} or item["id"] not in item_contexts:
+                continue
+            template = max(item["templates"], key=len).replace("{x}", scorer.surface[c])
+            text = item_contexts[item["id"]] + "\n" + template + max(item["candidates"], key=len)
+            flags.append(len(tokenizer(text, add_special_tokens=False)["input_ids"]) > limit)
+    return float(np.mean(flags)) if flags else 0.0
+
+
+# -- RD-4e offline size rule (addendum 12 §2): assembled from existing per-item outputs, before any run ---------------------
+
+def size_rule_offline(sym_runs: Sequence[Path], route_runs: Sequence[Path], *, limits: Sequence[int] = (*SIZE_LIMITS, 10, 12, 1000),
+                      routers: Sequence[str] = ("fewshot", "lex"), readers: Sequence[str] = ("oracle",), resamples: int = 4000,
+                      seed: int = 0, items_dir: Path | None = None, tokenizer_name: str | None = None) -> dict[str, Any]:
+    """Per L, router and reader: the pooled means of the hybrid "whole frame if |frame| ≤ L else routed" and its paired
+    differences against the routed and the labelled condition. `sym_runs[i]` and `route_runs[i]` are the same host and seed
+    (`explicit-sym:<reader>` rows from the first, `explicit-route:<router>:<reader>` and `explicit-rel:<reader>` from the
+    second); frame sizes come from each sym run's `frames_from`. With `items_dir` and `tokenizer_name`, also the share of
+    whole-frame prompts longer than the adapter's 256 tokens per size bucket (the truncation caveat)."""
+    from .e5_zeroshot import paired_difference
+    diffs: dict[tuple, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    sizes_seen: Counter = Counter()
+    for k, (sym_dir, route_dir) in enumerate(zip(sym_runs, route_runs)):
+        summary = json.loads((Path(sym_dir) / "summary.json").read_text())
+        sizes: dict[str, dict[str, int]] = defaultdict(dict)
+        for row in e11._read_jsonl(Path(summary["frames_from"])):
+            if row.get("style") == summary["style"] and row.get("reader") in readers:
+                sizes[row["reader"]][row["concept"]] = len(row["frame"] or [])
+        concept_of = {}
+        for line in (Path(route_dir) / "predictions.jsonl").open():
+            row = json.loads(line)
+            concept_of[row["id"]] = row["concept"]
+        sym, routed = _prediction_values(Path(sym_dir)), _prediction_values(Path(route_dir))
+        for reader in readers:
+            if k == 0:
+                sizes_seen.update(sizes[reader].values())
+            for test in PRIMARY_TESTS:
+                S, Lab = sym.get(f"explicit-sym:{reader}", {}).get(test, {}), routed.get(f"explicit-rel:{reader}", {}).get(test, {})
+                for router in routers:
+                    R = routed.get(f"explicit-route:{router}:{reader}", {}).get(test, {})
+                    ids = sorted(set(S) & set(R) & set(Lab))
+                    for L in limits:
+                        hybrid = [S[i] if sizes[reader][concept_of[i]] <= L else R[i] for i in ids]
+                        d = diffs[(reader, router, L, test)]
+                        d["value"] += hybrid
+                        d["vs_route"] += [h - R[i] for h, i in zip(hybrid, ids)]
+                        d["vs_labelled"] += [h - Lab[i] for h, i in zip(hybrid, ids)]
+                        d["whole"] += [float(sizes[reader][concept_of[i]] <= L) for i in ids]
+    rows = []
+    for (reader, router, L, test), d in sorted(diffs.items()):
+        if not d["value"]:
+            continue
+        rows.append({"reader": reader, "router": router, "L": L, "test": test, "mean": float(np.mean(d["value"])),
+                     "whole_frame_share": float(np.mean(d["whole"])), "n": len(d["value"]),
+                     "vs_route": paired_difference(np.asarray(d["vs_route"]), np.zeros(len(d["vs_route"])), resamples=resamples, seed=seed),
+                     "vs_labelled": paired_difference(np.asarray(d["vs_labelled"]), np.zeros(len(d["vs_labelled"])), resamples=resamples, seed=seed)})
+    out: dict[str, Any] = {"sym_runs": [str(p) for p in sym_runs], "route_runs": [str(p) for p in route_runs], "limits": list(limits),
+                           "frame_sizes": dict(sorted(sizes_seen.items())), "rows": rows}
+    if items_dir is not None and tokenizer_name:
+        out["truncation"] = whole_frame_truncation(Path(sym_runs[0]), Path(items_dir), tokenizer_name, readers[0])
+    return out
+
+
+def whole_frame_truncation(sym_dir: Path, items_dir: Path, tokenizer_name: str, reader: str, limit: int = 256) -> dict[str, Any]:
+    """Per frame-size bucket: the share of whole-frame prompts (recall lines, template, candidate) over `limit` tokens."""
+    from transformers import AutoTokenizer
+    summary = json.loads((Path(sym_dir) / "summary.json").read_text())
+    read_set = e11.load_read_set(items_dir)
+    ctx = e11.track_context(read_set.manifest["track"])
+    text = RecallText(ctx.ontology, ctx.lexicon)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+    frames = {row["concept"]: ctx.ids(row["frame"]) for row in e11._read_jsonl(Path(summary["frames_from"]))
+              if row.get("style") == summary["style"] and row.get("reader") == reader and row.get("frame") is not None}
+    surface = {c["concept"]: c.get("item_surface") or c["surface"] for c in read_set.concepts}
+    buckets: dict[str, list[bool]] = defaultdict(list)
+    for item in read_set.items:
+        if item["test"] not in {"property", "entailment"} or item["concept"] not in frames:
+            continue
+        c = item["concept"]
+        prompt = text.symbolic(surface[c], frames[c]) + "\n" + max(item["templates"], key=len).replace("{x}", surface[c]) \
+            + max(item["candidates"], key=len)
+        over = len(tokenizer(prompt, add_special_tokens=False)["input_ids"]) > limit
+        n = len(frames[c])
+        buckets["all"].append(over)
+        buckets["≤4" if n <= 4 else "5–6" if n <= 6 else "7–8" if n <= 8 else "9–12" if n <= 12 else "13+"].append(over)
+    return {"limit": limit, "share_over": {k: float(np.mean(v)) for k, v in buckets.items()}, "items": {k: len(v) for k, v in buckets.items()}}
+
+
+def render_size_rule_offline(result: dict[str, Any], *, title: str) -> str:
+    lines = [f"# {title}", "", "Derived analysis, no new scoring: per item the `explicit-sym:<reader>` row when the reader's frame "
+             "has ≤ L lines, else the `explicit-route:<router>:<reader>` row; item differences of every seed pooled, 95% bootstrap "
+             "intervals. L = 1000 is whole-frame recall for every item; L below the smallest frame is pure routing.", "",
+             f"Runs (whole frame): {', '.join(result['sym_runs'])}", f"Runs (routed, labelled): {', '.join(result['route_runs'])}", "",
+             "Frame sizes (lines → concepts): " + ", ".join(f"{k} → {v}" for k, v in result["frame_sizes"].items()), "",
+             "| reader | router | L | test | hybrid mean | whole-frame share | − routed [95% CI] | − labelled [95% CI] | n |",
+             "|---|---|---:|---|---:|---:|---|---|---:|"]
+    for r in result["rows"]:
+        lines.append(f"| {r['reader']} | {r['router']} | {r['L']} | {r['test']} | {r['mean']:.4f} | {r['whole_frame_share']:.3f} | "
+                     f"{fmt_ci(r['vs_route'])} | {fmt_ci(r['vs_labelled'])} | {r['n']} |")
+    if result.get("truncation"):
+        t = result["truncation"]
+        lines += ["", f"Whole-frame prompts longer than the adapter's {t['limit']} tokens (their continuation was truncated in the runs "
+                  "above; `probes.py` `_run_batch`): " + ", ".join(f"{k} lines {v:.3f} (n {t['items'][k]})" for k, v in t["share_over"].items())]
+    return "\n".join(lines) + "\n"
+
+
+def run_size_rule_offline(args: argparse.Namespace) -> dict[str, Any]:
+    if len(args.sym_runs) != len(args.route_runs):
+        raise SystemExit("--sym-runs and --route-runs must pair up (same host and seed in the same order)")
+    limits = tuple(int(x) for x in args.limits.split(",")) if args.limits else (*SIZE_LIMITS, 10, 12, 1000)
+    result = size_rule_offline([Path(p) for p in args.sym_runs], [Path(p) for p in args.route_runs], limits=limits,
+                               routers=tuple(args.routers.split(",")), readers=tuple(args.readers.split(",")), resamples=args.resamples,
+                               seed=args.seed, items_dir=args.items, tokenizer_name=args.tokenizer)
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    stem = args.name or "offline-size-rule"
+    write_json(output / f"{stem}.json", result)
+    (output / f"{stem}.md").write_text(render_size_rule_offline(result, title=args.title or f"RD-4e offline size rule ({stem})"))
+    return result
+
+
+def own_calibration_set(read_set: e11.ReadSet, oracle: dict[str, list | None], ctx: e11.TrackContext) -> list[dict[str, Any]]:
+    """The run's own items as the abstention calibration set (a T4 run calibrates on T4 this way), as `load_calibration_set`."""
+    names = list(ctx.ontology["relation_names"])
+    surface = {c["concept"]: c.get("item_surface") or c["surface"] for c in read_set.concepts}
+    return [{"id": i["id"], "concept": i["concept"], "surface": surface[i["concept"]], "templates": list(i["templates"]),
+             "relation": i.get("relation"), "options": sorted({names[int(r)] for r, _ in (oracle.get(i["concept"]) or [])})}
+            for i in read_set.items if i.get("relation") and oracle.get(i["concept"])]
+
+
+def rd4e_extras(folders: Sequence[Path], group: dict[str, Any], conds: set[str]) -> dict[str, Any]:
+    """RD-4e's report additions: the derived-against-real size-rule check, abstention and calibration, truncation shares,
+    and the decision rule ("routing solved": the best realistic pipeline within 0.05 of labelled type-prior recall on property)."""
+    out: dict[str, Any] = {}
+    real, derived = f"explicit-size:{SIZE_STAR}:fewshot:oracle", f"derived-size:{SIZE_STAR}:fewshot:oracle"
+    if real in conds and derived in conds:
+        agree, n = 0, 0
+        for f in folders:
+            values = _prediction_values(f)
+            for test in ("property", "entailment"):
+                a, b = values.get(real, {}).get(test, {}), values.get(derived, {}).get(test, {})
+                for i in set(a) & set(b):
+                    agree += a[i] == b[i]
+                    n += 1
+        out["size_rule_check"] = {"real": real, "derived": derived, "items": n, "agreement": agree / n if n else None}
+    abstain: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    truncated: dict[str, list[float]] = defaultdict(list)
+    lengths = []
+    for f in folders:
+        s = json.loads((f / "summary.json").read_text())
+        lengths.append(s.get("max_length"))
+        for cond, diag in s["diagnostics"].items():
+            if (diag or {}).get("truncated_share") is not None:
+                truncated[cond].append(diag["truncated_share"])
+            if cond.startswith("explicit-route:fewshot-abstain"):
+                for k in ("threshold", "abstain_share", "calibration_queries", "calibration_accuracy"):
+                    if (diag or {}).get(k) is not None:
+                        abstain[cond][k].append(float(diag[k]))
+    out["abstention"] = {c: {k: float(np.mean(v)) for k, v in by.items()} for c, by in abstain.items()}
+    out["truncated_share"] = {c: float(np.mean(v)) for c, v in truncated.items()}
+    out["max_length"] = lengths
+    means = group["means"]
+    labelled = means.get("explicit-rel:typeprior", {}).get("property")
+    candidates = {c: means[c]["property"] for c in RD4E_REALISTIC if c in means and "property" in means[c]}
+    if candidates and labelled is not None:
+        best = max(candidates, key=candidates.get)
+        row = next((r for r in group["primary"] if r["a"] == best and r["b"] == "explicit-rel:typeprior" and r["test"] == "property"), None)
+        out["decision"] = {"best_realistic": best, "property": candidates[best], "labelled_typeprior": labelled,
+                           "difference": candidates[best] - labelled, "solved": candidates[best] - labelled >= -0.05,
+                           "p_holm": row.get("p_holm") if row else None, "ci": [row["ci_low"], row["ci_high"]] if row else None}
+    return out
+
+
+def render_rd4e_extras(group: dict[str, Any]) -> list[str]:
+    lines = []
+    if group.get("size_rule_check"):
+        c = group["size_rule_check"]
+        lines += ["", f"Size-rule check: `{c['real']}` (scored) against `{c['derived']}` (assembled from the run's own rows): "
+                  f"identical `correct` on {c['agreement']:.4f} of {c['items']} property + entailment rows." if c["agreement"] is not None
+                  else "Size-rule check: no rows."]
+    if group.get("abstention"):
+        lines += ["", "Abstention (τ from the calibration, the share of multi-relation items recalling nothing): "
+                  + "; ".join(f"{c}: τ {by.get('threshold', float('nan')):.4f}, abstained {by.get('abstain_share', float('nan')):.3f}, "
+                              f"calibration {by.get('calibration_queries', float('nan')):.0f} queries at {by.get('calibration_accuracy', float('nan')):.3f}"
+                              for c, by in sorted(group["abstention"].items()))]
+    if group.get("truncated_share"):
+        over = {c: v for c, v in group["truncated_share"].items() if v > 0}
+        lines += ["", f"Prompts over the adapter's token limit (max_length {group.get('max_length')}): "
+                  + (", ".join(f"{c} {v:.3f}" for c, v in sorted(over.items())) if over else "none")]
+    if group.get("decision"):
+        d = group["decision"]
+        verdict = "routing solved" if d["solved"] else "routing not solved"
+        p = f", Holm p {d['p_holm']:.4f}" if d.get("p_holm") is not None else ""
+        lines += ["", f"Decision rule: best realistic pipeline `{d['best_realistic']}` property {d['property']:.4f} against labelled "
+                  f"`explicit-rel:typeprior` {d['labelled_typeprior']:.4f}: difference {d['difference']:+.4f}{p} → **{verdict}** "
+                  "(within 0.05 on property)."]
+    return lines
 
 
 # -- pooled report ----------------------------------------------------------------------------------------------------
@@ -771,7 +1348,7 @@ def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed
 
 
 def run_recall_report(args: argparse.Namespace) -> dict[str, Any]:
-    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c", "rd12c", "rd4d", "rd13"}:
+    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c", "rd12c", "rd4d", "rd13", "rd4e"}:
         return run_rd4b_report(args)
     present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
     missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
@@ -836,7 +1413,9 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
              "rd12c": "# E14 RD-12c — the RD-12 cycle's read frames under selective recall (pre-registration §17)",
              "rd4d": "# E14 RD-4d — learned relation routers, the routed wording held out (pre-registration §19)",
              "rd13": "# E14 RD-13 — retrieve-then-read: Wikipedia text read into the store against the same text in the prompt "
-                     "(pre-registration addendum 10)"}[family]
+                     "(pre-registration addendum 10)",
+             "rd4e": "# E14 RD-4e — routing that generalises: paraphrase demonstrations, abstention, top-2 and the size rule "
+                     "(pre-registration addendum 12)"}[family]
     lines = [title, "",
              "PMI choices use the null prompt **without** the context; `raw` columns are uncalibrated choices; `(stated)`: "
              "items whose gold answer is in the `stated` reader's frame.", ""]
@@ -851,6 +1430,8 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
             pairs = {"primary": PRIMARY_F, "secondary": SECONDARY_F, "stated_pairs": ()}
         if family == "rd13":
             pairs = {"primary": PRIMARY_R, "secondary": SECONDARY_R, "stated_pairs": STATED_R, "stated_reader": f"{RETRIEVED_PREFIX}stated"}
+        if family == "rd4e":
+            pairs = {"primary": PRIMARY_E, "secondary": SECONDARY_E, "stated_pairs": ()}
         if family == "rd4c":
             host_group = model.startswith("Qwen") or "-C0p" in model
             pairs = {"primary": PRIMARY_HOST if host_group else PRIMARY_C, "secondary": SECONDARY_HOST if host_group else SECONDARY_C,
@@ -887,6 +1468,9 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
         if g["route_accuracy"]:
             lines += ["", "Router accuracy (the asked relation chosen, among items whose frame holds it): "
                       + "; ".join(f"{c} {v:.3f}" for c, v in sorted(g["route_accuracy"].items()))]
+        if family == "rd4e":
+            g.update(rd4e_extras(folders, g, conds))
+            lines += render_rd4e_extras(g)
         for title, key in (("Primary (Holm)", "primary"), ("Secondary", "secondary"), ("Stated-only items", "stated_only"),
                            ("Primary contrasts on raw choices", "raw_primary")):
             lines += ["", f"### {title}", "", "| a − b | test | difference [95% CI] | n |", "|---|---|---|---:|"]
@@ -1238,7 +1822,15 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--overwrite", action="store_true")
     r.add_argument("--null", choices=("context", "plain"), default="context",
                    help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
-    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13"), default="tier-p", help="default condition list")
+    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13", "rd4e"), default="tier-p", help="default condition list")
+    r.add_argument("--max-length", type=int, default=256,
+                   help="the adapter's token limit per prompt (prompts beyond it lose their continuation; RD-4e uses 1280)")
+    r.add_argument("--route-scoring", choices=("prefix", "brute"), default="prefix",
+                   help="RD-4e few-shot routers: demonstrations cached once per item (prefix) or re-read per option (brute)")
+    r.add_argument("--calibration-items", type=Path, default=None,
+                   help="RD-4e: the abstention calibration item set (T4 held-out); default: the run's own items")
+    r.add_argument("--calibration-frames", type=Path, default=None, help="RD-4e: the E11 frames.jsonl of the calibration set")
+    r.add_argument("--calibration-style", default=None, help="RD-4e: the calibration frames' style (default: the run's)")
     r.add_argument("--retrieved", type=Path, default=None,
                    help="RD-13: an `e14_retrieve build` directory (retrieved.jsonl, frames.jsonl): the `retrieved` and `wiki-*` conditions")
     r.add_argument("--extra-readers", default=None, help="more reader names to load from --frames (rd12c: the RD-12 arms)")
@@ -1247,7 +1839,7 @@ def main(argv: list[str] | None = None) -> None:
     rr = sub.add_parser("recall-report", help="pool RD-4 run folders over seeds")
     rr.add_argument("--runs", nargs="+", required=True)
     rr.add_argument("--output", type=Path, required=True)
-    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13"), default="tier-p", help="which pre-registered contrasts")
+    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13", "rd4e"), default="tier-p", help="which pre-registered contrasts")
     rr.add_argument("--retrieved", type=Path, default=None, help="RD-13: the build directory, for its stated-rate table (coverage.json)")
     rr.add_argument("--resamples", type=int, default=4000)
     rr.add_argument("--seed", type=int, default=0)
@@ -1272,7 +1864,23 @@ def main(argv: list[str] | None = None) -> None:
     rr2 = sub.add_parser("relations-report", help="pool RD-3 run folders (Holm per track)")
     rr2.add_argument("--runs", nargs="+", required=True)
     rr2.add_argument("--output", type=Path, required=True)
+    so = sub.add_parser("size-rule-offline", help="RD-4e: the size rule assembled from existing per-item outputs (no scoring)")
+    so.add_argument("--sym-runs", nargs="+", required=True, help="run folders with explicit-sym:<reader> rows (one per seed)")
+    so.add_argument("--route-runs", nargs="+", required=True, help="run folders with explicit-route / explicit-rel rows, same order")
+    so.add_argument("--output", type=Path, required=True)
+    so.add_argument("--name", default=None, help="file stem (default offline-size-rule)")
+    so.add_argument("--title", default=None)
+    so.add_argument("--limits", default=None, help="comma-separated L values (default 2,3,4,6,8,10,12,1000)")
+    so.add_argument("--routers", default="fewshot,lex")
+    so.add_argument("--readers", default="oracle")
+    so.add_argument("--items", type=Path, default=None, help="with --tokenizer: the truncation table (prompts over 256 tokens)")
+    so.add_argument("--tokenizer", default=None)
+    so.add_argument("--resamples", type=int, default=4000)
+    so.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
+    if args.command == "size-rule-offline":
+        run_size_rule_offline(args)
+        return
     if args.command == "relations":
         run_relations(args)
         return
