@@ -1159,3 +1159,21 @@ The measure is stated-edge F1.
 - precision on T4 ≥ 0.28.
 
 **Cost:** 4 jobs, about 0.05–0.15 GPU-h each.
+
+## 20. Addenda 9–11 (2026-10-20, evening; each in its own file, written before any host run of it)
+
+Approved by the author on 2026-10-20 ("Do the tree test and see whether it is worth queuing more experiments for";
+"Retrieval tool over a Wikipedia dump could be cool"; "Let's also do some of the cheaper tests"). Each addendum
+carries its own predictions, decision rule, queue script and compute estimate.
+
+| Addendum | Study | File | Jobs (GPU 54.4959997; CPU-lane report) |
+|---|---|---|---|
+| 9 | tree-text: can a host read a decision tree from prose into the executor's form? | `preregistration-addendum-9-treetext.md` | `e14-treetext-*` (3), `e14-treetext-report` (54.49599985) |
+| 10 | RD-13, retrieve-then-read: Wikipedia text (MediaWiki API, cached by revision) as the source; store vs RAG vs definition | `preregistration-addendum-10-retrieve.md` | `e14-rd13-*` (4), `e14-rd13-report` (54.49599986) |
+| 11 | LG-CF, chains of what-if edits (executor relay vs in-context); RD-14, inferred facts under selective recall | `preregistration-addendum-11-cheap.md` | `e14-lgcf-*` (3), `e14-rd14-*` (3), two reports (54.49599987) |
+
+Addendum 10's CPU stage ran right after its registration: the stated rate of retrieved Wikipedia text is 0.087 at
+300 words and 0.120 for the whole page, against 0.116 for the ChEBI definition (string-matching finder, a lower
+bound). By its decision rule, more text is not the lever on T4 and no dump is fetched; the queued arms still answer
+store against RAG on the same text. Addendum 11's eight jobs were queued about one minute before its commit, with
+the text unchanged in between.
