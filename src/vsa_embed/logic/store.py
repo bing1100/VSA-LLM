@@ -454,6 +454,15 @@ class StableCodebook(Codebook):
         return torch.Generator().manual_seed(int.from_bytes(digest[:8], "little") % (2 ** 63))
 
 
+class StableTreeStore(TreeStore):
+    """`TreeStore` with a `StableCodebook` (LG-CF's states, pre-registration addendum 11): byte-identical in every process."""
+
+    def _encode_record(self, record: dict[str, Any]) -> torch.Tensor:
+        if not isinstance(self.cb, StableCodebook):
+            self.cb = StableCodebook(self.cb.width, self.cb.seed)
+        return super()._encode_record(record)
+
+
 def soft_text(subject: str, lines: Sequence[tuple[str, float | None]], dist: dict[str, float], *, confidence: bool = True,
               floor: float = 0.05) -> tuple[str, str]:
     """A soft path as recall text: the trace, then (with two or more outcomes of weight ≥ `floor`) the possible outcomes, then

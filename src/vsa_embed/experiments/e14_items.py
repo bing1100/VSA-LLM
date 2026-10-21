@@ -12,12 +12,15 @@ Sets (`build --sets`, default all; seed 1 by default):
 - `trees` — LG-D: 600 trees (depth 2/3/4/6), 300 lists (length 3/6/12), 200 tree edits.
 - `trees-noisy` (command `noisy`, not part of `build`) — LG-D2: 600 trees whose records are corrupted at 10% and 30%
   (wrong or missing values); exact and soft executor paths; SHA-256-seeded stores (pre-registration §19).
+- `trees-cf` (command `counterfactual`, not part of `build`) — LG-CF: 300 trees, each with a chain of 8 "what if" edits;
+  states k = 0, 1, 2, 4, 8 scored in context (`chain-text`) or relayed from the executor (`chain-relay`; addendum 11).
 
 Item files are written gzipped to `--output` (default `~/data/vsa-llm/e14/items/`); a manifest with counts, conditions and
 SHA-256 goes to `experiments/e14-logic/items/manifest-<seed>.json`.
 
     python -m vsa_embed.experiments.e14_items build [--seed 1] [--sets taxonomy,trees] [--scale 1.0]
     python -m vsa_embed.experiments.e14_items noisy [--seed 1]        # LG-D2, set `trees-noisy` (pre-registration §19)
+    python -m vsa_embed.experiments.e14_items counterfactual [--seed 1]   # LG-CF, set `trees-cf` (addendum 11)
 """
 
 from __future__ import annotations
@@ -422,6 +425,81 @@ def run_noisy(args: argparse.Namespace) -> dict[str, Any]:
     return manifest
 
 
+# -- LG-CF: chains of "what if" edits over decision trees (pre-registration addendum 11) -------------------------------------
+
+CF_SET = "trees-cf"
+CF_STEPS = (0, 1, 2, 4, 8)                 # the states scored; k = 0 is the unedited item
+CF_CONDITIONS = ("chain-text", "chain-relay", "chain-text+exec", "chain-text+conclusion")
+
+
+def cf_question(entity: str, k: int) -> str:
+    return (f"Question: After these changes, under the policy, what happens to {entity}?\nAnswer:" if k
+            else f"Question: Under the policy, what happens to {entity}?\nAnswer:")
+
+
+def cf_trees_set(seed: int, *, scale: float = 1.0, width: int = 512, namer: W.Namer | None = None,
+                 steps: Sequence[int] = CF_STEPS) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """LG-CF items (`world.counterfactual_trees`): one row per chain and scored state k, with the chain's 6 outcomes as options.
+    Conditions: `chain-text` (the original record and policy, then the edits so far as a numbered list: the model answers the
+    chain in context); `chain-relay` (the edited record and the exact executor's path on the edited state, LG-D's `path-vsa`
+    interface: the model relays the executor); `chain-text+exec` (`chain-text`, then the executor's path); `chain-text+conclusion`
+    (`chain-text`, then the executor's conclusion line only). Each row's `cf` records the executor's answers, the previous and
+    the original gold and whether the gold changed."""
+    world = W.counterfactual_trees(seed, inputs_per_depth=max(2, int(75 * scale)), namer=namer or W.Namer(seed + 60))
+    out: list[dict[str, Any]] = []
+    ceil: dict[str, list[int]] = {}
+    change: dict[str, list[int]] = {}
+    kinds: dict[str, int] = {}
+    for item in world["items"]:
+        ent, states = item["entity"], item["states"]
+        options = [" " + o for o in item["outcomes"]]
+        random.Random(f"trees-cf-options:{seed}:{item['id']}").shuffle(options)
+        index = lambda answer: options.index(" " + answer)  # noqa: E731
+        base = {"entity": ent, "attributes": item["attributes"], "kind": "tree"}
+        head = record_text({**base, "record": states[0]["record"]}) + "\nPolicy:\n" + "\n".join(W.tree_text(states[0]["tree"]))
+        for e in states[1:]:
+            kinds[e["edit"]["kind"]] = kinds.get(e["edit"]["kind"], 0) + 1
+        for k in steps:
+            st = states[k]
+            edits = [s["edit"] for s in states[1:k + 1]]
+            history = head + ("\nChanges so far:\n" + "\n".join(f"{i + 1}. {e['text'][0].upper() + e['text'][1:]}." for i, e in enumerate(edits))
+                              if edits else "")
+            store = S.StableTreeStore({**base, "tree": st["tree"], "record": st["record"]}, width=width, seed=seed).execute()
+            sym = S.tree_symbolic({**base, "tree": st["tree"], "record": st["record"]})
+            conds = {"chain-text": history, "chain-relay": record_text({**base, "record": st["record"]}) + "\n" + store.text(ent),
+                     "chain-text+exec": history + "\n" + store.text(ent), "chain-text+conclusion": history + "\n" + store.text(ent, trace=False)}
+            ceil.setdefault(f"executor@{k}", []).append(int(store.answer == st["answer"]))
+            ceil.setdefault(f"sym@{k}", []).append(int(sym.answer == st["answer"]))
+            cf = {"exec": index(store.answer), "exec_sym": index(sym.answer), "orig": index(states[0]["answer"]),
+                  "stale": index(states[k - 1]["answer"]) if k else index(states[0]["answer"]),
+                  "changed": bool(k) and st["answer"] != states[k - 1]["answer"],
+                  "changed_from_start": st["answer"] != states[0]["answer"],
+                  "edits": [e["kind"] for e in edits], "path_edits": sum(e["kind"] != "input" for e in edits)}
+            change.setdefault(f"changed_from_start@{k}", []).append(int(cf["changed_from_start"]))
+            out.append({"id": f"{item['id']}-k{k}", "set": CF_SET, "world": "trees-cf", "kind": "chain", "chain": item["id"], "k": k,
+                        "depth": item["depth"], "numeric": item["numeric"], "format": "mc", "question": cf_question(ent, k),
+                        "options": options, "gold": index(st["answer"]), "contexts": conds, "cf": cf})
+    stats = {"ceilings": {k: {"accuracy": float(sum(v) / len(v)), "n": len(v)} for k, v in sorted(ceil.items())},
+             "changed_from_start": {k: float(sum(v) / len(v)) for k, v in sorted(change.items())}, "edit_kinds": kinds,
+             "chains": len(world["items"]), "steps": list(steps)}
+    return out, stats
+
+
+def run_counterfactual(args: argparse.Namespace) -> dict[str, Any]:
+    rows, stats = cf_trees_set(args.seed, scale=args.scale, width=args.width)
+    path = Path(args.output) / f"{CF_SET}-s{args.seed}.jsonl.gz"
+    if path.exists() and not args.overwrite:
+        raise FileExistsError(f"{path} exists (pass --overwrite to replace it)")
+    sha = write_set(rows, path)
+    manifest = {"seed": args.seed, "scale": args.scale, "width": args.width, "set": CF_SET, "path": str(path), "items": len(rows),
+                "sha256": sha, "conditions": sorted({c for r in rows for c in r["contexts"]}), **stats}
+    Path(args.manifest_dir).mkdir(parents=True, exist_ok=True)
+    (Path(args.manifest_dir) / f"manifest-cf-s{args.seed}.json").write_text(json.dumps(manifest, indent=1) + "\n")
+    print(f"{CF_SET}: {len(rows)} rows ({stats['chains']} chains) -> {path}")
+    print(json.dumps({k: manifest[k] for k in ("ceilings", "changed_from_start", "edit_kinds")}, indent=1))
+    return manifest
+
+
 def run_build(args: argparse.Namespace) -> dict[str, Any]:
     sets = [s.strip() for s in args.sets.split(",")] if args.sets else list(BUILDERS)
     namer = W.Namer(args.seed)
@@ -458,8 +536,12 @@ def main(argv: list[str] | None = None) -> None:
     n.add_argument("--seed", type=int, default=1); n.add_argument("--scale", type=float, default=1.0); n.add_argument("--width", type=int, default=512)
     n.add_argument("--output", type=Path, default=OUT); n.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
     n.add_argument("--overwrite", action="store_true")
+    c = sub.add_parser("counterfactual", help="LG-CF chains of what-if edits over trees (pre-registration addendum 11); not part of `build`")
+    c.add_argument("--seed", type=int, default=1); c.add_argument("--scale", type=float, default=1.0); c.add_argument("--width", type=int, default=512)
+    c.add_argument("--output", type=Path, default=OUT); c.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
+    c.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)
-    {"build": run_build, "verdict": run_verdict, "noisy": run_noisy}[args.command](args)
+    {"build": run_build, "verdict": run_verdict, "noisy": run_noisy, "counterfactual": run_counterfactual}[args.command](args)
 
 
 if __name__ == "__main__":

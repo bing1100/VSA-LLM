@@ -17,6 +17,7 @@ with the highest length-normalised log-probability is the answer. Per-item rows 
     python -m vsa_embed.experiments.e14_score score --host H-360 --items DIR --output OUT --data DATA [--sets ...] [--limit N]
     python -m vsa_embed.experiments.e14_score report --runs OUT ... --output DIR
     python -m vsa_embed.experiments.e14_score noisy-report --runs OUT ... --output DIR     # LG-D2 (pre-registration §19)
+    python -m vsa_embed.experiments.e14_score cf-report --runs OUT ... --output DIR        # LG-CF (addendum 11)
 """
 
 from __future__ import annotations
@@ -63,7 +64,7 @@ def score_set(host: Any, rows: Sequence[dict[str, Any]], *, log=print) -> list[d
         out.append({"id": rid, "set": r["set"], "condition": cond, "choice": choice, "gold": r["gold"], "correct": int(choice == r["gold"]),
                     "depth": r.get("depth"), "format": r.get("format"), "scores": [round(v, 4) for v in vs],
                     **{k: r[k] for k in ("label", "counterfactual", "kind", "k", "sampler", "rule_count", "rules", "uses_heldout", "numeric",
-                                         "noise") if k in r}})
+                                         "noise", "chain", "cf") if k in r}})
     return out
 
 
@@ -73,7 +74,7 @@ def summarize(rows: Sequence[dict[str, Any]]) -> dict[str, Any]:
         key = f"{r['set']}|{r.get('format')}|{r['condition']}"
         acc[key]["all"].append(r["correct"])
         acc[key][f"depth={r.get('depth')}"].append(r["correct"])
-        for k in ("kind", "sampler", "counterfactual", "rules", "uses_heldout", "numeric"):
+        for k in ("kind", "sampler", "counterfactual", "rules", "uses_heldout", "numeric", "k"):
             if k in r and r[k] is not None:
                 acc[key][f"{k}={r[k]}"].append(r["correct"])
     return {key: {sub: {"acc": float(np.mean(v)), "n": len(v)} for sub, v in subs.items()} for key, subs in acc.items()}
@@ -417,6 +418,107 @@ def run_noisy_report(args: argparse.Namespace) -> dict[str, Any]:
     return doc
 
 
+CF_STEPS = (0, 1, 2, 4, 8)
+CF_FINAL = 8
+CF_HOSTS = ("HuggingFaceTB/SmolLM2-360M", "Qwen/Qwen3-0.6B-Base", "Qwen/Qwen3-1.7B-Base")
+
+
+def cf_host_report(rows: Sequence[dict[str, Any]], *, resamples: int, seed: int) -> dict[str, Any]:
+    """LG-CF (pre-registration addendum 11) for one host's `trees-cf` predictions: accuracy by condition and k (the drift
+    curve), consistency (every scored state k ≥ 1 right, per chain), `chain-relay − chain-text` at k = 8 (the primary; Holm
+    over hosts is applied by the caller) and by k, the other executor interfaces, anchoring (answers equal to the original
+    or the previous state's gold) and how often the host follows its executor."""
+    from .e5_zeroshot import paired_difference
+    kw = {"resamples": resamples, "seed": seed}
+    rows = [r for r in rows if r["set"] == "trees-cf"]
+    ks = sorted({r["k"] for r in rows})
+    conds = sorted({r["condition"] for r in rows})
+    at = lambda k: (lambda r: r["k"] == k)  # noqa: E731
+    acc = {c: {k: float(np.mean([r["correct"] for r in rows if r["condition"] == c and r["k"] == k])) for k in ks} for c in conds}
+    per_chain: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        if r["k"] > 0:
+            per_chain[r["condition"]][r["chain"]].append(r["correct"])
+    consistent = {c: {ch: int(all(v)) for ch, v in by.items()} for c, by in per_chain.items()}
+    consistency = {c: float(np.mean(list(by.values()))) for c, by in consistent.items()}
+    primary = contrast(rows, "chain-relay", "chain-text", where=at(CF_FINAL), **kw)
+    by_k = {k: contrast(rows, "chain-relay", "chain-text", where=at(k), **kw) for k in ks}
+    secondary = [c for c in (contrast(rows, a, b, where=at(CF_FINAL), **kw)
+                             for a, b in (("chain-text+exec", "chain-text"), ("chain-text+conclusion", "chain-text"),
+                                          ("chain-relay", "chain-text+exec"), ("chain-text+exec", "chain-text+conclusion"))) if c]
+    chains = sorted(set(consistent.get("chain-relay", {})) & set(consistent.get("chain-text", {})))
+    cons_contrast = {"a": "chain-relay", "b": "chain-text", **paired_difference(
+        np.array([consistent["chain-relay"][ch] for ch in chains]), np.array([consistent["chain-text"][ch] for ch in chains]), **kw)} if chains else None
+    subsets = {"changed from start": lambda r: r["cf"]["changed_from_start"], "unchanged": lambda r: not r["cf"]["changed_from_start"],
+               "with a policy edit": lambda r: r["cf"]["path_edits"] > 0, "input edits only": lambda r: r["cf"]["path_edits"] == 0}
+    by_subset = [{**c, "subset": name} for name, where in subsets.items()
+                 if (c := contrast(rows, "chain-relay", "chain-text", where=lambda r, w=where: r["k"] == CF_FINAL and w(r), **kw))]
+    by_depth = [{**c, "depth": d} for d in sorted({r["depth"] for r in rows})
+                if (c := contrast(rows, "chain-relay", "chain-text", where=lambda r, d=d: r["k"] == CF_FINAL and r["depth"] == d, **kw))]
+    anchoring, follow = {}, {}
+    for c in conds:
+        rs = [r for r in rows if r["condition"] == c and r["k"] == CF_FINAL]
+        if rs:
+            anchoring[c] = {"original": float(np.mean([r["choice"] == r["cf"]["orig"] for r in rs])),
+                            "previous": float(np.mean([r["choice"] == r["cf"]["stale"] for r in rs])),
+                            "original (when the gold changed)": float(np.mean([r["choice"] == r["cf"]["orig"] for r in rs if r["cf"]["changed_from_start"]]))
+                            if any(r["cf"]["changed_from_start"] for r in rs) else None}
+        if c != "chain-text":
+            rs = [r for r in rows if r["condition"] == c]
+            wrong = [r for r in rs if r["cf"]["exec"] != r["gold"]]
+            follow[c] = {"follow": float(np.mean([r["choice"] == r["cf"]["exec"] for r in rs])),
+                         "follow_when_executor_wrong": float(np.mean([r["choice"] == r["cf"]["exec"] for r in wrong])) if wrong else None,
+                         "n_executor_wrong": len(wrong)}
+    ceiling = {k: float(np.mean([r["cf"]["exec"] == r["gold"] for r in rows if r["condition"] == "chain-text" and r["k"] == k])) for k in ks}
+    return {"primary": primary, "by_k": by_k, "secondary": secondary, "consistency": consistency, "consistency_contrast": cons_contrast,
+            "accuracy": acc, "by_subset": by_subset, "by_depth": by_depth, "anchoring": anchoring, "follow": follow,
+            "executor_ceiling": ceiling, "chains": len(chains), "steps": ks}
+
+
+def run_cf_report(args: argparse.Namespace) -> dict[str, Any]:
+    """LG-CF (pre-registration addendum 11): per host the drift curve, consistency and the contrasts of `cf_host_report`; the
+    primary `chain-relay − chain-text` at k = 8 is Holm-adjusted over the hosts present."""
+    present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
+    missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
+    doc: dict[str, Any] = {"hosts": {}, "missing": missing}
+    lines = ["# E14 LG-CF — consistency under chains of what-if edits (pre-registration addendum 11)", ""] + \
+        ([f"Missing: {', '.join(missing)}", ""] if missing else [])
+    by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for run in present:
+        by_host[json.loads((run / "summary.json").read_text())["source"]["host"]] += load_predictions(run)
+    if any(json.loads((run / "summary.json").read_text()).get("smoke") for run in present):
+        lines[:0] = ["**SMOKE TEST — not a result.**", ""]
+    for host, rows in by_host.items():
+        doc["hosts"][host] = cf_host_report(rows, resamples=args.resamples, seed=args.seed)
+    with_primary = [h for h, rep in doc["hosts"].items() if rep["primary"]]
+    for h, p in zip(with_primary, holm_adjust([doc["hosts"][h]["primary"]["p_value"] for h in with_primary]) if with_primary else []):
+        doc["hosts"][h]["primary"]["p_holm"] = p
+    lines += ["**Primary: chain-relay − chain-text at k = 8 (Holm over hosts)**", ""]
+    lines += [f"- {h}: {fmt(doc['hosts'][h]['primary'])}" for h in doc["hosts"]]
+    for host, rep in doc["hosts"].items():
+        ks = rep["steps"]
+        lines += ["", f"## {host} ({rep['chains']} chains)", "", "| condition | " + " | ".join(f"k = {k}" for k in ks) + " | consistency (k ≥ 1) |",
+                  "|---|" + "---:|" * (len(ks) + 1)]
+        lines += [f"| executor ceiling | " + " | ".join(f"{rep['executor_ceiling'][k]:.3f}" for k in ks) + " | — |"]
+        for c, a in rep["accuracy"].items():
+            lines.append(f"| {c} | " + " | ".join(f"{a[k]:.3f}" for k in ks) + f" | {rep['consistency'].get(c, float('nan')):.3f} |")
+        lines += ["", f"- consistency, chain-relay − chain-text (chains): {fmt(rep['consistency_contrast'])}",
+                  "- chain-relay − chain-text by k: " + "; ".join(f"k = {k}: {fmt(v)}" for k, v in rep["by_k"].items()),
+                  *[f"- {c['a']} − {c['b']} at k = 8: {fmt(c)}" for c in rep["secondary"]],
+                  "- at k = 8 by subset: " + "; ".join(f"{c['subset']}: {fmt(c)}" for c in rep["by_subset"]),
+                  "- at k = 8 by depth: " + "; ".join(f"{c['depth']}: {fmt(c)}" for c in rep["by_depth"]),
+                  "- anchoring at k = 8 (answer = original gold / previous state's gold): " + "; ".join(
+                      f"{c}: {v['original']:.3f} / {v['previous']:.3f}" for c, v in rep["anchoring"].items()),
+                  "- follows the executor: " + "; ".join(
+                      f"{c}: {v['follow']:.3f}" + (f" (when wrong {v['follow_when_executor_wrong']:.3f}, n {v['n_executor_wrong']})"
+                                                   if v["follow_when_executor_wrong"] is not None else "") for c, v in rep["follow"].items())]
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    write_json(out / "report.json", doc)
+    (out / "report.md").write_text("\n".join(lines) + "\n")
+    return doc
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -434,8 +536,12 @@ def main(argv: list[str] | None = None) -> None:
     nr = sub.add_parser("noisy-report", help="LG-D2 trees on noisy or partial records (pre-registration §19)")
     nr.add_argument("--runs", nargs="+", required=True); nr.add_argument("--output", type=Path, required=True)
     nr.add_argument("--resamples", type=int, default=4000); nr.add_argument("--seed", type=int, default=0)
+    cr = sub.add_parser("cf-report", help="LG-CF chains of what-if edits (pre-registration addendum 11)")
+    cr.add_argument("--runs", nargs="+", required=True); cr.add_argument("--output", type=Path, required=True)
+    cr.add_argument("--resamples", type=int, default=4000); cr.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
-    {"score": run_score, "report": run_report, "verdict-report": run_verdict_report, "noisy-report": run_noisy_report}[args.command](args)
+    {"score": run_score, "report": run_report, "verdict-report": run_verdict_report, "noisy-report": run_noisy_report,
+     "cf-report": run_cf_report}[args.command](args)
 
 
 if __name__ == "__main__":

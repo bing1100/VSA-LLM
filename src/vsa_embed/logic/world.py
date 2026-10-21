@@ -16,6 +16,8 @@ Every generator is seeded and returns plain JSON-able dicts. Worlds:
   "attr is at most t"), decision lists with first-match and a default; entity records; edits (one node changed).
 - `noisy_trees` (LG-D2, pre-registration §19): LG-D-style trees whose input records are corrupted (wrong or missing
   values) at noise levels 0.1 and 0.3; the answer is the outcome on the true record.
+- `counterfactual_trees` (LG-CF, pre-registration addendum 11): LG-D-style trees with a chain of successive "what if"
+  edits (an input value changed, a test retargeted, two branches swapped); each state's answer is the exact leaf.
 - `fol` (LG-P): first-order problems needing backward chaining, proof by cases (a disjunctive fact) or proof by
   contradiction (modus tollens), with few or many distractor clauses; half provable, half not.
 
@@ -372,6 +374,79 @@ def _copy(tree: dict[str, Any]) -> dict[str, Any]:
     if "leaf" in tree:
         return dict(tree)
     return {"test": dict(tree["test"]), "yes": _copy(tree["yes"]), "no": _copy(tree["no"])}
+
+
+def internal_nodes(tree: dict[str, Any]) -> list[dict[str, Any]]:
+    """The internal nodes of a tree in pre-order (the dicts themselves, so an edit in place reaches the tree)."""
+    if "leaf" in tree:
+        return []
+    return [tree, *internal_nodes(tree["yes"]), *internal_nodes(tree["no"])]
+
+
+def cf_edit(tree: dict[str, Any], record: dict[str, Any], attributes: Sequence[dict[str, Any]], path: Sequence[dict[str, Any]],
+            rng: random.Random) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """One "what if" edit of the state (tree, record), LG-CF (pre-registration addendum 11). With probability 1/2 an input
+    edit: one attribute (on the current path with probability 0.7) takes another value. Otherwise a tree edit on an internal
+    node whose test text is unique in the tree (so the edit's sentence names it without ambiguity): `retarget` (the test's
+    value or threshold changes) or `swap` (its two branches are exchanged); without a unique test, an input edit. Returns
+    the new tree, the new record and the edit {"kind", "text", ...}; the inputs are not modified."""
+    tree, record = _copy(tree), dict(record)
+    by_name = {a["name"]: a for a in attributes}
+    nodes = internal_nodes(tree)
+    counts: dict[str, int] = {}
+    for n in nodes:
+        counts[test_text(n["test"])] = counts.get(test_text(n["test"]), 0) + 1
+    unique = [n for n in nodes if counts[test_text(n["test"])] == 1 and n["yes"] != n["no"]]   # a swap of equal branches is no edit
+    if rng.random() < 0.5 or not unique:
+        on_path = [s["test"]["attr"] for s in path]
+        name = rng.choice(on_path) if on_path and rng.random() < 0.7 else rng.choice([a["name"] for a in attributes])
+        a = by_name[name]
+        old = record[name]
+        new: Any = rng.choice([v for v in a["values"] if v != old]) if a["values"] else rng.choice([v for v in range(101) if v != old])
+        record[name] = new
+        return tree, record, {"kind": "input", "attr": name, "old": old, "new": new, "text": f"its {name} is now {new}"}
+    node = rng.choice(unique)
+    test = node["test"]
+    old_text = test_text(test)
+    if rng.random() < 0.5:
+        a = by_name[test["attr"]]
+        test["value"] = rng.choice([v for v in a["values"] if v != test["value"]]) if a["values"] else \
+            rng.choice([v for v in range(20, 81) if v != test["value"]])
+        return tree, record, {"kind": "retarget", "attr": test["attr"], "old": old_text, "new": test_text(test),
+                              "text": f'in the policy, the test "{old_text}" now reads "{test_text(test)}"'}
+    node["yes"], node["no"] = node["no"], node["yes"]
+    return tree, record, {"kind": "swap", "attr": test["attr"], "old": old_text, "new": old_text,
+                          "text": f'in the policy, the two branches of the test "{old_text}" are exchanged: what followed '
+                                  f'"If {old_text}:" now follows "Otherwise:", and the other way round'}
+
+
+def counterfactual_trees(seed: int, *, depths: Sequence[int] = (2, 3, 4, 6), inputs_per_depth: int = 75, length: int = 8,
+                         namer: Namer | None = None) -> dict[str, Any]:
+    """LG-CF (pre-registration addendum 11): LG-D's trees (`random_tree`, 8 attributes, half the items numeric, 6 outcomes)
+    under their own seed key and namer, each with a chain of `length` successive edits (`cf_edit`). State k is the tree and
+    record after the first k edits; its answer is the exact executor's leaf on that state. `trees` and the tier-P sets are
+    untouched."""
+    from .reference import run_tree
+    rng = random.Random(f"trees-cf:{seed}")
+    namer = namer or Namer(seed + 60)
+    items = []
+    for depth in depths:
+        for q in range(inputs_per_depth):
+            numeric = q % 2 == 1
+            attrs = _attributes(namer, 8, 0.5 if numeric else 0.0, rng)
+            outcomes = [f"send it to the {namer.word()} desk" for _ in range(6)]
+            tree = random_tree(depth, attrs, outcomes, rng)
+            record = {a.name: (rng.choice(a.values) if a.values else rng.randint(0, 100)) for a in attrs}
+            attributes = [a.__dict__ for a in attrs]
+            leaf, path = run_tree(tree, record)
+            states = [{"tree": tree, "record": record, "answer": leaf, "path": path, "edit": None}]
+            for _ in range(length):
+                tree, record, edit = cf_edit(tree, record, attributes, path, rng)
+                leaf, path = run_tree(tree, record)
+                states.append({"tree": tree, "record": record, "answer": leaf, "path": path, "edit": edit})
+            items.append({"world": "trees-cf", "id": f"cf-{seed}-{depth}-{q}", "kind": "chain", "depth": depth, "numeric": numeric,
+                          "entity": namer.name(), "attributes": attributes, "outcomes": outcomes, "states": states})
+    return {"world": "trees-cf", "seed": seed, "length": length, "items": items}
 
 
 def test_text(test: dict[str, Any]) -> str:
