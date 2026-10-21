@@ -11,8 +11,12 @@ with the highest length-normalised log-probability is the answer. Per-item rows 
   C4: `icl` against `exec-vsa` by kind and k; C5: `exec-vsa − exec-stale` on propagation and locality.
 - LG-D primary (§5): `path-vsa − tree-text` on trees by depth, Holm over depths; lists; edits (`path-vsa` vs `path-stale`).
 
+`noisy-report` — LG-D2 (§19) on the `trees-noisy` set: `path-vsa@p − tree-text@p` and `path-vsa-soft@p − path-vsa@p`
+(p = 0.1, 0.3; Holm over 4), by subset and depth, and how often the host follows its executor.
+
     python -m vsa_embed.experiments.e14_score score --host H-360 --items DIR --output OUT --data DATA [--sets ...] [--limit N]
     python -m vsa_embed.experiments.e14_score report --runs OUT ... --output DIR
+    python -m vsa_embed.experiments.e14_score noisy-report --runs OUT ... --output DIR     # LG-D2 (pre-registration §19)
 """
 
 from __future__ import annotations
@@ -58,8 +62,8 @@ def score_set(host: Any, rows: Sequence[dict[str, Any]], *, log=print) -> list[d
         choice = int(np.argmax(vs))
         out.append({"id": rid, "set": r["set"], "condition": cond, "choice": choice, "gold": r["gold"], "correct": int(choice == r["gold"]),
                     "depth": r.get("depth"), "format": r.get("format"), "scores": [round(v, 4) for v in vs],
-                    **{k: r[k] for k in ("label", "counterfactual", "kind", "k", "sampler", "rule_count", "rules", "uses_heldout", "numeric")
-                       if k in r}})
+                    **{k: r[k] for k in ("label", "counterfactual", "kind", "k", "sampler", "rule_count", "rules", "uses_heldout", "numeric",
+                                         "noise") if k in r}})
     return out
 
 
@@ -316,6 +320,103 @@ def run_verdict_report(args: argparse.Namespace) -> dict[str, Any]:
     return doc
 
 
+NOISE_LEVELS = ("0.1", "0.3")
+
+
+def noisy_host_report(rows: Sequence[dict[str, Any]], *, resamples: int, seed: int) -> dict[str, Any]:
+    """LG-D2 (pre-registration §19) for one host's `trees-noisy` predictions."""
+    kw = {"resamples": resamples, "seed": seed}
+    rows = [r for r in rows if r["set"] == "trees-noisy"]
+    every = lambda r: True  # noqa: E731
+    primary = []
+    for fam, (a, b) in (("a", ("path-vsa@{p}", "tree-text@{p}")), ("b", ("path-vsa-soft@{p}", "path-vsa@{p}"))):
+        for p in NOISE_LEVELS:
+            c = contrast(rows, a.format(p=p), b.format(p=p), where=every, **kw)
+            if c:
+                primary.append({**c, "family": fam, "noise": p})
+    for c, ph in zip(primary, holm_adjust([c["p_value"] for c in primary]) if primary else []):
+        c["p_holm"] = ph
+    secondary = []
+    for p in NOISE_LEVELS:
+        subsets = {"all": every, "affected": lambda r, p=p: r["noise"][p]["affected"],
+                   "missing on path": lambda r, p=p: r["noise"][p]["missing_on_path"],
+                   "wrong on path": lambda r, p=p: r["noise"][p]["wrong_on_path"],
+                   "unaffected": lambda r, p=p: not r["noise"][p]["affected"]}
+        for a, b in ((f"path-vsa@{p}", "path-vsa"), (f"tree-text@{p}", "tree-text"), (f"path-vsa-soft@{p}", f"path-sym-soft@{p}"),
+                     (f"path-vsa@{p}", f"tree-text@{p}"), (f"path-vsa-soft@{p}", f"path-vsa@{p}"), (f"tree-text@{p}", f"none@{p}")):
+            for name, where in subsets.items():
+                c = contrast(rows, a, b, where=where, **kw)
+                if c:
+                    secondary.append({**c, "noise": p, "subset": name})
+            for d in sorted({r["depth"] for r in rows}):
+                c = contrast(rows, a, b, where=lambda r, d=d: r["depth"] == d, **kw)
+                if c:
+                    secondary.append({**c, "noise": p, "subset": f"depth {d}"})
+    acc: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        acc[r["condition"]]["all"].append(r["correct"])
+        acc[r["condition"]][f"depth {r['depth']}"].append(r["correct"])
+    accuracy = {c: {k: float(np.mean(v)) for k, v in subs.items()} for c, subs in acc.items()}
+    follow, ceilings = {}, {}
+    for p in NOISE_LEVELS:
+        for cond in ("path-vsa", "path-vsa-soft", "path-sym-soft"):
+            rs = [r for r in rows if r["condition"] == f"{cond}@{p}"]
+            if not rs:
+                continue
+            ex = [r["noise"][p]["exec"][cond] for r in rs]
+            wrong = [r for r, e in zip(rs, ex) if e != r["gold"]]
+            follow[f"{cond}@{p}"] = {"follow": float(np.mean([r["choice"] == e for r, e in zip(rs, ex)])),
+                                     "follow_when_executor_wrong": float(np.mean([r["choice"] == r["noise"][p]["exec"][cond] for r in wrong])) if wrong else None,
+                                     "n_executor_wrong": len(wrong)}
+            ceilings[f"{cond}@{p}"] = float(np.mean([e == r["gold"] for r, e in zip(rs, ex)]))
+    return {"primary": primary, "secondary": secondary, "accuracy": accuracy, "follow": follow, "executor_ceilings": ceilings,
+            "items": len({r["id"] for r in rows})}
+
+
+def run_noisy_report(args: argparse.Namespace) -> dict[str, Any]:
+    """LG-D2 (pre-registration §19): per host, primary (Holm over 4) (a) `path-vsa@p − tree-text@p` and (b)
+    `path-vsa-soft@p − path-vsa@p` for p = 0.1, 0.3; secondary contrasts by subset and depth; accuracy by condition; how often
+    the host follows its executor (also when the executor is wrong); the executors' own ceilings."""
+    present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
+    missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
+    doc: dict[str, Any] = {"hosts": {}, "missing": missing}
+    lines = ["# E14 LG-D2 — decision trees on noisy or partial records (pre-registration §19)", ""] + \
+        ([f"Missing: {', '.join(missing)}", ""] if missing else [])
+    by_host: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for run in present:
+        by_host[json.loads((run / "summary.json").read_text())["source"]["host"]] += load_predictions(run)
+    smoke = any(json.loads((run / "summary.json").read_text()).get("smoke") for run in present)
+    if smoke:
+        lines[:0] = ["**SMOKE TEST — not a result.**", ""]
+    for host, rows in by_host.items():
+        rep = noisy_host_report(rows, resamples=args.resamples, seed=args.seed)
+        doc["hosts"][host] = rep
+        lines += [f"## {host} ({rep['items']} items)", "", "**Primary (Holm over 4)**", ""]
+        lines += [f"- ({c['family']}) {c['a']} − {c['b']}: {fmt(c)}" for c in rep["primary"]]
+        conds = ["tree-text", "path-vsa"] + [f"{c}@{p}" for p in NOISE_LEVELS for c in ("none", "tree-text", "path-vsa", "path-vsa-soft", "path-sym-soft")]
+        depths = sorted({k for a in rep["accuracy"].values() for k in a if k.startswith("depth")}, key=lambda k: int(k.split()[1]))
+        lines += ["", "| condition | all | " + " | ".join(depths) + " | executor ceiling | follows executor | … when it is wrong |",
+                  "|---|---:|" + "---:|" * (len(depths) + 3)]
+        for c in conds:
+            if c not in rep["accuracy"]:
+                continue
+            a, fo = rep["accuracy"][c], rep["follow"].get(c)
+            ce = rep["executor_ceilings"].get(c)
+            lines.append(f"| {c} | {a['all']:.3f} | " + " | ".join(f"{a.get(d, float('nan')):.3f}" for d in depths)
+                         + f" | {'—' if ce is None else f'{ce:.3f}'} | {'—' if not fo else f"{fo['follow']:.3f}"} | "
+                         + f"{'—' if not fo or fo['follow_when_executor_wrong'] is None else f"{fo['follow_when_executor_wrong']:.3f} (n {fo['n_executor_wrong']})"} |")
+        lines += ["", "Secondary:", ""]
+        lines += [f"- p {c['noise']}, {c['subset']}: {c['a']} − {c['b']} {fmt(c)}" for c in rep["secondary"] if not c["subset"].startswith("depth")]
+        lines += ["", "By depth:", ""]
+        lines += [f"- p {c['noise']}, {c['subset']}: {c['a']} − {c['b']} {fmt(c)}" for c in rep["secondary"] if c["subset"].startswith("depth")]
+        lines.append("")
+    out = Path(args.output)
+    out.mkdir(parents=True, exist_ok=True)
+    write_json(out / "report.json", doc)
+    (out / "report.md").write_text("\n".join(lines) + "\n")
+    return doc
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -330,8 +431,11 @@ def main(argv: list[str] | None = None) -> None:
     v = sub.add_parser("verdict-report", help="LG-B verdict format (pre-registration §14)")
     v.add_argument("--runs", nargs="+", required=True); v.add_argument("--output", type=Path, required=True)
     v.add_argument("--resamples", type=int, default=4000); v.add_argument("--seed", type=int, default=0)
+    nr = sub.add_parser("noisy-report", help="LG-D2 trees on noisy or partial records (pre-registration §19)")
+    nr.add_argument("--runs", nargs="+", required=True); nr.add_argument("--output", type=Path, required=True)
+    nr.add_argument("--resamples", type=int, default=4000); nr.add_argument("--seed", type=int, default=0)
     args = parser.parse_args(argv)
-    {"score": run_score, "report": run_report, "verdict-report": run_verdict_report}[args.command](args)
+    {"score": run_score, "report": run_report, "verdict-report": run_verdict_report, "noisy-report": run_noisy_report}[args.command](args)
 
 
 if __name__ == "__main__":

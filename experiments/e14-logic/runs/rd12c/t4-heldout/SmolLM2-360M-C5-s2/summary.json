@@ -1,0 +1,274 @@
+{
+  "source": {
+    "run": "experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s2",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 2,
+    "size": "HuggingFaceTB/SmolLM2-360M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t4-SmolLM2-360M-full-C5-s2",
+    "run_git_sha": "9dac634bffc7cab96ecd1fa6c727b3aaa5ff5b68",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "frames_from": "experiments/e14-logic/items/t4-heldout-rd12/frames.jsonl",
+  "smoke": false,
+  "family": "rd12c",
+  "set": {
+    "kind": "heldout",
+    "track": "t4",
+    "concepts": 160,
+    "items": 394
+  },
+  "null": "plain",
+  "gold_in_frame_share": {
+    "oracle": 0.9847715736040609,
+    "stated": 0.29441624365482233,
+    "typeprior": 0.2715736040609137,
+    "linker": 0.04568527918781726,
+    "rd12-single-r2": 0.21573604060913706,
+    "rd12-cycle-r0": 0.21573604060913706,
+    "rd12-cycle-r2": 0.2512690355329949,
+    "rd12-gold-r2": 0.9847715736040609
+  },
+  "style": "chebi",
+  "conditions": [
+    "none",
+    "explicit-rel:oracle",
+    "explicit-rel:typeprior",
+    "explicit-rel:rd12-single-r2",
+    "explicit-rel:rd12-cycle-r2",
+    "explicit-sym:rd12-single-r2",
+    "explicit-sym:rd12-cycle-r2",
+    "definition"
+  ],
+  "compose": true,
+  "vsa": true,
+  "context_budget": 1024,
+  "readers": {
+    "oracle": 160,
+    "stated": 116,
+    "typeprior": 147,
+    "linker": 146,
+    "rd12-single-r2": 160,
+    "rd12-cycle-r0": 160,
+    "rd12-cycle-r2": 160,
+    "rd12-gold-r2": 160
+  },
+  "diagnostics": {
+    "none": {},
+    "explicit-rel:oracle": {
+      "lines_per_item": 2.512690355329949,
+      "items_without_lines": 0
+    },
+    "explicit-rel:typeprior": {
+      "lines_per_item": 1.2538071065989849,
+      "items_without_lines": 130
+    },
+    "explicit-rel:rd12-single-r2": {
+      "lines_per_item": 0.5532994923857868,
+      "items_without_lines": 186
+    },
+    "explicit-rel:rd12-cycle-r2": {
+      "lines_per_item": 0.6294416243654822,
+      "items_without_lines": 162
+    },
+    "explicit-sym:rd12-single-r2": {},
+    "explicit-sym:rd12-cycle-r2": {},
+    "definition": {}
+  },
+  "context_tokens": {
+    "none": 0.0,
+    "explicit-rel:oracle": 68.70558375634518,
+    "explicit-rel:typeprior": 40.45177664974619,
+    "explicit-rel:rd12-single-r2": 25.390862944162436,
+    "explicit-rel:rd12-cycle-r2": 26.639593908629443,
+    "explicit-sym:rd12-single-r2": 35.68020304568528,
+    "explicit-sym:rd12-cycle-r2": 47.31979695431472,
+    "definition": 52.19796954314721
+  },
+  "context_samples": {
+    "explicit-rel:oracle": "recall((R)-lipoic acid):\n- (R)-lipoic acid is functionally related to octanoic acid. (1.00)",
+    "explicit-rel:typeprior": "recall((R)-lipoic acid):\n- (nothing recalled)",
+    "explicit-rel:rd12-single-r2": "recall((R)-lipoic acid):\n- (nothing recalled)",
+    "explicit-rel:rd12-cycle-r2": "recall((R)-lipoic acid):\n- (nothing recalled)",
+    "explicit-sym:rd12-single-r2": "recall((R)-lipoic acid):\n- (R)-lipoic acid is a member of the class of thia fatty acid. (1.00)\n- (R)-lipoic acid has a role as an oxidising agent. (1.00)",
+    "explicit-sym:rd12-cycle-r2": "recall((R)-lipoic acid):\n- (R)-lipoic acid is the enantiomer of lipoic acid. (1.00)\n- (R)-lipoic acid is a member of the class of thia fatty acid. (1.00)\n- (R)-lipoic acid has a role as an oxidising agent. (1.00)",
+    "definition": "(R)-lipoic acid: The (R)-enantiomer of lipoic acid. A vitamin-like, C8 thia fatty acid with anti-oxidant properties."
+  },
+  "timings": {
+    "none": 2.74,
+    "explicit-rel:oracle": 8.61,
+    "explicit-rel:typeprior": 6.7,
+    "explicit-rel:rd12-single-r2": 5.78,
+    "explicit-rel:rd12-cycle-r2": 5.7,
+    "explicit-sym:rd12-single-r2": 6.53,
+    "explicit-sym:rd12-cycle-r2": 7.2,
+    "definition": 7.98
+  },
+  "items": {
+    "means": {
+      "none": {
+        "property": [
+          0.6243654822335025,
+          197
+        ],
+        "paraphrase": [
+          0.5939086294416244,
+          197
+        ],
+        "entailment": [
+          0.7157360406091371,
+          197
+        ]
+      },
+      "explicit-rel:oracle": {
+        "property": [
+          0.8849407783417935,
+          197
+        ],
+        "paraphrase": [
+          0.868020304568528,
+          197
+        ],
+        "entailment": [
+          0.9289340101522843,
+          197
+        ]
+      },
+      "explicit-rel:typeprior": {
+        "property": [
+          0.6954314720812182,
+          197
+        ],
+        "paraphrase": [
+          0.6649746192893401,
+          197
+        ],
+        "entailment": [
+          0.8324873096446701,
+          197
+        ]
+      },
+      "explicit-rel:rd12-single-r2": {
+        "property": [
+          0.6818950930626057,
+          197
+        ],
+        "paraphrase": [
+          0.6852791878172588,
+          197
+        ],
+        "entailment": [
+          0.8223350253807107,
+          197
+        ]
+      },
+      "explicit-rel:rd12-cycle-r2": {
+        "property": [
+          0.6869712351945854,
+          197
+        ],
+        "paraphrase": [
+          0.6852791878172588,
+          197
+        ],
+        "entailment": [
+          0.8223350253807107,
+          197
+        ]
+      },
+      "explicit-sym:rd12-single-r2": {
+        "property": [
+          0.6886632825719121,
+          197
+        ],
+        "paraphrase": [
+          0.6751269035532995,
+          197
+        ],
+        "entailment": [
+          0.8527918781725888,
+          197
+        ]
+      },
+      "explicit-sym:rd12-cycle-r2": {
+        "property": [
+          0.700507614213198,
+          197
+        ],
+        "paraphrase": [
+          0.6751269035532995,
+          197
+        ],
+        "entailment": [
+          0.8629441624365483,
+          197
+        ]
+      },
+      "definition": {
+        "property": [
+          0.7343485617597294,
+          197
+        ],
+        "paraphrase": [
+          0.7309644670050761,
+          197
+        ],
+        "entailment": [
+          0.8274111675126904,
+          197
+        ]
+      }
+    },
+    "primary": [],
+    "secondary": [
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "property",
+        "mean": 0.10998307952622674,
+        "ci_low": 0.06937394247038918,
+        "ci_high": 0.15059221658206431,
+        "n": 197,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": 0.13705583756345177,
+        "ci_low": 0.07106598984771574,
+        "ci_high": 0.20304568527918782,
+        "n": 197,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "entailment",
+        "mean": 0.1116751269035533,
+        "ci_low": 0.05583756345177665,
+        "ci_high": 0.16751269035532995,
+        "n": 197,
+        "p_value": 0.0004998750312421895
+      }
+    ]
+  }
+}

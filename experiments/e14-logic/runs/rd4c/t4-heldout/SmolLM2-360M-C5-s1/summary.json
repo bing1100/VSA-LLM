@@ -1,0 +1,475 @@
+{
+  "source": {
+    "run": "experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s1",
+    "checkpoint": "final.pt",
+    "condition": "C5",
+    "seed": 1,
+    "size": "HuggingFaceTB/SmolLM2-360M/train",
+    "channel_mode": "compose",
+    "channel": {
+      "mode": "compose",
+      "operator": "hrr",
+      "dimension": 256,
+      "composition": "attentive",
+      "key_dimension": 8,
+      "context_window": 8,
+      "gate_bias": 0.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t4-SmolLM2-360M-full-C5-s1",
+    "run_git_sha": "0df30d2bcd9e07f8135f4763188d9c8049ddd26a",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t4-chemistry/v1/eval",
+    "min_subtokens": 2,
+    "tokenizer": "HuggingFaceTB/SmolLM2-135M"
+  },
+  "frames_from": "experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s1/e11-t4-heldout/frames.jsonl",
+  "smoke": false,
+  "family": "rd4c",
+  "set": {
+    "kind": "heldout",
+    "track": "t4",
+    "concepts": 341,
+    "items": 814
+  },
+  "null": "plain",
+  "gold_in_frame_share": {
+    "oracle": 0.9815724815724816,
+    "stated": 0.31203931203931207,
+    "typeprior": 0.29238329238329236,
+    "linker": 0.06265356265356266,
+    "teacher": 0.23832923832923833
+  },
+  "style": "chebi",
+  "conditions": [
+    "none",
+    "explicit-sym:oracle",
+    "explicit-rel:oracle",
+    "explicit-rel:typeprior",
+    "explicit-rel-wrong:oracle",
+    "explicit-route:lex:oracle",
+    "explicit-route:lm:oracle",
+    "explicit-route:top2:oracle",
+    "explicit-route:lex:typeprior",
+    "explicit-route:lm:typeprior",
+    "explicit-route:top2:typeprior",
+    "definition",
+    "explicit-rel:teacher",
+    "explicit-route:lm:teacher"
+  ],
+  "compose": true,
+  "vsa": true,
+  "context_budget": 1024,
+  "readers": {
+    "oracle": 341,
+    "stated": 248,
+    "typeprior": 321,
+    "linker": 317,
+    "teacher": 218
+  },
+  "diagnostics": {
+    "none": {},
+    "explicit-sym:oracle": {},
+    "explicit-rel:oracle": {
+      "lines_per_item": 2.656019656019656,
+      "items_without_lines": 0
+    },
+    "explicit-rel:typeprior": {
+      "lines_per_item": 1.2727272727272727,
+      "items_without_lines": 258
+    },
+    "explicit-rel-wrong:oracle": {
+      "lines_per_item": 2.656019656019656,
+      "items_without_lines": 0,
+      "corrupted_share": 1.0
+    },
+    "explicit-route:lex:oracle": {
+      "lines_per_item": 2.4373464373464375,
+      "route_accuracy": 0.7923832923832924,
+      "routable_items": 814
+    },
+    "explicit-route:lm:oracle": {
+      "lines_per_item": 2.2186732186732185,
+      "route_accuracy": 0.5847665847665847,
+      "routable_items": 814
+    },
+    "explicit-route:top2:oracle": {
+      "lines_per_item": 4.58968058968059,
+      "route_accuracy": 0.8316953316953317,
+      "routable_items": 814
+    },
+    "explicit-route:lex:typeprior": {
+      "lines_per_item": 1.8316953316953317,
+      "route_accuracy": 0.8902877697841727,
+      "routable_items": 556
+    },
+    "explicit-route:lm:typeprior": {
+      "lines_per_item": 1.9164619164619165,
+      "route_accuracy": 0.7805755395683454,
+      "routable_items": 556
+    },
+    "explicit-route:top2:typeprior": {
+      "lines_per_item": 2.5675675675675675,
+      "route_accuracy": 0.9622302158273381,
+      "routable_items": 556
+    },
+    "definition": {},
+    "explicit-rel:teacher": {
+      "lines_per_item": 0.5085995085995086,
+      "items_without_lines": 428
+    },
+    "explicit-route:lm:teacher": {
+      "lines_per_item": 0.7764127764127764,
+      "route_accuracy": 0.7979274611398963,
+      "routable_items": 386
+    }
+  },
+  "context_tokens": {
+    "none": 0.0,
+    "explicit-sym:oracle": 277.515,
+    "explicit-rel:oracle": 88.045,
+    "explicit-rel:typeprior": 40.35,
+    "explicit-rel-wrong:oracle": 95.855,
+    "explicit-route:lex:oracle": 81.5025,
+    "explicit-route:lm:oracle": 74.96,
+    "explicit-route:top2:oracle": 142.6,
+    "explicit-route:lex:typeprior": 53.4775,
+    "explicit-route:lm:typeprior": 56.11,
+    "explicit-route:top2:typeprior": 73.6,
+    "definition": 59.84,
+    "explicit-rel:teacher": 26.0,
+    "explicit-route:lm:teacher": 33.16
+  },
+  "context_samples": {
+    "explicit-sym:oracle": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)\n- (4R)-limonene is the enantiomer of (4S)-limonene. (1.00)\n- (4R)-limonene has a role as a plant metabolite. (1.00)\n- (4R)-limonene contains element C. (1.00)\n- (4R)-limonene has charge neutral. (1.00)\n- (4R)-limonene has branch chemical entity. (1.00)",
+    "explicit-rel:oracle": "recall((4R)-limonene):\n- (4R)-limonene has a role as a plant metabolite. (1.00)",
+    "explicit-rel:typeprior": "recall((4R)-limonene):\n- (nothing recalled)",
+    "explicit-rel-wrong:oracle": "recall((4R)-limonene):\n- (4R)-limonene has a role as a hormone. (1.00)",
+    "explicit-route:lex:oracle": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)",
+    "explicit-route:lm:oracle": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)",
+    "explicit-route:top2:oracle": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)\n- (4R)-limonene is the enantiomer of (4S)-limonene. (1.00)",
+    "explicit-route:lex:typeprior": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)",
+    "explicit-route:lm:typeprior": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)",
+    "explicit-route:top2:typeprior": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)",
+    "definition": "(4R)-limonene: An optically active form of limonene having (4R)-configuration.",
+    "explicit-rel:teacher": "recall((4R)-limonene):\n- (nothing recalled)",
+    "explicit-route:lm:teacher": "recall((4R)-limonene):\n- (4R)-limonene is a member of the class of limonene. (1.00)"
+  },
+  "timings": {
+    "none": 5.74,
+    "explicit-sym:oracle": 29.82,
+    "explicit-rel:oracle": 19.19,
+    "explicit-rel:typeprior": 17.01,
+    "explicit-rel-wrong:oracle": 21.3,
+    "explicit-route:lex:oracle": 20.46,
+    "explicit-route:lm:oracle": 32.0,
+    "explicit-route:top2:oracle": 37.27,
+    "explicit-route:lex:typeprior": 18.94,
+    "explicit-route:lm:typeprior": 22.35,
+    "explicit-route:top2:typeprior": 26.4,
+    "definition": 16.57,
+    "explicit-rel:teacher": 11.94,
+    "explicit-route:lm:teacher": 14.71
+  },
+  "items": {
+    "means": {
+      "none": {
+        "property": [
+          0.6117936117936117,
+          407
+        ],
+        "paraphrase": [
+          0.5405405405405406,
+          407
+        ],
+        "entailment": [
+          0.769041769041769,
+          407
+        ]
+      },
+      "explicit-sym:oracle": {
+        "property": [
+          0.5782145782145782,
+          407
+        ],
+        "paraphrase": [
+          0.85995085995086,
+          407
+        ],
+        "entailment": [
+          0.6584766584766585,
+          407
+        ]
+      },
+      "explicit-rel:oracle": {
+        "property": [
+          0.8615888615888615,
+          407
+        ],
+        "paraphrase": [
+          0.8427518427518428,
+          407
+        ],
+        "entailment": [
+          0.9262899262899262,
+          407
+        ]
+      },
+      "explicit-rel:typeprior": {
+        "property": [
+          0.7133497133497134,
+          407
+        ],
+        "paraphrase": [
+          0.6732186732186732,
+          407
+        ],
+        "entailment": [
+          0.855036855036855,
+          407
+        ]
+      },
+      "explicit-rel-wrong:oracle": {
+        "property": [
+          0.5249795249795249,
+          407
+        ],
+        "paraphrase": [
+          0.5528255528255528,
+          407
+        ],
+        "entailment": [
+          0.687960687960688,
+          407
+        ]
+      },
+      "explicit-route:lex:oracle": {
+        "property": [
+          0.7846027846027845,
+          407
+        ],
+        "paraphrase": [
+          0.7813267813267813,
+          407
+        ],
+        "entailment": [
+          0.9164619164619164,
+          407
+        ]
+      },
+      "explicit-route:lm:oracle": {
+        "property": [
+          0.7780507780507779,
+          407
+        ],
+        "paraphrase": [
+          0.769041769041769,
+          407
+        ],
+        "entailment": [
+          0.8968058968058968,
+          407
+        ]
+      },
+      "explicit-route:top2:oracle": {
+        "property": [
+          0.7772317772317773,
+          407
+        ],
+        "paraphrase": [
+          0.8083538083538083,
+          407
+        ],
+        "entailment": [
+          0.8722358722358723,
+          407
+        ]
+      },
+      "explicit-route:lex:typeprior": {
+        "property": [
+          0.7174447174447175,
+          407
+        ],
+        "paraphrase": [
+          0.6756756756756757,
+          407
+        ],
+        "entailment": [
+          0.8673218673218673,
+          407
+        ]
+      },
+      "explicit-route:lm:typeprior": {
+        "property": [
+          0.7141687141687141,
+          407
+        ],
+        "paraphrase": [
+          0.6707616707616708,
+          407
+        ],
+        "entailment": [
+          0.8673218673218673,
+          407
+        ]
+      },
+      "explicit-route:top2:typeprior": {
+        "property": [
+          0.7158067158067157,
+          407
+        ],
+        "paraphrase": [
+          0.6633906633906634,
+          407
+        ],
+        "entailment": [
+          0.8796068796068796,
+          407
+        ]
+      },
+      "definition": {
+        "property": [
+          0.7305487305487305,
+          407
+        ],
+        "paraphrase": [
+          0.7199017199017199,
+          407
+        ],
+        "entailment": [
+          0.8624078624078624,
+          407
+        ]
+      },
+      "explicit-rel:teacher": {
+        "property": [
+          0.701883701883702,
+          407
+        ],
+        "paraphrase": [
+          0.6609336609336609,
+          407
+        ],
+        "entailment": [
+          0.8353808353808354,
+          407
+        ]
+      },
+      "explicit-route:lm:teacher": {
+        "property": [
+          0.7027027027027027,
+          407
+        ],
+        "paraphrase": [
+          0.6781326781326781,
+          407
+        ],
+        "entailment": [
+          0.8353808353808354,
+          407
+        ]
+      }
+    },
+    "primary": [
+      {
+        "a": "explicit-sym:oracle",
+        "b": "none",
+        "test": "property",
+        "mean": -0.033579033579033565,
+        "ci_low": -0.08108108108108106,
+        "ci_high": 0.01392301392301393,
+        "n": 407,
+        "p_value": 0.18095476130967258,
+        "p_holm": 0.18095476130967258
+      },
+      {
+        "a": "explicit-sym:oracle",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": 0.3194103194103194,
+        "ci_low": 0.26044226044226043,
+        "ci_high": 0.3759213759213759,
+        "n": 407,
+        "p_value": 0.0004998750312421895,
+        "p_holm": 0.0014996250937265685
+      },
+      {
+        "a": "explicit-sym:oracle",
+        "b": "none",
+        "test": "entailment",
+        "mean": -0.11056511056511056,
+        "ci_low": -0.171990171990172,
+        "ci_high": -0.051597051597051594,
+        "n": 407,
+        "p_value": 0.0004998750312421895,
+        "p_holm": 0.0014996250937265685
+      }
+    ],
+    "secondary": [
+      {
+        "a": "definition",
+        "b": "explicit-sym:oracle",
+        "test": "property",
+        "mean": 0.15233415233415235,
+        "ci_low": 0.1080876330876331,
+        "ci_high": 0.19983619983619982,
+        "n": 407,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "explicit-sym:oracle",
+        "test": "paraphrase",
+        "mean": -0.14004914004914004,
+        "ci_low": -0.1891891891891892,
+        "ci_high": -0.09336609336609336,
+        "n": 407,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "explicit-sym:oracle",
+        "test": "entailment",
+        "mean": 0.20393120393120392,
+        "ci_low": 0.15233415233415235,
+        "ci_high": 0.25552825552825553,
+        "n": 407,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "property",
+        "mean": 0.11875511875511874,
+        "ci_low": 0.0900900900900901,
+        "ci_high": 0.14825962325962336,
+        "n": 407,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": 0.17936117936117937,
+        "ci_low": 0.13022113022113022,
+        "ci_high": 0.2285012285012285,
+        "n": 407,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "entailment",
+        "mean": 0.09336609336609336,
+        "ci_low": 0.056511056511056514,
+        "ci_high": 0.1302825552825555,
+        "n": 407,
+        "p_value": 0.0004998750312421895
+      }
+    ]
+  }
+}

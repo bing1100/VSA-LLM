@@ -1,0 +1,223 @@
+{
+  "arm": "cycle",
+  "run": "experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s1",
+  "tokens_per_round": 2000000,
+  "terms": 160,
+  "recipe": "gentle",
+  "smoke": false,
+  "rounds": [
+    {
+      "round": 0,
+      "arm": "cycle",
+      "relations": [
+        "has_parent_hydride",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 0.88125,
+      "gold_recall": 0.15486725663716813,
+      "loss_after_read_terms": 1.7634540328795403,
+      "terms_with_windows": 112,
+      "items": {
+        "implicit": {
+          "property": 0.6142131979695431,
+          "paraphrase": 0.5939086294416244,
+          "entailment": 0.7157360406091371
+        },
+        "explicit": {
+          "property": 0.5177664974619289,
+          "paraphrase": 0.37055837563451777,
+          "entailment": 0.6954314720812182
+        },
+        "none": {
+          "property": 0.61082910321489,
+          "paraphrase": 0.6142131979695431,
+          "entailment": 0.7055837563451777
+        },
+        "explicit_rel": {
+          "property": 0.6920473773265652,
+          "paraphrase": 0.6903553299492385,
+          "entailment": 0.8274111675126904
+        },
+        "none_plain": {
+          "property": 0.61082910321489,
+          "paraphrase": 0.6142131979695431,
+          "entailment": 0.7055837563451777
+        }
+      },
+      "general_loss": 2.5481607913970947,
+      "utility": {},
+      "accepted_next": [
+        {
+          "name": "has_functional_parent",
+          "description": "X is formally or structurally derived from parent compound Y, by substitution or other modification.",
+          "support": 26
+        },
+        {
+          "name": "found_in_organism",
+          "description": "X occurs naturally in, is produced by, or was isolated from organism or source Y.",
+          "support": 10
+        },
+        {
+          "name": "is_metabolite_of",
+          "description": "X is produced by metabolism of Y.",
+          "support": 9
+        },
+        {
+          "name": "has_part",
+          "description": "X contains Y as a part: a mixture component, a constituent residue, or a repeating unit.",
+          "support": 22
+        }
+      ],
+      "retracted": [],
+      "teacher_spent_usd": 0.0,
+      "seconds": 247.5
+    },
+    {
+      "round": 1,
+      "arm": "cycle",
+      "relations": [
+        "found_in_organism",
+        "has_functional_parent",
+        "has_parent_hydride",
+        "has_part",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_metabolite_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 1.30625,
+      "gold_recall": 0.17551622418879056,
+      "loss_after_read_terms": 1.7639564254767062,
+      "terms_with_windows": 112,
+      "items": {
+        "implicit": {
+          "property": 0.61082910321489,
+          "paraphrase": 0.5685279187817259,
+          "entailment": 0.7258883248730964
+        },
+        "explicit": {
+          "property": 0.5194585448392556,
+          "paraphrase": 0.37055837563451777,
+          "entailment": 0.6751269035532995
+        },
+        "none": {
+          "property": 0.6142131979695431,
+          "paraphrase": 0.5939086294416244,
+          "entailment": 0.7106598984771574
+        },
+        "explicit_rel": {
+          "property": 0.6920473773265652,
+          "paraphrase": 0.6954314720812182,
+          "entailment": 0.8274111675126904
+        },
+        "none_plain": {
+          "property": 0.6142131979695431,
+          "paraphrase": 0.5939086294416244,
+          "entailment": 0.7106598984771574
+        }
+      },
+      "general_loss": 2.5476536750793457,
+      "utility": {
+        "has_functional_parent": {
+          "loss_without": 1.7651231498139868,
+          "loss_with": 1.7639564254767062,
+          "relative": 0.0006614246930534551,
+          "retract": false
+        },
+        "has_part": {
+          "loss_without": 1.7646250735632958,
+          "loss_with": 1.7639564254767062,
+          "relative": 0.0003790615669028884,
+          "retract": false
+        },
+        "is_metabolite_of": {
+          "loss_without": 1.7643698726881767,
+          "loss_with": 1.7639564254767062,
+          "relative": 0.0002343862952049882,
+          "retract": false
+        }
+      },
+      "accepted_next": [],
+      "retracted": [],
+      "teacher_spent_usd": 0.0,
+      "seconds": 312.4
+    },
+    {
+      "round": 2,
+      "arm": "cycle",
+      "relations": [
+        "found_in_organism",
+        "has_functional_parent",
+        "has_parent_hydride",
+        "has_part",
+        "has_role",
+        "is_a",
+        "is_enantiomer_of",
+        "is_metabolite_of",
+        "is_substituent_group_from",
+        "is_tautomer_of"
+      ],
+      "frames_per_term": 1.31875,
+      "gold_recall": 0.17551622418879056,
+      "loss_after_read_terms": 1.7662781716138194,
+      "terms_with_windows": 112,
+      "items": {
+        "implicit": {
+          "property": 0.6192893401015228,
+          "paraphrase": 0.583756345177665,
+          "entailment": 0.7157360406091371
+        },
+        "explicit": {
+          "property": 0.5093062605752962,
+          "paraphrase": 0.3604060913705584,
+          "entailment": 0.6649746192893401
+        },
+        "none": {
+          "property": 0.6159052453468696,
+          "paraphrase": 0.5786802030456852,
+          "entailment": 0.7157360406091371
+        },
+        "explicit_rel": {
+          "property": 0.6954314720812182,
+          "paraphrase": 0.6903553299492385,
+          "entailment": 0.8324873096446701
+        },
+        "none_plain": {
+          "property": 0.6159052453468696,
+          "paraphrase": 0.5786802030456852,
+          "entailment": 0.7157360406091371
+        }
+      },
+      "general_loss": 2.5473077297210693,
+      "utility": {
+        "has_functional_parent": {
+          "loss_without": 1.7665453137157157,
+          "loss_with": 1.7662781716138194,
+          "relative": 0.00015124576988469706,
+          "retract": false
+        },
+        "has_part": {
+          "loss_without": 1.766562871237626,
+          "loss_with": 1.7662781716138194,
+          "relative": 0.0001611861757576336,
+          "retract": false
+        },
+        "is_metabolite_of": {
+          "loss_without": 1.765927313398809,
+          "loss_with": 1.7662781716138194,
+          "relative": -0.00019864267172021378,
+          "retract": false
+        }
+      },
+      "retracted": [],
+      "teacher_spent_usd": 0.0,
+      "seconds": 313.0
+    }
+  ]
+}

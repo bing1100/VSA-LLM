@@ -290,57 +290,78 @@ As 14.4 (C5 × 3 seeds, C0′ × 1 seed, T4 and T5).
 
 # 14.6 — Without the label: routing, Claude's frames and larger hosts (RD-4c)
 
-**Status:** partly done. The T4 SmolLM2 runs (3 seeds) are complete; T5 and the Qwen3 hosts are running. The numbers
-below come from a preliminary interim report. · **When:** 2026-10-20 · **Sources:** `experiments/e14-logic/preregistration.md` §16; `experiments/e14-logic/runs/rd4c/`
+**Status:** done · **When:** 2026-10-20 · **Sources:** `experiments/e14-logic/report/rd4c/`; `manuscript/findings/2026-10-20-e14-evening.md` §1; preregistration §16
 
 ## Research gap
-Selective recall needs to know which relation the question asks about. We asked three things:
-- whether a router can choose it without the label;
-- whether better readers (Claude) close the gap to gold;
+Selective recall (14.5) was given the item's relation label, which a deployed system does not have. We asked three
+things:
+- whether a router can choose the relation without the label;
+- whether a better reader (Claude) closes the gap to gold frames;
 - whether the effect holds on larger models.
 
 ## Intuition
-Questions usually signal their relation ("has a role as", "is a kind of"). The model, or simple word overlap, should
-pick it from the relations the term's frame holds.
+Questions signal their relation ("has a role as", "is a kind of"). The model, or simple word overlap, should pick that
+relation from the ones the term's frame holds.
 
 ## Methodology
-- **Routers** choose from the frame's relations, never the item label:
-  - `lex`: word overlap with the question;
-  - `lm`: the host scores each relation phrase;
-  - `top2`: `lm`'s best two.
-- **Readers:** oracle, type prior, Claude (T4).
-- **Hosts:** SmolLM2-360M C5 (3 seeds; T4, T5); Qwen3-0.6B and 1.7B C0′, explicit only.
-- **Primary** (Holm over 6):
-  - (a) `lm` router + type prior − none (the realistic pipeline);
-  - (b) `lm` router + oracle − labelled oracle (the cost of routing).
+- **Routers** choose among the frame's relations, never using the label:
+  - `lex`: word overlap between the relation's phrase and the question;
+  - `lm`: the host scores each relation phrase as a continuation of the question;
+  - `top2`: the two best relations under `lm`.
+- **Readers:** oracle, type prior, Claude (T4 only).
+- **Primary** (Holm over 6 per track):
+  - (a) the realistic pipeline (`lm` router + type-prior frames) − none;
+  - (b) `lm` router + oracle frames − labelled oracle (the cost of routing).
+- **Larger hosts:** Qwen3-0.6B and 1.7B C0′, explicit route only. Primary: labelled oracle recall − none, and − whole
+  frame.
 
 ## Experiment
-Queued at 54.4959981–2: 11 jobs, about 3 GPU-h. The six SmolLM2 jobs take about 0.1–0.25 GPU-h each.
+- SmolLM2-360M C5, 3 seeds, on T4 and T5.
+- Qwen3-1.7B C0′ on T4 (1 seed); Qwen3-0.6B and 1.7B C0′ on T5 (2 seeds each).
+- 11 GPU jobs.
 
-## Results (preliminary: T4, SmolLM2-360M C5, 3 seeds)
-- **(a) The realistic pipeline helps:** property +0.099\*, paraphrase +0.130\*, entailment +0.100\*. This is just below
-  the predicted +0.10 ceiling. It still trails the definition text by 0.021\* on property.
-- **(b) Routing costs about 8 points when the frame is full:** property −0.083\*. The prediction (≥ −0.05) failed.
-  - The `lm` router chose the asked relation 0.585 of the time, `lex` 0.79 and `top2` 0.83, among oracle frames with
-    many relations.
-  - With the type prior's short frames, routing costs nothing (−0.004, n.s.), and the router picks the right relation
-    0.78–0.96 of the time.
-- **Claude's frames do not beat the type prior's:** −0.014\* on property. That prediction failed.
+## Results
+
+| Property accuracy, SmolLM2-360M | T4 real chemicals | T5 new words |
+|---|---:|---:|
+| none | 0.614 | 0.190 |
+| labelled selective recall, oracle frames | 0.862 | 0.845 |
+| `lm` router + oracle frames | 0.780 | 0.307 |
+| `lex` router + oracle frames | 0.787 | 0.618 |
+| **`lm` router + type-prior frames (realistic)** | **0.713** | **0.304** |
+| `lex` router + type-prior frames | 0.714 | 0.589 |
+| definition text | 0.734 | 0.857 |
+
+- **(a) The realistic pipeline helps on both tracks:** property +0.099\* (T4) and +0.114\* (T5).
+- **(b) Routing costs a lot:** −0.083\* on T4 and **−0.538\*** on T5. The prediction (≥ −0.05) failed on both tracks.
+- **Router accuracy:**
+  - `lm`: 0.585 on T4 with oracle frames, 0.781 with type-prior frames; 0.21 on T5;
+  - `lex`: 0.79–0.89 on T4; 0.39 on T5.
+
+  On T5 the model's router almost always picks a generic relation. Word overlap does far better there: +0.399 over
+  `none` with type-prior frames.
+- **Claude's frames do not beat the type prior's** on T4 (−0.014\*). That prediction failed.
+- **Larger hosts keep the effect:**
+  - labelled selective recall − none is +0.172\* (Qwen3-1.7B, T4), +0.529\* (Qwen3-0.6B, T5) and +0.615\* (Qwen3-1.7B,
+    T5);
+  - on T5's short frames, the larger hosts are barely hurt by whole-frame recall (−0.028 to +0.017).
 
 ## Limitations
-- Preliminary: T5 and the larger hosts are pending.
-- Our routers are simple; a trained router was not tested.
-- Claude's frames are sparse (RD-3 recall 0.66), which may explain why they do not help.
+- The routers are simple and untrained.
+- T5's question wording rarely matches the relation phrases, which favours `lex` over `lm` for reasons specific to the
+  track.
+- Claude's frames are sparse (RD-3 recall 0.66).
+- The larger hosts have one or two seeds.
 
 ## Next steps
-The full report lands with the rest of the queue (projected 2026-10-20 evening). If routing remains the bottleneck, a
-learned router is the next tier-F proposal.
+**Routing, not reading, is now the bottleneck of the realistic pipeline.** A learned router is approved (tier F,
+2026-10-20) and being built.
 
 ---
 
 # 14.7 — The read → train → read cycle (RD-12, RD-12b, RD-12c)
 
-**Status:** RD-12 done (null); RD-12b and RD-12c queued · **When:** 2026-10-20 · **Sources:** `experiments/e14-logic/report/rd12/`; preregistration §§12, 17, 18
+**Status:** done (RD-12, RD-12b, RD-12c) · **When:** 2026-10-20 · **Sources:** `experiments/e14-logic/report/{rd12, rd12b, rd12c}/`; `manuscript/findings/2026-10-20-e14-evening.md` §§2–3; preregistration §§12, 17, 18
 
 ## Research gap
 The author's hypothesis: self-learning alternates passive learning (gradient descent on text) with active reading (the
@@ -371,20 +392,30 @@ T4, SmolLM2-360M C5 seed 1, 160 definitions. A first attempt failed twice; both 
   signature of overfitting to the narrow passive mix: definitions repeated 40× and a learning-rate restart.
 - The cycle still grew its frames: gold recall 0.155 → 0.176, frames per term 0.88 → 1.32. It retracted nothing.
 
+### Reruns (RD-12b, RD-12c)
+
+**RD-12b** (the gentle passive phase, with no-training controls):
+- **The recipe gate passes:** the drift of `passive − still-none` is +0.08%, against a +0.5% limit.
+- **On loss, nothing changes:**
+  - `cycle − passive` +0.0007 (n.s.);
+  - `cycle − single` +0.0002 (n.s.);
+  - training with gold frames adds nothing over writing them (`gold − still-gold` +0.0036, n.s.).
+- **Under selective recall the cycle's extra facts help a little:** `cycle − single` on property is +0.0152\*
+  (Holm 0.018).
+- Gold frames add +0.23 whether or not the model trained with them.
+
+**RD-12c** (the pilot's frames on the base models, 3 seeds):
+- `cycle − single` on property is +0.0056 (Holm 0.080, n.s.).
+- It is largest on `has_functional_parent`, the rediscovered relation (0.977 against 0.959).
+
+**Reading:** repeated reading adds a few usable facts, and passive training adds nothing on top of explicit recall.
+
 ## Limitations
-- The pilot measured use only through the implicit route, which does nothing on T4 even with gold frames (14.4).
+- The pilot (not the reruns) measured use only through the implicit route, which does nothing on T4 even with gold frames (14.4).
 - The passive recipe itself caused drift.
 - One seed.
 
 ## Next steps
-Queued, about 1.5 GPU-h, results expected 2026-10-20 evening:
-- **RD-12c:** the cycle's frames under selective recall.
-- **RD-12b:** the cycle rerun with a gentle passive phase:
-  - learning rate ×0.1, constant;
-  - definitions ×10;
-  - general rehearsal text;
-  - two no-training controls;
-  - selective-recall scoring each round;
-  - a recipe gate requiring that the passive phase alone not hurt.
-
-  The CPU smoke run shows a −0.10% drift, passing the gate.
+Closed for T4.
+- Reading's ceiling is the text (14.1) and routing (14.6), not the number of rounds.
+- A T5 version, where the implicit route works, remains possible.

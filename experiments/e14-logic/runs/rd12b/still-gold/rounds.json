@@ -1,0 +1,48 @@
+{
+  "arm": "still-gold",
+  "run": "experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s1",
+  "tokens_per_round": 0,
+  "terms": 160,
+  "recipe": "gentle",
+  "smoke": false,
+  "rounds": [
+    {
+      "round": 0,
+      "arm": "still-gold",
+      "frames_per_term": 7.6625,
+      "gold_recall": 1.0,
+      "loss_after_read_terms": 1.7654159456513452,
+      "terms_with_windows": 112,
+      "items": {
+        "implicit": {
+          "property": 0.6125211505922166,
+          "paraphrase": 0.5786802030456852,
+          "entailment": 0.7309644670050761
+        },
+        "explicit": {
+          "property": 0.5448392554991539,
+          "paraphrase": 0.6294416243654822,
+          "entailment": 0.8629441624365483
+        },
+        "none": {
+          "property": 0.6209813874788493,
+          "paraphrase": 0.5989847715736041,
+          "entailment": 0.7055837563451777
+        },
+        "explicit_rel": {
+          "property": 0.8730964467005076,
+          "paraphrase": 0.8477157360406091,
+          "entailment": 0.9086294416243654
+        },
+        "none_plain": {
+          "property": 0.6209813874788493,
+          "paraphrase": 0.5989847715736041,
+          "entailment": 0.7055837563451777
+        }
+      },
+      "general_loss": 2.548661708831787,
+      "teacher_spent_usd": 0.0,
+      "seconds": 106.5
+    }
+  ]
+}

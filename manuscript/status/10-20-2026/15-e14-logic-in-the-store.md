@@ -287,7 +287,7 @@ Proposed: noisy or partial inputs.
 
 # 15.7 — The language model as the prover's search policy (LG-P)
 
-**Status:** tier P done; hard problems done; hybrid policy queued · **When:** 2026-10-19 to 2026-10-20 · **Sources:** `experiments/e14-logic/report/{lgp, lgp-hard}/`; `manuscript/findings/2026-10-20-e14-followups.md` §3
+**Status:** done (tier P, hard problems, hybrid policy) · **When:** 2026-10-19 to 2026-10-20 · **Sources:** `experiments/e14-logic/report/{lgp, lgp-hard, lgp-sos-score}/`; `manuscript/findings/2026-10-20-e14-followups.md` §3; `manuscript/findings/2026-10-20-e14-evening.md` §4
 
 ## Research gap
 The author asked whether the prover for full first-order logic could be the language model itself, in a ReAct-style
@@ -329,6 +329,12 @@ is valid.
 
   It ties set of support at budgets 10 and 30 and trails it at 100. The smaller hosts gain only at budget 30.
 - **Writing the step number (`react`) is worse than scoring the steps** (−0.12 to −0.20 on Qwen3-1.7B).
+- **The hybrid is best:** set of support orders the steps and the model breaks ties (`sos-score`). It beats set of
+  support at budgets 10 and 30 on every host.
+  - Qwen3-1.7B: +0.141\* and +0.096\*. At budget 10 set of support finds 0.199 of proofs; the hybrid finds 0.340.
+  - Nothing changes at budget 100.
+  - The prediction for Qwen3-1.7B was met. The prediction that the SmolLM2 hosts would show no gain was not: the
+    135M host gains +0.096\* and +0.064\*.
 
 ## Limitations
 - Base models only.
@@ -336,5 +342,4 @@ is valid.
 - A weak chain-of-thought baseline (160 new tokens).
 
 ## Next steps
-Queued: the hybrid `sos-score` policy (set of support's order, the model breaking ties); results expected 2026-10-20
-evening. Proposed: premise retrieval at 10⁴–10⁵ clauses.
+The hybrid is done. Premise retrieval at 10⁴–10⁵ clauses is approved (tier F, 2026-10-20) and being built.

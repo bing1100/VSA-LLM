@@ -10,11 +10,14 @@ Sets (`build --sets`, default all; seed 1 by default):
 - `fewshot` — LG-C4: 4 rule kinds × k ∈ {1, 3, 5, 10} × 100.
 - `edits` — LG-C5: 300 class edits × 3 hops plus 300 locality questions.
 - `trees` — LG-D: 600 trees (depth 2/3/4/6), 300 lists (length 3/6/12), 200 tree edits.
+- `trees-noisy` (command `noisy`, not part of `build`) — LG-D2: 600 trees whose records are corrupted at 10% and 30%
+  (wrong or missing values); exact and soft executor paths; SHA-256-seeded stores (pre-registration §19).
 
 Item files are written gzipped to `--output` (default `~/data/vsa-llm/e14/items/`); a manifest with counts, conditions and
 SHA-256 goes to `experiments/e14-logic/items/manifest-<seed>.json`.
 
     python -m vsa_embed.experiments.e14_items build [--seed 1] [--sets taxonomy,trees] [--scale 1.0]
+    python -m vsa_embed.experiments.e14_items noisy [--seed 1]        # LG-D2, set `trees-noisy` (pre-registration §19)
 """
 
 from __future__ import annotations
@@ -339,6 +342,86 @@ def run_verdict(args: argparse.Namespace) -> dict[str, Any]:
     return manifest
 
 
+# -- LG-D2: decision trees on noisy or partial records (pre-registration §19) ------------------------------------------------
+
+NOISY_SET = "trees-noisy"
+
+
+def noisy_record_text(entity: str, record: dict[str, Any]) -> str:
+    return f"{entity}: " + "; ".join(f"{k} is {'unknown' if v is None else v}" for k, v in record.items()) + "."
+
+
+def noisy_trees_set(seed: int, *, scale: float = 1.0, width: int = 512, namer: W.Namer | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """LG-D2 items (`world.noisy_trees`; gold = the outcome on the true record; options = the item's 6 outcomes) with the clean
+    references `tree-text`, `path-vsa` and, per noise level p, `none@p`, `tree-text@p`, `path-vsa@p`, `path-vsa-soft@p`,
+    `path-sym-soft@p`. Returns the rows and the build statistics (executor ceilings, presence detection)."""
+    world = W.noisy_trees(seed, inputs_per_depth=max(2, int(150 * scale)), namer=namer or W.Namer(seed + 40))
+    out: list[dict[str, Any]] = []
+    stats: dict[str, Any] = {"ceilings": {}, "detection": {}, "affected": {}}
+    ceil: dict[str, list[int]] = {}
+    det: dict[str, list[int]] = {}
+    for item in world["items"]:
+        ent = item["entity"]
+        policy = "\n".join(["Policy:"] + W.tree_text(item["tree"]))
+        options = [" " + o for o in item["outcomes"]]
+        random.Random(f"trees-noisy-options:{seed}:{item['id']}").shuffle(options)
+        index = lambda answer: options.index(" " + answer)  # noqa: E731
+        clean = S.NoisyTreeStore(item, item["record"], width=width, seed=seed).execute()
+        conds = {"tree-text": noisy_record_text(ent, item["record"]) + "\n" + policy,
+                 "path-vsa": noisy_record_text(ent, item["record"]) + "\n" + clean.text(ent)}
+        ceil.setdefault("path-vsa", []).append(int(clean.answer == item["answer"]))
+        meta: dict[str, Any] = {}
+        on_path = [s["test"]["attr"] for s in item["path"]]
+        for p, nz in item["noisy"].items():
+            rec, corrupted = nz["record"], nz["corrupted"]
+            rt = noisy_record_text(ent, rec)
+            store = S.NoisyTreeStore(item, rec, width=width, seed=seed)
+            exact = store.execute()
+            soft_t, soft_a, _ = store.execute_soft(ent)
+            sym_t, sym_a, _ = S.noisy_tree_symbolic(item, rec, soft=True)
+            _, sym_exact_a, _ = S.noisy_tree_symbolic(item, rec, soft=False)
+            conds[f"none@{p}"] = rt
+            conds[f"tree-text@{p}"] = rt + "\n" + policy
+            conds[f"path-vsa@{p}"] = rt + "\n" + exact.text(ent)
+            conds[f"path-vsa-soft@{p}"] = rt + "\n" + soft_t
+            conds[f"path-sym-soft@{p}"] = rt + "\n" + sym_t
+            meta[p] = {"corrupted": len(corrupted), "affected": any(a in corrupted for a in on_path),
+                       "missing_on_path": any(corrupted.get(a) == "missing" for a in on_path),
+                       "wrong_on_path": any(corrupted.get(a) == "wrong" for a in on_path),
+                       "exec": {"path-vsa": index(exact.answer), "path-vsa-soft": index(soft_a), "path-sym-soft": index(sym_a),
+                                "path-sym": index(sym_exact_a)}}
+            for name, ans in (("path-vsa", exact.answer), ("path-vsa-soft", soft_a), ("path-sym-soft", sym_a), ("path-sym", sym_exact_a)):
+                ceil.setdefault(f"{name}@{p}", []).append(int(ans == item["answer"]))
+            ceil.setdefault(f"agree path-vsa=path-sym@{p}", []).append(int(exact.answer == sym_exact_a))
+            for a in item["attributes"]:                              # presence detection on every attribute of the record
+                present, _, _ = store.present(a["name"])
+                det.setdefault(f"{p}|{'missing' if rec[a['name']] is None else 'present'}", []).append(int(present))
+            stats["affected"].setdefault(p, []).append(int(meta[p]["affected"]))
+        out.append({"id": item["id"], "set": NOISY_SET, "world": "trees-noisy", "kind": "tree", "depth": item["depth"],
+                    "numeric": item["numeric"], "format": "mc", "question": f"Question: Under the policy, what happens to {ent}?\nAnswer:",
+                    "options": options, "gold": index(item["answer"]), "contexts": conds, "noise": meta})
+    stats["ceilings"] = {k: {"accuracy": float(sum(v) / len(v)), "n": len(v)} for k, v in sorted(ceil.items())}
+    stats["detection"] = {k: {"detected_present": float(sum(v) / len(v)), "n": len(v)} for k, v in sorted(det.items())}
+    stats["affected"] = {p: float(sum(v) / len(v)) for p, v in stats["affected"].items()}
+    stats["presence_threshold"] = S.NoisyTreeStore.PRESENCE
+    return out, stats
+
+
+def run_noisy(args: argparse.Namespace) -> dict[str, Any]:
+    rows, stats = noisy_trees_set(args.seed, scale=args.scale, width=args.width)
+    path = Path(args.output) / f"{NOISY_SET}-s{args.seed}.jsonl.gz"
+    if path.exists() and not args.overwrite:
+        raise FileExistsError(f"{path} exists (pass --overwrite to replace it)")
+    sha = write_set(rows, path)
+    manifest = {"seed": args.seed, "scale": args.scale, "width": args.width, "set": NOISY_SET, "path": str(path), "items": len(rows),
+                "sha256": sha, "conditions": sorted({c for r in rows for c in r["contexts"]}), **stats}
+    Path(args.manifest_dir).mkdir(parents=True, exist_ok=True)
+    (Path(args.manifest_dir) / f"manifest-noisy-s{args.seed}.json").write_text(json.dumps(manifest, indent=1) + "\n")
+    print(f"{NOISY_SET}: {len(rows)} items -> {path}")
+    print(json.dumps({k: manifest[k] for k in ("ceilings", "detection", "affected")}, indent=1))
+    return manifest
+
+
 def run_build(args: argparse.Namespace) -> dict[str, Any]:
     sets = [s.strip() for s in args.sets.split(",")] if args.sets else list(BUILDERS)
     namer = W.Namer(args.seed)
@@ -371,8 +454,12 @@ def main(argv: list[str] | None = None) -> None:
     v.add_argument("--seed", type=int, default=1)
     v.add_argument("--output", type=Path, default=OUT)
     v.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
+    n = sub.add_parser("noisy", help="LG-D2 trees on noisy or partial records (pre-registration §19); not part of `build`")
+    n.add_argument("--seed", type=int, default=1); n.add_argument("--scale", type=float, default=1.0); n.add_argument("--width", type=int, default=512)
+    n.add_argument("--output", type=Path, default=OUT); n.add_argument("--manifest-dir", type=Path, default=MANIFEST_DIR)
+    n.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)
-    {"build": run_build, "verdict": run_verdict}[args.command](args)
+    {"build": run_build, "verdict": run_verdict, "noisy": run_noisy}[args.command](args)
 
 
 if __name__ == "__main__":

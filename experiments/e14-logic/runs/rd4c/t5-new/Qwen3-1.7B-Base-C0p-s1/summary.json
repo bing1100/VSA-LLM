@@ -1,0 +1,572 @@
+{
+  "source": {
+    "run": "experiments/e9-retrofit/runs/t5-qwen3/Qwen3-1.7B-Base-lora-C0p-s1",
+    "checkpoint": "final.pt",
+    "condition": "C0p",
+    "seed": 1,
+    "size": "Qwen/Qwen3-1.7B-Base/lora",
+    "channel_mode": "none",
+    "channel": {
+      "mode": "none",
+      "operator": "hrr",
+      "composition": "attentive",
+      "dimension": 256,
+      "key_dimension": 32,
+      "context_window": 0,
+      "gate_bias": -2.0,
+      "hashed_buckets": 0,
+      "developmental": null,
+      "concept_factor": "induced",
+      "free_dimension": 0,
+      "frames": "ontology"
+    },
+    "experiment": "e9-t5-qwen3-Qwen3-1.7B-Base-lora-C0p-s1",
+    "run_git_sha": "f75467cb08b99ff5b6e0d48de881d2f09f1ef42b",
+    "ontology": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/ontology.pt",
+    "eval_corpus": "/home/bhux/data/vsa-llm/tracks/t5-glossary/v1-qwen3/eval",
+    "min_subtokens": 2,
+    "tokenizer": "Qwen/Qwen3-0.6B-Base"
+  },
+  "frames_from": "experiments/e9-retrofit/runs/t5/SmolLM2-360M-full-C5-s1/e11-t5-new/frames.jsonl",
+  "smoke": false,
+  "family": "rd4c",
+  "set": {
+    "kind": "new",
+    "track": "t5",
+    "concepts": 300,
+    "items": 3658
+  },
+  "null": "plain",
+  "gold_in_frame_share": {
+    "oracle": 0.8037933289731851,
+    "stated": 0.8037933289731851,
+    "typeprior": 0.7573577501635056,
+    "linker": 0.3296272073250491
+  },
+  "style": "prose",
+  "conditions": [
+    "none",
+    "explicit-sym:oracle",
+    "explicit-rel:oracle",
+    "explicit-rel:typeprior",
+    "explicit-rel-wrong:oracle",
+    "explicit-route:lex:oracle",
+    "explicit-route:lm:oracle",
+    "explicit-route:top2:oracle",
+    "explicit-route:lex:typeprior",
+    "explicit-route:lm:typeprior",
+    "explicit-route:top2:typeprior",
+    "definition"
+  ],
+  "compose": false,
+  "vsa": false,
+  "context_budget": 1024,
+  "readers": {
+    "oracle": 300,
+    "stated": 300,
+    "typeprior": 300,
+    "linker": 290
+  },
+  "diagnostics": {
+    "none": {},
+    "explicit-sym:oracle": {},
+    "explicit-rel:oracle": {
+      "lines_per_item": 2.0705303444505194,
+      "items_without_lines": 0
+    },
+    "explicit-rel:typeprior": {
+      "lines_per_item": 2.0256971022416623,
+      "items_without_lines": 110
+    },
+    "explicit-rel-wrong:oracle": {
+      "lines_per_item": 2.0705303444505194,
+      "items_without_lines": 0,
+      "corrupted_share": 1.0
+    },
+    "explicit-route:lex:oracle": {
+      "lines_per_item": 1.01667577911427,
+      "route_accuracy": 0.3917593198168738,
+      "routable_items": 3058
+    },
+    "explicit-route:lm:oracle": {
+      "lines_per_item": 1.0005467468562055,
+      "route_accuracy": 0.1998037933289732,
+      "routable_items": 3058
+    },
+    "explicit-route:top2:oracle": {
+      "lines_per_item": 2.1724986331328595,
+      "route_accuracy": 0.3858731196860693,
+      "routable_items": 3058
+    },
+    "explicit-route:lex:typeprior": {
+      "lines_per_item": 1.010114816839803,
+      "route_accuracy": 0.3914518317503392,
+      "routable_items": 2948
+    },
+    "explicit-route:lm:typeprior": {
+      "lines_per_item": 1.0005467468562055,
+      "route_accuracy": 0.2059023066485753,
+      "routable_items": 2948
+    },
+    "explicit-route:top2:typeprior": {
+      "lines_per_item": 2.112629852378349,
+      "route_accuracy": 0.35345997286295794,
+      "routable_items": 2948
+    },
+    "definition": {}
+  },
+  "context_tokens": {
+    "none": 0.0,
+    "explicit-sym:oracle": 155.935,
+    "explicit-rel:oracle": 51.675,
+    "explicit-rel:typeprior": 51.075,
+    "explicit-rel-wrong:oracle": 51.6475,
+    "explicit-route:lex:oracle": 29.4725,
+    "explicit-route:lm:oracle": 27.78,
+    "explicit-route:top2:oracle": 52.935,
+    "explicit-route:lex:typeprior": 29.11,
+    "explicit-route:lm:typeprior": 27.78,
+    "explicit-route:top2:typeprior": 50.845,
+    "definition": 101.015
+  },
+  "context_samples": {
+    "explicit-sym:oracle": "recall(steindsoxvinquux):\n- steindsoxvinquux is a tool. (1.00)\n- steindsoxvinquux belongs to the finance area. (1.00)\n- steindsoxvinquux plans headcount. (1.00)\n- steindsoxvinquux is currently deprecated. (1.00)\n- steindsoxvinquux is classified as tier 3. (1.00)\n- steindsoxvinquux is owned by the Bairksai Squad. (1.00)",
+    "explicit-rel:oracle": "recall(steindsoxvinquux):\n- steindsoxvinquux belongs to the finance area. (1.00)",
+    "explicit-rel:typeprior": "recall(steindsoxvinquux):\n- steindsoxvinquux belongs to the finance area. (1.00)",
+    "explicit-rel-wrong:oracle": "recall(steindsoxvinquux):\n- steindsoxvinquux belongs to the sales area. (1.00)",
+    "explicit-route:lex:oracle": "recall(steindsoxvinquux):\n- steindsoxvinquux is a tool. (1.00)",
+    "explicit-route:lm:oracle": "recall(steindsoxvinquux):\n- steindsoxvinquux is a tool. (1.00)",
+    "explicit-route:top2:oracle": "recall(steindsoxvinquux):\n- steindsoxvinquux is a tool. (1.00)\n- steindsoxvinquux is classified as tier 3. (1.00)",
+    "explicit-route:lex:typeprior": "recall(steindsoxvinquux):\n- steindsoxvinquux is a tool. (1.00)",
+    "explicit-route:lm:typeprior": "recall(steindsoxvinquux):\n- steindsoxvinquux is a tool. (1.00)",
+    "explicit-route:top2:typeprior": "recall(steindsoxvinquux):\n- steindsoxvinquux is a tool. (1.00)\n- steindsoxvinquux is classified as tier 3. (1.00)",
+    "definition": "In our organisation, steindsoxvinquux is a tool in the finance domain whose main job is that it plans headcount. Steindsoxvinquux gets tier 3 support. For now, steindsoxvinquux has deprecated status. Responsibility for steindsoxvinquux rests with the Bairksai Squad."
+  },
+  "timings": {
+    "none": 80.66,
+    "explicit-sym:oracle": 474.63,
+    "explicit-rel:oracle": 206.93,
+    "explicit-rel:typeprior": 205.14,
+    "explicit-rel-wrong:oracle": 206.77,
+    "explicit-route:lex:oracle": 187.13,
+    "explicit-route:lm:oracle": 359.31,
+    "explicit-route:top2:oracle": 416.37,
+    "explicit-route:lex:typeprior": 186.13,
+    "explicit-route:lm:typeprior": 359.54,
+    "explicit-route:top2:typeprior": 413.83,
+    "definition": 362.61
+  },
+  "items": {
+    "means": {
+      "none": {
+        "property": [
+          0.17560497056899935,
+          1529
+        ],
+        "property_new": [
+          0.1899918633034988,
+          1229
+        ],
+        "paraphrase": [
+          0.3669064748201439,
+          1529
+        ],
+        "entailment": [
+          0.46166666666666667,
+          600
+        ],
+        "statement_accuracy": [
+          0.2393721386527142,
+          1529
+        ],
+        "statement_loss": [
+          4.294040074077352,
+          1529
+        ]
+      },
+      "explicit-sym:oracle": {
+        "property": [
+          0.7720732504905167,
+          1529
+        ],
+        "property_new": [
+          0.8368592351505288,
+          1229
+        ],
+        "paraphrase": [
+          0.6991497710922171,
+          1529
+        ],
+        "entailment": [
+          0.8733333333333333,
+          600
+        ],
+        "statement_accuracy": [
+          0.8031393067364291,
+          1529
+        ],
+        "statement_loss": [
+          2.2639484086903043,
+          1529
+        ]
+      },
+      "explicit-rel:oracle": {
+        "property": [
+          0.7789404839764552,
+          1529
+        ],
+        "property_new": [
+          0.8096013018714402,
+          1229
+        ],
+        "paraphrase": [
+          0.6690647482014388,
+          1529
+        ],
+        "entailment": [
+          0.875,
+          600
+        ],
+        "statement_accuracy": [
+          0.843034663178548,
+          1529
+        ],
+        "statement_loss": [
+          2.322412443808004,
+          1529
+        ]
+      },
+      "explicit-rel:typeprior": {
+        "property": [
+          0.749836494440811,
+          1529
+        ],
+        "property_new": [
+          0.772986167615948,
+          1229
+        ],
+        "paraphrase": [
+          0.6540222367560498,
+          1529
+        ],
+        "entailment": [
+          0.87,
+          600
+        ],
+        "statement_accuracy": [
+          0.8109875735775016,
+          1529
+        ],
+        "statement_loss": [
+          2.4706329226250157,
+          1529
+        ]
+      },
+      "explicit-rel-wrong:oracle": {
+        "property": [
+          0.15336821451929367,
+          1529
+        ],
+        "property_new": [
+          0.17005695687550854,
+          1229
+        ],
+        "paraphrase": [
+          0.4349247874427731,
+          1529
+        ],
+        "entailment": [
+          0.43,
+          600
+        ],
+        "statement_accuracy": [
+          0.1948986265533028,
+          1529
+        ],
+        "statement_loss": [
+          4.763379051840365,
+          1529
+        ]
+      },
+      "explicit-route:lex:oracle": {
+        "property": [
+          0.5693263570961413,
+          1529
+        ],
+        "property_new": [
+          0.54759967453214,
+          1229
+        ],
+        "paraphrase": [
+          0.5487246566383257,
+          1529
+        ],
+        "entailment": [
+          0.5266666666666666,
+          600
+        ],
+        "statement_accuracy": [
+          0.3512099411379987,
+          1529
+        ],
+        "statement_loss": [
+          3.857076084875688,
+          1529
+        ]
+      },
+      "explicit-route:lm:oracle": {
+        "property": [
+          0.2854807063440157,
+          1529
+        ],
+        "property_new": [
+          0.19568755085435313,
+          1229
+        ],
+        "paraphrase": [
+          0.41137998691955524,
+          1529
+        ],
+        "entailment": [
+          0.5383333333333333,
+          600
+        ],
+        "statement_accuracy": [
+          0.34990189666448657,
+          1529
+        ],
+        "statement_loss": [
+          3.891046284911959,
+          1529
+        ]
+      },
+      "explicit-route:top2:oracle": {
+        "property": [
+          0.40745585349901897,
+          1529
+        ],
+        "property_new": [
+          0.35842148087876324,
+          1229
+        ],
+        "paraphrase": [
+          0.4643557880967953,
+          1529
+        ],
+        "entailment": [
+          0.6233333333333333,
+          600
+        ],
+        "statement_accuracy": [
+          0.48463047743623283,
+          1529
+        ],
+        "statement_loss": [
+          3.3349405920014115,
+          1529
+        ]
+      },
+      "explicit-route:lex:typeprior": {
+        "property": [
+          0.5431654676258992,
+          1529
+        ],
+        "property_new": [
+          0.516273393002441,
+          1229
+        ],
+        "paraphrase": [
+          0.5323741007194245,
+          1529
+        ],
+        "entailment": [
+          0.5233333333333333,
+          600
+        ],
+        "statement_accuracy": [
+          0.3544800523217789,
+          1529
+        ],
+        "statement_loss": [
+          3.8381496985592687,
+          1529
+        ]
+      },
+      "explicit-route:lm:typeprior": {
+        "property": [
+          0.2818835840418574,
+          1529
+        ],
+        "property_new": [
+          0.19243287225386493,
+          1229
+        ],
+        "paraphrase": [
+          0.41007194244604317,
+          1529
+        ],
+        "entailment": [
+          0.5383333333333333,
+          600
+        ],
+        "statement_accuracy": [
+          0.3485938521909745,
+          1529
+        ],
+        "statement_loss": [
+          3.8909108278359894,
+          1529
+        ]
+      },
+      "explicit-route:top2:typeprior": {
+        "property": [
+          0.37410071942446044,
+          1529
+        ],
+        "property_new": [
+          0.3193653376729048,
+          1229
+        ],
+        "paraphrase": [
+          0.44669718770438194,
+          1529
+        ],
+        "entailment": [
+          0.5983333333333334,
+          600
+        ],
+        "statement_accuracy": [
+          0.4578155657292348,
+          1529
+        ],
+        "statement_loss": [
+          3.465428690801163,
+          1529
+        ]
+      },
+      "definition": {
+        "property": [
+          0.8067364290385873,
+          1529
+        ],
+        "property_new": [
+          0.8763222131814483,
+          1229
+        ],
+        "paraphrase": [
+          0.6736429038587312,
+          1529
+        ],
+        "entailment": [
+          0.8766666666666667,
+          600
+        ],
+        "statement_accuracy": [
+          0.8188358404185743,
+          1529
+        ],
+        "statement_loss": [
+          2.4135958330105898,
+          1529
+        ]
+      }
+    },
+    "primary": [
+      {
+        "a": "explicit-sym:oracle",
+        "b": "none",
+        "test": "property",
+        "mean": 0.5964682799215173,
+        "ci_low": 0.5761935905820798,
+        "ci_high": 0.6164159581425769,
+        "n": 1529,
+        "p_value": 0.0004998750312421895,
+        "p_holm": 0.0014996250937265685
+      },
+      {
+        "a": "explicit-sym:oracle",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": 0.3322432962720733,
+        "ci_low": 0.30150425114453894,
+        "ci_high": 0.3623283191628515,
+        "n": 1529,
+        "p_value": 0.0004998750312421895,
+        "p_holm": 0.0014996250937265685
+      },
+      {
+        "a": "explicit-sym:oracle",
+        "b": "none",
+        "test": "entailment",
+        "mean": 0.4116666666666667,
+        "ci_low": 0.36833333333333335,
+        "ci_high": 0.455,
+        "n": 600,
+        "p_value": 0.0004998750312421895,
+        "p_holm": 0.0014996250937265685
+      }
+    ],
+    "secondary": [
+      {
+        "a": "definition",
+        "b": "explicit-sym:oracle",
+        "test": "property",
+        "mean": 0.03466317854807063,
+        "ci_low": 0.020274689339437543,
+        "ci_high": 0.04905166775670373,
+        "n": 1529,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "explicit-sym:oracle",
+        "test": "paraphrase",
+        "mean": -0.025506867233485938,
+        "ci_low": -0.043181818181818175,
+        "ci_high": -0.007848266841072597,
+        "n": 1529,
+        "p_value": 0.005498625343664084
+      },
+      {
+        "a": "definition",
+        "b": "explicit-sym:oracle",
+        "test": "entailment",
+        "mean": 0.0033333333333333335,
+        "ci_low": -0.018333333333333333,
+        "ci_high": 0.023333333333333334,
+        "n": 600,
+        "p_value": 0.8082979255186203
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "property",
+        "mean": 0.631131458469588,
+        "ci_low": 0.6128188358404185,
+        "ci_high": 0.6494440810987574,
+        "n": 1529,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "paraphrase",
+        "mean": 0.30673642903858733,
+        "ci_low": 0.2753433616742969,
+        "ci_high": 0.3381294964028777,
+        "n": 1529,
+        "p_value": 0.0004998750312421895
+      },
+      {
+        "a": "definition",
+        "b": "none",
+        "test": "entailment",
+        "mean": 0.415,
+        "ci_low": 0.3732916666666667,
+        "ci_high": 0.4583333333333333,
+        "n": 600,
+        "p_value": 0.0004998750312421895
+      }
+    ]
+  }
+}

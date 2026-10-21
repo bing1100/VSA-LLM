@@ -131,3 +131,97 @@ def test_algebra_experiments_quick() -> None:
     assert A.apply_rules(facts, rules)["h0"] == R.datalog(facts, rules)["h0"]
     p, r, f = A.prf({1, 2}, {2, 3})
     assert (p, r, f) == (0.5, 0.5, 0.5)
+
+
+# -- addendum 8 (pre-registration §19): LG-D2 noisy records, X8b irregular trees, X7b statistics, LG-P3b retrieval at scale --
+
+def test_missing_split_and_soft_reference() -> None:
+    attrs = [{"name": "hue", "values": ["a", "b", "c", "d"]}, {"name": "size score", "values": None}]
+    p, yes, no = R.missing_split({"attr": "hue", "op": "is", "value": "b"}, attrs, {})
+    assert p == 0.25 and yes["hue"] == {"b"} and no["hue"] == {"a", "c", "d"}
+    p2, _, _ = R.missing_split({"attr": "hue", "op": "is", "value": "b"}, attrs, no)               # already excluded on this path
+    assert p2 == 0.0
+    q, yes, no = R.missing_split({"attr": "size score", "op": "le", "value": 40}, attrs, {})
+    assert abs(q - 41 / 101) < 1e-12 and yes["size score"] == (0, 40) and no["size score"] == (41, 100)
+    tree = {"test": {"attr": "hue", "op": "is", "value": "b"}, "yes": {"leaf": "X"},
+            "no": {"test": {"attr": "size score", "op": "le", "value": 40}, "yes": {"leaf": "Y"}, "no": {"leaf": "X"}}}
+    dist = R.tree_leaf_distribution(tree, {"hue": None, "size score": 70}, attrs)
+    assert abs(dist["X"] - 1.0) < 1e-12                                                            # both branches end in X here
+    dist = R.tree_leaf_distribution(tree, {"hue": None, "size score": None}, attrs)
+    assert abs(sum(dist.values()) - 1) < 1e-12 and abs(dist["Y"] - 0.75 * 41 / 101) < 1e-12
+    assert R.run_tree_missing(tree, {"hue": None, "size score": 10})[0] == "Y"                      # missing: the otherwise branch
+
+
+def test_noisy_trees_items_and_stores() -> None:
+    world = W.noisy_trees(2, depths=(2, 4), inputs_per_depth=6, namer=NAMER(42))
+    for item in world["items"]:
+        assert R.run_tree(item["tree"], item["record"])[0] == item["answer"]
+        lo, hi = item["noisy"]["0.1"]["corrupted"], item["noisy"]["0.3"]["corrupted"]
+        assert set(lo) <= set(hi) and all(hi[a] == k for a, k in lo.items())                     # coupled noise levels
+        for p, nz in item["noisy"].items():
+            for a, kind in nz["corrupted"].items():
+                assert (nz["record"][a] is None) == (kind == "missing") and nz["record"][a] != item["record"][a]
+            store = S.NoisyTreeStore(item, nz["record"], width=1024, seed=1)
+            assert store.execute().answer == R.run_tree_missing(item["tree"], nz["record"])[0]     # presence detection works
+            _, soft, dist = store.execute_soft(item["entity"])
+            exact = R.tree_leaf_distribution(item["tree"], nz["record"], item["attributes"])
+            assert abs(exact.get(soft, 0.0) - max(exact.values())) < 1e-6 and abs(sum(dist.values()) - 1) < 1e-6
+    rows, stats = items_mod.noisy_trees_set(2, scale=0.02, width=512, namer=NAMER(42))
+    assert rows and stats["ceilings"]["path-vsa"]["accuracy"] >= 0.9
+    for r in rows:
+        assert len(r["options"]) == 6 and 0 <= r["gold"] < 6 and len(r["contexts"]) == 12
+        assert all(0 <= v < 6 for p in r["noise"] for v in r["noise"][p]["exec"].values())
+    assert "trees-noisy" not in items_mod.BUILDERS                                                  # `build`'s default sets unchanged
+
+
+def test_stable_codebook_is_process_independent() -> None:
+    import subprocess
+    code = "from vsa_embed.logic.store import StableCodebook, Codebook; print(StableCodebook(64, 1).filler('abc')[:3].tolist())"
+    outs = set()
+    for salt in ("1", "2"):
+        env = {**__import__("os").environ, "PYTHONHASHSEED": salt, "CUDA_VISIBLE_DEVICES": ""}
+        outs.add(subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True).stdout.strip().splitlines()[-1])
+    assert len(outs) == 1
+
+
+def test_x8b_layouts_quick() -> None:
+    from vsa_embed.experiments import e14_concat as C
+    import random
+    rng = random.Random(0)
+    for fam in C.X8B_FAMILIES:
+        tree = C.x8b_tree(rng, fam, 8)
+        shape = C.x8b_shape(tree)
+        assert shape["depth"] == 8 and shape["leaves"] == shape["internal"] + 1
+        nodes, sizes, _ = C._preorder(tree)
+        assert sizes[0] == len(nodes) and all(sizes[i] == 1 for i, n in enumerate(nodes) if "leaf" in n)
+        xs, classes, lengths = C.x8b_inputs(rng, tree, 20)
+        assert len(xs) == 20 and max(lengths) <= 8
+    rows = C.x8b(1, depths=(8,), families=("spine", "gw"), trees_per_cell=1, inputs_per_tree=20)
+    acc = {(r["family"], r["layout"], r["block_width"]): r["accuracy"] for r in rows}
+    assert all(acc[(f, lay, w)] == 1.0 for f in ("spine", "gw") for lay in ("preorder-concat", "heap-concat") for w in (64, 256))
+    assert all(acc[(f, "preorder-vsa", 256)] >= 0.95 for f in ("spine", "gw"))
+
+
+def test_x7b_cluster_bootstrap() -> None:
+    import numpy as np
+    from vsa_embed.experiments import e14_concat as C
+    zero = C.cluster_bootstrap(np.zeros(10), [0, 0, 1, 1, 2, 2, 3, 3, 4, 4], resamples=200)
+    assert zero["mean"] == 0 and zero["p_value"] == 1.0 and zero["n_entries"] == 5
+    pos = C.cluster_bootstrap(np.ones(40) * 0.1, list(range(20)) * 2, resamples=200)
+    assert abs(pos["mean"] - 0.1) < 1e-12 and pos["ci_low"] > 0 and pos["p_value"] < 0.05
+
+
+def test_p3b_names_and_retrieval_small() -> None:
+    assert "abd" in prover.edits1("abcd") and "abxcd" in prover.edits1("abcd") and "abcd" not in prover.edits1("abcd")
+    for regime in prover.P3B_NAMES:
+        names = prover.p3b_class_names(1, 40, regime)
+        assert len(names) == len(set(names)) == 40
+    nd = prover.p3b_class_names(1, 40, "near-dup")
+    assert all(v in prover.edits1(nd[i - i % 4]) for i, v in enumerate(nd) if i % 4)                # clusters of one-edit variants
+    rows = prover.retrieval_scale_study(1, sizes=(50,), widths=(512,), queries=20, log=lambda *a: None)
+    get = {(r["names"], r["codes"], r["query"], r["method"]): r for r in rows}
+    for regime in prover.P3B_NAMES:
+        assert get[(regime, "-", "exact", "exact")]["recall_at_5"] == 1.0
+        assert get[(regime, "-", "typo", "exact")]["recall_at_5"] == 0.0
+        assert get[(regime, "random", "exact", "vsa")]["recall_at_5"] >= 0.95
+    assert get[("independent", "-", "typo", "exact+edit1")]["recall_at_5"] > 0.9

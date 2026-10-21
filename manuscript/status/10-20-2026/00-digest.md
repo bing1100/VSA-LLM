@@ -88,12 +88,17 @@ organise the evidence.
   (14.2).
 - **Frames read into the term's vector help invented words a little** (+0.031\*) and not real chemistry (11.1).
 - **Frames recalled as text help a lot** (14.5).
-- **The realistic pipeline helps on real chemistry** (preliminary, 14.6): a real reader plus the model's own choice of
-  relation gives +0.10\*. Choosing the relation costs about 8 points when the frame is full.
+- **The realistic pipeline helps** (14.6): a real reader plus the model's own choice of relation gives +0.10\* on real
+  chemistry and +0.11\* on new words.
+- **Choosing the relation is now the bottleneck.** It costs 8 points on T4 and 54 points on T5: the model's router picks
+  the asked relation only 21–78% of the time. A learned router is approved and being built.
+- **Selective recall holds on Qwen3 hosts** (+0.17 to +0.62\*).
 - **The self-learning loops are negative so far:**
   - E10's active plus passive learning is not faster (10.3);
-  - the read → train → read pilot (RD-12) was null, and its passive phase drifted (14.7).
-  - Both are being re-tested: RD-12b and RD-12c (queued tonight), and E13 (from about 25 October).
+  - the read → train → read cycle (RD-12) adds nothing through the loss, even with a passive phase that no longer drifts
+    (RD-12b);
+  - the cycle's extra facts help only a little through selective recall (+0.015\*) (14.7);
+  - E13 tests the full cycle from about 25 October.
 
 ### Q5. Can logic run inside the store, and does it help a model?
 
@@ -106,6 +111,8 @@ organise the evidence.
   questions even with the answer stated, and succeed in fill-in-the-blank form (15.4–15.5).
 - **A 1.7B model guides a sound prover** on hard problems (+0.11 to +0.15\* over random search). Soundness comes from
   the tools (15.7).
+- **The best prover is a hybrid:** a symbolic heuristic orders the steps and the model breaks ties, beating either alone
+  (+0.14\* over set of support at budget 10).
 
 ### Also
 
@@ -142,8 +149,8 @@ organise the evidence.
 | [11](11-e11-read-to-learn.md) | E11: read to learn | partly done | Read frames help invented words a little and real text not at all. Text routes win. |
 | [12](12-e12-explicit-recall.md) | E12: explicit recall | done | Decoding the store into the prompt resolves roles, on synthetic and real text. |
 | [13](13-e13-learning-cycle.md) | E13: the learning cycle | queued; amendment 3 approved | No results yet. T5 about 25–26 October, T7-ROOD about 30 October. |
-| [14](14-e14-reading-real-text.md) | E14: reading facts from real text | done; RD-4c, RD-12b and RD-12c running | Text states about 12% of facts. Selective recall works (+0.25 / +0.66). Routing costs about 8 points. |
-| [15](15-e14-logic-in-the-store.md) | E14: logic in the store | done; hybrid prover queued | An exact executor with a readable interface. Not better than symbols. A 1.7B model guides proofs. |
+| [14](14-e14-reading-real-text.md) | E14: reading facts from real text | done | Text states about 12% of facts. Selective recall works (+0.25 / +0.66) and holds on Qwen3. Routing is the new bottleneck. The cycle adds little. |
+| [15](15-e14-logic-in-the-store.md) | E14: logic in the store | done | An exact executor with a readable interface. Not better than symbols. A model plus a heuristic proves best. |
 | [16](16-infrastructure-and-validation.md) | Reproduction, benchmarks, judge, toolkit, queue | done / partly queued | Results reproduce. The harnesses are validated. The toolkit write and learn evaluations are queued. |
 
 ## 4. What is running, and when it lands
@@ -152,7 +159,7 @@ organise the evidence.
 
 | Block | Lands about |
 |---|---|
-| E14 follow-ups (RD-4c, RD-12b, RD-12c, the hybrid prover) | 20 October, evening |
+| E14 follow-ups (RD-4c, RD-12b, RD-12c, the hybrid prover) | **landed** 20 October; `manuscript/findings/2026-10-20-e14-evening.md` |
 | Qwen3 retrofit evaluations; the T7-ROOD block (the decisive new-vocabulary test) | 24 October |
 | E13 on T5 | 25–26 October |
 | T8 (Wikidata) | 27 October |

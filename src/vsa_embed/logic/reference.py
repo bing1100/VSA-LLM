@@ -2,6 +2,8 @@
 
 - `taxonomy_closure` — the entity's derived classes (with the rule path that reaches each) and excluded classes.
 - `run_tree` / `run_list` — exact execution of a decision tree (with the path) and a decision list (first match, default).
+- `run_tree_missing` / `tree_leaf_distribution` — LG-D2 (pre-registration §19): a tree on a record with missing values
+  (None), the exact run with the "otherwise" convention and the exact outcome distribution under the values' priors.
 - `prove` — entailment for the one-entity first-order fragment of `world.fol` (unary predicates over one constant, so the
   problem is propositional): DPLL on the knowledge base plus the negated goal. Complete and sound.
 - `datalog` — semi-naive forward chaining for binary-relation rules (LG-A3): rules of the shapes
@@ -63,6 +65,57 @@ def run_tree(tree: dict[str, Any], record: dict[str, Any]) -> tuple[str, list[di
         path.append({"test": node["test"], "value": record[node["test"]["attr"]], "result": result})
         node = node["yes"] if result else node["no"]
     return node["leaf"], path
+
+
+def missing_split(test: dict[str, Any], attributes: Sequence[dict[str, Any]], known: dict[str, Any]) -> tuple[float, dict, dict]:
+    """For a test on a missing value: P(test holds) under the generator's prior (uniform over the values; uniform over the
+    integers 0–100), given what earlier tests on the same path implied (`known`: per attribute the allowed set of values or the
+    (low, high) interval), and that knowledge after the yes and the no branch. Unconstrained, P = 1/|values| for "is v" and
+    (t + 1)/101 for "at most t"."""
+    name = test["attr"]
+    attr = next(a for a in attributes if a["name"] == name)
+    if attr["values"]:
+        allowed = known.get(name, frozenset(attr["values"]))
+        p = (1.0 if test["value"] in allowed else 0.0) / max(1, len(allowed))
+        return p, {**known, name: frozenset({test["value"]}) & allowed}, {**known, name: allowed - {test["value"]}}
+    lo, hi = known.get(name, (0, 100))
+    t = int(test["value"])
+    span = max(0, hi - lo + 1)
+    p = max(0, min(hi, t) - lo + 1) / span if span else 0.0
+    return p, {**known, name: (lo, min(hi, t))}, {**known, name: (max(lo, t + 1), hi)}
+
+
+def run_tree_missing(tree: dict[str, Any], record: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    """`run_tree` on a record whose missing values are None: a test on a missing value counts as not met (the "otherwise"
+    branch). LG-D2 (pre-registration §19)."""
+    path = []
+    node = tree
+    while "leaf" not in node:
+        value = record.get(node["test"]["attr"])
+        result = value is not None and holds(node["test"], record)
+        path.append({"test": node["test"], "value": value, "result": result})
+        node = node["yes"] if result else node["no"]
+    return node["leaf"], path
+
+
+def tree_leaf_distribution(tree: dict[str, Any], record: dict[str, Any], attributes: Sequence[dict[str, Any]]) -> dict[str, float]:
+    """The exact distribution over outcomes when every missing value (None) is drawn from its prior (`missing_split`): both
+    branches followed, weighted. LG-D2's soft reference."""
+    out: dict[str, float] = defaultdict(float)
+
+    def walk(node: dict[str, Any], w: float, known: dict[str, Any]) -> None:
+        if w <= 0:
+            return
+        if "leaf" in node:
+            out[node["leaf"]] += w
+            return
+        if record.get(node["test"]["attr"]) is None:
+            p, k_yes, k_no = missing_split(node["test"], attributes, known)
+            walk(node["yes"], w * p, k_yes); walk(node["no"], w * (1 - p), k_no)
+        else:
+            walk(node["yes"] if holds(node["test"], record) else node["no"], w, known)
+    walk(tree, 1.0, {})
+    return dict(out)
 
 
 def run_list(rules: Sequence[dict[str, Any]], default: str, record: dict[str, Any]) -> tuple[str, int | None]:

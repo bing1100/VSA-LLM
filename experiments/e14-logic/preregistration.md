@@ -785,3 +785,377 @@ still arms, then the report.
 - 6 arm jobs at 54.4959985: the four training arms about 0.25 GPU-h each, the two still arms about 0.05 each;
   about 1.2 GPU-h in all.
 - The report at 54.4959989.
+
+## 19. Addendum 8 (2026-10-20; X8b and LG-P3b written before they ran, X7b and LG-D2 before any queue entry): X7b, X8b, LG-D2 and LG-P3b (tier F)
+
+**Origin:** the author's approval of 2026-10-20 of the tier-F follow-ups proposed in the status file
+(`manuscript/status/10-20-2026/15-e14-logic-in-the-store.md` §§15.2, 15.6, 15.7): "approve all … run them and queue".
+- **X7b** answers 15.2's limitation that X7's ensemble has three times the width of one store.
+- **X8b** answers 15.2's "irregular trees are untested".
+- **LG-D2** answers 15.6's "inputs were clean".
+- **LG-P3b** answers 15.7's proposal of premise retrieval at 10⁴–10⁵ clauses (LG-P3 scored recall@5 = 1.00 at 50 and
+  500 clauses, too easy to tell anything).
+
+X8b and LG-P3b are CPU studies run directly (plan §1); their design below was written before either ran. X7b and LG-D2
+are GPU jobs in `queue-commands-addendum8.sh`.
+
+### X7b: one trained store as wide as the three-store ensemble (GPU training + CPU decode)
+
+**Training:** SmolLM2-360M, track T4, arm C5, seed 1, with the channel 768 wide (arm label `C5w768`).
+- The config is C5 s1's resolved config (`experiments/e9-retrofit/runs/t4/SmolLM2-360M-full-C5-s1/resolved_config.yaml`)
+  with `channel.dimension` 256 → 768 and the experiment name changed; nothing else. The current code resolves the
+  original C5 s1 config to exactly that resolved config (checked), so the recipe is C5 s1's: full host training at
+  3e-5, channel lr 1e-3, 50M tokens, the same data order (data seed 1234), seed 1.
+- Config `experiments/e14-logic/configs/x7b/SmolLM2-360M-full-C5w768-s1.yaml`; run folder
+  `experiments/e14-logic/runs/x7b/SmolLM2-360M-full-C5w768-s1` (outside E9's stage folders, so no E9 stage job or
+  report picks it up).
+
+**Decode (`e14_concat x7b`):** exactly X7's measure and slots.
+- The same entries (seeded sample `x7:1`, 600 held-out and 600 seen entries) and the same slots (entry, relation);
+  top-m against the gold fillers, m = the number of gold fillers.
+- Stores: C5 s1–s3 (256 each), `ensemble-3` (their cosines averaged, as X7), `C5w768` s1. The job checks that its
+  single-store and ensemble rows reproduce `runs/lga-concat/x7.csv` exactly.
+- **Untrained controls** (added after the smoke below, before any queue entry): `init-256` and `init-768`, C5 s1's
+  composer at each width with its initial random parameters (seed 1), never trained. They separate what width does
+  from what training does.
+- Descriptive extra: E9's pending C5w512 s1–s3 (512 wide), if their runs exist when the job runs.
+
+**Primary** (Holm over the 2 subsets, held-out and seen): `C5w768 − ensemble-3`, per-slot decode accuracy, paired over
+slots, bootstrap clustered by entry (4,000 resamples).
+
+**Secondary:**
+- `C5w768 − C5 s1` (same seed, a third of the width) and `C5w768 − mean single store` (slot-wise mean of s1–s3);
+- **what training does to decoding at each width:** `C5w768 − init-768` and `mean single store − init-256`;
+- `C5w768 − init-256`;
+- the same by relation (`is_a`, `has_role`, conjugate acid, enantiomer);
+- descriptive: the run's held-out language-model loss against C5 s1 at 50M tokens (strata `all`, `after`,
+  `after_heldout` from `metrics.jsonl`), so a gain in decoding is not bought with a loss in modelling.
+
+**Predictions** (revised after the smoke, before any queue entry; the first version predicted the ensemble would win):
+- (X7b-P1) `C5w768` beats every single 256-wide store on held-out slots by ≥ 0.03 (0.89–0.92 now).
+- (X7b-P2) `C5w768 − ensemble-3` > 0 on both subsets, by about +0.01 to +0.02. **Seen in the smoke:** untrained
+  composers decode the X7 slots at 0.927 (256 wide) and 0.998 (768 wide, held-out), and the ensemble at 0.979. Width
+  alone accounts for the ensemble's gain and more, so the primary is now expected to be positive by construction of
+  the measure, unless training at 768 costs more than 0.02.
+- (X7b-P3) Training lowers decoding a little at either width: `mean single − init-256` = −0.022 (seen; it is not a
+  prediction), and `C5w768 − init-768` < 0 but above −0.03. The trained fillers become correlated (LG-A: trained
+  fillers cost 0.21 at 256), and width dilutes that.
+- The language-model loss is within ±0.5% of C5 s1's.
+- **What this means for the reading:** X7's "ensemble removes decode noise" is a width effect, and the store's
+  decodability is mostly set at initialisation. The informative results of the trained run are `C5w768 − init-768`
+  and the language-model loss.
+
+### X8b: irregular and sparse trees (CPU)
+
+**Trees:** binary decision trees over the X8 world (20 features × 8 values, 10 classes; tests "feature f is v").
+Three families, at maximum depths d ∈ {8, 12, 16, 24, 32}:
+- `gw`: Galton–Watson growth. The root is internal; every other node above depth d is internal with probability 0.55,
+  nodes at depth d are leaves; trees are kept only if they reach depth d.
+- `deep-sparse`: complete to depth 4 (16 subtrees), then each subtree grows as `gw` with probability 0.5 (critical
+  growth: mostly short tails, a few deep ones); kept only if some tail reaches depth d. This is the "bushy top, deep
+  sparse parts" case of the X8 recommendation.
+- `spine`: a decision-list-shaped tree, one internal and one leaf child at every level (the sparsest tree of depth d;
+  the internal child's side drawn at random).
+- Trees above 3,000 internal nodes are redrawn (they occur only in `gw` at large d).
+
+5 trees per family and depth, 100 inputs per tree, 3 seeds. **Inputs follow a chosen leaf:** a reachable leaf is drawn
+uniformly, and a record consistent with its path is built (the other features at random). Random records would rarely
+reach the deep parts of a sparse tree. The input record is X8's, an HRR of 4,096 dimensions, the same for every
+layout.
+
+**Layouts** (block width b ∈ {64, 256} for the block layouts):
+- `nested`: one nested vector, D ∈ {4,096, 16,384} (X8's baseline). Paths now differ in length, so every node also
+  binds KIND⊛{INTERNAL, LEAF} (a leaf is KIND⊛LEAF + CLS⊛class), and the decoder stops at a leaf.
+- `node-memory`: X8's node memory (one block per internal node: test + YES⊛child + NO⊛child, children by associative
+  address; clean-up over all addresses and the classes). Width n_internal × b.
+- `heap-concat`: X8's heap layout (node i in block i, children 2i+1 and 2i+2). Only the existing nodes are stored; the
+  width reported is the nominal heap width (2^(d+1) − 1) × b, the cost of the layout.
+- **`preorder-concat`** (new): the nodes in pre-order, node i in block i; the blocks hold only a node's test or a leaf's
+  class, as in the heap. A side array of subtree sizes (one integer per node) holds the structure: the yes-child is
+  i + 1, the no-child i + 1 + size(i + 1), and size 1 marks a leaf. Width n_nodes × b, plus n_nodes integers.
+- **`preorder-vsa`** (new): the same order with the structure stored in the blocks too. An internal block is
+  TEST⊛f + VAL⊛v + KIND⊛INTERNAL + SKIP⊛P[size of the yes-subtree]; a leaf block is KIND⊛LEAF + CLS⊛class. P is a
+  codebook of random position vectors; the offset is read by unbinding SKIP and cleaning up against P. No side array.
+- **`hybrid`** (new): heap concatenation for depths 0–4 (31 blocks) and, below each internal node at depth 4, the
+  subtree in its own node memory. Its clean-up searches only that subtree's addresses and the classes. Width
+  31 × b + (internal nodes below depth 4) × b.
+
+**Measure:** the accuracy of the leaf reached, against the exact run of the tree. Also the total width and the codebook
+sizes (address and position books), and accuracy by path length.
+
+**Primary** (descriptive, no Holm family, as §10): accuracy of `preorder-concat` and `preorder-vsa` against
+`node-memory` and `nested` at equal block width, by family and depth.
+
+**Predictions:**
+- (X8b-P1) `preorder-concat` = 1.00 at every depth, family and block width: as in the heap, nothing is superposed
+  except a node's own test.
+- (X8b-P2) `preorder-vsa` ≥ 0.99 at b = 256 at every depth. At b = 64 it falls as the node count grows (four bindings
+  per block and a clean-up among n_nodes positions): < 0.95 for the larger `gw` trees (d ≥ 16).
+- (X8b-P3) `node-memory` at b = 64 decays with the node count (X8: 0.64 at 255 internal nodes); at b = 256 it stays
+  ≥ 0.98 up to about 1,000 internal nodes.
+- (X8b-P4) `nested` ≤ 0.3 at d ≥ 12 at either width.
+- (X8b-P5) `hybrid` ≥ `node-memory` at equal b, since each clean-up searches only one subtree.
+- (X8b-P6) `heap-concat` is exact, but its nominal width is ≥ 100× `preorder-concat`'s at d ≥ 16 in every family.
+
+**Outputs:** `experiments/e14-logic/runs/lga-concat-x8b/` (`e14_concat run --experiments x8b`).
+
+### LG-D2: decision trees on noisy or partial input records (GPU scoring)
+
+**Items** (`e14_items noisy`, set `trees-noisy`, seed 1):
+- 600 trees, depths 2, 3, 4 and 6, 150 each, half with numeric attributes. LG-D's generator (`random_tree`, 8
+  attributes, 6 outcomes) is used under its own seed key (`trees-noisy:1`) and namer (`Namer(41)`). The tier-P sets
+  and `world.trees` are unchanged.
+- **Noise:** for p ∈ {0.1, 0.3}, each attribute of the record is corrupted independently with probability p, half
+  wrong and half missing:
+  - **wrong:** another value of the attribute (categorical), or a new draw from 0–100 (numeric);
+  - **missing:** shown as "unknown" and left out of the record's vector.
+- **Gold:** the tree's outcome on the true (clean) record, i.e. what the policy does for the entity as it really is.
+  When a tested attribute is wrong, no condition can know the truth; the ceilings below show how much that costs.
+- **Options:** all 6 outcomes of the item, so every executor's answer is an option (LG-D used 4; the clean conditions
+  below are the paired reference on these items).
+- **Stores:** the VSA stores of this set use a codebook seeded by SHA-256 rather than Python's `hash`, so the set
+  rebuilds byte-identically in any process. Tier P's `Codebook` depends on the per-process hash salt: a rebuild of the
+  tier-P sets reproduces items, questions and gold, but not the VSA contexts' confidences. The tier-P files on disk
+  remain the record.
+
+**Conditions** (12 per item):
+- clean references: `tree-text` and `path-vsa`, LG-D's conditions on the clean record;
+- for each p:
+  - `none@p`: the noisy record only;
+  - `tree-text@p`: the noisy record and the tree as text;
+  - `path-vsa@p`: the exact executor over the noisy record's VSA store. A missing attribute is detected by a read
+    confidence below a fixed presence threshold, and its test counts as not met (the "otherwise" branch, the usual
+    symbolic default). A wrong value is read as it is.
+  - **`path-vsa-soft@p`**: the soft path from the VSA path bundle. At a missing attribute the executor follows both
+    branches, weighted by the test's prior (1/|values| for "is v"; (t + 1)/101 for "at most t"). The leaves reached
+    are superposed into one bundle Σ w·leaf, and the bundle is decoded by least squares against the outcome codebook.
+    With 6 outcome vectors at width 512 the decode is exact, so the soft path's VSA costs come from the reads and the
+    presence detection. If one missing attribute is tested twice on a path, the second test's prior is conditioned on
+    the first (allowed values or interval), so the soft reference is exact.
+    The text lists the outcomes with weight ≥ 0.05 and their weights, then the most probable outcome as the conclusion
+    line with its weight.
+  - `path-sym-soft@p`: the same soft path computed exactly, with the true missing set, as the symbolic twin of the
+    bundle.
+
+**Hosts:** H-135, H-360, H-q06, H-q17, frozen; scored by `e14_score score --sets trees-noisy`.
+
+**Primary** (per host; Holm over 4):
+- (a) `path-vsa@0.1 − tree-text@0.1` and `path-vsa@0.3 − tree-text@0.3`: does the executor's advantage survive noisy
+  inputs?
+- (b) `path-vsa-soft@0.1 − path-vsa@0.1` and `path-vsa-soft@0.3 − path-vsa@0.3`: does the soft path add to the exact
+  one?
+
+**Secondary:**
+- the degradation `path-vsa@p − path-vsa` and `tree-text@p − tree-text`;
+- `path-vsa-soft@p − path-sym-soft@p` (what the VSA reads and presence detection cost);
+- each contrast by depth, on items whose true path has a corrupted attribute, and on items whose true path has a
+  missing one;
+- the follow rate: how often the host chooses its executor's answer, including when that answer is wrong.
+
+**Ceilings, computed when the items were built** (no model): the accuracy of each executor's own answer against the
+gold, 600 items (`items/manifest-noisy-s1.json`).
+
+| Executor | clean | p = 0.1 | p = 0.3 |
+|---|---:|---:|---:|
+| exact (`path-vsa`) | 1.000 | 0.888 | 0.713 |
+| soft (`path-vsa-soft`) | — | 0.895 | 0.728 |
+| soft, symbolic (`path-sym-soft`) | — | 0.895 | 0.728 |
+
+- The true path has a corrupted attribute in 26% of items at p = 0.1 and 64% at p = 0.3; a missing one in 96 and 227
+  items, a wrong one in 78 and 229.
+- Presence detection at threshold 0.2 is exact: every missing value is detected and no present value is missed. The
+  threshold was set from a 120-item calibration sample, whose read confidences were 0.24–0.55 for present values and
+  0.01–0.16 for missing ones. `path-vsa@p` agrees with the symbolic exact path on all items.
+- The soft path gains only +0.007 and +0.015 over the exact one. "Unknown counts as not met" already takes the more
+  probable branch for every categorical test (P(yes) = 1/3 to 1/5); the soft path can gain only on numeric tests with
+  t ≥ 50 and where both branches lead to the same outcome.
+
+**Predictions** (written after the ceilings were known, before any model scored these items):
+- (a) is positive on every host at both noise levels. `tree-text` was 0.37 on clean records; the exact ceilings are
+  0.89 and 0.71.
+- Every host tracks its executor: |`path-vsa@p` − the exact ceiling| ≤ 0.03 on the Qwen3 hosts. The SmolLM2 hosts
+  copied LG-D's leaf at 0.997, so also there, probably. The follow rate stays ≥ 0.9 when the executor is wrong (the
+  hosts cannot know).
+- (b) is about the soft ceiling's gain: +0.01 to +0.015 if the hosts copy the soft conclusion. With 600 items it is
+  probably not significant after Holm. A null (b) means the soft path adds little on these trees; it does not mean the
+  hosts cannot read it.
+- `path-vsa-soft@p` ≈ `path-sym-soft@p` (|difference| ≤ 0.02).
+
+### LG-P3b: premise retrieval at 10⁴ and 10⁵ clauses with correlated class names (CPU)
+
+**Memory:** LG-P3's: one vector per rule clause, HEAD⊛head + BODY⊛body. Retrieval unbinds HEAD from every clause and
+ranks the clauses by cosine with the goal's class vector, keeping the top k + |truth| − 1, where the truth is every
+clause whose head is the goal. The codebooks are seeded by SHA-256 (reproducible); roles are unitary.
+
+**Grid:**
+- **Clauses** N ∈ {50, 500, 10⁴, 10⁵}, with max(40, N/2) classes as in LG-P3; heads and bodies drawn uniformly.
+- **Class names:**
+  - `independent`: invented words (LG-P3's namer);
+  - `shared`: compounds of two stems from a pool of about √(2C) stems, so each stem occurs in about √(2C) names;
+  - `near-dup`: `shared` compounds in clusters of 4, a base name and 3 one-edit variants (substitution, insertion or
+    deletion; no collisions).
+- **Class codes:**
+  - `random`: an independent vector per name (LG-P3);
+  - `subword`: the normalised bundle of the name's character trigrams, with boundary marks. Similar names get similar
+    vectors, as from a text encoder or a trained store's correlated fillers;
+  - `mixed`: half the energy random and half subword.
+- **Widths:** D ∈ {1,024, 4,096, 8,192}.
+- 300 queries per cell; 3 seeds.
+
+**Queries:**
+- **exact:** the goal's class name, as in LG-P3; the primary;
+- **typo:** a one-edit variant of the goal's name that is not itself a class name; secondary. Its truth is the
+  intended class's clauses.
+
+**Methods:**
+- `vsa`, as above;
+- `exact`: a hash index from the head symbol to clauses. On exact queries it returns the truth by construction; on typo
+  queries it returns nothing.
+- `exact+edit1`: the index looked up at the query and at all its one-edit variants. Exact matches rank first, then the
+  variants' clauses.
+
+**Measures:**
+- recall@5 (top 5 + |truth| − 1, as LG-P3);
+- recall@50, retrieval as a prefilter for exact checking;
+- R-precision, the share of the truth in the top |truth|;
+- memory: N × D floats against N index entries.
+
+**Primary** (descriptive, no Holm, as LG-A): `vsa` recall@5 against `exact` (1.00) on exact queries at N = 10⁴ and 10⁵,
+per names × codes × width.
+
+**Predictions:**
+- (P3b-1) `random` codes: recall@5 ≥ 0.99 at every N, names and width. With one vector per clause the noise does not
+  grow with N, and its maximum over N grows only as √(2 ln N / D).
+- (P3b-2) `subword` codes:
+  - ≥ 0.99 with `independent` names;
+  - ≥ 0.97 with `shared` names;
+  - with `near-dup` names, below 0.95 at D = 1,024 and N = 10⁵, recovering to ≥ 0.99 at 8,192. The margin to a
+    near-duplicate (1 − its cosine, about 0.15–0.4) meets a noise maximum that grows with √(ln N / D).
+- (P3b-3) R-precision falls before recall@5 does.
+- (P3b-4) Typo queries:
+  - `exact` 0.00;
+  - `exact+edit1` ≈ 1.00 with `independent` names, below 1 with `near-dup` names (several classes within one edit);
+  - `vsa` with `subword` codes ≥ 0.9 with `independent` names, lower with `near-dup` names;
+  - `vsa` with `random` codes ≈ 0.
+- **The reading stated in advance:** on exact queries VSA retrieval never beats an exact symbol index. Its use is as a
+  similarity prefilter (recall@50) or for inexact queries.
+
+**Outputs:** `experiments/e14-logic/runs/lgp3b-retrieval/` (`e14_prover retrieval-scale`). LG-P3's `retrieval` command
+and defaults are unchanged.
+
+### Common to all four
+
+**Smokes seen before this registration** (labelled; not results):
+- **X8b:** `--quick` (seed 1, depths 8 and 12, 2 trees × 30 inputs per cell) and one full cell (`gw`, depth 32) for
+  timing, both before the full run. They showed the code ran and that the trees reach 79–1,506 internal nodes at
+  depth 32. The 3,000-node cap and the KIND marker of `nested` were in the code from the start; their two sentences
+  above were added to this text while the full run was in progress, before any of its results were read.
+- **LG-P3b:** seed 1, 500 and 10⁴ clauses, widths 1,024 and 8,192, 100 queries, before the full run. Exact-query
+  recall@5 was 1.00 in every cell, which already put (P3b-2)'s `near-dup` prediction in doubt; the design was not
+  changed.
+- **X7b:** a CPU training smoke of the C5w768 config on SmolLM2-135M (same tokenizer and ontology; sequence 128,
+  4 steps), then `x7b` with that store as the wide one against the real C5 s1–s3. The job reproduced X7's 8 rows
+  exactly. The 4-step store decoded at 0.997 (held-out) and an untrained 768-wide composer at 0.998, which led to the
+  untrained controls and the revised predictions above.
+- **LG-D2:** the full item build (its ceilings are above), a rebuild in two other processes (byte-identical, sha256
+  `b45e227b…`), and SmolLM2-135M on 8 items on the CPU followed by `noisy-report`.
+
+X8b and LG-P3b then ran as registered (outputs `runs/lga-concat-x8b/`, `runs/lgp3b-retrieval/`).
+
+**Cost:**
+- **X7b training:** about 1.2 GPU-h. The three 256-wide T4 C5 runs of SmolLM2-360M took 1.12–1.13 h; the 768-wide
+  channel adds composer work (6.8M channel parameters on the 135M host).
+- **X7b decode:** CPU, a few minutes (the smoke took 10 s, 3.1 GB).
+- **LG-D2:** 600 items × 12 conditions × 6 options = 43,200 sequences, 1.64× tier-P LG-D's prompt tokens. Scaling
+  LG-D's measured durations (0.030 / 0.058 / 0.083 / 0.166 h) gives about 0.05 / 0.10 / 0.14 / 0.27 GPU-h for
+  H-135 / H-360 / H-q06 / H-q17, about 0.56 GPU-h in all. The report is CPU.
+- **In all:** 7 jobs (5 GPU, 2 CPU lane), about 1.75 GPU-h.
+- **CPU already spent:** X8b 22 min (0.8 GB); LG-P3b 16.5 min (4.0 GB).
+
+**Queue:** `queue-commands-addendum8.sh`, with priority placeholders `PRIO_GPU` (the training and the four scoring
+jobs) and `PRIO_REPORT` (`e14-x7b-report`, `e14-lgd2-report`, both CPU lane). `PRIO_REPORT` must be above `PRIO_GPU`,
+so that the X7b decode waits for its training.
+
+**Outputs:**
+- `experiments/e14-logic/runs/x7b/SmolLM2-360M-full-C5w768-s1/` (training);
+- `runs/lga-concat-x7b/` (decode);
+- `runs/lgd2/<host>/` and `report/lgd2/`;
+- predictions in `~/data/vsa-llm/e14/runs/lgd2/`.
+
+**Merged into this file on 2026-10-20 (about 21:15) by workplace-8e.**
+- **Logic part:** drafted by the session's E14 agent. X8b's and LG-P3b's designs were written in the draft before
+  those CPU studies ran (draft timestamps from 19:53). Both ran before this merge, and their results are not used
+  to change their designs.
+- **Reading part (RD-4d, RD-3b below):** written before any non-smoke run.
+- **Queue scripts:** X7b and LG-D2 are in `queue-commands-addendum8.sh`; RD-4d and RD-3b are in
+  `queue-commands-addendum8-reading.sh`. Neither had been run when this was merged.
+
+### RD-4d: learned relation routers, with the routed wording held out
+
+**Origin:** RD-4c (§16) found that routing, not reading, is the bottleneck of the realistic pipeline.
+- The model's phrase-likelihood router chose the asked relation 0.59 (T4, oracle frames) and 0.21 (T5) of the time.
+- Routing cost −0.083\* (T4) and −0.538\* (T5) against labelled recall.
+- The author approved a learned router (2026-10-20).
+
+**The difficulty:** every T4 relation always uses the same three question templates, and every T5 relation the same
+two. A router trained on all templates would memorise them.
+- Each item is therefore routed by **one** of its templates, chosen by a stable hash of its id.
+- The learned routers never see that wording. They learn from the other templates, labelled with their relation.
+
+**Routers:**
+- **`nb`:** naive Bayes over the template words.
+- **`fewshot`:** the host, prompted with up to two labelled example questions per candidate relation. This is the
+  pre-specified primary router.
+- **`memo`:** `nb` trained on every template, including the routed one. It is an upper bound (seen wording), not a fair
+  router.
+- **`lex` and `lm`,** as in §16, for paired comparison.
+
+**Conditions** (`--family rd4d`, context-free null):
+- `none`, `explicit-rel:{oracle,typeprior}`, `definition`;
+- `explicit-route:<router>:{oracle,typeprior}` for the routers above.
+
+**Hosts:** SmolLM2-360M C5, seeds 1–3, on T4 held-out and T5 new words.
+
+**Primary** (per track; Holm over 2 contrasts × 3 tests):
+- (a) `explicit-route:fewshot:oracle − explicit-rel:oracle`: the routing cost of the learned router;
+- (b) `explicit-route:fewshot:typeprior − none`: the realistic pipeline with it.
+
+**Secondary:**
+- `nb` and `memo` against labelled recall;
+- `fewshot − lm` and `nb − lex`;
+- the realistic pipelines against `lm`, `lex` and the definition;
+- router accuracy.
+
+**Predictions:**
+- (a) a smaller cost than `lm`'s: ≥ −0.04 on T4 and ≥ −0.20 on T5;
+- (b) positive on both tracks, and above `lm`'s +0.099 (T4) and +0.114 (T5);
+- `memo` near 0 cost, as an upper bound;
+- `nb` on held-out wording below `fewshot`.
+
+**Cost:** 6 jobs, about 0.15–0.35 GPU-h each.
+
+### RD-3b: a precision filter for the ReAct-style reader
+
+**Origin:** RD-3 (§2). `react` beat the linker but lost to the type prior on T4 (stated F1 0.337 against 0.573). Its
+fuzzy step over-proposed partners (precision 0.19). The author approved a precision filter (2026-10-20).
+
+**The `react-strict` reader is `react` with four stricter gates:**
+- fuzzy candidates need trigram Dice ≥ 0.8 (not 0.6);
+- at most 3 fuzzy picks (not 8);
+- a fuzzy pick must beat "none of these" by ≥ 0.5 nat per token (length-normalised score);
+- a relation is kept only if P(relation | partner) ≥ 0.1 under the type prior.
+
+**Design:** RD-3's items, readers and hosts (SmolLM2-360M and Qwen3-1.7B; T4 held-out and T5 new), with `--strict`.
+
+**Primary** (per track; Holm over hosts × 2):
+- `react-strict − react`;
+- `react-strict − typeprior`.
+
+The measure is stated-edge F1.
+
+**Predictions:**
+- `react-strict > react` on T4 (higher precision, a small loss of recall);
+- `react-strict` still below the type prior on T4, and about equal on T5;
+- precision on T4 ≥ 0.28.
+
+**Cost:** 4 jobs, about 0.05–0.15 GPU-h each.

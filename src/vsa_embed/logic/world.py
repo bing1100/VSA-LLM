@@ -14,6 +14,8 @@ Every generator is seeded and returns plain JSON-able dicts. Worlds:
   new entities.
 - `trees` / `lists` (LG-D): decision trees over invented categorical and numeric attributes (tests "attr is v" and
   "attr is at most t"), decision lists with first-match and a default; entity records; edits (one node changed).
+- `noisy_trees` (LG-D2, pre-registration §19): LG-D-style trees whose input records are corrupted (wrong or missing
+  values) at noise levels 0.1 and 0.3; the answer is the outcome on the true record.
 - `fol` (LG-P): first-order problems needing backward chaining, proof by cases (a disjunctive fact) or proof by
   contradiction (modus tollens), with few or many distractor clauses; half provable, half not.
 
@@ -325,6 +327,45 @@ def trees(seed: int, *, depths: Sequence[int] = (2, 3, 4, 6), inputs_per_depth: 
         items.append({**base, "id": f"edit-{seed}-{q}", "kind": "edit", "tree": tree, "answer": leaf, "path": path,
                       "before": old, "base_tree": base["tree"], "base_id": base["id"]})
     return {"world": "trees", "seed": seed, "items": items}
+
+
+def noisy_trees(seed: int, *, depths: Sequence[int] = (2, 3, 4, 6), inputs_per_depth: int = 150, noise: Sequence[float] = (0.1, 0.3),
+                namer: Namer | None = None) -> dict[str, Any]:
+    """LG-D2 (pre-registration §19): LG-D's trees (`random_tree`, 8 attributes, half the items numeric, 6 outcomes) under their own
+    seed key and namer, each with its true record and, per noise level p, a noisy record. Each attribute is corrupted with
+    probability p, half wrong (another value; numeric: a new draw from 0–100) and half missing (None). The noise is coupled
+    across levels (one uniform draw, kind and wrong value per attribute), so the corruptions at 0.1 are a subset of those at 0.3.
+    The answer is the tree's outcome on the true record. `trees` and the tier-P sets are untouched."""
+    from .reference import run_tree
+    rng = random.Random(f"trees-noisy:{seed}")
+    namer = namer or Namer(seed + 40)
+    items = []
+    for depth in depths:
+        for q in range(inputs_per_depth):
+            numeric = q % 2 == 1
+            attrs = _attributes(namer, 8, 0.5 if numeric else 0.0, rng)
+            outcomes = [f"send it to the {namer.word()} desk" for _ in range(6)]
+            tree = random_tree(depth, attrs, outcomes, rng)
+            record = {a.name: (rng.choice(a.values) if a.values else rng.randint(0, 100)) for a in attrs}
+            leaf, path = run_tree(tree, record)
+            draws = {}
+            for a in attrs:
+                u, kind = rng.random(), ("wrong" if rng.random() < 0.5 else "missing")
+                if a.values:
+                    wrong: Any = rng.choice([v for v in a.values if v != record[a.name]])
+                else:
+                    wrong = rng.choice([v for v in range(101) if v != record[a.name]])
+                draws[a.name] = (u, kind, wrong)
+            noisy = {}
+            for p in noise:
+                corrupted = {name: kind for name, (u, kind, _) in draws.items() if u < p}
+                rec = {name: (record[name] if name not in corrupted else (draws[name][2] if corrupted[name] == "wrong" else None))
+                       for name in record}
+                noisy[f"{p:g}"] = {"record": rec, "corrupted": corrupted}
+            items.append({"world": "trees-noisy", "id": f"ntree-{seed}-{depth}-{q}", "kind": "tree", "depth": depth, "numeric": numeric,
+                          "entity": namer.name(), "attributes": [a.__dict__ for a in attrs], "tree": tree, "record": record,
+                          "answer": leaf, "path": path, "outcomes": outcomes, "noisy": noisy})
+    return {"world": "trees-noisy", "seed": seed, "noise": list(noise), "items": items}
 
 
 def _copy(tree: dict[str, Any]) -> dict[str, Any]:

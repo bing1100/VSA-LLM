@@ -1,0 +1,81 @@
+{
+  "source": {
+    "host": "HuggingFaceTB/SmolLM2-135M",
+    "device": "cuda",
+    "dtype": "torch.bfloat16",
+    "max_length": 8192
+  },
+  "items": 156,
+  "policies": [
+    "sos",
+    "sos-score"
+  ],
+  "problems": {
+    "depths": [
+      2,
+      3,
+      4
+    ],
+    "decoy": 1.0,
+    "decoy_depth": 4,
+    "decoy_fanout": 3
+  },
+  "provable_only": true,
+  "budgets": [
+    10,
+    30,
+    100
+  ],
+  "smoke": false,
+  "seconds": 59.5,
+  "cells": {
+    "sos|10": {
+      "accuracy": 0.1987179487179487,
+      "found_within_budget": 0.1987179487179487,
+      "soundness": 1.0,
+      "mean_steps_found": 5.935483870967742,
+      "calls": null,
+      "n": 156
+    },
+    "sos|30": {
+      "accuracy": 0.6410256410256411,
+      "found_within_budget": 0.6410256410256411,
+      "soundness": 1.0,
+      "mean_steps_found": 15.09,
+      "calls": null,
+      "n": 156
+    },
+    "sos|100": {
+      "accuracy": 0.9935897435897436,
+      "found_within_budget": 0.9935897435897436,
+      "soundness": 1.0,
+      "mean_steps_found": 30.148387096774194,
+      "calls": 0.0,
+      "n": 156
+    },
+    "sos-score|10": {
+      "accuracy": 0.2948717948717949,
+      "found_within_budget": 0.2948717948717949,
+      "soundness": 1.0,
+      "mean_steps_found": 5.630434782608695,
+      "calls": null,
+      "n": 156
+    },
+    "sos-score|30": {
+      "accuracy": 0.7051282051282052,
+      "found_within_budget": 0.7051282051282052,
+      "soundness": 1.0,
+      "mean_steps_found": 13.054545454545455,
+      "calls": null,
+      "n": 156
+    },
+    "sos-score|100": {
+      "accuracy": 0.9935897435897436,
+      "found_within_budget": 0.9935897435897436,
+      "soundness": 1.0,
+      "mean_steps_found": 26.148387096774194,
+      "calls": 5.083333333333333,
+      "n": 156
+    }
+  }
+}

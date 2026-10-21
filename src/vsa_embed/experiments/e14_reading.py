@@ -194,6 +194,16 @@ SECONDARY_C = (("explicit-route:lex:oracle", "explicit-rel:oracle"), ("explicit-
                ("explicit-route:lm:typeprior", "definition"), ("explicit-rel:teacher", "explicit-rel:typeprior"),
                ("explicit-rel:teacher", "none"), ("explicit-route:lm:teacher", "none"), ("explicit-route:lm:teacher", "definition"))
 PRIMARY_HOST = (("explicit-rel:oracle", "none"), ("explicit-rel:oracle", "explicit-sym:oracle"))
+# RD-4d (pre-registration §19): learned routers — the routed question's wording is held out (`memo`: an upper bound).
+RD4D_CONDITIONS = ("none", "explicit-rel:oracle", "explicit-rel:typeprior", "definition",
+                   *(f"explicit-route:{r}:{reader}" for reader in ("oracle", "typeprior") for r in ("lex", "lm", "nb", "fewshot", "memo")))
+PRIMARY_F = (("explicit-route:fewshot:oracle", "explicit-rel:oracle"), ("explicit-route:fewshot:typeprior", "none"))
+SECONDARY_F = (("explicit-route:nb:oracle", "explicit-rel:oracle"), ("explicit-route:memo:oracle", "explicit-rel:oracle"),
+               ("explicit-route:fewshot:oracle", "explicit-route:lm:oracle"), ("explicit-route:nb:oracle", "explicit-route:lex:oracle"),
+               ("explicit-route:fewshot:typeprior", "explicit-route:lm:typeprior"),
+               ("explicit-route:fewshot:typeprior", "explicit-route:lex:typeprior"), ("explicit-route:nb:typeprior", "none"),
+               ("explicit-route:fewshot:typeprior", "definition"))
+
 # RD-12c (pre-registration §17): the RD-12 cycle's read frames under selective recall (the route that works).
 RD12C_CONDITIONS = ("none", "explicit-rel:oracle", "explicit-rel:typeprior", "explicit-rel:rd12-single-r2",
                     "explicit-rel:rd12-cycle-r2", "explicit-sym:rd12-single-r2", "explicit-sym:rd12-cycle-r2", "definition")
@@ -292,7 +302,84 @@ def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, li
 
 # -- RD-4c (pre-registration §16): choosing which relation to recall, without the item's label ---------------------------
 
-ROUTERS = ("lex", "lm", "top2")
+ROUTERS = ("lex", "lm", "top2", "nb", "fewshot", "memo")      # nb / fewshot / memo: RD-4d's learned routers (§19)
+
+
+def _route_words(text: str) -> list[str]:
+    return re.findall(r"[a-z]+", text.replace("{x}", " ").lower())
+
+
+def relation_templates(scorer: Any) -> dict[str, list[str]]:
+    """Relation name → the distinct question templates its items use (property items: the paraphrase set)."""
+    out: dict[str, list[str]] = defaultdict(list)
+    for c in scorer.concepts:
+        for item in scorer.items_by_concept[c]:
+            for t in item["templates"]:
+                if item.get("relation") and t not in out[item["relation"]]:
+                    out[item["relation"]].append(t)
+    return out
+
+
+def question_template(item: dict[str, Any]) -> str:
+    """The one template a learned router routes by: chosen per item by a stable hash of its id."""
+    import zlib
+    return item["templates"][zlib.crc32(item["id"].encode()) % len(item["templates"])]
+
+
+def route_learned(scorer: Any, frames: dict[str, list | None], ctx: e11.TrackContext, router: str) -> dict[str, list[int]]:
+    """RD-4d's learned routers. Each item is routed by ONE of its templates (`question_template`). The router learns from
+    the other items' templates, labelled with their relation:
+    - `nb`: multinomial naive Bayes over the template words (Laplace 1);
+    - `fewshot`: the host, prompted with up to two labelled example questions per candidate relation;
+    - `memo`: `nb` trained on every template *including* the routed one — an upper bound (wording seen), not a fair
+      router.
+    For `nb` and `fewshot` the routed template's exact wording is held out of the training examples. Candidates are the
+    relations the term's frame holds."""
+    from ..evaluation import channel_probes as cp
+    names = list(ctx.ontology["relation_names"])
+    bank = relation_templates(scorer)
+    out: dict[str, list[int]] = {}
+    jobs: list[tuple[str, int, str, str]] = []
+    for c in scorer.concepts:
+        options = sorted({int(r) for r, _ in (frames.get(c) or [])})
+        for item in scorer.items_by_concept[c]:
+            if len(options) <= 1:
+                out[item["id"]] = options
+                continue
+            q = question_template(item)
+            train = {r: [t for t in bank.get(names[r], []) if router == "memo" or t != q] for r in options}
+            if router in {"nb", "memo"}:
+                vocab = {w for ts in train.values() for t in ts for w in _route_words(t)}
+                words = [w for w in _route_words(q) if w in vocab]
+                best, best_score = options[0], float("-inf")
+                for r in options:
+                    counts = defaultdict(int)
+                    for t in train[r]:
+                        for w in _route_words(t):
+                            counts[w] += 1
+                    total = sum(counts.values())
+                    score = sum(np.log((counts[w] + 1.0) / (total + len(vocab) + 1.0)) for w in words)
+                    if score > best_score:
+                        best, best_score = r, score
+                out[item["id"]] = [best]
+                continue
+            surface = scorer.surface[c]
+            shots = "".join(f"Question: {t.replace('{x}', 'X')} ...\nFact: X {_route_phrase(names[r])}\n"
+                            for r in options for t in train[r][:2])
+            prompt = f"Each question asks for one kind of fact.\n{shots}Question: {q.replace('{x}', surface)} ...\nFact: {surface}"
+            for r in options:
+                jobs.append((item["id"], r, prompt, " " + _route_phrase(names[r])))
+    if jobs:
+        with scorer.condition({c: None for c in scorer.concepts}), e11.fast_continuations():
+            values = cp.continuation_logprob(scorer.adapter, [j[2] for j in jobs], [j[3] for j in jobs])
+        lengths = [max(1, len(scorer.run.tokenizer(j[3], add_special_tokens=False)["input_ids"])) for j in jobs]
+        best: dict[str, tuple[float, int]] = {}
+        for (iid, r, _, _), v, n in zip(jobs, values, lengths):
+            score = float(v) / n
+            if iid not in best or score > best[iid][0] or (score == best[iid][0] and r < best[iid][1]):
+                best[iid] = (score, r)
+        out.update({iid: [r] for iid, (_, r) in best.items()})
+    return out
 
 
 def _route_phrase(name: str) -> str:
@@ -306,6 +393,8 @@ def route_relations(scorer: Any, frames: dict[str, list | None], ctx: e11.TrackC
     templates; `lm`: the host's choice — the summed length-normalised log-probability over the item's templates of
     " <phrase>" after "Question: <template with the term> ...\\nThe fact needed is that <term>"; `top2`: `lm`'s best two."""
     from ..evaluation import channel_probes as cp
+    if router in {"nb", "fewshot", "memo"}:
+        return route_learned(scorer, frames, ctx, router)
     names = list(ctx.ontology["relation_names"])
     out: dict[str, list[int]] = {}
     jobs: list[tuple[str, int, str, str]] = []
@@ -552,6 +641,8 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         conditions = list(RD4C_CONDITIONS) + (list(RD4C_TEACHER) if args.teacher_frames else [])
     elif args.family == "rd12c":
         conditions = list(RD12C_CONDITIONS)
+    elif args.family == "rd4d":
+        conditions = list(RD4D_CONDITIONS)
     else:
         conditions = default_conditions(compose, store is not None, noise)
     if not compose:
@@ -642,7 +733,7 @@ def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed
 
 
 def run_recall_report(args: argparse.Namespace) -> dict[str, Any]:
-    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c", "rd12c"}:
+    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c", "rd12c", "rd4d"}:
         return run_rd4b_report(args)
     present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
     missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
@@ -704,7 +795,8 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
     out: dict[str, Any] = {"family": family, "groups": [], "missing": missing}
     title = {"rd4b": "# E14 RD-4b — recall of the item's relation, context-free null (pre-registration §13)",
              "rd4c": "# E14 RD-4c — routing without the item's label, Claude's frames, larger hosts (pre-registration §16)",
-             "rd12c": "# E14 RD-12c — the RD-12 cycle's read frames under selective recall (pre-registration §17)"}[family]
+             "rd12c": "# E14 RD-12c — the RD-12 cycle's read frames under selective recall (pre-registration §17)",
+             "rd4d": "# E14 RD-4d — learned relation routers, the routed wording held out (pre-registration §19)"}[family]
     lines = [title, "",
              "PMI choices use the null prompt **without** the context; `raw` columns are uncalibrated choices; `(stated)`: "
              "items whose gold answer is in the `stated` reader's frame.", ""]
@@ -715,6 +807,8 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
         pairs = {}
         if family == "rd12c":
             pairs = {"primary": PRIMARY_D, "secondary": SECONDARY_D, "stated_pairs": ()}
+        if family == "rd4d":
+            pairs = {"primary": PRIMARY_F, "secondary": SECONDARY_F, "stated_pairs": ()}
         if family == "rd4c":
             host_group = model.startswith("Qwen") or "-C0p" in model
             pairs = {"primary": PRIMARY_HOST if host_group else PRIMARY_C, "secondary": SECONDARY_HOST if host_group else SECONDARY_C,
@@ -860,7 +954,13 @@ class RelationReaders:
                 lm.append((self.last_lm_choice, atom))
         return list(dict.fromkeys(frame)), list(dict.fromkeys(lm))
 
-    def react(self, text: str, subject: str, headwords: Sequence[str]) -> tuple[list[tuple[int, int]], dict[str, Any]]:
+    def react(self, text: str, subject: str, headwords: Sequence[str], *, strict: bool = False
+              ) -> tuple[list[tuple[int, int]], dict[str, Any]]:
+        """`strict` (RD-3b, pre-registration §19, the precision filter): fuzzy candidates need trigram Dice ≥ 0.8 (not
+        `min_score`), at most 3 fuzzy picks (not `max_fuzzy`), a pick must beat "none of these" by ≥ 0.5 nat per token
+        (the choice's length-normalised score), and a
+        relation is kept only if P(relation | partner) ≥ 0.1 under the type prior (exact mentions included)."""
+        min_score, max_fuzzy = (0.8, 3) if strict else (self.min_score, self.max_fuzzy)
         exclude = self._headword_spans(text, headwords)
         mentions = self.ctx.fillers.find(text, exclude)
         partners: list[int] = []
@@ -879,18 +979,20 @@ class RelationReaders:
         for start, end in word_spans(text):
             if any(start < e and s < end for s, e in taken):
                 continue
-            cands = self.index.top(text[start:end], k=self.k, min_score=self.min_score)
+            cands = self.index.top(text[start:end], k=self.k, min_score=min_score)
             if cands:
                 fuzzy.append((cands[0][1], start, end, cands))
         chosen_spans: list[tuple[int, int]] = []
         for score, start, end, cands in sorted(fuzzy, key=lambda x: -x[0]):
-            if len(chosen_spans) >= self.max_fuzzy or any(start < e and s < end for s, e in chosen_spans):
+            if len(chosen_spans) >= max_fuzzy or any(start < e and s < end for s, e in chosen_spans):
                 continue
             chosen_spans.append((start, end))
             options = [" " + self.index.texts[a] for a, _ in cands] + [" none of these"]
-            best, _ = self.host.choose(f'{text}\n\nIn this definition, "{text[start:end]}" refers to', options)
+            best, values = self.host.choose(f'{text}\n\nIn this definition, "{text[start:end]}" refers to', options)
             self.choices += 1
             pick = None if best == len(cands) else int(cands[best][0])
+            if strict and pick is not None and float(values[best]) - float(values[-1]) < 0.5:
+                pick = None                                         # not clearly better than "none of these"
             log.append({"span": text[start:end], "kind": "fuzzy", "candidates": [int(a) for a, _ in cands], "chosen": pick})
             if pick is not None:
                 partners.append(pick)
@@ -900,6 +1002,10 @@ class RelationReaders:
             r = self.relation(text, subject, atom)
             if r is None or r not in self.ctx.typing.candidates(atom):
                 continue
+            if strict:
+                cands_r = self.ctx.typing.candidates(atom)
+                if float(np.exp(self.log_prior(atom, cands_r))[cands_r.index(r)]) < 0.1:
+                    continue                                        # a rare pairing for this partner type
             if r in self.ctx.typing.functional:
                 if r in seen_functional:
                     continue
@@ -934,7 +1040,7 @@ def summarize_readers(per: dict[str, dict[str, dict[str, Any]]], *, resamples: i
                                   "ambiguous_labelled": amb_l}
     for a, b in (("react", "linker"), ("react", "typeprior"), ("mc-rel", "linker"), ("mc-rel", "typeprior"), ("react", "mc-rel"),
                  ("mc-rel", "mc-rel-lm"), ("mc-rel-lm", "linker"),
-                 ("react", "host"), ("teacher", "react")):
+                 ("react", "host"), ("teacher", "react"), ("react-strict", "react"), ("react-strict", "typeprior")):
         if a not in per or b not in per:
             continue
         ids = sorted(c for c in set(per[a]) & set(per[b]) if per[a][c]["stated_f1"] is not None and per[b][c]["stated_f1"] is not None)
@@ -982,6 +1088,8 @@ def run_relations(args: argparse.Namespace) -> dict[str, Any]:
         mc, mc_lm = readers.mc_rel(text, subject, heads)
         new = {"mc-rel": mc, "mc-rel-lm": mc_lm}
         new["react"], details = readers.react(text, subject, heads)
+        if getattr(args, "strict", False):
+            new["react-strict"], _ = readers.react(text, subject, heads, strict=True)
         for name, frame in {**{k: v.get(cid) for k, v in old.items() if k not in {"oracle", "stated"}}, **new}.items():
             per[name][cid] = frame_scores(frame, gold, stated, ambiguous)
         frames_out += [{"concept": cid, "style": style, "reader": name, "frame": ctx.names(frame)} for name, frame in new.items()]
@@ -1019,7 +1127,13 @@ def run_relations_report(args: argparse.Namespace) -> dict[str, Any]:
             if c["a"] == "react" and c["b"] in {"linker", "typeprior"}:
                 by_track[track].append({**c, "host": s["source"]["host"]})
         tables.append((track, s["source"]["host"], s["readers"]))
-    for rows in by_track.values():
+    strict_rows: dict[str, list[dict[str, Any]]] = defaultdict(list)      # RD-3b (§19): the precision-filtered reader
+    for folder in present:
+        s = json.loads((folder / "summary.json").read_text())
+        for c in s["contrasts"]:
+            if c["a"] == "react-strict" and c["b"] in {"react", "typeprior"}:
+                strict_rows[f"{s['set']['track']} {s['set']['kind']}"].append({**c, "host": s["source"]["host"]})
+    for rows in (*by_track.values(), *strict_rows.values()):
         for row, p in zip(rows, holm_adjust([r["p_value"] for r in rows])):
             row["p_holm_family"] = p
     lines = ["# E14 RD-3 — pooled report (Holm per track over hosts × {react − linker, react − typeprior})", ""]
@@ -1034,9 +1148,14 @@ def run_relations_report(args: argparse.Namespace) -> dict[str, Any]:
     lines += ["## Primary", "", "| track | host | a − b | stated F1 difference [95% CI] | p (Holm, family) | n |", "|---|---|---|---|---:|---:|"]
     for track, rows in sorted(by_track.items()):
         lines += [f"| {track} | {r['host']} | {r['a']} − {r['b']} | {fmt_ci(r)} | {r['p_holm_family']:.4f} | {r['n']} |" for r in rows]
+    if strict_rows:
+        lines += ["", "## RD-3b primary (pre-registration §19; Holm per track over hosts × {react-strict − react, react-strict − typeprior})", "",
+                  "| track | host | a − b | stated F1 difference [95% CI] | p (Holm, family) | n |", "|---|---|---|---|---:|---:|"]
+        for track, rows in sorted(strict_rows.items()):
+            lines += [f"| {track} | {r['host']} | {r['a']} − {r['b']} | {fmt_ci(r)} | {r['p_holm_family']:.4f} | {r['n']} |" for r in rows]
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
-    doc = {"primary": by_track, "missing": missing}
+    doc = {"primary": by_track, "rd3b_primary": strict_rows, "missing": missing}
     write_json(output / "report.json", doc)
     (output / "report.md").write_text("\n".join(lines) + "\n")
     return doc
@@ -1066,14 +1185,14 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--overwrite", action="store_true")
     r.add_argument("--null", choices=("context", "plain"), default="context",
                    help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
-    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c"), default="tier-p", help="default condition list")
+    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d"), default="tier-p", help="default condition list")
     r.add_argument("--extra-readers", default=None, help="more reader names to load from --frames (rd12c: the RD-12 arms)")
     r.add_argument("--teacher-frames", type=Path, default=None,
                    help="RD-4c: Claude's frames (RD-3's teacher-frames.jsonl), read as the reader `teacher`")
     rr = sub.add_parser("recall-report", help="pool RD-4 run folders over seeds")
     rr.add_argument("--runs", nargs="+", required=True)
     rr.add_argument("--output", type=Path, required=True)
-    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c"), default="tier-p", help="which pre-registered contrasts")
+    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d"), default="tier-p", help="which pre-registered contrasts")
     rr.add_argument("--resamples", type=int, default=4000)
     rr.add_argument("--seed", type=int, default=0)
     rl = sub.add_parser("relations", help="RD-3: relation choice on stated edges (mc-rel, react, and E11's readers)")
@@ -1093,6 +1212,7 @@ def main(argv: list[str] | None = None) -> None:
     rl.add_argument("--seed", type=int, default=0)
     rl.add_argument("--smoke", action="store_true")
     rl.add_argument("--overwrite", action="store_true")
+    rl.add_argument("--strict", action="store_true", help="RD-3b: also the precision-filtered `react-strict` reader (§19)")
     rr2 = sub.add_parser("relations-report", help="pool RD-3 run folders (Holm per track)")
     rr2.add_argument("--runs", nargs="+", required=True)
     rr2.add_argument("--output", type=Path, required=True)

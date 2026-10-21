@@ -444,6 +444,144 @@ class TreeStore:
         return out
 
 
+class StableCodebook(Codebook):
+    """`Codebook` seeded by SHA-256 of (seed, key) instead of Python's per-process salted `hash`: the same vectors in every
+    process (LG-D2's stores; the tier-P stores keep `Codebook`)."""
+
+    def _gen(self, key: str) -> torch.Generator:
+        import hashlib
+        digest = hashlib.sha256(f"{self.seed}:{key}".encode()).digest()
+        return torch.Generator().manual_seed(int.from_bytes(digest[:8], "little") % (2 ** 63))
+
+
+def soft_text(subject: str, lines: Sequence[tuple[str, float | None]], dist: dict[str, float], *, confidence: bool = True,
+              floor: float = 0.05) -> tuple[str, str]:
+    """A soft path as recall text: the trace, then (with two or more outcomes of weight ≥ `floor`) the possible outcomes, then
+    the most probable outcome as the conclusion with its weight. Returns (text, answer)."""
+    ranked = sorted(dist.items(), key=lambda kv: (-round(kv[1], 6), kv[0]))   # ties (to 1e-6) by name: BLAS rounding differs by process
+    answer, top = ranked[0]
+    fmt = lambda s, c: f"- {s}" + (f" ({c:.2f})" if confidence and c is not None else "")  # noqa: E731
+    body = [fmt(s, c) for s, c in lines]
+    shown = [(o, w) for o, w in ranked if w >= floor]
+    if len(shown) > 1:
+        body.append("- possible outcomes: " + "; ".join(f"{o} ({w:.2f})" for o, w in shown))
+    body.append(f"Conclusion: {answer} ({top:.2f})")
+    return "\n".join([f"recall({subject}):", *body]), answer
+
+
+class NoisyTreeStore(TreeStore):
+    """LG-D2 (pre-registration §19): `TreeStore` over a record with missing values (None: left out of the record vector), with a
+    `StableCodebook`. A value is missing when its read confidence is below `presence`.
+    - `execute`: the exact path; a test on a missing value counts as not met (the "otherwise" branch).
+    - `execute_soft`: the soft path; at a missing value both branches are followed, weighted by the test's prior
+      (`reference.missing_split`). The leaves reached are superposed into one bundle Σ w·leaf, decoded by least squares against
+      the item's outcome vectors."""
+
+    PRESENCE = 0.2
+
+    def __init__(self, item: dict[str, Any], record: dict[str, Any], *, width: int = 512, seed: int = 0, presence: float | None = None) -> None:
+        self.presence = self.PRESENCE if presence is None else float(presence)
+        super().__init__({**item, "record": record}, width=width, seed=seed)
+
+    def _encode_record(self, record: dict[str, Any]) -> torch.Tensor:
+        if not isinstance(self.cb, StableCodebook):
+            self.cb = StableCodebook(self.cb.width, self.cb.seed)
+        parts = [torch.zeros(self.cb.width)]
+        for a in self.item["attributes"]:
+            value = record.get(a["name"])
+            if value is None:
+                continue
+            filler = self.cb.filler(value) if a["values"] else self.number(float(value))
+            parts.append(ALG.bind(self.cb.role("ATTR:" + a["name"]), filler))
+        return torch.stack(parts).sum(0)
+
+    def present(self, attr: str) -> tuple[bool, Any, float]:
+        numeric = next(a["values"] is None for a in self.item["attributes"] if a["name"] == attr)
+        value, score = self.read_value(attr, numeric)
+        return score >= self.presence, value, score
+
+    def _holds(self, test: dict[str, Any], value: Any) -> bool:
+        return value == test["value"] if test["op"] == "is" else float(value) <= float(test["value"])
+
+    def execute(self) -> Recall:
+        from .world import test_text
+        out = Recall()
+        node = self.tree
+        while "leaf" not in node:
+            test = node["test"]
+            ok, value, score = self.present(test["attr"])
+            if not ok:
+                out.lines.append((f"{test_text(test)}? unknown, so no (read: nothing)", score))
+                node = node["no"]
+                continue
+            yes = self._holds(test, value)
+            out.lines.append((f"{test_text(test)}? {'yes' if yes else 'no'} (read: {value})", score))
+            node = node["yes"] if yes else node["no"]
+        out.conclusion, out.answer = node["leaf"], node["leaf"]
+        return out
+
+    def execute_soft(self, subject: str, *, confidence: bool = True) -> tuple[str, str, dict[str, float]]:
+        """(text, answer, decoded outcome weights). The trace follows the more probable branch at each missing value."""
+        from .world import test_text
+        reached: list[tuple[float, str]] = []
+        lines: list[tuple[str, float | None]] = []
+
+        def walk(node: dict[str, Any], w: float, known: dict[str, Any], main: bool) -> None:
+            if w <= 0:
+                return
+            if "leaf" in node:
+                reached.append((w, node["leaf"]))
+                return
+            test = node["test"]
+            ok, value, score = self.present(test["attr"])
+            if not ok:
+                p, k_yes, k_no = R.missing_split(test, self.item["attributes"], known)
+                if main:
+                    lines.append((f"{test_text(test)}? unknown (read: nothing): yes with prior {p:.2f}, no with prior {1 - p:.2f}", score))
+                walk(node["yes"], w * p, k_yes, main and p >= 0.5); walk(node["no"], w * (1 - p), k_no, main and p < 0.5)
+                return
+            yes = self._holds(test, value)
+            if main:
+                lines.append((f"{test_text(test)}? {'yes' if yes else 'no'} (read: {value})", score))
+            walk(node["yes"] if yes else node["no"], w, known, main)
+        walk(self.tree, 1.0, {}, True)
+        outcomes = list(self.item["outcomes"])
+        book = torch.stack([self.cb.filler(o) for o in outcomes])                      # (outcomes, d)
+        bundle = sum(w * self.cb.filler(leaf) for w, leaf in reached)                    # the path bundle
+        alpha = torch.linalg.lstsq(book.T, bundle[:, None]).solution[:, 0].clamp_min(0.0)
+        alpha = alpha / alpha.sum() if float(alpha.sum()) > 0 else torch.full_like(alpha, 1.0 / len(outcomes))
+        dist = {o: float(a) for o, a in zip(outcomes, alpha)}
+        text, answer = soft_text(subject, lines, dist, confidence=confidence)
+        return text, answer, dist
+
+
+def noisy_tree_symbolic(item: dict[str, Any], record: dict[str, Any], *, soft: bool) -> tuple[str, str, dict[str, float]]:
+    """LG-D2's symbolic twins, on the true missing set: `soft=False` the exact path with the "otherwise" convention, `soft=True`
+    the exact outcome distribution (`reference.tree_leaf_distribution`) in `soft_text` form. Returns (text, answer, dist)."""
+    from .world import test_text
+    if not soft:
+        leaf, path = R.run_tree_missing(item["tree"], record)
+        out = Recall(lines=[(f"{test_text(s['test'])}? " + (f"{'yes' if s['result'] else 'no'} (read: {s['value']})" if s["value"] is not None
+                              else "unknown, so no (read: nothing)"), 1.0) for s in path], conclusion=leaf, answer=leaf)
+        return out.text(item["entity"]), leaf, {leaf: 1.0}
+    dist = R.tree_leaf_distribution(item["tree"], record, item["attributes"])
+    lines: list[tuple[str, float | None]] = []
+    node, known = item["tree"], {}
+    while "leaf" not in node:                                                           # the trace: the more probable branch
+        test = node["test"]
+        value = record.get(test["attr"])
+        if value is None:
+            p, k_yes, k_no = R.missing_split(test, item["attributes"], known)
+            lines.append((f"{test_text(test)}? unknown (read: nothing): yes with prior {p:.2f}, no with prior {1 - p:.2f}", 1.0))
+            node, known = (node["yes"], k_yes) if p >= 0.5 else (node["no"], k_no)
+        else:
+            yes = R.holds(test, record)
+            lines.append((f"{test_text(test)}? {'yes' if yes else 'no'} (read: {value})", 1.0))
+            node = node["yes"] if yes else node["no"]
+    text, answer = soft_text(item["entity"], lines, dist)
+    return text, answer, dist
+
+
 def tree_symbolic(item: dict[str, Any]) -> Recall:
     from .world import test_text
     out = Recall()

@@ -1,0 +1,92 @@
+{
+ "seed": 1,
+ "scale": 1.0,
+ "width": 512,
+ "set": "trees-noisy",
+ "path": "/home/bhux/data/vsa-llm/e14/items/trees-noisy-s1.jsonl.gz",
+ "items": 600,
+ "sha256": "b45e227b2d1abd5ba85e82015d9776087d2704823eb5fb31ceced5f0de30493a",
+ "conditions": [
+  "none@0.1",
+  "none@0.3",
+  "path-sym-soft@0.1",
+  "path-sym-soft@0.3",
+  "path-vsa",
+  "path-vsa-soft@0.1",
+  "path-vsa-soft@0.3",
+  "path-vsa@0.1",
+  "path-vsa@0.3",
+  "tree-text",
+  "tree-text@0.1",
+  "tree-text@0.3"
+ ],
+ "ceilings": {
+  "agree path-vsa=path-sym@0.1": {
+   "accuracy": 1.0,
+   "n": 600
+  },
+  "agree path-vsa=path-sym@0.3": {
+   "accuracy": 1.0,
+   "n": 600
+  },
+  "path-sym-soft@0.1": {
+   "accuracy": 0.895,
+   "n": 600
+  },
+  "path-sym-soft@0.3": {
+   "accuracy": 0.7283333333333334,
+   "n": 600
+  },
+  "path-sym@0.1": {
+   "accuracy": 0.8883333333333333,
+   "n": 600
+  },
+  "path-sym@0.3": {
+   "accuracy": 0.7133333333333334,
+   "n": 600
+  },
+  "path-vsa": {
+   "accuracy": 1.0,
+   "n": 600
+  },
+  "path-vsa-soft@0.1": {
+   "accuracy": 0.895,
+   "n": 600
+  },
+  "path-vsa-soft@0.3": {
+   "accuracy": 0.7283333333333334,
+   "n": 600
+  },
+  "path-vsa@0.1": {
+   "accuracy": 0.8883333333333333,
+   "n": 600
+  },
+  "path-vsa@0.3": {
+   "accuracy": 0.7133333333333334,
+   "n": 600
+  }
+ },
+ "detection": {
+  "0.1|missing": {
+   "detected_present": 0.0,
+   "n": 255
+  },
+  "0.1|present": {
+   "detected_present": 1.0,
+   "n": 4545
+  },
+  "0.3|missing": {
+   "detected_present": 0.0,
+   "n": 705
+  },
+  "0.3|present": {
+   "detected_present": 1.0,
+   "n": 4095
+  }
+ },
+ "affected": {
+  "0.1": 0.2633333333333333,
+  "0.3": 0.635
+ },
+ "presence_threshold": 0.2
+}
