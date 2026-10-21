@@ -61,7 +61,7 @@ import yaml
 from torch import nn
 
 from ..data.corpus import TokenCorpus, eval_windows
-from ..evaluation.quantization import (auto_group_size, conv1d_to_linear, fake_quantize_module_, group_quantized_bytes,
+from ..evaluation.quantization import (auto_group_size, conv1d_to_linear, fake_quantize_module_, group_fake_quantize, group_quantized_bytes,
                                        index_bytes, is_quantized, merge_lora, quantize_weight_only, tensor_storage_bytes)
 from ..provenance import git_state, prepare_output_dir, write_run_metadata
 from ..statistics import _cluster_weights, holm_adjust, paired_ratio_bootstrap
@@ -98,8 +98,9 @@ def variant_names(bits: Sequence[int], variants: Sequence[str]) -> list[str]:
 def quantize_host(model: nn.Module, bits: int, group_size: int) -> dict[str, Any]:
     """Merge LoRA, cast the host's linear layers to bf16 (INT4's layout needs it; under bf16 autocast
     this is the precision they run at anyway) and quantize them with torchao in place."""
+    from ..integrations.transformers import side_adapters
     host = model.model
-    merged = merge_lora(host)
+    merged = merge_lora(host)               # host-mode LoRA only: B-B1 side adapters stay unmerged (FP16, like a channel)
     conv1d_to_linear(host)
     head = host.get_output_embeddings()
     tied = head.weight is host.get_input_embeddings().weight
@@ -108,7 +109,8 @@ def quantize_host(model: nn.Module, bits: int, group_size: int) -> dict[str, Any
             module.to(torch.bfloat16)
     quantize_weight_only(host, bits, group_size=group_size)
     linear = [(name, m) for name, m in host.named_modules() if isinstance(m, nn.Linear) and m is not head]
-    return {"lora_merged": merged, "head_tied": tied,
+    side = side_adapters(host)
+    return {"lora_merged": merged, "head_tied": tied, **({"side_adapters_kept": len(side)} if side else {}),
             "linear_quantized": sum(is_quantized(m.weight) for _, m in linear),
             "linear_skipped": [name for name, m in linear if not is_quantized(m.weight)]}
 
@@ -118,12 +120,22 @@ def _channel_modules(model: nn.Module) -> list[tuple[str, nn.Module]]:
 
 
 def quantize_channel(model: nn.Module, bits: int, group_size: int) -> dict[str, int]:
-    """Variant B: the channel and context, simulated with the host's scheme."""
+    """Variant B: the channel and context, simulated with the host's scheme; a B-B1 side module (unmerged LoRA
+    adapters next to the host) is quantized the same way (keys `side.<host parameter name>`)."""
+    from ..integrations.transformers import side_adapters
     sizes = {}
+    symmetric = bits == 8
     for prefix, module in _channel_modules(model):
-        symmetric = bits == 8
         for name, size in fake_quantize_module_(module, bits, None if symmetric else group_size, symmetric=symmetric).items():
             sizes[f"{prefix}.{name}"] = size
+    for name, adapter in side_adapters(model.model):        # the adapters' own tensors only (never `base`, the host weight)
+        for tensor_name in ("lora_a", "lora_b"):
+            tensor = getattr(adapter, tensor_name)
+            with torch.no_grad():
+                tensor.copy_(group_fake_quantize(tensor.detach().float(), bits, None if symmetric else group_size,
+                                                 symmetric=symmetric).to(tensor.dtype))
+            sizes[f"side.{name}.{tensor_name}"] = group_quantized_bytes(tensor.numel() // tensor.shape[-1], tensor.shape[-1], bits,
+                                                                        None if symmetric else group_size, symmetric=symmetric)
     return sizes
 
 
@@ -163,6 +175,8 @@ def model_bytes(model: nn.Module, channel_sizes: dict[str, int] | None = None, *
         seen.add(id(parameter))
         part = "lora" if ("lora_a" in name or "lora_b" in name) else "linear" if id(parameter) in linear_ids else "other"
         size = tensor_storage_bytes(parameter, float_bytes=2)
+        if part == "lora" and channel_sizes and f"side.{name}" in channel_sizes:     # B-B1 side module, variant B
+            size = channel_sizes[f"side.{name}"]
         parts[part] += size
         if part == "linear":
             if is_quantized(parameter):
@@ -228,7 +242,7 @@ def evaluate_run(run_dir: Path, out_dir: Path, *, bits: Sequence[int], variants:
     record.update(condition=run.condition, seed=run.seed, model=run.model, cohort=list(run.cohort))
     arrays: dict[str, np.ndarray] = {}
     strata = counts = None
-    has_channel = config["channel"]["mode"] != "none"
+    has_channel = config["channel"]["mode"] != "none" or bool(config["model"].get("side_lora"))   # B-B1: B quantizes the side module
     for name in variant_names(bits, variants):
         if name != "ref" and name.endswith("-B") and not has_channel:
             continue                                 # B = A without a channel

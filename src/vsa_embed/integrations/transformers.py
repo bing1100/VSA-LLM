@@ -9,8 +9,10 @@ be trained, frozen, or frozen with LoRA adapters on its attention and MLP projec
 
 from __future__ import annotations
 
+import contextlib
 import math
-from typing import Any, Iterable
+import re
+from typing import Any, Iterable, Iterator, Sequence
 
 import torch
 from torch import Tensor, nn
@@ -21,7 +23,13 @@ from ..span_channel import SpanChannel
 
 
 class LoRALinear(nn.Module):
-    """`y = W x + (α / r) · B A x` with `B` zero-initialised (identity at start)."""
+    """`y = W x + (α / r) · B A x` with `B` zero-initialised (identity at start).
+
+    `side_module` (False): an adapter of the B-B1 side module (`add_side_lora`) — trained next to a fully trained host,
+    kept unmerged by `evaluation.quantization.merge_lora` (the host's own linear weights are quantized, the adapter
+    keeps the channel's precision)."""
+
+    side_module = False
 
     def __init__(self, base: nn.Module, rank: int = 16, alpha: float = 32.0, *, dtype: torch.dtype | None = None) -> None:
         super().__init__()
@@ -74,6 +82,85 @@ def add_lora(model: nn.Module, *, rank: int = 16, alpha: float = 32.0,
                 setattr(module, child_name, wrapped)
                 params += [wrapped.lora_a, wrapped.lora_b]
     return params
+
+
+_LAYER = re.compile(r"(?:^|\.)(?:layers|h|blocks|layer)\.(\d+)\.")
+
+
+def lora_units(model: nn.Module, targets: Iterable[str] = LORA_TARGETS) -> list[tuple[str, int, int]]:
+    """(module name, decoder layer index or −1, in + out features) of every projection `add_lora` would wrap: the LoRA
+    parameters per unit of rank (works on a meta-device skeleton)."""
+    targets = set(targets)
+    units = []
+    for name, module in model.named_modules():
+        for child_name, child in module.named_children():
+            if child_name in targets and hasattr(child, "weight") and child.weight.ndim == 2 and not isinstance(child, LoRALinear):
+                full = f"{name}.{child_name}" if name else child_name
+                match = _LAYER.search(full + ".")
+                units.append((full, int(match[1]) if match else -1, int(sum(child.weight.shape))))
+    return units
+
+
+def side_lora_plan(units: Sequence[tuple[str, int, int]], budget: int) -> dict[str, Any]:
+    """Rank pattern of a side module matched to `budget` parameters: rank r on every target projection, r + 1 on those of
+    the first k decoder layers, with (r, k) the pattern whose parameter count is closest to `budget` (r ≥ 1)."""
+    per_rank = sum(u for _, _, u in units)
+    layers = sorted({layer for _, layer, _ in units})
+    if not per_rank:
+        raise ValueError("no LoRA target projections in the host")
+    per_layer = {layer: sum(u for _, l, u in units if l == layer) for layer in layers}
+    best = None
+    for rank in range(max(1, budget // per_rank - 1), budget // per_rank + 2):
+        total = rank * per_rank
+        for k in range(len(layers) + 1):
+            count = total + sum(per_layer[l] for l in layers[:k])
+            if best is None or abs(count - budget) < abs(best[2] - budget):
+                best = (rank, k, count)
+    rank, extra, count = best
+    return {"rank": rank, "extra_rank_layers": extra, "parameters": count, "matched_to": int(budget),
+            "ratio": count / budget if budget else None, "per_rank": per_rank, "layers": len(layers)}
+
+
+def add_side_lora(model: nn.Module, *, rank: int, extra_rank_layers: int = 0, targets: Iterable[str] = LORA_TARGETS,
+                  dtype: torch.dtype | None = None) -> dict[str, Any]:
+    """The B-B1 side module: `LoRALinear` adapters (`side_module = True`) on the target projections of a host whose own
+    weights stay trainable, rank `rank` (`rank + 1` in the first `extra_rank_layers` decoder layers), α = rank (scale 1, so
+    the update `B A` does not depend on the rank pattern). Returns the record (parameters, adapters, rank pattern)."""
+    units = lora_units(model, targets)
+    layers = sorted({layer for _, layer, _ in units})
+    wider = set(layers[:int(extra_rank_layers)])
+    by_name = dict(model.named_modules())
+    count = adapters = 0
+    for full, layer, _ in units:
+        parent_name, _, child_name = full.rpartition(".")
+        parent = by_name[parent_name] if parent_name else model
+        r = int(rank) + (1 if layer in wider else 0)
+        wrapped = LoRALinear(getattr(parent, child_name), r, float(r), dtype=dtype)
+        wrapped.side_module = True
+        setattr(parent, child_name, wrapped)
+        count += wrapped.lora_a.numel() + wrapped.lora_b.numel()
+        adapters += 1
+    return {"rank": int(rank), "extra_rank_layers": int(extra_rank_layers), "adapters": adapters, "parameters": int(count),
+            "alpha": "rank (scale 1)"}
+
+
+def side_adapters(model: nn.Module) -> list[tuple[str, LoRALinear]]:
+    """(name, adapter) of the B-B1 side module's adapters in `model`."""
+    return [(name, m) for name, m in model.named_modules() if isinstance(m, LoRALinear) and m.side_module]
+
+
+@contextlib.contextmanager
+def side_lora_off(model: nn.Module) -> Iterator[int]:
+    """Within the block the side module adds nothing (scale 0); yields the number of adapters switched off."""
+    adapters = side_adapters(model)
+    scales = [m.scale for _, m in adapters]
+    for _, m in adapters:
+        m.scale = 0.0
+    try:
+        yield len(adapters)
+    finally:
+        for (_, m), scale in zip(adapters, scales):
+            m.scale = scale
 
 
 def chunked_causal_lm_loss(hidden: Tensor, output_weight: Tensor, labels: Tensor, *, chunk: int = 2048,

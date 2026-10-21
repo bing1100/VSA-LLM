@@ -65,6 +65,16 @@ Opt-in keys of the binding and unbinding program (decisions 60–61; absent keys
   steps: 1, typed: true, source: "static"}` — a head that predicts a role from the hidden state at layer L, unbinds it
   from the most recent linked concept's frame store, cleans up and adds the filler, gated, to the residual stream.
 
+Opt-in key of the E9 bit-matched side-module control (B-B1, addendum 2026-10-20; absent changes nothing):
+
+- `model.side_lora` (`{rank, extra_rank_layers: 0, targets: null}`): a fully trained host (`host_mode: train`, C0′'s
+  update) plus LoRA adapters on its projections (`integrations.transformers.add_side_lora`: rank `rank`, `rank + 1` in the
+  first `extra_rank_layers` decoder layers, α = rank), trained with the channel's parameter group (`train.lr`, its
+  schedule) while the host takes `train.host_lr`. No ontology, no composition, not keyed to terms: extra capacity that
+  sits outside the host's linear weights, as the channel does. Post-training quantization keeps the adapters unmerged
+  (`evaluation.quantization.merge_lora`); `e4_quant` / `e9_rescore` variant B quantizes them as it quantizes a channel.
+  The manifest records the pattern and parameter count (`side_lora`).
+
 Opt-in keys for larger pretrained hosts (E9 on Qwen3; absent keys change nothing):
 
 - `channel.scale_to_host` (false) and `channel.host_scale_fraction` (`span_channel.HOST_SCALE_FRACTION`,
@@ -336,8 +346,17 @@ def wrap_host(config: dict[str, Any], base: torch.nn.Module, channel: SpanChanne
         optional["lora_targets"] = lora_targets(config["model"]["lora_targets"])
     if config["model"].get("loss_chunk"):
         optional["loss_chunk"] = int(config["model"]["loss_chunk"])
-    return ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if pretrained else "train",
-                     lora_rank=int(config["model"]["lora_rank"]), adapter_dtype=lora_adapter_dtype(config), **optional)
+    model = ChannelLM(base, channel, context=context, host_mode=config["model"]["host_mode"] if pretrained else "train",
+                      lora_rank=int(config["model"]["lora_rank"]), adapter_dtype=lora_adapter_dtype(config), **optional)
+    side = config["model"].get("side_lora")
+    if side:                                          # opt-in (E9 B-B1): the bit-matched unstructured side module
+        from ..integrations.transformers import add_side_lora
+        if model.host_mode != "train":
+            raise ValueError("model.side_lora needs a fully trained host (host_mode train): it sits next to C0′'s update")
+        model.side_lora = add_side_lora(model.model, rank=int(side["rank"]), extra_rank_layers=int(side.get("extra_rank_layers", 0)),
+                                        targets=lora_targets(side.get("targets")), dtype=lora_adapter_dtype(config))
+        model.side_parameter_names = frozenset(n for n, _ in model.named_parameters() if n.endswith((".lora_a", ".lora_b")))
+    return model
 
 
 def host_records(config: dict[str, Any], model: ChannelLM) -> dict[str, Any]:
@@ -352,6 +371,8 @@ def host_records(config: dict[str, Any], model: ChannelLM) -> dict[str, Any]:
         records["linear_attention_kernels"] = {"status": kernel_status(), "calls": kernel_calls(), "python": sys.executable}
     if config["model"].get("lora_targets") is not None and model.host_mode == "lora":
         records["lora_coverage"] = lora_layer_coverage(model.model)
+    if getattr(model, "side_lora", None):              # E9 B-B1 side module (opt-in)
+        records["side_lora"] = dict(model.side_lora)
     return records
 
 
@@ -550,12 +571,13 @@ def check_host_corpora(config: dict[str, Any], base: torch.nn.Module, corpora: t
 
 
 def _host_lr_groups(trainable: list[tuple[str, torch.nn.Parameter]], embedding_names: tuple[str, ...],
-                    train_cfg: dict[str, Any]) -> list[dict[str, Any]]:
-    """Parameter groups with host parameters (names under `model.`) at `host_lr` via `lr_scale`."""
+                    train_cfg: dict[str, Any], side: frozenset[str] = frozenset()) -> list[dict[str, Any]]:
+    """Parameter groups with host parameters (names under `model.`) at `host_lr` via `lr_scale`; the B-B1 side module's
+    adapters (`side`, under `model.` too) train with the channel's parameters at `train.lr`."""
     groups = []
     for host in (False, True):
         for decayed in (True, False):
-            params = [p for n, p in trainable if n.startswith("model.") == host
+            params = [p for n, p in trainable if (n.startswith("model.") and n not in side) == host
                       and (p.ndim >= 2 and not any(e in n for e in embedding_names)) == decayed]
             if params:
                 group = {"params": params, "weight_decay": train_cfg["weight_decay"] if decayed else 0.0}
@@ -575,7 +597,7 @@ def build_optimizer(model: ChannelLM, train_cfg: dict[str, Any], device: torch.d
         raise ValueError("no trainable parameters (frozen host without a channel? use train.eval_only)")
     groups = [{"params": decay, "weight_decay": train_cfg["weight_decay"]}, {"params": no_decay, "weight_decay": 0.0}]
     if train_cfg.get("host_lr") is not None:
-        groups = _host_lr_groups(trainable, embedding_names, train_cfg)
+        groups = _host_lr_groups(trainable, embedding_names, train_cfg, getattr(model, "side_parameter_names", frozenset()))
     return torch.optim.AdamW(groups, lr=train_cfg["lr"], betas=(train_cfg["beta1"], train_cfg["beta2"]),
                              fused=device.type == "cuda")
 

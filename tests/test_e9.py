@@ -777,6 +777,52 @@ def test_t5_alias_table_replays_exactly(monkeypatch) -> None:
     assert lexicon.text("type:process") == "process" and any(t.startswith("the ") for t in lexicon.texts.values())
 
 
+# -- T2 developer tools (E9 addendum 2026-10-20) ---------------------------------------------------------------------------
+
+def test_t2_track_spec_plan_and_atom_text(plan_root, tmp_path) -> None:
+    spec = tracks.TRACKS["t2"]
+    assert spec.windows == 3072 and spec.eval_split == "eval" and spec.general_split == "eval-general" and not spec.family_roots
+    assert spec.category_relations == ("kind",) and spec.edit_relations[0] == "returns" and not spec.licensed
+    assert tracks.t2_atom_text("symbol:pondpirk.stoltgoum.KultGonpleirk") == "KultGonpleirk"
+    assert tracks.t2_atom_text("module:sashsish.brushbrolk") == "brushbrolk" and tracks.t2_atom_text("symbol:ValueError") == "ValueError"
+    assert tracks.t2_atom_text("version:kluntind 2.9") == "2.9" and tracks.t2_atom_text("param:input_values") == "input_values"
+    assert tracks.t2_atom_text("purpose:commits a transaction") == "commits a transaction"
+    with pytest.raises(ValueError, match="no qwen3 corpora"):
+        tracks.track_spec("t2", "qwen3")
+    paths = _plan(plan_root, track="t2", hosts=["SmolLM2-360M"], models=["P0", "C5"])
+    config = yaml.safe_load(next(p for p in paths if "-C5-" in p.name).read_text())
+    assert config["e9_track"] == "t2" and config["eval"]["windows"] == 3072 and config["data"]["eval"] == str(plan_root["data"] / "eval")
+    with pytest.raises(ValueError, match="3072 windows"):
+        _plan(plan_root, track="t2", hosts=["SmolLM2-360M"], models=["C5"], windows=1024)
+    jobs = e9_plan.evaluation_jobs(Path("run"), spec, alias_table=Path("t2.json"))
+    assert {s for s, _, _ in jobs} == {"probes", "probes-int4", "zeroshot", "zeroshot-int4", "edit", "edit-int4"}
+    edit_command = next(c for s, c, _ in jobs if s == "edit")
+    assert edit_command[edit_command.index("--new-items") + 1].endswith("new-words-t2-smollm2-v1")
+
+
+def _t2_available() -> bool:
+    spec = tracks.TRACKS["t2"]
+    root = Path(__file__).resolve().parents[1]
+    docs = Path("~/data/vsa-llm/tracks/t2-devtools/docs-v1").expanduser()
+    return spec.ontology.exists() and (root / spec.config).exists() and docs.exists()
+
+
+@pytest.mark.skipif(not _t2_available(), reason="T2 corpus not on this machine")
+def test_t2_alias_table_replays_exactly_and_items_convert(monkeypatch) -> None:
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+    spec = tracks.TRACKS["t2"]
+    table = tracks.track_alias_table(spec)
+    ontology = torch.load(spec.ontology, weights_only=False)
+    assert table.digest() == ontology["alias_table_sha256"] and table.normalization == "identifier"
+    assert table.digest() == cp.load_alias_table(spec.ontology.with_name("alias_table.json")).digest()   # the build's own table
+    lexicon = tracks.track_lexicon(spec, ontology)
+    assert lexicon.text("kind:function") == "function" and lexicon.prompts("*", "returns") == ["`{x}` returns", "The return type of `{x}` is"]
+    assert lexicon.statements("*", "returns") == ["Calling `{x}` gives you a value of type"]
+    concepts, items = tracks.convert_wpc7_items(spec.items_dir)
+    assert {c["split"] for c in concepts} == {"synthetic", "heldout"} and {i["test"] for i in items} == {"property", "entailment"}
+    assert all(table.alias_to_entry.get(c["surface"].lower()) is not None for c in concepts[:50])          # identifiers link
+
+
 # -- 8. item versions (decision 56): v2 ⊃ v1, opt-in jobs and report ------------------------------------------------------
 
 def _frame_key(frame) -> frozenset:

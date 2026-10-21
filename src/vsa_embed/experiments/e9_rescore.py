@@ -23,10 +23,12 @@ each as written, lower-cased and capitalized, with and without a leading space, 
 - `-emb`: the input-embedding table quantized too (4-bit `rtn` grid; a tied output head keeps its 16-bit copy);
   `-embhead`: the tied table, i.e. lookup and head (GGUF-style);
 - `-off`: the channel switched off (gate 0: no row is injected) — claim-B control B-B2, "how much of the INT4 gap is the
-  channel and how much the C5-trained host weights". A run without a channel answers `-off` with its plain variant.
+  channel and how much the C5-trained host weights". A run without a channel answers `-off` with its plain variant; a
+  run with the B-B1 side module (`model.side_lora`, arm C0L) switches the side module off instead (its adapters add 0).
 
 Profiles (`--profile`): `controls` = `ref ref-off int4-A int4-A-off int4-A-emb int4-hqq int4-nf4 int4-gptq int4-awq`
-(P0, C0′, C2, C5 — the claim-B table), `light` = `ref int4-A` (the ablation / row-source arms); `auto` picks by the
+(P0, C0′, C2, C5 — the claim-B table), `light` = `ref int4-A` (the ablation / row-source arms), `side` = the controls
+without `-emb`, plus `int4-B` (the side module quantized too; the B-B1 arm C0L, addendum 2026-10-20); `auto` picks by the
 model in the run name. Each variant group (base + embedding flag) is quantized once and evaluated with the channel on
 and, if asked, off.
 
@@ -66,8 +68,12 @@ FILLER_ROOT = Path("~/data/vsa-llm/e9/filler-tables").expanduser()
 PROFILES = {
     "controls": ("ref", "ref-off", "int4-A", "int4-A-off", "int4-A-emb", "int4-hqq", "int4-nf4", "int4-gptq", "int4-awq"),
     "light": ("ref", "int4-A"),
+    # E9 B-B1 (addendum 2026-10-20): the bit-matched side-module arm, scored on the claim-B quantizers, with the side module
+    # off (`-off`) and quantized (`int4-B`); the `-emb` control is not part of B-B1.
+    "side": ("ref", "ref-off", "int4-A", "int4-A-off", "int4-B", "int4-hqq", "int4-nf4", "int4-gptq", "int4-awq"),
 }
 CONTROL_MODELS = frozenset({"P0", "C0p", "C0'", "C2", "C5"})
+SIDE_MODELS = frozenset({"C0L"})
 TORCHAO_BASES = {"int8-A": (8, False), "int4-A": (4, False), "int4-B": (4, True)}
 SIMULATED_BASES = {"int4-rtn": "rtn", "int4-hqq": "hqq", "int4-nf4": "nf4", "int4-gptq": "gptq", "int4-awq": "awq"}
 BASES = ("ref", *TORCHAO_BASES, *SIMULATED_BASES)
@@ -182,7 +188,7 @@ def plain_variant(name: str) -> str:
 
 def profile_variants(profile: str, model: str | None) -> list[str]:
     if profile == "auto":
-        profile = "controls" if (model or "") in CONTROL_MODELS else "light"
+        profile = "controls" if (model or "") in CONTROL_MODELS else "side" if (model or "") in SIDE_MODELS else "light"
     if profile not in PROFILES:
         raise ValueError(f"profile must be auto or one of {sorted(PROFILES)}")
     return list(PROFILES[profile])
@@ -190,11 +196,14 @@ def profile_variants(profile: str, model: str | None) -> list[str]:
 
 @contextlib.contextmanager
 def channel_off(model: Any) -> Iterator[None]:
-    """Within the block the model runs without its channel (gate 0: no row injected); the P1 context needs the channel."""
+    """Within the block the model runs without its channel (gate 0: no row injected; the P1 context needs the channel) and
+    without its B-B1 side module, if it has one (adapters scaled to 0)."""
+    from ..integrations.transformers import side_lora_off
     channel = model.channel
     model.channel = None
     try:
-        yield
+        with side_lora_off(model.model):
+            yield
     finally:
         model.channel = channel
 
@@ -244,7 +253,7 @@ def prepare_variant(run_dir: Path, base: str, emb: str | None, *, device: torch.
             info["channel_tensors"] = sorted(quantize_channel(model, bits, size))
     elif base in SIMULATED_BASES:
         scheme = SIMULATED_BASES[base]
-        info["lora_merged"] = merge_lora(model.model)
+        info["lora_merged"] = merge_lora(model.model)         # host-mode LoRA only; a B-B1 side module stays unmerged
         forward = None
         if scheme in {"gptq", "awq"}:
             forward = calibration_forward(model, calibration["config"], windows=calibration["windows"], corpus=calibration["corpus"],
@@ -342,9 +351,12 @@ def score_run(run_dir: Path, output: Path | None = None, *, variants: Sequence[s
             record.setdefault("redone", {})[name] = {
                 "at": time.strftime("%Y-%m-%dT%H:%M:%S"), "git_sha": git_at_start.get("git_sha"),
                 "previous_all": (previous or {}).get("strata", {}).get("all", {}).get("loss")}
-    has_channel = config["channel"]["mode"] != "none"
+    side = config["model"].get("side_lora")
+    has_channel = config["channel"]["mode"] != "none" or bool(side)      # `-off` switches a channel or a side module off
     record.update(channel=config["channel"]["mode"], fillers=str(fillers) if fillers else None,
                   frames_sha256=frames_digest(ontology), windows=len(starts))
+    if side:
+        record["side_lora"] = dict(side)
     requested = [parse_variant(v) for v in variants]
     todo = [v for v in requested if v["name"] not in sums and (has_channel or not v["off"])]
     groups: dict[tuple[str, str | None], list[dict[str, Any]]] = {}

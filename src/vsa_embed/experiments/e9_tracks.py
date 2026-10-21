@@ -25,6 +25,10 @@ Tracks (SmolLM2-tokenized corpora; order of priority):
   frames' fillers, frames from Wikidata statements (`ontologies/wikidata.py`), linked in FineWeb-Edu documents that
   mention them (`t8_wikidata_corpus`); M1 holdout (node- and alias-disjoint, every training document naming a held-out
   entity excluded); evaluation on `eval-entities`; no WP-C7 zero-shot items.
+- `t2` — T2 developer tools (E8 WP-T2; E9 addendum 2026-10-20): API symbols of invented private libraries
+  (contamination-free) and real packages as concepts, linked with the `identifier` alias normalization; evaluation on
+  `eval` with 3,072 windows (WP-T1's strict bar); its WP-C7 zero-shot items are the 600 schema-only "new API symbols"
+  and the held-out symbols. SmolLM2 build only.
 
 Host tokenizer families (WP-Qwen): every track is built for SmolLM2 (`data_root`) and, relinked with the same
 ontology, alias table and holdout, for the Qwen3 base tokenizer (`TrackSpec.for_family("qwen3")`, `QWEN3_ROOTS`)
@@ -137,6 +141,18 @@ T7_TEMPLATES = {
     "mapped_to": RelationTemplates(["{x} is a kind of", "In MeSH, {x} is indexed under"], "{x} is a type of {y}."),
     "record_class": RelationTemplates(["{x} is classified as a", "In MeSH, {x} is recorded as a"], "{x} is a {y}."),
 }
+
+
+def t2_atom_text(atom: str) -> str:
+    """Readable filler of a T2 atomic: a symbol or module by its last dotted component (how the track's items and
+    documentation name it: `brushbrolk`, `RourbdruPloultkloun`), a version by its number (`version:<library> 1.1` → `1.1`),
+    anything else (kind, library, language, category, purpose, type, parameter, status) by its value."""
+    kind, _, value = atom.partition(":")
+    if kind in {"symbol", "module"}:
+        return value.rsplit(".", 1)[-1]
+    if kind == "version":
+        return value.rsplit(" ", 1)[-1]
+    return value
 
 
 @dataclass(frozen=True)
@@ -266,6 +282,18 @@ TRACKS: dict[str, TrackSpec] = {
                         kept_relations=("mapped_to", "parent", "branch_top", "branch_second", "record_class"),
                         edit_relations=("pharmacological_action", "mapped_to", "parent"),
                         family_roots={"qwen3": QWEN3_ROOTS["t7rood"]}),
+    # T2 (E8 WP-T2; E9 addendum 2026-10-20, experiments/e9-retrofit/preregistration-addendum-2026-10-20-t2.md): API symbols
+    # of 16 invented private libraries (contamination-free) and 20 real packages + Node.js, SmolLM2 build only. 3,072 windows:
+    # the fewest that meet WP-T1's strict bar at ℓ_min 2 (runs/v1/feasibility_strict.json; C7's criterion holds at 512).
+    # Linked with the `identifier` alias normalization (snake_case symbols link in code), which the replayed alias table
+    # keeps. Category = the symbol's kind; new words keep kind, library, language and owner; edits change the return type
+    # (functions, methods, constants), else the category, else the API status.
+    "t2": TrackSpec("t2", "T2 developer tools (private libraries + real API documentation)",
+                    DATA / "tracks/t2-devtools/v1-smollm2", eval_split="eval", windows=3072,
+                    config=Path("experiments/t2-developer-tools/t2.yaml"), items_dir=Path("experiments/t2-developer-tools/items"),
+                    holdout_names=Path("experiments/t2-developer-tools/items/holdout_concepts.txt"),
+                    category_relations=("kind",), kept_relations=("kind", "library", "language", "member_of"),
+                    edit_relations=("returns", "category", "status")),
     # T8 (decision 63): 8,192 windows = the fewest that meet the held-out and rare criteria at ℓ_min 2 (runs/v1/feasibility.json).
     # Category = the entity's type (P31); edits change a typed, single-valued fact (citizenship,
     # occupation, country, birthplace, …) to a filler of the same type.
@@ -521,6 +549,11 @@ def track_lexicon(spec: TrackSpec, ontology: dict[str, Any] | None = None) -> Tr
                 texts[atom] = meta["filler_headings"][value]
                 types[atom] = f"wd:{meta['filler_types'].get(value) or 'other'}"
         templates, article = relation_templates(), ARTICLE_RELATIONS
+    elif spec.name == "t2":
+        from ..tracks.devtools import ZEROSHOT        # the track's own wordings (signature and doc-QA forms)
+        templates = ZEROSHOT
+        for atom in atoms:
+            texts[atom] = t2_atom_text(atom)
     else:
         raise ValueError("WordNet uses e9_ontology_edit.WordNetLexicon")
     return TrackLexicon(spec.name, templates, texts, types, category_relations=spec.category_relations,

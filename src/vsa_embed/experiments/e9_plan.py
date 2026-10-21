@@ -87,8 +87,20 @@ twins, the strict / filler strata (`e9_freqbias score`), the readout evaluation 
 role prediction, filler recovery; `e9_binding_readout`) and the binding probe; their batch report is the job
 `<stage>-report-<seeds>-readout-<hosts>`.
 
+B-B1 side-module arm (2026-10-20 addendum, `experiments/e9-retrofit/preregistration-addendum-2026-10-20-bb1.md`;
+`SIDE_ARMS`, opt-in through `--models`, SmolLM2 full fine-tuning only): `C0L` = C0′ plus an unstructured side module —
+LoRA adapters on the host's projections (`model.side_lora`, `training.lm`), no channel — with as many parameters as C5's
+channel on the same track and host (`channel_parameters` of the stage's C5 config; `side_lora_spec`: rank r, r + 1 in the
+first k layers, the closest count). It gets only its claim-B rescoring (`e9_rescore` profile `side`: the side module off,
+quantized, and the four simulated quantizers), and its batch report is `e9_bb1 report` (`report/<stage>-bb1`, job
+`<stage>-report-<seeds>-bb1-<hosts>`).
+
+**T2** (`--track t2`, 2026-10-20 addendum `preregistration-addendum-2026-10-20-t2.md`): the developer-tools track's SmolLM2
+build, 3,072 evaluation windows, its WP-C7 zero-shot items and dimension-3 items `items/{new-words,edits}-t2-smollm2-v1`.
+
 **Batch report folders** (`batch_tag`): a batch with arms carries a tag in its quant / report job names (`-pq-` for the
-WP-PQ1 arms, `-readout-` for the readout arms) and writes its R9 report to `report/<stage>-<tag>`; only a base batch
+WP-PQ1 arms, `-readout-` for the readout arms, `-bb1-` for the side-module arm) and writes its R9 report to
+`report/<stage>-<tag>`; only a base batch
 (P0 / C0′ / C2 / C5) writes `report/<stage>`, the folder R9, the claims ledger and the draft cite.
 
 Job chaining (the queue runs the lowest priority number first, so everything queued after training at
@@ -201,9 +213,16 @@ READOUT_ARMS: dict[str, dict[str, Any]] = {
     # (does learning the operator matter for the readout?); unbinding by the conjugate, the readout trains around it
     "U5rf": {"operator": "random_fixed:unitary_hrr"},
 }
+# 2026-10-20 addendum (experiments/e9-retrofit/preregistration-addendum-2026-10-20-bb1.md; novelty check B-B1): C0′ plus a
+# bit-matched unstructured side module — LoRA adapters on the fully trained host's projections (`model.side_lora`), no
+# channel, no ontology, not keyed to terms, with as many parameters as C5's channel on the same track and host
+# (`side_lora_spec`; FP16 next to the INT4 host, as the channel). SmolLM2 full fine-tuning only. Evaluated by its claim-B
+# rescoring (`e9_rescore` profile `side`), no `pq` items (it has no channel); its batch reports with `e9_bb1`.
+SIDE_ARMS: dict[str, dict[str, Any]] = {"C0L": {}}
 ARMS = (*C5_ABLATIONS, *ROW_SOURCE_ARMS, *FREE_ARMS, *HYBRID_ARMS, *HASHED_ARMS, *ONTOLOGY_ARMS)
-# Every arm planned and evaluated like the WP-PQ1 arms (the `pq` chain, rescoring, no `e4_quant`): those and the readout arms.
-ARM_LIKE = (*ARMS, *READOUT_ARMS)
+# Every arm planned and evaluated like the WP-PQ1 arms (the `pq` chain, rescoring, no `e4_quant`): those, the readout arms and
+# the B-B1 side-module arm (rescoring only: it has no channel for the `pq` items).
+ARM_LIKE = (*ARMS, *READOUT_ARMS, *SIDE_ARMS)
 ALL_MODELS = MODELS + ARM_LIKE
 MODE_LABELS = {"train": "full", "lora": "lora", "frozen": "frozen"}
 HOST_LR = {"train": 3.0e-5, "lora": 2.0e-4}
@@ -312,13 +331,18 @@ def _merge(config: dict[str, Any], part: dict[str, Any]) -> None:
 
 
 def model_spec(model: str, *, free_dimension: int, gate_bias: float, source: dict[str, Any] | None = None,
-               hybrid: dict[str, Any] | None = None, buckets: int | None = None) -> dict[str, Any]:
+               hybrid: dict[str, Any] | None = None, buckets: int | None = None, side: dict[str, Any] | None = None) -> dict[str, Any]:
     """Channel keys of a model; the row-source arms (C6m / C6d / C6g) need `source` (`source_table`, `source_hidden`,
     `source_kind`; `write_stage` fills it), the hybrid arms their matched channel (`hybrid`), the hashed arm its matched
-    bucket count (`buckets`)."""
+    bucket count (`buckets`), the side-module arm its matched rank pattern (`side`, `side_lora_spec`: no channel, the
+    `model.side_lora` key)."""
     table = conditions("hrr", 8, 256, free_dimension, 256, {})
     if model in {"P0", "C0p"}:
         return {"channel": {"mode": "none"}}
+    if model in SIDE_ARMS:
+        if not side:
+            raise ValueError(f"{model} needs its matched side-module rank pattern (side_lora_spec)")
+        return {"channel": {"mode": "none"}, "model": {"side_lora": dict(side)}}
     if model in C5_ABLATIONS:
         spec = copy.deepcopy(table["C5"])
         spec["channel"].update(C5_ABLATIONS[model])
@@ -358,6 +382,46 @@ def channel_budget(ontology: dict[str, Any] | Path, model_dimension: int, channe
     projector; the row-source arms' projector MLP is matched to the same budget."""
     onto = torch.load(ontology, weights_only=False) if isinstance(ontology, (str, Path)) else ontology
     return int((onto["atomic_count"] + onto["relation_count"]) * channel_dimension + channel_dimension * model_dimension)
+
+
+def channel_parameters(config: dict[str, Any], ontology: dict[str, Any] | Path) -> int:
+    """Floating-point parameters and buffers of a config's channel and P1 context as built (`training.lm.build_channel`):
+    what `e4_quant.model_bytes` counts as the channel's bytes at 16 bits (÷ 2), integer frame buffers excluded."""
+    from vsa_embed.training.lm import build_channel, resolve_config
+    onto = torch.load(ontology, weights_only=False) if isinstance(ontology, (str, Path)) else ontology
+    resolved = resolve_config(config)
+    width = int(next(h["width"] for h in CPT_HOSTS.values() if h["pretrained"] == resolved["model"]["pretrained"]))
+    channel, context = build_channel(resolved, onto, width)
+    tensors: dict[int, int] = {}
+    for module in (channel, context):
+        if module is not None:
+            for _, tensor in [*module.named_parameters(), *module.named_buffers()]:
+                if tensor.is_floating_point():
+                    tensors[id(tensor)] = tensor.numel()
+    return int(sum(tensors.values()))
+
+
+@functools.lru_cache(maxsize=None)
+def host_lora_units(host: str) -> tuple[tuple[str, int, int], ...]:
+    """LoRA parameters per unit of rank of every default target projection of `host` (`integrations.transformers.lora_units`),
+    from a meta-device skeleton of its Hugging Face config (no weights are loaded)."""
+    from transformers import AutoConfig, AutoModelForCausalLM
+
+    from vsa_embed.integrations.transformers import lora_units
+    config = AutoConfig.from_pretrained(CPT_HOSTS[host]["pretrained"], local_files_only=True)
+    with torch.device("meta"):
+        skeleton = AutoModelForCausalLM.from_config(config)
+    return tuple(lora_units(skeleton))
+
+
+def side_lora_spec(host: str, budget: int) -> dict[str, Any]:
+    """`model.side_lora` of the B-B1 arm on `host`, matched to `budget` (C5's `channel_parameters` on the same track and host):
+    rank r on every default projection, r + 1 in the first k decoder layers, the closest count (`side_lora_plan`)."""
+    from vsa_embed.integrations.transformers import side_lora_plan
+    plan = side_lora_plan(host_lora_units(host), int(budget))
+    return {"rank": plan["rank"], "extra_rank_layers": plan["extra_rank_layers"], "parameters": plan["parameters"],
+            "matched_to": plan["matched_to"], "ratio": round(float(plan["ratio"]), 6),
+            "matched_to_source": "C5's channel floating-point parameters on this track and host (e9_plan.channel_parameters)"}
 
 
 def row_source(model: str, *, track: str, family: str, host: str, budget: int) -> dict[str, Any]:
@@ -426,7 +490,8 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
                windows: int = MIN_WINDOWS, channel_lr: float = 1.0e-3, eval_split: str = "eval",
                overrides: dict[str, Any] | None = None, plan: dict[str, Any] | None = None,
                channel_extra: dict[str, Any] | None = None, source: dict[str, Any] | None = None,
-               hybrid: dict[str, Any] | None = None, buckets: int | None = None) -> tuple[str, dict[str, Any]]:
+               hybrid: dict[str, Any] | None = None, buckets: int | None = None,
+               side: dict[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
     """(file stem, config) of one run; P0 ignores the host mode (frozen, evaluation only). `plan` (`host_plan`)
     sets micro-batches, host model keys and evaluation batch (default: the tables); `channel_extra` is merged
     into the channel of every model with a channel (C2, C5 and the WP-PQ1 arms; Qwen3: `scale_to_host`); `source`
@@ -452,8 +517,11 @@ def run_config(*, stage: str, host: str, mode: str, model: str, seed: int, data_
                   "save_trainable_only": host_mode != "train"},
         "eval": {"windows": int(windows), "batch": plan["eval_batch"]},
     })
-    _merge(config, model_spec(model, free_dimension=free_dimension, gate_bias=gate_bias, source=source, hybrid=hybrid, buckets=buckets))
-    if model not in {"P0", "C0p"} and channel_extra:
+    if model in SIDE_ARMS and host_mode != "train":
+        raise ValueError(f"{model} (the B-B1 side module) needs a fully trained host (--host-mode train)")
+    _merge(config, model_spec(model, free_dimension=free_dimension, gate_bias=gate_bias, source=source, hybrid=hybrid, buckets=buckets,
+                              side=side))
+    if model not in {"P0", "C0p", *SIDE_ARMS} and channel_extra:
         _merge(config, {"channel": channel_extra})
     if model == "P0":
         config["train"]["eval_only"] = True
@@ -497,7 +565,8 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
     if counts is None:
         raise FileNotFoundError(f"no ontology under {corpus_root} (build the track's {family} corpus, or pass counts_ontology)")
     paths = []
-    sizes = torch.load(counts, weights_only=False) if any(m in ROW_SOURCE_ARMS or m in HYBRID_ARMS for m in models) else None
+    sizes = (torch.load(counts, weights_only=False) if any(m in ROW_SOURCE_ARMS or m in HYBRID_ARMS or m in SIDE_ARMS for m in models)
+             else None)
     for host in hosts:
         free_dimension, buckets = matched_sizes(counts, CPT_HOSTS[host]["width"], 256)
         hybrids = None
@@ -505,6 +574,13 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
             from .e4_plan import matched_hybrid_widths
             hybrids = matched_hybrid_widths(sizes, int(CPT_HOSTS[host]["width"]), 256, 8)
         plan = host_plan(host, mode, memory=memory, micro_batch=micro_batch)
+        side = None
+        if any(m in SIDE_ARMS for m in models):            # B-B1: matched to C5's channel as this stage builds it
+            _, c5 = run_config(stage=stage, host=host, mode=mode, model="C5", seed=1, data_root=corpus_root, tokens=tokens,
+                               lora_rank=lora_rank, host_lr=host_lr, gate_bias=gate_bias, free_dimension=free_dimension,
+                               sequences_per_step=sequences_per_step, windows=windows, channel_lr=channel_lr,
+                               eval_split=spec.eval_split, overrides=overrides, plan=plan, channel_extra=channel_extra)
+            side = side_lora_spec(host, channel_parameters(c5, sizes))
         for model in models:
             source = (row_source(model, track=spec.name, family=family, host=host,
                                  budget=channel_budget(sizes, int(CPT_HOSTS[host]["width"])))
@@ -517,7 +593,8 @@ def write_stage(stage: str, *, hosts: list[str], models: list[str], seeds: list[
                                           eval_split=spec.eval_split, overrides=overrides, plan=plan, channel_extra=channel_extra,
                                           source=source,
                                           hybrid=(hybrids[HYBRID_ARMS[model]]["channel"] if model in HYBRID_ARMS else None),
-                                          buckets=buckets if model in HASHED_ARMS else None)
+                                          buckets=buckets if model in HASHED_ARMS else None,
+                                          side=side if model in SIDE_ARMS else None)
                 config["e9_track"] = spec.name
                 if family != "smollm2":            # new key only where it applies (SmolLM2 configs as before)
                     config["e9_family"] = family
@@ -637,8 +714,12 @@ def quant_command(stage: str, run_dirs: list[Path], *, python: str = sys.executa
 
 def report_command(stage: str, *, python: str = sys.executable, root: Path = ROOT, general: bool = False,
                    tag: str | None = None) -> list[str]:
-    """The R9 report of a stage: `report/<stage>` for a base batch, `report/<stage>-<tag>` for an arm batch (`batch_tag`)."""
+    """The R9 report of a stage: `report/<stage>` for a base batch, `report/<stage>-<tag>` for an arm batch (`batch_tag`);
+    the B-B1 batch (`bb1`) reports with `e9_bb1` (its claim-B table against C0′, C2 and C5 of the same stage)."""
     folder = f"{stage}-{tag}" if tag else stage
+    if tag == "bb1":
+        return [python, "-m", "vsa_embed.experiments.e9_bb1", "report", "--stages", stage, "--root", str(root),
+                "--output", str(root / "report" / folder)]
     return [python, "-m", "vsa_embed.experiments.e9_report", "--runs", str(root / "runs" / stage), "--quant",
             str(root / "quant" / stage), *(["--quant-general", str(root / "quant-general" / stage)] if general else []),
             "--output", str(root / "report" / folder), "--overwrite"]
@@ -737,7 +818,7 @@ def queue_jobs(paths: list[Path], stage: str, priority: int | None = None, *, tr
             quant_dirs.append(run_dir)
         if evals:
             batch = EVAL_JOB_BATCH.get(_config_host(configs[path]) or "")
-            for suffix, command, retry in ([] if model in HASHED_ARMS else evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
+            for suffix, command, retry in ([] if model in HASHED_ARMS or model in SIDE_ARMS else evaluation_jobs(run_dir, spec, python=python, alias_table=alias_table,
                                                           int4_probes=int4_probes, batch_size=batch, model=model,
                                                           profile="pq" if model in ARM_LIKE else "full", item_versions=item_versions)):
                 submit(f"{stage}-{path.stem}-{suffix}", command, level(1), min_free_gb=5, resume_args=retry)
@@ -773,6 +854,8 @@ def batch_tag(models: Sequence[str]) -> str | None:
     the stage's base report `report/<stage>` (the folder R9, the claims ledger and the draft cite)."""
     if any(m in READOUT_ARMS for m in models):
         return "readout"
+    if any(m in SIDE_ARMS for m in models):
+        return "bb1"
     if any(m in ARMS for m in models):
         return "pq"
     return None
@@ -1015,6 +1098,8 @@ def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2"
         host = _config_host(config) or ""
         if (models and model not in models) or (seeds and model != "P0" and seed not in seeds) or (hosts and host not in hosts):
             continue
+        if model in SIDE_ARMS:                                       # B-B1: no channel, so no editing items
+            continue
         reference = "C5" if model in ARM_LIKE else model             # the arms are costed like C5 (a channel per entry)
         siblings = sorted((p for p in runs.glob(f"{host}-*-s*") if p.name != stem
                            and _channel_kind(stem_model(p.name)) == _channel_kind(reference)
@@ -1044,6 +1129,13 @@ def queue_item_evaluations(stage: str, *, track: str = "t5", version: str = "v2"
 MEASURED_TRAINING_MINUTES = {"SmolLM2-360M": 67.0, "SmolLM2-135M": 31.0}
 # Training time of a readout arm relative to C5 (WP-BU GPU smoke, step 2: the readout's per-step overhead).
 READOUT_TRAINING_OVERHEAD = 1.15
+# B-B1 side module (rank 2–5 adapters on 224 projections of SmolLM2-360M): < 0.5% more FLOPs, but 448 small extra matmuls
+# per forward; not measured on the GPU yet, so 5% is assumed.
+SIDE_TRAINING_OVERHEAD = 1.05
+# Claim-B rescoring with ≥ 5 variants (`controls`, `side`): minutes per variant at 1,024 windows, measured on the T5 / T4
+# SmolLM2-360M C5 controls jobs (9 variants, 7.2–7.6 min, .jobs 2026-10-07 / 10-09), and the window factor 0.25 + 0.75 ·
+# windows / 1,024, which reproduces T7's 4,096-window jobs (23.9–24.0 min).
+RESCORE_MINUTES_PER_VARIANT_360M = 7.4 / 9
 # Minutes of one evaluation job on SmolLM2-360M, measured on the T1-open seed-1 block (2,048 windows; `probes*.json`
 # timing, `quant/t1` per-run file times): probes 2.0 (bf16) / 3.8 (INT4); e4_quant per run 4 (P0, C0′) / 7.2 (C2, C5,
 # with variant B); WP-PQ1: zero-shot + editing ≈ 3 min at bf16, the R9 report ≈ 22 min. SmolLM2-135M takes ≈ 0.55×
@@ -1084,7 +1176,8 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
         if config["train"].get("eval_only"):
             return EVAL_MINUTES_360M["eval_only"] * _host_scale(host) / 60
         if host in MEASURED_TRAINING_MINUTES:
-            overhead = READOUT_TRAINING_OVERHEAD if (config.get("channel") or {}).get("readout") else 1.0
+            overhead = (READOUT_TRAINING_OVERHEAD if (config.get("channel") or {}).get("readout")
+                        else SIDE_TRAINING_OVERHEAD if (config.get("model") or {}).get("side_lora") else 1.0)
             return (MEASURED_TRAINING_MINUTES[host] * overhead * tokens / 50_000_000 + extra_evaluation_minutes(config, host)) / 60
         return estimate_hours(host, tokens) if host in HOST_PARAMETERS else float("nan")
     host = next((h for h in HOST_PARAMETERS if h in name), "SmolLM2-360M")
@@ -1098,6 +1191,19 @@ def job_estimate_hours(name: str, command: list[str], *, configs: dict[str, dict
         return minutes / 60
     if module == "vsa_embed.experiments.e9_report":
         return EVAL_MINUTES_360M["report"] / 60
+    if module == "vsa_embed.experiments.e9_bb1":                # window sums and bootstraps only: the CPU lane
+        return 0.0
+    if module == "vsa_embed.experiments.e9_rescore" and "--variants" in command:
+        variants = [a for a in command[command.index("--variants") + 1:] if not a.startswith("--")]
+        variants = variants[:next((i for i, a in enumerate(variants) if "/" in a), len(variants))]
+        if len(variants) >= 5:
+            run = Path(command[command.index("--run") + 1])
+            config_path = str(ROOT / "configs" / run.parent.name / f"{run.name}.yaml")
+            config = (configs or {}).get(config_path) or (yaml.safe_load(Path(config_path).read_text()) if Path(config_path).exists() else {})
+            windows = int((config.get("eval") or {}).get("windows", MEASURED_EVAL_WINDOWS))
+            run_host = next((h for h in HOST_PARAMETERS if run.name.startswith(h + "-")), "SmolLM2-360M")
+            return (RESCORE_MINUTES_PER_VARIANT_360M * len(variants) * (0.25 + 0.75 * windows / MEASURED_EVAL_WINDOWS)
+                    * _host_scale(run_host) / 60)
     marker = re.search(r"-s\d+-(.+)$", name)                  # the job's suffix follows the run's seed marker
     suffix = marker[1] if marker else (name.rsplit("-s", 1)[-1].split("-", 1)[-1] if "-s" in name else "")
     minutes = EVAL_MINUTES_360M.get(suffix)
@@ -1141,7 +1247,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--stage", default=None, help="run-folder stage name (default: the track; <track>-qwen3 / <track>-qwen35 for Qwen3 / Qwen3.5 hosts)")
     parser.add_argument("--hosts", nargs="+", default=list(E9_HOSTS), choices=list(ALL_HOSTS))
     parser.add_argument("--models", nargs="+", default=list(MODELS), choices=list(ALL_MODELS),
-                        help=f"default {' '.join(MODELS)}; WP-PQ1 arms: {' '.join(ARMS)}; readout arms: {' '.join(READOUT_ARMS)}")
+                        help=f"default {' '.join(MODELS)}; WP-PQ1 arms: {' '.join(ARMS)}; readout arms: {' '.join(READOUT_ARMS)}; "
+                             f"B-B1 side-module arm: {' '.join(SIDE_ARMS)}")
     parser.add_argument("--rescore", default="arms", choices=["arms", "all", "none"],
                         help="e9_rescore jobs (filler strata, claim-B controls): for the WP-PQ1 arms (default), for every "
                              "model (P0/C0p/C2/C5 get the controls variants), or none")

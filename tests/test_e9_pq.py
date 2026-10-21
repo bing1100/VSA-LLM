@@ -708,3 +708,173 @@ def test_ontology_arms_read_the_enriched_copy(plan_root) -> None:
     _, shuffled = e9_plan.run_config(stage="s", host="SmolLM2-360M", mode="train", model="C5tchsh", seed=1, data_root=data, tokens=1000,
                                      lora_rank=64, host_lr=None, gate_bias=0.0, free_dimension=8)
     assert shuffled["channel"]["frames"] == "shuffled" and shuffled["data"]["ontology"].endswith("rood-v1-teacher/ontology.pt")
+
+
+# -- 2026-10-20 addendum: B-B1, the bit-matched unstructured side module (C0L) ------------------------------------------
+
+def test_side_lora_plan_adapters_merge_and_off() -> None:
+    from vsa_embed.integrations.transformers import (LoRALinear, add_side_lora, lora_units, side_adapters, side_lora_off,
+                                                     side_lora_plan)
+    host = fake_host()
+    units = lora_units(host)
+    assert {layer for _, layer, _ in units} == {0, 1} and all(u > 0 for _, _, u in units)
+    per_rank = sum(u for _, _, u in units)
+    layer0 = sum(u for _, layer, u in units if layer == 0)
+    plan = side_lora_plan(units, 2 * per_rank + layer0 + 3)                          # rank 2, +1 in the first layer
+    assert (plan["rank"], plan["extra_rank_layers"], plan["parameters"]) == (2, 1, 2 * per_rank + layer0)
+    assert side_lora_plan(units, 10)["rank"] == 1                                  # never below rank 1
+    record = add_side_lora(host, rank=2, extra_rank_layers=1)
+    adapters = side_adapters(host)
+    assert record["parameters"] == plan["parameters"] == sum(m.lora_a.numel() + m.lora_b.numel() for _, m in adapters)
+    assert {m.rank for name, m in adapters if ".h.0." in name} == {3} and {m.rank for name, m in adapters if ".h.1." in name} == {2}
+    assert all(m.scale == 1.0 and m.side_module for _, m in adapters)             # α = rank
+    for _, m in adapters:
+        torch.nn.init.normal_(m.lora_b, std=0.05)
+    ids = torch.arange(12).view(1, 12)
+    host.eval()                                                                      # no dropout
+    with torch.no_grad():
+        on = host(ids).logits
+        with side_lora_off(host) as count:
+            off = host(ids).logits
+        again = host(ids).logits
+    assert count == len(adapters) and not torch.allclose(on, off) and torch.equal(on, again)
+    assert quant.merge_lora(host) == 0 and len(side_adapters(host)) == len(adapters)     # side adapters are never merged
+    lora_host = fake_host()                                                         # host-mode LoRA is still merged
+    from vsa_embed.integrations.transformers import add_lora
+    wrapped = len(add_lora(lora_host, rank=2)) // 2
+    assert quant.merge_lora(lora_host) == wrapped > 0 and not any(isinstance(m, LoRALinear) for m in lora_host.modules())
+    assert quant.merge_lora(host, include_side=True) == len(adapters) and not side_adapters(host)
+
+
+def test_side_arm_trains_rescores_and_quantizes_on_cpu(world, tmp_path) -> None:
+    from vsa_embed.experiments import e4_quant
+    from vsa_embed.integrations.transformers import side_adapters
+    root = world["root"]
+    config = _config(root, "C0L", {"mode": "none"}, host_mode="train", train={"save_trainable_only": False, "host_lr": 1e-4})
+    config["model"]["side_lora"] = {"rank": 2, "extra_rank_layers": 1}
+    lm.train(config, tmp_path / "c0l")
+    manifest = json.loads((tmp_path / "c0l" / "manifest.json").read_text())
+    assert manifest["side_lora"]["rank"] == 2 and manifest["side_lora"]["adapters"] == 8           # 4 projections × 2 blocks
+    model = lm.load_final(tmp_path / "c0l" / "final.pt")
+    adapters = side_adapters(model.model)
+    assert adapters and any(float(m.lora_b.detach().abs().sum()) > 0 for _, m in adapters)   # the side module trained
+    optimizer = lm.build_optimizer(model, lm.resolve_config(config)["train"], torch.device("cpu"))
+    side_ids = {id(p) for _, m in adapters for p in (m.lora_a, m.lora_b)}
+    for group in optimizer.param_groups:
+        ids = {id(p) for p in group["params"]}
+        if ids & side_ids:
+            assert ids <= side_ids | {id(p) for p in model.parameters() if not p.requires_grad} and "lr_scale" not in group
+        else:
+            assert group.get("lr_scale") == pytest.approx(1e-4 / 3e-3)                  # host parameters at host_lr
+    with pytest.raises(ValueError, match="fully trained host"):
+        lm.wrap_host({**config, "model": {**config["model"], "host_mode": "lora"}}, fake_host(), None, None)
+    # rescoring: `-off` switches the side module off; the simulated schemes quantize the host, never the adapters
+    variants = ["ref", "ref-off", "int4-rtn", "int4-rtn-off", "int4-gptq"]
+    record = e9_rescore.score_run(tmp_path / "c0l", variants=variants, fillers=world["fillers"], device="cpu", group_size=16,
+                                  calibration_windows=4)
+    losses = {v: record["variants"][v]["strata"]["all"]["loss"] for v in variants}
+    assert losses["ref"] != losses["ref-off"] and losses["int4-rtn"] != losses["int4-rtn-off"] and losses["ref"] != losses["int4-rtn"]
+    assert all(np.isfinite(x) for x in losses.values()) and record["side_lora"]["rank"] == 2 and record["ref_check"]["paired"]
+    assert record["variants"]["int4-rtn"]["quantization"]["lora_merged"] == 0 and "off_variants" not in record
+    assert e9_rescore.profile_variants("auto", "C0L") == list(e9_rescore.PROFILES["side"])
+    # variant B quantizes the side module's own tensors (not the host weight inside the adapter); bytes follow
+    model = lm.load_final(tmp_path / "c0l" / "final.pt")
+    name, adapter = side_adapters(model.model)[0]
+    base_before, a_before = adapter.base.weight.detach().clone(), adapter.lora_a.detach().clone()
+    sizes = e4_quant.quantize_channel(model, 4, 16)
+    assert f"side.{name}.lora_a" in sizes and torch.equal(adapter.base.weight, base_before)
+    assert not torch.equal(adapter.lora_a, a_before) and len(torch.unique(adapter.lora_a[0, :16])) <= 16
+    parts = e4_quant.model_bytes(model, sizes)
+    assert parts["lora"] == sum(v for k, v in sizes.items() if k.startswith("side."))
+
+
+def test_e9_plan_side_arm(world, tmp_path, monkeypatch) -> None:
+    from vsa_embed.integrations.transformers import lora_units
+    units = tuple(lora_units(fake_host()))
+    monkeypatch.setattr(e9_plan, "host_lora_units", lambda host: units)
+    root = tmp_path / "e9"
+    paths = e9_plan.write_stage("main", hosts=["SmolLM2-360M"], models=["C0p", "C5", "C0L"], seeds=[1, 2], data_root=world["root"],
+                                root=root, track="t5")
+    configs = {p.stem: yaml.safe_load(p.read_text()) for p in paths}
+    side, c0p = configs["SmolLM2-360M-full-C0L-s1"], configs["SmolLM2-360M-full-C0p-s1"]
+    budget = e9_plan.channel_parameters(configs["SmolLM2-360M-full-C5-s1"], world["ontology"])
+    assert side["model"]["side_lora"]["matched_to"] == budget and side["channel"] == {"mode": "none"}
+    from vsa_embed.integrations.transformers import side_lora_plan
+    assert side["model"]["side_lora"]["parameters"] == side_lora_plan(units, budget)["parameters"]
+    strip = lambda c: {k: v for k, v in c.items() if k not in {"experiment"}}            # noqa: E731
+    assert strip({**side, "model": {k: v for k, v in side["model"].items() if k != "side_lora"}}) == strip(c0p)
+    assert budget > e9_plan.channel_parameters(configs["SmolLM2-360M-full-C0p-s1"], world["ontology"]) == 0
+    with pytest.raises(ValueError, match="fully trained host"):
+        e9_plan.run_config(stage="s", host="SmolLM2-360M", mode="lora", model="C0L", seed=1, data_root=world["root"], tokens=1000,
+                           lora_rank=64, host_lr=None, gate_bias=0.0, free_dimension=8, side={"rank": 1})
+    assert e9_plan.batch_tag(["C0L"]) == "bb1" and "C0L" in e9_plan.ARM_LIKE and "C0L" not in e9_plan.ARMS
+    queue = tmp_path / "jobs"
+    side_paths = [p for p in paths if "-C0L-" in p.stem]
+    e9_plan.queue_jobs(side_paths, "main", 51, root=root, queue_dir=queue, track="t5", alias_table=Path("t5.json"))
+    jobs = {p.stem: json.loads(p.read_text()) for p in queue.glob("*.json")}
+    assert set(jobs) == {"main-SmolLM2-360M-full-C0L-s1", "main-SmolLM2-360M-full-C0L-s2", "main-SmolLM2-360M-full-C0L-s1-rescore",
+                         "main-SmolLM2-360M-full-C0L-s2-rescore", "main-report-s1-2-bb1-SmolLM2-360M"}
+    rescore = jobs["main-SmolLM2-360M-full-C0L-s1-rescore"]["command"]
+    assert rescore[rescore.index("--variants") + 1:rescore.index("--output")] == list(e9_rescore.PROFILES["side"])
+    report = jobs["main-report-s1-2-bb1-SmolLM2-360M"]
+    assert report["command"][2] == "vsa_embed.experiments.e9_bb1" and report["priority"] == 54 and "-report" in report["name"]
+    hours = e9_plan.job_estimate_hours("main-SmolLM2-360M-full-C0L-s1", jobs["main-SmolLM2-360M-full-C0L-s1"]["command"])
+    assert hours == pytest.approx(e9_plan.MEASURED_TRAINING_MINUTES["SmolLM2-360M"] * e9_plan.SIDE_TRAINING_OVERHEAD
+                                  * side["train"]["total_tokens"] / 50_000_000 / 60)
+    assert e9_plan.job_estimate_hours(report["name"], report["command"]) == 0.0
+
+
+def test_bb1_report_on_synthetic_rescores(tmp_path) -> None:
+    from vsa_embed.experiments import e9_bb1
+    rng = np.random.default_rng(1)
+    strata = ["all", "unlinked", "after", "after_heldout", "after_rare_seen", "after_len3plus", "after_heldout_filler"]
+    windows = 40
+    counts = rng.integers(4, 12, size=(len(strata), windows)).astype(np.int32)
+    root, stage = tmp_path / "e9", "toy"
+    # bf16 levels; INT4 damage per model: C0′ +0.30, C0L +0.20 (its side module survives), C2 +0.25, C5 +0.10; with the module
+    # off: C0L 2.95 (+0.28 at INT4), C5 2.92 (+0.27).
+    level = {"P0": 3.2, "C0p": 3.0, "C0L": 2.97, "C2": 2.98, "C5": 2.90}
+    damage = {"P0": 0.05, "C0p": 0.30, "C0L": 0.20, "C2": 0.25, "C5": 0.10}
+    for model in e9_bb1.MODELS:
+        for seed in ([1] if model == "P0" else [1, 2]):
+            run = e9_bb1.run_dir(root, stage, "host", model, seed)
+            noise = rng.normal(0, 0.001, size=counts.shape) * counts
+            ref = level[model] * counts + noise
+            arrays = {"ref": ref, "int4-A": ref + damage[model] * counts, "int4-gptq": ref + damage[model] / 2 * counts}
+            if model in {"C0L", "C5", "C2"}:
+                off = {"C0L": 2.95, "C5": 2.92, "C2": 2.99}[model] * counts + noise
+                arrays.update({"ref-off": off, "int4-A-off": off + {"C0L": 0.28, "C5": 0.27, "C2": 0.29}[model] * counts})
+            if model == "C0L":
+                arrays["int4-B"] = ref + 0.22 * counts
+            (run / "rescore").mkdir(parents=True)
+            e9_rescore._write_windows(run / "rescore" / "windows.npz", strata, list(range(windows)), counts, arrays)
+            record = {"channel": "none" if model in {"P0", "C0p", "C0L"} else "compose",
+                      **({"side_lora": {"rank": 2}} if model == "C0L" else {})}
+            (run / "rescore" / "rescore.json").write_text(json.dumps(record))
+            if model in {"C5", "C2"}:                              # variant B lives in the stage's e4_quant windows
+                quant_dir = root / "quant" / stage / "runs" / f"{stage}__{run.name}"
+                quant_dir.mkdir(parents=True)
+                np.savez_compressed(quant_dir / "windows.npz", strata=np.asarray(strata[:-1]), starts=np.arange(windows), count=counts[:-1],
+                                    sum_ref=ref[:-1], **{"sum_int4-B": (ref + (damage[model] + 0.02) * counts)[:-1]})
+            if model == "C0L":
+                (run / "resolved_config.yaml").write_text(yaml.safe_dump({"model": {"side_lora": {"rank": 2, "parameters": 100,
+                                                                                                "matched_to": 101}}}))
+    summary = e9_bb1.report(root, [stage], tmp_path / "out", host="host", seeds=[1, 2], resamples=300)
+    block = summary["stages"][stage]["comparisons"]
+    primary = block["C5 vs C0L"]["int4-A"]["after_heldout"]
+    assert primary["did"]["gain_change"]["mean"] == pytest.approx(0.10 - 0.20, abs=2e-3)       # C5's advantage grows vs C0L
+    assert primary["cells"]["reference_q"] == pytest.approx(3.17, abs=5e-3) and primary["seeds"] == [1, 2]
+    assert block["C5 vs C0′"]["int4-A"]["all"]["did"]["gain_change"]["mean"] == pytest.approx(-0.20, abs=2e-3)
+    assert block["C0L vs C0′"]["int4-A"]["all"]["did"]["gain_change"]["mean"] == pytest.approx(-0.10, abs=2e-3)
+    assert block["C0L off vs C0′"]["int4-A"]["all"]["did"]["gain_change"]["mean"] == pytest.approx(0.28 - 0.30, abs=2e-3)
+    assert block["C0L vs C0L off"]["int4-A"]["all"]["did"]["gain_change"]["mean"] == pytest.approx(0.20 - 0.28, abs=2e-3)
+    assert block["C5 vs C0L"]["int4-B"]["all"]["did"]["gain_change"]["mean"] == pytest.approx(0.12 - 0.22, abs=2e-3)
+    assert "after_heldout_filler" not in block["C5 vs C0L"]["int4-B"]                      # not in the e4_quant windows
+    assert "int4-B" not in block["C5 vs C0′"] or block["C5 vs C0′"]["int4-B"]["all"]["cells"]["reference_q"] == pytest.approx(3.30, abs=5e-3)
+    tests = summary["primary"]["tests"]
+    assert [t["stratum"] for t in tests] == list(e9_bb1.PRIMARY_STRATA) and all(t["significant"] for t in tests)
+    assert tests[0]["reading"].startswith("structure")
+    assert summary["stages"][stage]["budget"]["side_lora"]["matched_to"] == 101
+    text = (tmp_path / "out" / "report.md").read_text()
+    assert "## Primary: C5 vs C0L under int4-A" in text and "### C0L vs C0′" in text
+    assert (tmp_path / "out" / "manifest.json").exists() and (tmp_path / "out" / "summary.json").exists()

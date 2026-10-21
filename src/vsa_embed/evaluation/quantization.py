@@ -25,7 +25,8 @@ channel's dictionary tables, embedding rows, compressed-table parameters):
   zero points), so INT8/INT4 bytes are those of the actual layout.
 - `auto_group_size(model)` is the largest INT4 group size (128 / 64 / 32) dividing every linear
   layer's input width, so no layer is skipped for its shape.
-- `merge_lora(model)` folds LoRA adapters into their base weights before quantization.
+- `merge_lora(model)` folds LoRA adapters into their base weights before quantization (the E9 B-B1 side module's
+  adapters stay unmerged: they keep the channel's precision next to the quantized host).
 - `fake_quantize_module_(module, bits, group_size)` quantizes every floating parameter or buffer
   with ≥ 2 dimensions of a module in place (variant B of D4.3: the channel's dictionary, relation
   parameters, composer and projector) and returns the bytes of each tensor.
@@ -195,13 +196,15 @@ def auto_group_size(model: nn.Module, candidates: Iterable[int] = (128, 64, 32))
     return candidates[-1]
 
 
-def merge_lora(model: nn.Module) -> int:
-    """Fold every `LoRALinear` into its base weight (`W + (α/r)·B A`) and unwrap it; returns the count."""
+def merge_lora(model: nn.Module, *, include_side: bool = False) -> int:
+    """Fold every `LoRALinear` into its base weight (`W + (α/r)·B A`) and unwrap it; returns the count. The adapters of
+    the E9 B-B1 side module (`LoRALinear.side_module`) stay unmerged unless `include_side`: they are the separate
+    module whose precision the control matches to the channel's, next to the quantized host weights."""
     from ..integrations.transformers import LoRALinear
     merged = 0
     for module in list(model.modules()):
         for name, child in list(module.named_children()):
-            if isinstance(child, LoRALinear):
+            if isinstance(child, LoRALinear) and (include_side or not child.side_module):
                 base = child.base
                 with torch.no_grad():
                     update = child.scale * (child.lora_b.float() @ child.lora_a.float())     # out × in
