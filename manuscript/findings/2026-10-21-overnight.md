@@ -14,7 +14,10 @@
 `experiments/e7-self-authoring/preregistration-2026-10-20-reschedule.md`.
 
 **Conventions:** accuracy differences, positive = better; \* = Holm-significant within the pre-registered family;
-paired bootstrap over items, seeds pooled unless stated. All jobs ran without failure.
+paired bootstrap over items, seeds pooled unless stated. Secondary contrasts carry raw p-values only; where
+marked "(p < 0.05)" they are unadjusted. All jobs ran without failure.
+
+**Checked 2026-10-21 against the report files by a second pass;** corrections from that pass are in place.
 
 ## 1. RD-4d: learned relation routers, the routed wording held out (§19)
 
@@ -42,7 +45,7 @@ paired bootstrap over items, seeds pooled unless stated. All jobs ran without fa
 - T5: few-shot routed − labelled: **−0.445\***, −0.235\*, −0.130\*. Realistic − none: +0.188\*, +0.237\*, +0.156\*.
 
 **Secondary:** on T4 the realistic pipeline is 0.010 below the definition text on property (p 0.10) and 0.043 below
-on paraphrase\*. Few-shot beats `lm` by +0.065\* with gold frames on T4.
+on paraphrase (p 0.001, unadjusted). Few-shot beats `lm` by +0.065 (p 0.0005, unadjusted) with gold frames on T4.
 
 **Reading:**
 - **Routing is solved on real chemistry.** The routing cost fell from −0.083 (RD-4c) to −0.018. The realistic
@@ -50,8 +53,8 @@ on paraphrase\*. Few-shot beats `lm` by +0.065\* with gold frames on T4.
 - **On T5 every learned router fails.** The held-out question wording does not resemble the demonstrations, and the
   routers pick a generic relation. The memorising router reaches the ceiling, so the gap is generalisation across
   wordings, not router capacity. Word overlap remains the best T5 router.
-- Next (RD-4e, addendum 12, registered 2026-10-21): paraphrase-augmented demonstrations, abstention, top-2, and the
-  size rule "whole frame when the frame is short".
+- Next (RD-4e, addendum 12, 2026-10-21): paraphrase-augmented demonstrations, abstention, top-2, and the size rule
+  "whole frame when the frame is short".
 
 ## 2. RD-3b: a ReAct reader with a precision filter (§19)
 
@@ -124,7 +127,7 @@ history plus the executor's path or its one conclusion line).
 | 2. `chain-relay` ≥ 0.95 everywhere | **yes** (0.993–1.000) |
 | 3. primary positive on all hosts by ≥ +0.50 | **yes** (+0.72 to +0.76) |
 | 4. consistency relay ≥ 0.90, text ≤ 0.10 | **yes** (0.997 vs 0.03–0.05) |
-| 5. long-history relay worse on SmolLM2, ≈ 0 on Qwen3 | **yes**: SmolLM2 −0.217\* with the full history; Qwen3 +0.003 |
+| 5. long-history relay worse on SmolLM2, ≈ 0 on Qwen3 | **yes**: SmolLM2 −0.217 (p 0.0005) with the full history; Qwen3 +0.003 |
 | 6. SmolLM2 anchors to the original leaf | **no**: 0.24 of answers, near the 1/6 chance rate |
 
 **Decision rule.** The primary is positive on all three hosts. Prediction 1 did not hold as worded: `chain-text`
@@ -139,8 +142,9 @@ length". The stronger drift claim would need a host that can run the tree at k =
   any k. The executor supplies the whole of the computation; the model supplies the relay.
 - On the Qwen3 hosts a single conclusion line appended to the full history is enough (0.99+). SmolLM2-360M needs the
   short path interface (0.78–0.89 with the long history).
-- Every host follows the executor at 0.999–1.000 when it is wrong (n = 5), so the executor's soundness is the claim's
-  load-bearing part.
+- In the relay condition every host follows the executor at 1.000, including on the five states where the executor
+  is wrong, so the executor's soundness is the claim's load-bearing part. (With the full history, SmolLM2-360M
+  follows a wrong executor only 0.2–0.4 of the time; the Qwen3 hosts 1.000.)
 
 ## 5. RD-14: inferred facts under selective recall (addendum 11)
 
@@ -159,7 +163,8 @@ C5, 3 seeds). The inferred line names the gold answer for 15.7% of property item
 **Primary (Holm over 9):** inferred − empty: property +0.009 (n.s.), paraphrase −0.002 (n.s.), **entailment
 +0.040\***; marked − unmarked: |Δ| ≤ 0.004 (n.s.); inferred − gold: −0.204\*, −0.228\*, −0.075\*.
 
-**Split by whether the inference was right:** right (n 192): +0.234\* property; wrong (n 1,029): −0.033\*. The
+**Split by whether the inference was right (secondary, unadjusted):** right (n 192): +0.234 property (p 0.0005);
+wrong (n 1,029): −0.033 (p 0.001). The
 break-even precision on the asked relation is therefore about 0.12–0.15; the predictor's 0.16 hit rate sits at it.
 
 **Decision rule:** (a) not positive on property → **no recall of inferred facts without a precision gate; no E13
@@ -171,7 +176,8 @@ amendment.** Marking changes nothing, so it is kept as a format only.
 332 of 341 T4 held-out concepts (median 1,010 words). No dump.
 
 **Stated rate (CPU, string-matching finder, lower bound):** ChEBI definition **0.116**; Wikipedia, 300 words
-**0.087**; whole page **0.120**. Structural relations 0% in every text; `is_a` 0.35 → 0.18; `has_role` 0.05 → 0.15.
+**0.087**; whole page **0.120**. Structural relations 0% in every text; per-relation rates from the build's `coverage.json`: `is_a` 0.35 → 0.18,
+`has_role` 0.05 → 0.15.
 **The pre-registered rule fired: more text is not the lever on T4.**
 
 **GPU arms** (SmolLM2-360M C5 ×3; Qwen3-1.7B C0′ ×1; property):
@@ -180,7 +186,7 @@ amendment.** Marking changes nothing, so it is kept as a format only.
 |---|---:|---:|
 | none | 0.614 | 0.729 |
 | definition text | 0.734 | 0.812 |
-| 300 words of Wikipedia in the prompt (RAG) | — | **0.166** |
+| 300 words of Wikipedia in the prompt (RAG) | 0.155 | **0.166** |
 | store from Wikipedia, type-prior reader, `lm` router (realistic) | 0.524 | 0.622 |
 | store from Wikipedia, stated facts only, labelled | 0.692 | 0.749 |
 | store from the definition, type-prior reader, `lm` router (reference) | 0.713 | 0.773 |
@@ -190,10 +196,12 @@ amendment.** Marking changes nothing, so it is kept as a format only.
 
 **Reading:**
 - The Wikipedia store hurts because its frames are wrong: the type prior on Wikipedia text reads 10.7 edges per
-  concept at precision 0.05, and wrong lines cost more than none (RD-4b).
+  concept at precision 0.051 (against 2.5 edges at 0.313 on the definition; `items/t4-heldout-wiki/frames.jsonl`),
+  and wrong lines cost more than none (RD-4b).
 - 300 words of encyclopaedia text in the prompt collapses the PMI-scored property choice (0.17): the long context
   swamps the term. Paraphrase, which the PMI null does not penalise the same way, rises (+0.12).
-- Only the stated Wikipedia facts, recalled selectively, are neutral to slightly positive (+0.02 to +0.03).
+- Only the stated Wikipedia facts, recalled selectively, help: +0.02 to +0.03 on Qwen3-1.7B (n.s.), +0.077 /
+  +0.076 on SmolLM2-360M (p 0.0005, unadjusted).
 - **Closed.** On T4 the lever is the precision of what is read, not the amount of text. If retrieval returns, the
   finder (alias coverage for common names) comes first.
 
@@ -205,7 +213,7 @@ the executor 1.000, including when the executor is wrong on a corrupted field. N
 it costs on affected records (−0.42 at 10%) and nothing elsewhere.
 
 **X7b, one trained store as wide as the ensemble:** slot decode accuracy, held-out entries: single 256-wide stores
-0.891–0.918; three-store ensemble 0.979; **one 768-wide trained store 0.992** (+0.013\* over the ensemble); an
+0.891–0.918; three-store ensemble 0.979; **one 768-wide trained store 0.992** (+0.013\* over the ensemble, the pre-registered primary); an
 *untrained* 768-wide store 0.998; untrained 256-wide 0.927. **X7's ensemble gain was width**, as the smoke suggested
 (findings 2026-10-20 §6). Training costs decoding −0.006 at width 768 and −0.022 at 256.
 
@@ -244,7 +252,8 @@ Teacher build: 24,670 synsets, 987 calls, 0 errors, USD 68.05; ontology of 11,80
 | after held-out terms | −0.05% | −0.18% | +0.02% |
 | after rare terms | −2.65%\* | −2.52%\* | −3.12%\* |
 
-C5teach − C5: all −0.02%, inside **−0.34%\*** [−0.67, −0.01], after +0.00%, after held-out +0.07%. On the teacher's
+C5teach − C5: all −0.02%, inside **−0.34%** [−0.67, −0.01] (the interval excludes 0; the main report prints no
+star, the teacher-strata report does), after +0.00%, after held-out +0.07%. On the teacher's
 own reference strata: after teacher-trained terms −1.32% (C5teach) against −1.23% (C5@teachref); after
 teacher-held-out terms +0.02% against −0.05%.
 
@@ -260,10 +269,10 @@ G3 rule compares each author's edge precision on the masked gold with a degree-m
 | Arm | Masked concepts authored | Verifiable edges | Precision [95% CI] | Random high | Coverage | Verdict |
 |---|---:|---:|---|---:|---:|---|
 | self (Qwen2.5-0.5B) | 64 | 16 | 0.062 [0.011, 0.283] | 0.243 | 0.282 | FAIL (edges, above-random) |
-| teacher (Claude) | — | 277 | 0.069 [0.044, 0.105] | 0.243 | 0.751 | FAIL (above-random) |
+| teacher (Claude) | 64 | 277 | 0.069 [0.044, 0.105] | 0.243 | 0.751 | FAIL (above-random) |
 
 **Both arms are at or below the random high.** The self-authoring host writes almost no edges for masked concepts
-(36 edges over 26 concepts), and the teacher's edges on this general WordNet track are no more precise than
+(36 edges over 26 of the 64 authored concepts, from the follow-ups' log), and the teacher's edges on this general WordNet track are no more precise than
 degree-matched random ones. D7.2 was not queued; D7.3 depends on it. The Claude judge (cap USD 50; informational, not
 part of G3) was interrupted at USD 22.66 by a session restart and resumed from its cache.
 
@@ -273,7 +282,8 @@ small or large — are not more precise than the ontology's own statistics.
 
 ## 11. What follows
 
-- **Continue:** RD-4e (routing that generalises; addendum 12, registered and queued 2026-10-21); E13 (lands 25–30
+- **Continue:** RD-4e (routing that generalises; addendum 12, being registered on 2026-10-21 — see
+  `preregistration.md` §20 for its pointer once queued); E13 (lands 25–30
   October); the consistency result and E5.4 go to the claims ledger (numbers sent to workplace-9a).
 - **Stop:** trees from prose at ≤ 1.7B; retrieval over more text on T4; recall of inferred facts; E7 D7.2/D7.3;
   C5teachF.
