@@ -318,7 +318,8 @@ E7 code that reuses `SpendCap` (`tests/test_e7_g3.py`) also pass.
   That is 41 jobs: E5.1, E5.2, E5.4, the three E5.3 item builders, E5.5 and the R5 report.
 - **Held:** the three E5.3 grade jobs, which call the Claude judge (cap USD 25). The session that queued this
   amendment holds every Claude spend for the author to start: its permission check refused the C5teach teacher
-  spend the same evening. Until the grades run, the R5 report prints E5.3 as not run.
+  spend the same evening. Until the grades run, the R5 report has no E5.3 section (checked: `e5_report` omits it
+  when no graded folder exists).
 - **To release them:** run
   `JUDGE_ONLY=1 PRIO_GPU=54.4959994 PRIO_REPORT=54.4959998 bash experiments/e5-explainability/queue-commands-scale-v1.sh`
   from the repository root. This adds the three grade jobs (in the budget order of §A.5) and a final R5 report
