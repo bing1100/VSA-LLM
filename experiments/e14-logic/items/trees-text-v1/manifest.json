@@ -1,0 +1,70 @@
+{
+  "set": "trees-text-v1",
+  "seed": 1,
+  "per_depth": 24,
+  "records": 24,
+  "depths": [
+    2,
+    3,
+    4
+  ],
+  "items": 72,
+  "records_per_item": 24,
+  "counts": {
+    "depth=2": 24,
+    "numeric=False": 36,
+    "numeric=True": 36,
+    "depth=3": 24,
+    "depth=4": 24
+  },
+  "styles": [
+    "templated",
+    "paraphrased"
+  ],
+  "demos": [
+    "demo-1-2-0",
+    "demo-1-3-1"
+  ],
+  "files": {
+    "items.jsonl": "897999efdc0069e3555ec9591b45c19c83367cee30710bb834f643ee9495b09c",
+    "demos.json": "9ed4fe97fcf6c3f70a4c891ddcb071afc821dcc43f770e51e452a5e1780a71a8"
+  },
+  "baselines": {
+    "regex:templated": {
+      "parsed": 1.0,
+      "exact": 1.0,
+      "node_accuracy": 1.0,
+      "leaf_node_accuracy": 1.0,
+      "leaf_accuracy": 1.0,
+      "n": 72
+    },
+    "first-leaf": {
+      "parsed": 1.0,
+      "exact": 0.0,
+      "node_accuracy": 0.0,
+      "leaf_node_accuracy": 0.0,
+      "leaf_accuracy": 0.2314814814814815,
+      "n": 72
+    },
+    "gold": {
+      "parsed": 1.0,
+      "exact": 1.0,
+      "node_accuracy": 1.0,
+      "leaf_node_accuracy": 1.0,
+      "leaf_accuracy": 1.0,
+      "n": 72
+    }
+  },
+  "text_chars": {
+    "templated": {
+      "depth=2": 348.2916666666667,
+      "depth=3": 731.0833333333334,
+      "depth=4": 1514.5
+    },
+    "paraphrased": {
+      "depth=2": 419.4583333333333,
+      "depth=3": 878.2083333333334,
+      "depth=4": 1858.0
+    }
+  }
+}

@@ -1,0 +1,389 @@
+[
+ {
+  "attributes": [
+   {
+    "name": "gronbleroomp",
+    "values": [
+     "bleemgairt",
+     "keeploonaim",
+     "deinzop",
+     "kraimpgoond"
+    ]
+   },
+   {
+    "name": "vomdorkshilp",
+    "values": [
+     "pindflee",
+     "faimptheimp",
+     "pupfux"
+    ]
+   },
+   {
+    "name": "brokglu",
+    "values": [
+     "leixthe",
+     "teerksnu",
+     "kumteen"
+    ]
+   },
+   {
+    "name": "thuwee",
+    "values": [
+     "sertlumulp",
+     "reirtkrelp",
+     "saisnit",
+     "trelpdri",
+     "plauksnup"
+    ]
+   },
+   {
+    "name": "staindaisk",
+    "values": [
+     "broleirk",
+     "skootkrou",
+     "toompu",
+     "nauscheit"
+    ]
+   },
+   {
+    "name": "foppind",
+    "values": [
+     "flaudeim",
+     "bilple",
+     "paundskaimp",
+     "jootfleemp"
+    ]
+   },
+   {
+    "name": "koopgork",
+    "values": [
+     "fleethok",
+     "zoutain",
+     "fupblou",
+     "seerkgeilp"
+    ]
+   },
+   {
+    "name": "jondjojilp",
+    "values": [
+     "plaixpa",
+     "naurtglaind",
+     "gamstousk"
+    ]
+   }
+  ],
+  "depth": 2,
+  "id": "demo-1-2-0",
+  "numeric": false,
+  "outcomes": [
+   "send it to the yeeshump desk",
+   "send it to the tupflux desk",
+   "send it to the mapbreend desk",
+   "send it to the tondjaummauk desk",
+   "send it to the zainvaupshoo desk",
+   "send it to the draxnepshirt desk"
+  ],
+  "records": [
+   {
+    "gold": "send it to the mapbreend desk",
+    "record": {
+     "brokglu": "kumteen",
+     "foppind": "bilple",
+     "gronbleroomp": "deinzop",
+     "jondjojilp": "plaixpa",
+     "koopgork": "zoutain",
+     "staindaisk": "nauscheit",
+     "thuwee": "reirtkrelp",
+     "vomdorkshilp": "pupfux"
+    }
+   },
+   {
+    "gold": "send it to the yeeshump desk",
+    "record": {
+     "brokglu": "kumteen",
+     "foppind": "flaudeim",
+     "gronbleroomp": "kraimpgoond",
+     "jondjojilp": "gamstousk",
+     "koopgork": "seerkgeilp",
+     "staindaisk": "nauscheit",
+     "thuwee": "saisnit",
+     "vomdorkshilp": "pindflee"
+    }
+   },
+   {
+    "gold": "send it to the yeeshump desk",
+    "record": {
+     "brokglu": "kumteen",
+     "foppind": "paundskaimp",
+     "gronbleroomp": "kraimpgoond",
+     "jondjojilp": "gamstousk",
+     "koopgork": "seerkgeilp",
+     "staindaisk": "broleirk",
+     "thuwee": "sertlumulp",
+     "vomdorkshilp": "pindflee"
+    }
+   },
+   {
+    "gold": "send it to the yeeshump desk",
+    "record": {
+     "brokglu": "kumteen",
+     "foppind": "jootfleemp",
+     "gronbleroomp": "keeploonaim",
+     "jondjojilp": "naurtglaind",
+     "koopgork": "zoutain",
+     "staindaisk": "broleirk",
+     "thuwee": "sertlumulp",
+     "vomdorkshilp": "faimptheimp"
+    }
+   }
+  ],
+  "set": "trees-text-v1",
+  "target": "If its thuwee is reirtkrelp:\n  If its staindaisk is toompu:\n    then send it to the zainvaupshoo desk.\n  Otherwise:\n    then send it to the mapbreend desk.\nOtherwise:\n  If its thuwee is plauksnup:\n    then send it to the draxnepshirt desk.\n  Otherwise:\n    then send it to the yeeshump desk.",
+  "text": {
+   "paraphrased": "Here is how a request is handled.\nAt step 1, continue with step 2 when its thuwee reads reirtkrelp. Otherwise it then comes down to whether its thuwee reads plauksnup: if that holds, it goes to the draxnepshirt desk; if it fails, it goes to the yeeshump desk.\nStep 2: the mapbreend desk takes it unless its staindaisk reads toompu, in which case send it to the zainvaupshoo desk.",
+   "templated": "The policy has 3 steps; start at step 1.\nStep 1: if its thuwee is reirtkrelp, go to step 2; otherwise, go to step 3.\nStep 2: if its staindaisk is toompu, send it to the zainvaupshoo desk; otherwise, send it to the mapbreend desk.\nStep 3: if its thuwee is plauksnup, send it to the draxnepshirt desk; otherwise, send it to the yeeshump desk."
+  },
+  "tree": {
+   "no": {
+    "no": {
+     "leaf": "send it to the yeeshump desk"
+    },
+    "test": {
+     "attr": "thuwee",
+     "op": "is",
+     "value": "plauksnup"
+    },
+    "yes": {
+     "leaf": "send it to the draxnepshirt desk"
+    }
+   },
+   "test": {
+    "attr": "thuwee",
+    "op": "is",
+    "value": "reirtkrelp"
+   },
+   "yes": {
+    "no": {
+     "leaf": "send it to the mapbreend desk"
+    },
+    "test": {
+     "attr": "staindaisk",
+     "op": "is",
+     "value": "toompu"
+    },
+    "yes": {
+     "leaf": "send it to the zainvaupshoo desk"
+    }
+   }
+  },
+  "world": "trees-text"
+ },
+ {
+  "attributes": [
+   {
+    "name": "buseelpyond",
+    "values": [
+     "nentankrein",
+     "sheendyiksan",
+     "kiskkort"
+    ]
+   },
+   {
+    "name": "snauskzound",
+    "values": [
+     "feiskpolp",
+     "glourkchaimp",
+     "trairkstakwe",
+     "ropyoondreit",
+     "trindbron"
+    ]
+   },
+   {
+    "name": "dreilpfeirk",
+    "values": [
+     "thaundsto",
+     "glaurttram",
+     "troondkra",
+     "skonemp",
+     "leerktrim"
+    ]
+   },
+   {
+    "name": "gluskip",
+    "values": [
+     "lukchaump",
+     "deekaim",
+     "broskoop",
+     "kukplintri",
+     "grerkbreik"
+    ]
+   },
+   {
+    "name": "snaszomp score",
+    "values": null
+   },
+   {
+    "name": "thooblokre score",
+    "values": null
+   },
+   {
+    "name": "krooblai",
+    "values": [
+     "wompletsat",
+     "glaulpberk",
+     "skekak",
+     "sooswund"
+    ]
+   },
+   {
+    "name": "breiskveerk score",
+    "values": null
+   }
+  ],
+  "depth": 3,
+  "id": "demo-1-3-1",
+  "numeric": true,
+  "outcomes": [
+   "send it to the raiskjairk desk",
+   "send it to the dainsom desk",
+   "send it to the maumkortgra desk",
+   "send it to the blaundgroomp desk",
+   "send it to the mookairkgurt desk",
+   "send it to the tausklund desk"
+  ],
+  "records": [
+   {
+    "gold": "send it to the tausklund desk",
+    "record": {
+     "breiskveerk score": 49,
+     "buseelpyond": "kiskkort",
+     "dreilpfeirk": "leerktrim",
+     "gluskip": "deekaim",
+     "krooblai": "glaulpberk",
+     "snaszomp score": 95,
+     "snauskzound": "glourkchaimp",
+     "thooblokre score": 34
+    }
+   },
+   {
+    "gold": "send it to the tausklund desk",
+    "record": {
+     "breiskveerk score": 66,
+     "buseelpyond": "kiskkort",
+     "dreilpfeirk": "troondkra",
+     "gluskip": "grerkbreik",
+     "krooblai": "glaulpberk",
+     "snaszomp score": 0,
+     "snauskzound": "ropyoondreit",
+     "thooblokre score": 100
+    }
+   },
+   {
+    "gold": "send it to the dainsom desk",
+    "record": {
+     "breiskveerk score": 12,
+     "buseelpyond": "sheendyiksan",
+     "dreilpfeirk": "thaundsto",
+     "gluskip": "lukchaump",
+     "krooblai": "wompletsat",
+     "snaszomp score": 29,
+     "snauskzound": "trindbron",
+     "thooblokre score": 90
+    }
+   },
+   {
+    "gold": "send it to the tausklund desk",
+    "record": {
+     "breiskveerk score": 66,
+     "buseelpyond": "kiskkort",
+     "dreilpfeirk": "glaurttram",
+     "gluskip": "lukchaump",
+     "krooblai": "skekak",
+     "snaszomp score": 10,
+     "snauskzound": "trindbron",
+     "thooblokre score": 14
+    }
+   }
+  ],
+  "set": "trees-text-v1",
+  "target": "If its krooblai is skekak:\n  If its snaszomp score is at most 23:\n    If its snaszomp score is at most 55:\n      then send it to the tausklund desk.\n    Otherwise:\n      then send it to the blaundgroomp desk.\n  Otherwise:\n    If its breiskveerk score is at most 50:\n      then send it to the mookairkgurt desk.\n    Otherwise:\n      then send it to the raiskjairk desk.\nOtherwise:\n  If its snaszomp score is at most 79:\n    If its snauskzound is ropyoondreit:\n      then send it to the tausklund desk.\n    Otherwise:\n      then send it to the dainsom desk.\n  Otherwise:\n    If its dreilpfeirk is glaurttram:\n      then send it to the dainsom desk.\n    Otherwise:\n      then send it to the tausklund desk.",
+  "text": {
+   "paraphrased": "Process every request as follows, starting from step 1.\nFor step 1: apply step 2 as long as the krooblai is skekak; failing that, continue with step 5.\nStep 2: should its snaszomp score exceeds 23, go to step 4; in every other case, continue with step 3.\nAt step 4, ask whether its breiskveerk score is 50 or less. If so, route it to the mookairkgurt desk. If not, the raiskjairk desk takes it.\nStep 5: when its snaszomp score is more than 79, go to step 7; when its snaszomp score is no higher than 79, apply step 6.\nFor step 3: it belongs with the tausklund desk as long as its snaszomp score is at most 55; failing that, it belongs with the blaundgroomp desk.\nStep 7: if the dreilpfeirk comes out as glaurttram, route it to the dainsom desk; otherwise, it belongs with the tausklund desk.\nStep 6: when its snauskzound is something other than ropyoondreit, it goes to the dainsom desk; when it has ropyoondreit as its snauskzound, send it to the tausklund desk.",
+   "templated": "The policy has 7 steps; start at step 1.\nStep 1: if its krooblai is skekak, go to step 2; otherwise, go to step 5.\nStep 2: if its snaszomp score is at most 23, go to step 3; otherwise, go to step 4.\nStep 3: if its snaszomp score is at most 55, send it to the tausklund desk; otherwise, send it to the blaundgroomp desk.\nStep 4: if its breiskveerk score is at most 50, send it to the mookairkgurt desk; otherwise, send it to the raiskjairk desk.\nStep 5: if its snaszomp score is at most 79, go to step 6; otherwise, go to step 7.\nStep 6: if its snauskzound is ropyoondreit, send it to the tausklund desk; otherwise, send it to the dainsom desk.\nStep 7: if its dreilpfeirk is glaurttram, send it to the dainsom desk; otherwise, send it to the tausklund desk."
+  },
+  "tree": {
+   "no": {
+    "no": {
+     "no": {
+      "leaf": "send it to the tausklund desk"
+     },
+     "test": {
+      "attr": "dreilpfeirk",
+      "op": "is",
+      "value": "glaurttram"
+     },
+     "yes": {
+      "leaf": "send it to the dainsom desk"
+     }
+    },
+    "test": {
+     "attr": "snaszomp score",
+     "op": "le",
+     "value": 79
+    },
+    "yes": {
+     "no": {
+      "leaf": "send it to the dainsom desk"
+     },
+     "test": {
+      "attr": "snauskzound",
+      "op": "is",
+      "value": "ropyoondreit"
+     },
+     "yes": {
+      "leaf": "send it to the tausklund desk"
+     }
+    }
+   },
+   "test": {
+    "attr": "krooblai",
+    "op": "is",
+    "value": "skekak"
+   },
+   "yes": {
+    "no": {
+     "no": {
+      "leaf": "send it to the raiskjairk desk"
+     },
+     "test": {
+      "attr": "breiskveerk score",
+      "op": "le",
+      "value": 50
+     },
+     "yes": {
+      "leaf": "send it to the mookairkgurt desk"
+     }
+    },
+    "test": {
+     "attr": "snaszomp score",
+     "op": "le",
+     "value": 23
+    },
+    "yes": {
+     "no": {
+      "leaf": "send it to the blaundgroomp desk"
+     },
+     "test": {
+      "attr": "snaszomp score",
+      "op": "le",
+      "value": 55
+     },
+     "yes": {
+      "leaf": "send it to the tausklund desk"
+     }
+    }
+   }
+  },
+  "world": "trees-text"
+ }
+]
