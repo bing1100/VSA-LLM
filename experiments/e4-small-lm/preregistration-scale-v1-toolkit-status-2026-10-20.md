@@ -24,8 +24,8 @@ author's approval of the teacher spend, the cap, the spend so far and the prepar
 - **The call was the build smoke** (`teach --scope hybrid --limit 25`, new spend capped at USD 0.50). Its batch is the full
   build's first batch, so the build reuses it from the cache at no cost.
 - **Smoke answers:** 25 of 25 senses answered, 78 proposed edges, 96.2% mapped (pilot 97.3%), 3 unmapped (`no_ancestor`).
-- **Full build: not run on 2026-10-20.** The session's permission system refused the spending command. The build waits
-  for the author to run it, or to permit it:
+- **Full build: run on 2026-10-20 at 21:28–22:38**, after the author approved the Claude spend ("Approve the claude spend"). The
+  first attempt was refused by the session's permission system; the approved run used the commands as written:
 
       PYTHONPATH=src $PY -m vsa_embed.experiments.c3_teacher teach --scope hybrid --max-usd 82.40
       PYTHONPATH=src $PY -m vsa_embed.experiments.c3_teacher ontology --scope hybrid
@@ -38,11 +38,11 @@ author's approval of the teacher spend, the cap, the spend so far and the prepar
 
 | after the build (to fill in) | value |
 |---|---|
-| new spend on 2026-10-20 (USD, ≤ 80) | |
-| synsets read / failed calls | |
-| teacher entries in `ontology-hybrid.pt` | 11,800 (expected) |
-| parse rate, edges per entry | |
-| `answers.jsonl` sha256 (in the ontology's `teacher` record) | |
+| new spend on 2026-10-20 (USD, ≤ 80) | 68.05 (build 67.98 + smoke 0.07); ledger total 70.46 |
+| synsets read / failed calls | 24,670 in 987 calls, 0 errors, 4,189 s (1.16 h, 4 workers) |
+| teacher entries in `ontology-hybrid.pt` | 11,800 (built 2026-10-20 22:38; file sha256 6a6a8e003f650cba…) |
+| parse rate, edges per entry | 0.969; 440,113 edges (base ontology 444,548); unmapped: no_ancestor 2,277, unknown_lemma 188, self 58, bad_lexname 3 |
+| `answers.jsonl` sha256 (in the ontology's `teacher` record) | c31281ce694423afa57b6e13571d89f4f6a29dd741bb5b24de6503e32e48d0e3 |
 
 ## Built without spend (2026-10-20)
 
@@ -83,3 +83,10 @@ author's approval of the teacher spend, the cap, the spend so far and the prepar
 - **Rescoring:** the evaluation-only rescoring reproduced the trained run's final losses exactly (max |Δ| 0).
 - **Reports:** both report commands ran. With `--pool-ontologies` C5teach shares C5's cohort; without it, it falls into a
   separate cohort. Peak RSS was 2.9 GB.
+
+## Queued (2026-10-20, 22:40)
+
+`queue-commands-c5teach.sh` with `PRIO_TRAIN=54.4959992` and `PRIO_REPORT=54.4959996`, after the guard accepted the
+ontology above: `e4-scale-v1-toolkit-50M-C5teach-s1`, `-C5@teachref-s1`, `-C0@teachref-s1` (GPU lane), and the two
+reports `e4-scale-v1-toolkit-c5teach-report`, `-c5teach-teachref-report` (CPU lane). They run after the E7 D7.1 block
+and before the E5 block.
