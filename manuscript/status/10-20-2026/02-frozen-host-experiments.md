@@ -135,8 +135,9 @@ Further readings:
 ## Next steps
 - **Done:** M1, in its local-context form, stayed in the full method (C5) for joint training. `gates.md` carries E1
   forward as evidence that context helps, not as a sense-alignment claim.
-- **Not started:** sense alignment inside jointly trained models (E5.2). E5 has a pre-registration but no runs; it
-  needs checkpoints from the committed 125M from-scratch run (D4.1).
+- **Done (21 October):** sense alignment inside jointly trained models (E5.2, on the 125M scaling checkpoints; file
+  04, 04.2). Attention picks the gold sense 0.444 against 0.845 for WordNet's first sense, so the frozen-host result
+  holds in joint training too.
 - **Closed:** no sense-alignment claim on frozen hosts.
 
 ---

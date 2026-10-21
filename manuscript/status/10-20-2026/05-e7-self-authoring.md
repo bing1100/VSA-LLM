@@ -1,20 +1,21 @@
 # 05 — E7: self-authored ontologies on pretrained hosts
 
-> **Update, 20 October (evening).** Rescheduled on 20 October (`preregistration-2026-10-20-reschedule.md`, with a new
-> G3 rule). D7.1 is moved to the front of the queue and should land on 21 October. The Claude follow-ups and the judge
-> wait for the author. D7.2 is queued only if G3 passes. See the digest, §5.
+> **Update, 21 October.** D7.1 ran on 20–21 October with the Claude follow-ups (USD 9.07). **Gate G3 failed:** on the
+> general track, neither the host's nor the teacher's edges for masked concepts are more precise than degree-matched
+> random ones. D7.2 was not queued, and D7.3 depends on it. Self-authoring is closed on this track (05.2). Full
+> record: `manuscript/findings/2026-10-21-overnight.md` §10.
 
 **Overview.** E7 asks whether a small pretrained model can read text, write ontology frames for the concepts it meets,
 keep only the frames that help on held-out text, and then improve through the method. We built its reading corpora and
-hidden gold on 2 Oct (05.1). The rest has not run (05.2):
-- **D7.1, authoring quality:** queued on 2 Oct at priority 60. It has never reached the GPU; 1,104 pending jobs rank
-  ahead of it.
-- **D7.2, one self-improvement round, and D7.3, cross-authoring into a from-scratch model:** never queued. Both wait for
-  the E4 gate G3, which was never held.
+hidden gold on 2 Oct (05.1). D7.1, authoring quality, waited in the queue from 2 Oct until the author moved it to the
+front on 20 Oct; it ran on 20–21 Oct and failed the new gate G3 (05.2). D7.2 (one self-improvement round) and D7.3
+(cross-authoring into a from-scratch model) were therefore not queued.
 
-On 8 Oct, decision 63 recast self-authoring as one of three proposal sources for the toolkit's *learn* step. **There
-are no E7 results.** Evidence from other experiments (05.3) suggests that small hosts write poor frames while Claude
-writes WordNet-like ones:
+On 8 Oct, decision 63 recast self-authoring as one of three proposal sources for the toolkit's *learn* step. **The one
+E7 result is negative:** for masked WordNet concepts, the host's edges have precision 0.062 (16 verifiable edges) and
+the teacher's 0.069 (277), against a degree-matched random high of 0.243. Evidence from other experiments (05.3)
+agrees: small hosts write poor frames, and on real text even Claude's frames are no more precise than the ontology's
+own statistics:
 - a 360M host added 0 facts from 4 notes in a smoke test;
 - on real chemistry definitions the host reader recovered 8.0% of gold edges, against 9.7% for a type prior;
 - Claude's frames agree with WordNet at precision 0.78 and recall 0.75.
@@ -105,8 +106,11 @@ The gold frames live only under `~/data/vsa-llm/e7/{general,devtools}-v1/gold/` 
 
 # 05.2 — Authoring quality, one self-improvement round and cross-authoring (D7.1–D7.3)
 
-**Status:** D7.1 queued (since 2026-10-02, not reached); D7.2 and D7.3 not queued · **When:** plan 2026-10-03 ·
-**Sources:** `resources/plan-improvement/experiments.md` (E7); `experiments/e7-self-authoring/runs/general-v1/{plan/d71.json,
+**Status:** D7.1 done; G3 failed 21 October; D7.2 and D7.3 not queued; self-authoring closed on this track · **When:**
+plan 2026-10-03; D7.1 ran 2026-10-20 to 2026-10-21 ·
+**Sources:** `experiments/e7-self-authoring/preregistration-2026-10-20-reschedule.md`;
+`experiments/e7-self-authoring/runs/general-v1/gate/g3-d72.json`; `manuscript/findings/2026-10-21-overnight.md` §10;
+`resources/plan-improvement/experiments.md` (E7); `experiments/e7-self-authoring/runs/general-v1/{plan/d71.json,
 round.json}`; `.jobs/e7-general-v1-*.json` (read only); `manuscript/paper-readiness.md`; `manuscript/claims.md`
 (H-G.1–H-G.3); `manuscript/toolkit-methodology-2026-10.md` §1.2, §3.2, §5; `resources/plan-improvement/execution.md`
 (decisions 30, 63)
@@ -142,36 +146,62 @@ As planned:
 - **Round settings** (`round.json`): C5 with HRR. Verification uses a utility quantile of 0.05, at least 6 validation
   contexts and at most 8 edges per concept. Decision 30 moves the host from frozen to LoRA and picks the channel
   condition at G3.
+- **Gate G3 (the reschedule of 20 Oct):** each author's edge precision on the masked gold is compared with the upper
+  bound of a degree-matched random author's precision (the "random high"). An arm passes only with at least 30
+  verifiable edges, coverage ≥ 0.1 and precision above the random high. D7.2 is queued only if an arm passes.
 
 ## Experiment
-- **D7.1:** 9 jobs (discover, author and direct-prompt for each of the three hosts), about 1.1 GPU-h in total. All 9
-  have been pending at priority 60 since 2026-10-02. As of 20 Oct, 1,104 pending jobs rank ahead of them (E9, the
-  toolkit band 54.496–54.4999, addendum 2).
-- **D7.2 and D7.3:** never queued. Both wait for G3 (`queue.md` item 50), and G3 was never held: decision 54 replaced
-  the E4 core with reduced screens (file 03, 03.5).
-- **Budget committed:** about 40 GPU-h. None has been spent.
+- **D7.1:** 9 jobs (discover, author and direct-prompt for each of the three hosts), about 1.1 GPU-h in total. They
+  waited at priority 60 from 2 Oct, behind 1,104 jobs, until the reschedule of 20 Oct moved them to 54.4959993. They
+  ran on 20–21 Oct, followed by the CPU follow-ups: Hearst patterns, random frames, and the Claude teacher on 999
+  concepts (USD 9.07).
+- **D7.2 and D7.3:** not queued. The reschedule replaced the E4 gate G3 (never held; decision 54, file 03, 03.5) with
+  an E7 gate G3 on D7.1's output, which failed.
+- **Budget:** D7.1's 1.1 GPU-h and the follow-ups' USD 9.07 were spent; D7.2 (about 44 GPU-h) was not queued.
 - **Smoke runs:** three labelled CPU smoke folders (2 Oct; `smoke/`, no manifests) used slices of about 0.1–0.25M
   tokens or 300 documents. The general smoke ran every stage, D7.0 through the R6 report. They test plumbing and are not
   results.
 
 ## Results
-None. H-G.1 (self-authored frames beat cm and random), H-G.2 (verification raises precision) and H-G.3 (beats Hearst
-and OLLM-style extraction) all remain "pending".
+**Gate G3 (21 October): FAIL on both arms.**
+
+| Arm | Masked concepts authored | Verifiable edges | Precision [95% CI] | Random high | Coverage | Verdict |
+|---|---:|---:|---|---:|---:|---|
+| self (Qwen2.5-0.5B) | 64 | 16 | 0.062 [0.011, 0.283] | 0.243 | 0.282 | FAIL (too few edges; not above random) |
+| teacher (Claude) | 64 | 277 | 0.069 [0.044, 0.105] | 0.243 | 0.751 | FAIL (not above random) |
+
+- The self-authoring host writes almost no edges for masked concepts: 36 edges over 26 concepts, 16 of them
+  verifiable against the gold (findings §10).
+- The teacher's edges on this general WordNet track are no more precise than degree-matched random ones. Its recall
+  of the masked gold is 0.232 (19 of 82).
+- Baselines: Hearst patterns 0 of 8 edges right; direct prompting of SmolLM2-360M, precision 0.049 on 833 edges.
+- Discovery recall at 1,000 candidates is 0.010–0.014 for the three hosts.
+- D7.2 was not queued; D7.3 depends on it. The Claude judge (cap USD 50) is informational and not part of G3. A
+  session restart interrupted it at USD 22.66, and it resumed from its cache.
+- H-G.1 (self-authored frames beat cm and random), H-G.2 (verification raises precision) and H-G.3 (beats Hearst and
+  OLLM-style extraction) were "pending" when this file was written. The ledger should now record H-G.3's
+  authoring-quality part as failed on the general track, and H-G.1 and H-G.2 as untested, since D7.2 never ran.
 
 **Change of role (decision 63, 8 Oct).** The toolkit methodology makes self-authoring one of three proposal sources for
 the *learn* step, next to decomposing learned vectors and rule closure. Each proposal must pass the same null-calibrated
 acceptance test. The *learn* tool (`vsa_embed.learn`) lists E7 cards as an input source.
 
 ## Limitations
-- Nothing has been measured.
+- D7.1 measured authoring quality only. The self → self round (D7.2) never ran, so H-G.1's primary endpoint (loss
+  against cm) is untested rather than refuted.
+- The self arm has 16 verifiable edges, so its precision interval is wide (0.011–0.283). The verdict rests on the edge
+  count as much as on the precision.
+- Hosts may know masked WordNet concepts from pretraining (05.1). That would favour the authors, not hurt them.
 - The design's fairness rests on two plan decisions, the LoRA host and cm's FLOPs accounting (decisions 30, 32).
 - `manuscript/draft.md` §5.10 is a table of placeholders.
 
 ## Next steps
-- **Queued:** D7.1 (about 1.1 GPU-h). It runs only when the queue reaches priority 60.
-- **Blocked:** D7.2 and D7.3, on G3.
-- **Superseded in part:** the *learn* step of the toolkit (E13) and the E14 reading diagnostics now carry the "can the
-  model write its own structure?" question on real tracks (see the E14 status files).
+- **Closed on this track:** G3 failed on 21 October; D7.2 and D7.3 are not queued.
+- **Informational:** the Claude judge of authored edges, resumed from its cache. It does not change G3.
+- **Carried by other experiments:** the *learn* step of the toolkit (E13) and the E14 reading diagnostics carry the
+  "can the model write its own structure?" question on real tracks (see the E14 status files). Their evidence agrees
+  with G3: on real text, frames written by a model, small or large, are not more precise than the ontology's own
+  statistics (RD-11, RD-3, C5teach).
 
 ---
 
@@ -183,8 +213,8 @@ to 2026-10-17 · **Sources:** `experiments/e4-small-lm/preregistration-scale-v1-
 (RD-1a); `manuscript/update-2026-10-12.md` (E11-1); `manuscript/update-2026-10-15.md`
 
 ## Research gap
-E7.1 has not run, so we lack its central number: how good are a host's and a teacher's frames? Four other experiments
-measured parts of it.
+Before D7.1 ran (05.2) we lacked its central number: how good are a host's and a teacher's frames? Four other
+experiments measured parts of it, and they agree with D7.1.
 
 ## Intuition
 If small hosts cannot write usable frames even from definitions, E7.2's self → self arm reduces to the teacher → host
@@ -230,8 +260,8 @@ arm. The plan foresaw this risk (tasks.md: "E7 reduces to teacher → host").
 ## Next steps
 - **Pending in the queue (E9):** the teacher enrichment of T7-ROOD, the clean held-out track of new 2026 MeSH names.
   Claude reads MeSH notes under a USD 60 cap at priority 54.49995. The host-read stage waits behind its 10% gate.
-- **Awaiting the author:** C5teach, Claude-read frames in a from-scratch 50M model (file 03, 03.4; about USD 73). It is
-  the closest relative of E7.3.
+- **Done (21 October):** C5teach, Claude-read frames in a from-scratch 50M model (file 03, 03.4; USD 68.05), the
+  closest relative of E7.3. At one seed it changes the loss inside the terms it describes and nothing after them.
 
 ---
 
@@ -239,6 +269,8 @@ arm. The plan foresaw this risk (tasks.md: "E7 reduces to teacher → host").
 
 - E7 configs and run folders: `experiments/e7-self-authoring/{general.yaml, devtools.yaml}`;
   `experiments/e7-self-authoring/runs/{general-v1, devtools-v1}/`; `experiments/e7-self-authoring/smoke/` (SMOKE only).
+- Reschedule and gate: `experiments/e7-self-authoring/preregistration-2026-10-20-reschedule.md`;
+  `experiments/e7-self-authoring/runs/general-v1/gate/g3-d72.json`; `manuscript/findings/2026-10-21-overnight.md` §10.
 - Queue state (read only): `.jobs/e7-general-v1-*.json`.
 - Plan and decisions: `resources/plan-improvement/experiments.md` (E7); `resources/plan-improvement/execution.md`
   (decisions 30–34, 54, 63; TK-L); `resources/plan-improvement/queue.md` (item 50); `resources/plan-improvement/tasks.md`

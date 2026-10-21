@@ -1,8 +1,10 @@
 # 15 — E14, part 2: logic in the vector store
 
-> **Update, 20 October (evening).** Tier F was approved on 20 October. X8b (irregular trees) and LG-P3b (premise
-> retrieval at scale) have already run; see `manuscript/findings/2026-10-20-e14-evening.md` §5. X7b (an equal-size
-> store) and LG-D2 (noisy trees) are queued and should land on 21 October.
+> **Update, 21 October.** The remaining tier F blocks and addenda 9 and 11 landed overnight: trees read from prose
+> (15.8), LG-CF counterfactual chains (15.9), and LG-D2 noisy trees with X7b, the equal-size store (15.10). X8b
+> (irregular trees) and LG-P3b (premise retrieval at scale) ran on 20 October; see
+> `manuscript/findings/2026-10-20-e14-evening.md` §5. The full record of the night is
+> `manuscript/findings/2026-10-21-overnight.md`.
 
 **Overview.** This file asks whether predicate logic can be encoded directly in vector-symbolic form, and whether that
 helps a language model. Predicate logic here means relations, rules, deductions and decision trees.
@@ -10,6 +12,9 @@ helps a language model. Predicate logic here means relations, rules, deductions 
 - **15.4:** whether the store beats ordinary symbolic logic anywhere.
 - **15.5–15.6:** whether a frozen language model can use an executor's conclusions.
 - **15.7:** whether a language model can steer a sound prover.
+- **15.8:** whether a host can read a tree from prose into the executor's form.
+- **15.9:** whether the executor keeps a chain of what-if questions consistent.
+- **15.10:** trees on noisy records (LG-D2), and whether X7's ensemble gain was width (X7b).
 
 **Terms used throughout.**
 - **VSA:** vector-symbolic architecture.
@@ -117,17 +122,19 @@ Widths 1,024–16,384, 3 seeds. X8 used depths 2–12 with the input record fixe
 - **Role blocks make the impossible rules exact:** symmetry and sub-relation score 1.00.
 - **Fact × role blocks make whole-frame rules exact** (1.00 at every width).
 - **Redundant blocks equal one wide vector:** width is width.
-- **X7, three trained stores combined:** decoding reaches 0.979, against 0.89–0.92 for one store.
+- **X7, three trained stores combined:** decoding reaches 0.979, against 0.89–0.92 for one store. X7b confirmed on
+  21 October that this gain was width: one trained store as wide as the ensemble decodes 0.992 (15.10).
 - **X8, heap concatenation is exact (1.00) to depth 12,** even with 64-dimensional blocks. A single nested vector fails
   at any width (0.11 at depth 8).
 
 ## Limitations
-- X7's ensemble has three times the parameters of one store; an equal-size store was not trained.
+- X7's ensemble has three times the parameters of one store; the equal-size store was trained later (X7b, 15.10).
 - Heap concatenation trades memory for exactness (0.5–2M dimensions at depth 12).
 - Irregular trees are untested.
 
 ## Next steps
-Proposed: an equal-size trained store for X7, and irregular trees with a pre-order layout.
+Both ran: irregular trees (X8b; `manuscript/findings/2026-10-20-e14-evening.md` §5) and the equal-size store (X7b;
+15.10).
 
 ---
 
@@ -285,7 +292,7 @@ The executor's output essentially *is* the answer, so this is an interface test,
 clean.
 
 ## Next steps
-Proposed: noisy or partial inputs.
+Noisy records were tested in LG-D2 (15.10); what-if chains in LG-CF (15.9).
 
 ---
 
@@ -346,4 +353,164 @@ is valid.
 - A weak chain-of-thought baseline (160 new tokens).
 
 ## Next steps
-The hybrid is done. Premise retrieval at 10⁴–10⁵ clauses is approved (tier F, 2026-10-20) and being built.
+The hybrid is done. Premise retrieval at 10⁴–10⁵ clauses (LG-P3b) ran on 20 October; see
+`manuscript/findings/2026-10-20-e14-evening.md` §5.
+
+---
+
+# 15.8 — Trees read from prose (addendum 9)
+
+**Status:** done · **When:** 2026-10-21 · **Sources:** `experiments/e14-logic/report/treetext/`; `manuscript/findings/2026-10-21-overnight.md` §3; `experiments/e14-logic/preregistration-addendum-9-treetext.md`
+
+## Research gap
+The executor runs a tree exactly (15.2) and a model relays its result (15.6), but the tree arrived structured. The
+author asked whether a host can read a decision tree written in prose into the executor's form, so that "decode from
+text, then reason with the executor" becomes a pipeline.
+
+## Intuition
+A templated rendering ("if X is above 3, go to node 2") is close to the structured form, so a host should transcribe
+it. A paraphrased rendering tests whether the host reads the logic or imitates the format.
+
+## Methodology
+- 72 synthetic trees (depths 2–4), each rendered as templated prose and as paraphrased prose.
+- The host emits the executor's structured form. The decoded tree runs on 24 records and is compared with the gold
+  tree.
+- **Metrics:** parse rate, exact tree match and **leaf accuracy** (primary), with bootstrap intervals over trees.
+- **Baselines:** a regex reader of the templated style; the first leaf.
+- **Decision rule:** worth queuing more only if the best host reaches leaf accuracy ≥ 0.80 on the paraphrased style
+  with the interval's lower bound ≥ 0.70.
+
+## Experiment
+Three frozen hosts: SmolLM2-360M, Qwen3-0.6B and Qwen3-1.7B.
+
+## Results
+
+| Host | Style | Parse rate | Exact tree | Leaf accuracy |
+|---|---|---:|---:|---:|
+| SmolLM2-360M | templated | 0.986 | 0.250 | 0.451 [0.369, 0.534] |
+| SmolLM2-360M | paraphrased | 0.458 | 0.000 | 0.095 [0.054, 0.142] |
+| Qwen3-0.6B | templated | 0.903 | 0.528 | 0.667 [0.575, 0.755] |
+| Qwen3-0.6B | paraphrased | 0.806 | 0.042 | 0.218 [0.150, 0.289] |
+| Qwen3-1.7B | templated | 0.917 | 0.722 | **0.822 [0.741, 0.899]** |
+| Qwen3-1.7B | paraphrased | 0.694 | 0.042 | **0.237 [0.168, 0.310]** |
+
+- Baselines: the regex reader scores 1.000 on the templated style; the first leaf 0.231.
+- By depth, Qwen3-1.7B templated: 1.00 / 0.85 / 0.62 at depths 2 / 3 / 4; paraphrased 0.38 / 0.28 / 0.05.
+- **The decision rule is not met. Verdict: "not worth queuing more".**
+- The predictions for Qwen3-1.7B (templated > 0.9; paraphrased 0.6–0.8) were too optimistic. The SmolLM2 predictions
+  held.
+
+## Limitations
+- One item set of 72 trees; base models only; no host above 1.7B.
+
+## Next steps
+Stopped at ≤ 1.7B. These hosts imitate a format; they do not read logic from prose. The executor stays useful when
+the tree arrives structured, written by a larger model or a person.
+
+---
+
+# 15.9 — Consistency under chains of what-if edits (LG-CF, addendum 11)
+
+**Status:** done · **When:** 2026-10-21 · **Sources:** `experiments/e14-logic/report/lgcf/`; `manuscript/findings/2026-10-21-overnight.md` §4; `experiments/e14-logic/preregistration-addendum-11-cheap.md`
+
+## Research gap
+15.6 asked one question per tree. A user asks chains: "and if the income were higher? and if that test pointed
+elsewhere?" We asked whether the executor keeps such a chain consistent where in-context answering does not.
+
+## Intuition
+Each edit changes the record or the policy. The executor re-runs the tree on the edited state exactly. A model
+answering in context must track every edit itself, and should lose the thread as the chain grows.
+
+## Methodology
+- **Items:** 300 trees (depths 2, 3, 4, 6), each with 8 successive edits: an input attribute changes, a test is
+  retargeted, or two branches are swapped. Gold at state k is the exact executor's leaf. Six answer options.
+- **Conditions:**
+  - `chain-text`: the original record, the policy and the k edits listed; the model answers in context;
+  - `chain-relay`: the edited record and the executor's path on the edited state; the model relays;
+  - `chain-text+exec` and `chain-text+conclusion`: the full history plus the executor's path, or its one conclusion
+    line.
+- **Primary:** `chain-relay − chain-text` at k = 8, Holm over hosts.
+- **Consistency:** the share of chains with every answer at k = 1, 2, 4, 8 right.
+- **Pre-registered alternative wording:** if `chain-text` does not decline with k, the result is stated as the
+  executor's advantage persisting under edits, not as in-context drift.
+
+## Experiment
+Three frozen hosts: SmolLM2-360M, Qwen3-0.6B and Qwen3-1.7B; 300 chains each.
+
+## Results
+
+| Accuracy at k = 0 / 1 / 2 / 4 / 8 | SmolLM2-360M | Qwen3-0.6B | Qwen3-1.7B |
+|---|---|---|---|
+| executor (no model) | 0.993 / 0.997 / 0.997 / 0.997 / 1.000 | same | same |
+| `chain-relay` | 0.993 / 0.997 / 0.997 / 0.997 / 1.000 | same | same |
+| `chain-text` | 0.247 / 0.277 / 0.270 / 0.250 / 0.243 | 0.233 / 0.277 / 0.253 / 0.250 / 0.273 | 0.240 / 0.307 / 0.273 / 0.257 / 0.280 |
+| `chain-text+conclusion`, k = 0 / 8 | 0.847 / 0.890 | 0.990 / 1.000 | 0.993 / 1.000 |
+| `chain-text+exec`, k = 0 / 8 | 0.797 / 0.783 | 0.983 / 0.997 | 0.993 / 0.997 |
+| **consistency, relay / text** | **0.997 / 0.050** | **0.997 / 0.033** | **0.997 / 0.037** |
+
+- **Primary:** `chain-relay − chain-text` at k = 8 is **+0.757\*** [+0.710, +0.803], **+0.727\*** [+0.673, +0.777]
+  and **+0.720\*** [+0.667, +0.770] (p 0.0015 each; n = 300).
+- **Predictions:** four of six held. `chain-relay` ≥ 0.95 everywhere (yes). The primary ≥ +0.50 on all hosts (yes).
+  Consistency relay ≥ 0.90 and text ≤ 0.10 (yes). The full history costs SmolLM2 (0.217\* below the relay with
+  `chain-text+exec`) and not Qwen3 (0.003, n.s.) (yes). **`chain-text` does not fall with k** (no): it is at chance
+  (1/6 ≈ 0.167; observed 0.23–0.31) from k = 0 on, with no slope. SmolLM2 does not anchor to the original leaf (no):
+  0.24 of its answers, near the chance rate.
+- **The claim, in the pre-registered alternative wording:** *the executor's advantage on decision trees persists
+  under edits, and keeps a chain of what-if questions consistent (99.7%) where in-context answering is inconsistent
+  (3–5%)*. It is **not** "in-context answering drifts with chain length": `chain-text` is already at chance at k = 0,
+  because these hosts cannot run a tree given in prose (15.6 found 0.37 with four options). The drift claim would need
+  a host that can run the tree at k = 0 at all (about 4B or larger).
+- On the Qwen3 hosts a single conclusion line appended to the full history is enough (0.99+). SmolLM2-360M needs the
+  short path interface (0.78–0.89 with the long history).
+- In the relay condition every host follows the executor at 1.000, including the 5 chains where the executor is
+  wrong. The executor's soundness is the claim's load-bearing part.
+
+## Limitations
+- The consistency gap is real and large, but its source is that the model never executes the policy in context, at
+  any k. The executor supplies the whole computation; the model supplies the relay.
+- One item set of 300 chains; synthetic trees; base models only.
+
+## Next steps
+The consistency result goes to the claims ledger with its caveat. A drift test needs a host of about 4B or larger
+and is not queued.
+
+---
+
+# 15.10 — Trees on noisy records (LG-D2), and one store as wide as the ensemble (X7b)
+
+**Status:** done · **When:** 2026-10-21 · **Sources:** `experiments/e14-logic/report/lgd2/`; `experiments/e14-logic/runs/x7b/`; `manuscript/findings/2026-10-21-overnight.md` §7; preregistration §19
+
+## Research gap
+15.6 used clean records and left noisy or partial inputs as a next step. 15.2's X7 ensemble had three times the
+parameters of one store, so its gain could be width rather than ensembling.
+
+## Intuition
+A tree executor on a corrupted record fails exactly on the corrupted fields, and a model that relays it inherits those
+errors; soft matching might recover some. For X7, one store of the ensemble's width should decode as well if width is
+what mattered.
+
+## Methodology
+- **LG-D2:** SmolLM2-135M; 10% or 30% of record fields missing or wrong. Primary (Holm over 4): the executor's path −
+  the tree in text at each noise level; soft matching − exact matching.
+- **X7b:** one trained T4 store of width 768 against the three-store ensemble of 256-wide stores, with untrained
+  controls at both widths. Metric: slot decode accuracy on held-out entries.
+
+## Experiment
+LG-D2: 600 items per noise level. X7b: one trained run (`SmolLM2-360M-full-C5w768-s1`).
+
+## Results
+- **LG-D2.** The executor's path beats the tree in text by **+0.670\*** at 10% noise and **+0.488\*** at 30%. Soft
+  matching adds +0.002 and +0.003 (n.s.). The model follows the executor at 1.000, including when the executor is
+  wrong on a corrupted field. Noise costs the executor exactly what it costs on the affected records (−0.424 at 10%)
+  and nothing on the unaffected ones (+0.000).
+- **X7b.** Single 256-wide trained stores decode 0.891–0.918; the three-store ensemble 0.979; **one 768-wide trained
+  store 0.992** (+0.013\* over the ensemble). An untrained 768-wide store reaches 0.998 and an untrained 256-wide store
+  0.927. **X7's ensemble gain was width.** Training costs decoding −0.006 at width 768 and −0.022 at 256.
+
+## Limitations
+- LG-D2 ran on one host (135M) with a synthetic noise model.
+- X7b has one trained run.
+
+## Next steps
+Closed. The executor interface holds under noise but does not repair it. 15.2's "redundant blocks equal one wide
+vector" now also holds for the trained T4 store.

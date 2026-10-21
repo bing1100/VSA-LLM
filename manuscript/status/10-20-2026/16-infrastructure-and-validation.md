@@ -375,11 +375,13 @@ harness, and each records which.
 - The plan asked for an author-labelled set of ≈ 30 items. All 30 items are ontology-derived.
 - Individual verdicts are harness-specific; v1 has no manifest.
 - Validation calls of the E5.3 rubrics cost $0.027–0.061 each (mean $0.039), about twice the planned $0.02.
-- We found no committed result from E5.3 or E7.1, so the judge has not yet rated a real study.
+- The judge rated its first real study on 20–21 October: E5.3 (file 04, 04.2; κ 0.82–0.89, calibration 0.8–1.0 on
+  the known-answer items). E7's judge of authored edges is informational and was still running from its cache when
+  this was written (file 05, 05.2).
 
 ## Next steps
-The protocol requires a known-answer calibration before each study, so `authored_edge` and the E5.3 rubrics need one
-before they run. The clinician study (W4) will rate the identical cached items.
+The protocol requires a known-answer calibration before each study. The E5.3 rubrics had theirs on 20–21 October
+(calibration 0.8–1.0); `authored_edge` still needs one. The clinician study (W4) will rate the identical cached items.
 
 ---
 

@@ -1,9 +1,11 @@
 # 14 — E14, part 1: reading facts from real text, and using them
 
-> **Update, 20 October (evening).** Tier F was approved on 20 October. RD-4d (learned routers) and RD-3b (a stricter
-> ReAct reader) are queued and should land on 21 October; see the digest, §5.
+> **Update, 21 October.** The tier F and addenda 10–11 blocks landed overnight: RD-4d (learned routers, 14.8), RD-3b
+> (a stricter ReAct reader, 14.9), RD-13 (retrieval from Wikipedia, 14.10) and RD-14 (inferred facts, 14.11). Routing
+> is solved on real chemistry and still open on new words; RD-4e (addendum 12) is queued. The full record of the night
+> is `manuscript/findings/2026-10-21-overnight.md`.
 
-**Overview.** This file follows one question through seven explorations: why does reading facts from real definitions
+**Overview.** This file follows one question through eleven explorations: why does reading facts from real definitions
 fail, and what would make it work? We split a fact's path into four stages:
 1. **stated** — the text says it;
 2. **found** — the reader locates the partner concept;
@@ -11,7 +13,8 @@ fail, and what would make it work? We split a fact's path into four stages:
 4. **used** — the language model benefits from the stored fact.
 
 Explorations 14.1–14.3 locate the losses at stages 1–3. Explorations 14.4–14.6 test stage 4. Exploration 14.7 tests
-the full read–train–read cycle.
+the full read–train–read cycle. Explorations 14.8–14.11 follow up the open ends: learned routers (14.8), a stricter
+reader (14.9), retrieval over more text (14.10) and facts inferred from the ontology (14.11).
 
 **Terms used throughout.**
 - **T4:** real chemistry (ChEBI definitions and PubMed text). **T5:** a synthetic glossary of invented words.
@@ -136,7 +139,7 @@ its type should make fewer labelling errors than a one-shot matcher.
 Our `react` implementation lacks a precision filter. The hosts are base models, not instruction-tuned.
 
 ## Next steps
-Proposed, not queued: a typing filter for `react`, and an instruction-tuned host.
+The typing filter ran as RD-3b (14.9). An instruction-tuned host remains unplanned.
 
 ---
 
@@ -357,8 +360,8 @@ relation from the ones the term's frame holds.
 - The larger hosts have one or two seeds.
 
 ## Next steps
-**Routing, not reading, is now the bottleneck of the realistic pipeline.** A learned router is approved (tier F,
-2026-10-20) and being built.
+**Routing, not reading, is now the bottleneck of the realistic pipeline.** The learned routers ran on 21 October
+(14.8): routing is solved on T4 and still open on T5.
 
 ---
 
@@ -422,3 +425,229 @@ T4, SmolLM2-360M C5 seed 1, 160 definitions. A first attempt failed twice; both 
 Closed for T4.
 - Reading's ceiling is the text (14.1) and routing (14.6), not the number of rounds.
 - A T5 version, where the implicit route works, remains possible.
+
+---
+
+# 14.8 — Learned routers, with the routed wording held out (RD-4d)
+
+**Status:** done · **When:** 2026-10-21 · **Sources:** `experiments/e14-logic/report/rd4d/`; `manuscript/findings/2026-10-21-overnight.md` §1; preregistration §19
+
+## Research gap
+14.6 found that choosing the relation without the label costs 8 points on T4 and 54 on T5. The routers there were
+untrained: word overlap (`lex`) and the host's own scoring (`lm`). We asked whether a router that learns from
+demonstrations closes the gap to the labelled ceiling.
+
+## Intuition
+A few labelled question–relation pairs should teach a model, or a simple classifier, which wording asks for which
+relation. If the asked wording is held out of the demonstrations, the router must generalise across wordings rather
+than memorise them.
+
+## Methodology
+- **Routers,** choosing among the frame's relations, with the routed wording held out of their training data:
+  - `fewshot`: the host picks the relation after demonstrations;
+  - `nb`: a naive-Bayes classifier over question words;
+  - `lex` and `lm` from 14.6;
+  - `memo`: a memorising router that has seen the wording (an upper bound on router capacity).
+- **Frames:** oracle (gold) and type prior.
+- **Primary** (Holm over 6 per track): (a) `fewshot` + gold frames − labelled selective recall (the cost of routing);
+  (b) `fewshot` + type-prior frames (the realistic pipeline) − none.
+- **Secondary:** the realistic pipeline against the definition text; `fewshot` against `lm`.
+
+## Experiment
+SmolLM2-360M C5, 3 seeds, on T4 (1,221 property items pooled) and T5 (4,587).
+
+## Results
+
+| Property accuracy | T4 real chemicals | T5 new words |
+|---|---:|---:|
+| none | 0.614 | 0.190 |
+| labelled selective recall, gold frames (ceiling) | 0.862 | 0.845 |
+| **few-shot router**, gold frames | **0.845** | 0.400 |
+| naive-Bayes router, gold frames | 0.829 | 0.262 |
+| `lex` router, gold frames | 0.787 | 0.618 |
+| `lm` router, gold frames | 0.780 | 0.307 |
+| memorising router, gold frames (upper bound) | 0.862 | 0.839 |
+| **few-shot router + type-prior frames (realistic)** | **0.724** | 0.378 |
+| `lex` router + type-prior frames | 0.714 | 0.589 |
+| definition text | 0.734 | 0.857 |
+
+- **(a) Routing is solved on T4.** The few-shot router costs −0.018\* on property and −0.015\* on paraphrase against
+  the labelled ceiling, with entailment unchanged (+0.003, n.s.). In 14.6 the `lm` router cost −0.083.
+- **(b) The realistic pipeline helps on both tracks:** property +0.109\* (T4) and +0.188\* (T5); paraphrase and
+  entailment have the same sign (+0.10 to +0.24\*).
+- **On T4 the realistic pipeline matches the definition text** on property (−0.010, p 0.10) and trails it on
+  paraphrase (−0.043\*).
+- **On T5 every learned router fails.** The few-shot router costs −0.445\* against the labelled ceiling. Router
+  accuracy (the asked relation chosen): few-shot 0.935–0.945 on T4 and 0.358 on T5; naive Bayes 0.278 on T5; `lex`
+  0.79–0.89 on T4 and 0.39 on T5; `lm` 0.21 on T5; the memorising router 0.997.
+- **The gap is generalisation across wordings, not router capacity:** the memorising router reaches the ceiling on both
+  tracks. Word overlap remains the best T5 router.
+- The few-shot router beats `lm` by +0.065\* with gold frames on T4.
+
+## Limitations
+- One host; one item set per track.
+- T5's held-out wordings do not resemble the demonstrations, so the T5 failure is partly a property of the track.
+- The few-shot router adds demonstrations to every question.
+
+## Next steps
+RD-4e (addendum 12, registered and queued 21 October): paraphrase-augmented demonstrations, abstention, top-2
+recall, and the size rule "whole frame when the frame is short".
+
+---
+
+# 14.9 — A ReAct reader with a precision filter (RD-3b)
+
+**Status:** done · **When:** 2026-10-21 · **Sources:** `experiments/e14-logic/report/rd3b/`; `manuscript/findings/2026-10-21-overnight.md` §2; preregistration §19
+
+## Research gap
+14.2's `react` reader lost to the type prior on T4 because it over-proposed partners. We asked whether a precision
+filter closes that gap.
+
+## Intuition
+If the reader keeps only partners that pass a typing check, its precision should rise without losing the stated edges
+it already finds.
+
+## Methodology
+`react-strict` is 14.2's `react` with a precision filter. Primary (Holm per track over hosts × 2): `react-strict −
+react` and `react-strict − typeprior`, on stated-edge F1. Hosts: SmolLM2-360M and Qwen3-1.7B-Base.
+
+## Experiment
+248 T4 terms with at least one stated edge; 300 T5 words.
+
+## Results
+
+| T4 stated-edge F1 (precision) | SmolLM2-360M | Qwen3-1.7B |
+|---|---:|---:|
+| `react` | 0.337 (0.194) | 0.320 (0.192) |
+| **`react-strict`** | **0.433 (0.307)** | **0.446 (0.351)** |
+| type prior | 0.573 (0.367) | 0.573 (0.367) |
+| Claude teacher | 0.603 (0.672) | — |
+
+- The filter works: `react-strict − react` is +0.096\* (360M) and +0.126\* (1.7B) on T4.
+- The reader still loses to the type prior on T4: −0.141\* and −0.127\*.
+- On T5 `react-strict` is the best reader (0.923 / 0.942; +0.026\* over the type prior on Qwen3-1.7B).
+- All three pre-registered predictions held: `react-strict` beats `react` on T4, stays below the type prior, and
+  reaches precision ≥ 0.28.
+
+## Limitations
+Base models only; one filter design.
+
+## Next steps
+Closed. Labelling is not the T4 bottleneck (14.1, 14.2): a smarter reader still loses to a frequency table on real
+text.
+
+---
+
+# 14.10 — Retrieve, then read: Wikipedia against the definition (RD-13)
+
+**Status:** done · **When:** 2026-10-21 (the CPU stage on 20 October) · **Sources:** `experiments/e14-logic/report/rd13/`; `manuscript/findings/2026-10-21-overnight.md` §6; `experiments/e14-logic/preregistration-addendum-10-retrieve.md`
+
+## Research gap
+Definitions state about 12% of a term's facts (14.1). The author asked whether more text per term, retrieved from an
+encyclopaedia, raises that ceiling, and whether reading it into the store beats putting the same text in the prompt
+(retrieval-augmented generation, RAG).
+
+## Intuition
+A Wikipedia page is about 1,000 words against a one-sentence definition. If the facts are anywhere in text, a page
+should state more of them. A store that holds only the extracted facts should also cost less prompt space than the
+page.
+
+## Methodology
+- **Tool:** the MediaWiki API, cached by revision id (`~/data/vsa-llm/wikipedia/t4-heldout-v1/`, CC BY-SA 4.0). No
+  dump is fetched.
+- **Stated rate** (CPU): the share of gold edges whose partner the string-matching finder locates in the text, for the
+  ChEBI definition, the first 300 words of the page, and the whole page. Pre-registered rule: if the page states no
+  more than the definition, more text is not the lever on T4.
+- **GPU arms** (property, paraphrase, entailment): `none`; the definition in the prompt; 300 words of Wikipedia in the
+  prompt (RAG); a store read from Wikipedia with the type-prior reader and the `lm` router (the realistic pipeline);
+  the stated Wikipedia facts only, labelled; and the same pipeline over the definition, as a reference.
+- **Primary** (Qwen3-1.7B, Holm over 9): store − none; store − RAG; RAG − definition.
+
+## Experiment
+Pages for 332 of 341 T4 held-out concepts (median 1,010 words). SmolLM2-360M C5 × 3 seeds and Qwen3-1.7B C0′ × 1 seed.
+
+## Results
+- **The rule fired: more text is not the lever on T4.** Stated rate: ChEBI definition **0.116**; Wikipedia, 300 words
+  **0.087**; whole page **0.120**. No text states the structural relations; `is_a` falls 0.35 → 0.18 and `has_role`
+  rises 0.05 → 0.15 (findings §6).
+
+| Property accuracy | SmolLM2-360M | Qwen3-1.7B |
+|---|---:|---:|
+| none | 0.614 | 0.729 |
+| definition text | 0.734 | 0.812 |
+| 300 words of Wikipedia in the prompt (RAG) | 0.155 | **0.166** |
+| store from Wikipedia, type-prior reader, `lm` router (realistic) | 0.524 | 0.622 |
+| store from Wikipedia, stated facts only, labelled | 0.692 | 0.749 |
+| store from the definition, type-prior reader, `lm` router (reference) | 0.713 | 0.773 |
+
+- **The Wikipedia store hurts** on Qwen3-1.7B: store − none is **−0.107\*** on property and −0.096\* on entailment. The
+  type prior reads 10.7 edges per concept from Wikipedia text at precision 0.05, and wrong lines cost more than none
+  (14.5).
+- **RAG collapses the property choice:** RAG − definition **−0.646\***; store − RAG +0.456\*. The 300 words swamp the
+  PMI-scored term. Paraphrase, which the PMI null does not penalise the same way, rises (+0.12 against none).
+- **Only the stated Wikipedia facts, recalled selectively, are neutral to slightly positive:** +0.02 to +0.03 on
+  property against none on Qwen3-1.7B, +0.08\* on SmolLM2-360M.
+
+## Limitations
+- The string-matching finder under-counts paraphrased facts, so the stated rates are lower bounds. It also misses
+  common names, so a finder with alias coverage would come before any return to retrieval.
+- One seed on Qwen3-1.7B; one text source; the prompt arm is cut at 300 words.
+- The PMI scoring penalises long contexts (14.4), which is part of the RAG collapse.
+
+## Next steps
+Closed. On T4 the lever is the precision of what is read, not the amount of text.
+
+---
+
+# 14.11 — Inferred facts under selective recall (RD-14)
+
+**Status:** done · **When:** 2026-10-21 · **Sources:** `experiments/e14-logic/report/rd14/`; `manuscript/findings/2026-10-21-overnight.md` §5; `experiments/e14-logic/preregistration-addendum-11-cheap.md`
+
+## Research gap
+Text states few facts (14.1). The ontology's own statistics could predict the missing ones: a term's neighbours share
+most of its relations. We asked whether recalling such inferred facts helps, and whether marking them as inferred
+changes how the model uses them.
+
+## Intuition
+If an inferred line is right, it should help as much as a gold line (14.5). If it is wrong, it should hurt as a
+wrong-partner line does. The net effect depends on the predictor's precision on the asked relation.
+
+## Methodology
+- **Predictor:** an idf-weighted neighbour vote over the ontology, for facts missing from the frame.
+- **Conditions,** all with the oracle router (the label picks the relation):
+  - gold minus the asked relation (empty recall, the floor);
+  - inferred lines, unmarked;
+  - inferred lines marked "(inferred)";
+  - gold (labelled selective recall, the ceiling).
+- **Primary** (Holm over 9): inferred − empty; marked − unmarked; inferred − gold.
+- **Decision rule:** recall inferred facts in E13 only if inferred − empty is positive on property.
+
+## Experiment
+T4, SmolLM2-360M C5, 3 seeds (1,221 property items pooled). The predictor has precision 0.547 and recall 0.584
+overall: `is_a` 0.119, `has_role` 0.375, the structural relations 0.82–1.00. Its line names the gold answer for
+15.7% of property items and never names a distractor.
+
+## Results
+
+| Accuracy | property | paraphrase | entailment |
+|---|---:|---:|---:|
+| none | 0.614 | 0.544 | 0.767 |
+| gold minus the asked relation (empty recall) | 0.650 | 0.615 | 0.813 |
+| **inferred, unmarked** | **0.659** | 0.613 | 0.853 |
+| inferred, marked "(inferred)" | 0.655 | 0.618 | 0.852 |
+| gold (labelled selective recall) | 0.862 | 0.841 | 0.928 |
+
+- **Inferred − empty:** property +0.009 (n.s.), paraphrase −0.002 (n.s.), entailment **+0.040\***.
+- **Marking changes nothing:** |Δ| ≤ 0.004 (n.s.).
+- **Inferred − gold:** −0.204\*, −0.228\*, −0.075\*.
+- **Split by whether the inference was right:** right (n 192) +0.234\* on property; wrong (n 1,029) −0.033\*. The
+  break-even precision on the asked relation is about 0.12–0.15, and the predictor's hit rate of 0.16 sits at it.
+- **The decision rule did not fire:** no recall of inferred facts without a precision gate, and no E13 amendment.
+  The "(inferred)" marker is kept as a format only.
+
+## Limitations
+- One predictor and one item set; the oracle router, so routing is not part of the cost.
+- The predictor is precise on the structural relations (0.82–1.00) and poor on `is_a` (0.119) and `has_role` (0.375).
+
+## Next steps
+Closed. An inferred fact helps only when it is right, so any future use needs a per-relation precision gate.

@@ -1,7 +1,9 @@
 # 03 — E4: small GPT-style models trained from scratch with the method
 
-> **Update, 20 October (evening).** C5teach was approved on 20 October. Its training is scripted, and the teacher
-> build (cap USD 82.40) waits for the author to start it; see the digest, §5.
+> **Update, 21 October.** C5teach ran. The teacher build cost USD 68.05 (24,670 synsets, 987 calls, 0 errors) and the
+> 50M run landed on 21 October. At one seed, the Claude-read ontology changes the loss inside the terms it describes
+> (−0.34\* against C5) and nothing after them. C5teachF (the full variant, about USD 342) is not worth building; see
+> 03.4 and `manuscript/findings/2026-10-21-overnight.md` §9.
 
 **Overview.** E4 is the program's pre-registered core. It asks whether a language model trained from scratch learns
 better when every linked multi-token term gets a vector composed from its ontology entry. We follow it through five
@@ -10,8 +12,8 @@ explorations:
 - **03.2:** the scaling screen at 20M, 50M and 125M parameters × 500M tokens (seed 1). By its pre-registered rule we do
   not scale further.
 - **03.3:** seeds 2–3 at 125M, which confirm the 125M gain.
-- **03.4:** two toolkit arms at 50M. A growing dictionary (C5dev) adds nothing. A Claude-read ontology (C5teach) was
-  never built.
+- **03.4:** two toolkit arms at 50M, one seed each. A growing dictionary (C5dev) adds nothing. A Claude-read ontology
+  (C5teach) changes the loss inside terms and nothing after them.
 - **03.5:** what the original E4 plan promised and never ran.
 
 The bottom line: from scratch, the method gives a small, steady gain. It is about 0.3% of loss overall and 1.1–1.4%
@@ -280,9 +282,12 @@ Other 125M results (C0 and C5 pooled over 3 seeds; C2 seed 1):
 
 # 03.4 — Toolkit arms at 50M: a growing dictionary (C5dev) and a Claude-read ontology (C5teach)
 
-**Status:** partly done: C5dev done (seed 1); C5teach not run · **When:** pre-registered 2026-10-10; C5dev ran and was
-reported on 2026-10-13 · **Sources:** `experiments/e4-small-lm/preregistration-scale-v1-toolkit.md`;
+**Status:** done (seed 1 each): C5dev and C5teach · **When:** pre-registered 2026-10-10; C5dev ran and was reported on
+2026-10-13; C5teach's teacher build and run 2026-10-20 to 2026-10-21 · **Sources:** `experiments/e4-small-lm/preregistration-scale-v1-toolkit.md`;
+`experiments/e4-small-lm/preregistration-scale-v1-toolkit-status-2026-10-20.md`;
 `experiments/e4-small-lm/analysis/scale-v1-toolkit/report.md`;
+`experiments/e4-small-lm/analysis/scale-v1-toolkit-c5teach{,-teachref}/report.md`;
+`manuscript/findings/2026-10-21-overnight.md` §9;
 `experiments/e4-small-lm/runs/scale-v1-toolkit/50M-C5dev-s1/cards.json`;
 `experiments/e4-small-lm/scale-v1-toolkit/teacher-pilot/`; `resources/plan-improvement/execution.md` (decision 65)
 
@@ -317,8 +322,11 @@ curation.
 
 ## Experiment
 - **C5dev:** one run on 13 Oct (about 3.9 h wall clock).
-- **C5teach:** not run. Building the teacher ontology needs the author's approval of the spend: about USD 73 for the
-  hybrid and USD 342 for the full variant. Its jobs are commented out of the queue script and were never queued.
+- **C5teach (hybrid):** the author approved the spend on 20 Oct. The teacher build read 24,670 synsets in 987 calls
+  (0 errors; USD 68.05 against a projection of USD 73 and a cap of USD 82.40). The ontology holds 11,800 teacher
+  entries at parse rate 0.969. One 50M × 500M-token run (seed 1) landed on 21 Oct, with a second report that rescores
+  C5 and C0 on the teacher's own reference strata (`-teachref`). The full variant (C5teachF, about USD 342) was not
+  built.
 - **Teacher pilot** (before the pre-registration): 400 entries, 829 senses, USD 2.48 of a USD 5 cap.
 
 ## Results
@@ -359,16 +367,36 @@ formally; update-2026-10-15 calls C5dev "about the same as the method".
   held-out entries.
 - Meronyms are under-produced (recall 0.28–0.33), and entailment is never produced.
 
+**C5teach** (50M × 500M tokens, seed 1):
+
+| (condition − C0) / C0 | C5 | C5dev | **C5teach** |
+|---|---:|---:|---:|
+| all | −0.38%\* | −0.36%\* | −0.41%\* |
+| inside terms | −1.23%\* | −1.49%\* | −1.56%\* |
+| after terms | −0.90%\* | −0.94%\* | −0.90%\* |
+| after held-out terms | −0.05% | −0.18% | +0.02% |
+| after rare terms | −2.65%\* | −2.52%\* | −3.12%\* |
+
+- **C5teach − C5** (paired, window bootstrap): `all` −0.02%; **`inside` −0.34%\*** [−0.67, −0.01]; `after` +0.00%;
+  `after_heldout` +0.07%. Nothing after terms moves.
+- **On the teacher's own reference strata:** after teacher-trained terms −1.32% (C5teach) against −1.23% (C5
+  rescored); after teacher-held-out terms +0.02% against −0.05%. Neither difference reaches the 0.2% bar.
+- **Decision:** C5teach does not advance. It does not beat C5 by 0.2% on `after_heldout` or on the teacher-trained
+  stratum, and it does not beat C0 on `after_heldout`. The Claude-read ontology changes the loss inside the terms it
+  describes and nothing after them. This agrees with RD-4c (file 14, 14.6), where Claude's frames did not beat the type
+  prior's. **C5teachF is not worth building.**
+
 ## Limitations
 - One seed and one size, so the intervals reflect evaluation noise only.
 - The report omits the pre-registered C5dev − C5 comparisons and their Holm correction.
 - C5dev used 13 of 409 budgeted splits, so the screen settings may have limited growth. The rule flags this case only
   below 10 splits.
-- C5teach is untested. The pilot measures agreement with WordNet, not usefulness to the model.
+- C5teach has one seed. Its `inside` difference against C5 (−0.34% [−0.67, −0.01]) is starred in the `-teachref`
+  report and unstarred in the main report's Holm family; the interval just excludes 0 either way.
 
 ## Next steps
 - **Closed:** C5dev, by the pre-registered rule.
-- **Awaiting the author:** the C5teach spend (about USD 73 for the hybrid).
+- **Closed:** C5teach (hybrid), by the pre-registered rule. C5teachF is not built.
 - **Open:** add the C5dev − C5 table to the toolkit report.
 
 ---
@@ -435,7 +463,9 @@ absent. On that evidence item 1 fails mechanically and item 3 passes (03.3).
   `experiments/e4-small-lm/preregistration-scale-v1-toolkit.md`,
   `experiments/e9-retrofit/preregistration-addendum-2026-10-15.md` §3.
 - Reports: `experiments/e4-small-lm/analysis/{opscreen-v1, scale-v1, scale-v1-seeds, scale-v1-toolkit}/report.md`
-  (and `e4-report.md` in `scale-v1` and `scale-v1-seeds`); `reports/R1-sanity-pilot.md`.
+  (and `e4-report.md` in `scale-v1` and `scale-v1-seeds`); `reports/R1-sanity-pilot.md`;
+  `experiments/e4-small-lm/analysis/scale-v1-toolkit-c5teach{,-teachref}/report.md`;
+  `manuscript/findings/2026-10-21-overnight.md` §9.
 - Run outputs: `experiments/e4-small-lm/runs/scale-v1-toolkit/50M-C5dev-s1/cards.json`;
   `experiments/e4-small-lm/scale-v1-toolkit/teacher-pilot/`.
 - Plain-language summaries: `manuscript/update-2026-10-12.md` (E4-1, E4-2), `manuscript/update-2026-10-15.md` §7,

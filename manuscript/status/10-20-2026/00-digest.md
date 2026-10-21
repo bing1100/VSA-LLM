@@ -1,4 +1,4 @@
-# VSA-LLM — state of the research (20 October 2026)
+# VSA-LLM — state of the research (20 October 2026; updated 21 October with the overnight results)
 
 **For:** the program lead and collaborators. A human-readable digest of every experiment done so far, with one file per
 area. The files are numbered in program order (01–16).
@@ -90,8 +90,17 @@ organise the evidence.
 - **Frames recalled as text help a lot** (14.5).
 - **The realistic pipeline helps** (14.6): a real reader plus the model's own choice of relation gives +0.10\* on real
   chemistry and +0.11\* on new words.
-- **Choosing the relation is now the bottleneck.** It costs 8 points on T4 and 54 points on T5: the model's router picks
-  the asked relation only 21–78% of the time. A learned router is approved and being built.
+- **Choosing the relation was the next bottleneck. It is solved on real chemistry and not on new words** (14.8). A
+  few-shot router costs 0.018 against the labelled ceiling on T4, and the realistic pipeline matches the definition
+  text (0.724 against 0.734). On T5 every learned router fails (−0.445\*): the held-out wording does not resemble the
+  demonstrations. RD-4e (addendum 12) tests routers that generalise.
+- **More text and inferred facts do not help on T4** (14.10, 14.11). A Wikipedia page states 0.120 of a term's
+  facts against 0.116 for the definition, and a store read from it hurts (−0.107\*). Facts inferred by neighbour
+  voting help only when they are right, so they need a precision gate; the predictor's hit rate (0.16) sits at the
+  break-even point.
+- **Frames written by a model are not more precise than the ontology's own statistics,** on any track tried. A
+  Claude-read ontology in a 50M model from scratch (C5teach, 03.4) changes the loss inside the terms it describes
+  (−0.34\* against C5) and nothing after them, at one seed. E7's self-authored frames failed their gate (05.2).
 - **Selective recall holds on Qwen3 hosts** (+0.17 to +0.62\*).
 - **The self-learning loops are negative so far:**
   - E10's active plus passive learning is not faster (10.3);
@@ -113,6 +122,13 @@ organise the evidence.
   the tools (15.7).
 - **The best prover is a hybrid:** a symbolic heuristic orders the steps and the model breaks ties, beating either alone
   (+0.14\* over set of support at budget 10).
+- **A tree cannot be read from prose at ≤ 1.7B** (15.8): leaf accuracy 0.24 on paraphrased trees for the best host,
+  against 0.82 on templated ones. The executor needs its tree structured.
+- **The executor keeps a chain of what-if edits consistent** (15.9): 99.7% of chains right at every step, against
+  3–5% in context (+0.72 to +0.76\* at k = 8). The caveat: in-context answering is at chance from k = 0, so this is a
+  claim about execution, not about drift.
+- **Under noisy records the executor's path still beats the tree in text** (+0.67\* / +0.49\*), and the model follows
+  it even when it is wrong (15.10). X7's ensemble gain was width (15.10).
 
 ### Also
 
@@ -128,9 +144,11 @@ organise the evidence.
 | A small, steady gain from scratch that does not grow with size (03) | that binding matters for loss (06.3, 03.1) | zero-shot vectors for genuinely new names (T7-ROOD, 08.1) |
 | Retrofit gains that follow novelty, larger for small hosts (06.2, 06.11) | "sharing building blocks" as the mechanism on real text (06.5) | richer ontologies (06.12) |
 | Adds on top of a definition in the prompt, at zero prompt cost (06.8) | soft reasoning better than symbols (15.3) | the learning cycle (E13, 13) |
-| The store is readable; decoded explicitly it supplies roles (09.1, 12.1, 12.3) | that models use stored roles unaided (09.2, 09.4) | routing and reader quality for selective recall (14.6) |
+| The store is readable; decoded explicitly it supplies roles (09.1, 12.1, 12.3) | that models use stored roles unaided (09.2, 09.4) | routing that generalises across wordings (RD-4e; 14.8) |
 | Selective explicit recall works on real and new terms (14.5) | self-learning that "learns faster" (10.3, 14.7) | the cycle under selective recall (14.7: RD-12b, RD-12c) |
 | An exact executor with a model-readable interface; sound LLM-guided proving (15) | quantization as a headline claim (07.1) | Wikidata entities (T8, 08.3) |
+| The executor keeps counterfactual chains consistent, 99.7% against 3–5% in context (15.9); stated as execution, not drift, because in-context answering is at chance at k = 0 | self-authored or Claude-written frames as a source of structure on real text: E7's G3 failed (05.2), C5teach adds nothing after terms (03.4); both closed negatives | |
+| A structure-only vector for an unseen concept lifts property 0.52 → 0.67 and entailment 0.72 → 0.85 at 125M from scratch (E5.4, 04.2); the gain is the frame's content, which a graph projection matches | trees read from prose at ≤ 1.7B (15.8); more text or inferred facts as a lever on T4 (14.10, 14.11) | |
 
 ## 3. Index (program order)
 
@@ -138,9 +156,9 @@ organise the evidence.
 |---|---|---|---|
 | [01](01-mechanism-checks.md) | VSA capacity; frozen-row factorisation; E0 planted structure | done | Width 512 holds about 16 pairs. Typed HRR loses to an untyped sum on frozen rows. E0's gate G1 passed. |
 | [02](02-frozen-host-experiments.md) | E1, E2 (+F.1), E3 on frozen hosts | done, closed | The context query fits better but does not pick senses. Operators tie. F.1 refuted. The split test does not transfer to WordNet. |
-| [03](03-e4-small-models-from-scratch.md) | E4: models trained from scratch, scaling | done (3 seeds at 125M) | About −0.3% overall and −1.2% after long terms. No growth with size. No held-out benefit. |
-| [04](04-e5-explainability.md) | E5: explainability | queued 20 October (125M checkpoints; amendment 1) | Never run on its planned checkpoints; now retargeted to the 125M scaling runs. Its tools live on in E9 and E12. |
-| [05](05-e7-self-authoring.md) | E7: self-authoring | rescheduled 20 October; D7.1 queued first | D7.1 had never reached the GPU since 2 October. Small hosts write poor frames. |
+| [03](03-e4-small-models-from-scratch.md) | E4: models trained from scratch, scaling | done (3 seeds at 125M; C5teach 1 seed, 21 October) | About −0.3% overall and −1.2% after long terms. No growth with size. No held-out benefit. A Claude-read ontology (C5teach) changes nothing after terms. |
+| [04](04-e5-explainability.md) | E5: explainability | done on the 125M scaling checkpoints (amendment 1; 21 October) | Zero-shot insertion is the clear positive (0.52 → 0.67). Attention is weakly faithful. Senses and frequency are no cleaner than baselines. The judge is weakly positive against C0 only. |
+| [05](05-e7-self-authoring.md) | E7: self-authoring | D7.1 done; G3 failed 21 October; D7.2/D7.3 not queued; closed on this track | Self-authored and teacher edges for masked concepts are no more precise than degree-matched random ones (0.062 and 0.069 against a random high of 0.243). |
 | [06](06-e9-retrofit-pretrained-models.md) | E9: retrofit into pretrained models (core) | done; follow-ups queued | Large on invented words; 1–2% on real new words; mechanism unresolved. |
 | [07](07-e9-quantization-and-editing.md) | E9: 4-bit quantization; ontology editing | done | Quantization is a measurement. Editing is a proof of concept on synthetic data. The size-matched control B-B1 is queued. |
 | [08](08-e9-new-vocabulary-and-clinical.md) | E9: T7/T7-ROOD, T1c, T8, other tracks | partly done; decisive tests queued | T7 failed for diagnosed reasons. T1c has the same shape as chemistry. T7-ROOD, T8 and T2 (approved 20 October) are pending. |
@@ -149,8 +167,8 @@ organise the evidence.
 | [11](11-e11-read-to-learn.md) | E11: read to learn | partly done | Read frames help invented words a little and real text not at all. Text routes win. |
 | [12](12-e12-explicit-recall.md) | E12: explicit recall | done | Decoding the store into the prompt resolves roles, on synthetic and real text. |
 | [13](13-e13-learning-cycle.md) | E13: the learning cycle | queued; amendment 3 approved | No results yet. T5 about 25–26 October, T7-ROOD about 30 October. |
-| [14](14-e14-reading-real-text.md) | E14: reading facts from real text | done | Text states about 12% of facts. Selective recall works (+0.25 / +0.66) and holds on Qwen3. Routing is the new bottleneck. The cycle adds little. |
-| [15](15-e14-logic-in-the-store.md) | E14: logic in the store | done | An exact executor with a readable interface. Not better than symbols. A model plus a heuristic proves best. |
+| [14](14-e14-reading-real-text.md) | E14: reading facts from real text | done; RD-4e queued | Text states about 12% of facts. Selective recall works (+0.25 / +0.66) and holds on Qwen3. Routing is solved on T4 (−0.018) and open on T5. More text and inferred facts do not help. The cycle adds little. |
+| [15](15-e14-logic-in-the-store.md) | E14: logic in the store | done | An exact executor with a readable interface, consistent under what-if chains (99.7% against 3–5%). Not better than symbols. Trees cannot be read from prose at ≤ 1.7B. A model plus a heuristic proves best. |
 | [16](16-infrastructure-and-validation.md) | Reproduction, benchmarks, judge, toolkit, queue | done / partly queued | Results reproduce. The harnesses are validated. The toolkit write and learn evaluations are queued. |
 
 ## 4. What is running, and when it lands
@@ -160,7 +178,9 @@ organise the evidence.
 | Block | Lands about |
 |---|---|
 | E14 follow-ups (RD-4c, RD-12b, RD-12c, the hybrid prover) | **landed** 20 October; `manuscript/findings/2026-10-20-e14-evening.md` |
-| Approved 20 October, run first: E14 tier F (learned routers, strict ReAct, equal-size store, noisy trees), E7 D7.1, E5 on the 125M checkpoints | 21 October (about 8 GPU-h) |
+| Approved 20 October, run first: E14 tier F (learned routers, strict ReAct, equal-size store, noisy trees), E7 D7.1, E5 on the 125M checkpoints, C5teach | **landed** 21 October; `manuscript/findings/2026-10-21-overnight.md` |
+| Added 20 October (evening): tree-text, RD-13 retrieval, LG-CF, RD-14 | **landed** 21 October; same findings file |
+| RD-4e (addendum 12): routers that generalise across wordings | queued 21 October |
 | Qwen3 retrofit evaluations; the T7-ROOD block (the decisive new-vocabulary test) | 24 October |
 | E13 on T5 | 25–26 October |
 | T8 (Wikidata) | 27 October |
@@ -169,18 +189,22 @@ organise the evidence.
 | Approved 20 October, run after the toolkit: T2 (developer tools), B-B1 (side-module control) | 4–6 November |
 | Everything queued, including T1c-ROOD, the richer-ontology study and the editing baselines | about 7 November |
 
-The whole queue is about 425 GPU-h. The blocks approved on 20 October add about 44 GPU-h. The 8 GPU-h that run first
-move every date above them by about one third of a day.
+The whole queue is about 425 GPU-h. The blocks approved on 20 October add about 44 GPU-h. The blocks that ran first
+took about one third of a day, as projected, and the dates above are otherwise unchanged. D7.2's 44 GPU-h are not
+queued (G3 failed), so nothing moves later for it.
 
 ## 5. Decisions approved on 20 October
 
 The author approved all six decisions on 20 October. Everything that makes no Claude calls was queued at once. The
 three steps that spend money on Claude were held first, because this session's permission check refused the C5teach
-teacher spend. **The author approved the Claude spend later that evening, and all three have started:**
-- the C5teach teacher build is done (24,670 synsets, USD 68.05, 0 errors); the ontology is built and the 3 GPU jobs and 2 reports are queued at 54.4959992 and 54.4959996, landing 21 October;
-- the E5 judge grade jobs are queued after the E5 item builders (cap USD 25);
-- a watcher waits for E7's D7.1 jobs. It then runs the follow-ups (teacher, cap USD 15) and the G3 check; if G3
-  passes, it queues D7.2 at 54.5020; then it runs the judge (cap USD 50).
+teacher spend. **The author approved the Claude spend later that evening, and all three ran:**
+- the C5teach teacher build is done (24,670 synsets, USD 68.05, 0 errors); the 50M run and its 2 reports landed on
+  21 October (file 03, 03.4);
+- the E5 judge grade jobs ran after the E5 item builders (cap USD 25); the held-out neighbours study was refused by
+  the cap with USD 4.32 left (file 04, 04.2);
+- the watcher ran E7's follow-ups after D7.1 (teacher on 999 concepts, USD 9.07) and the G3 check. **G3 failed**, so
+  D7.2 was not queued. The judge (cap USD 50; informational) was interrupted at USD 22.66 by a session restart and
+  resumed from its cache (file 05, 05.2).
 
 The last column of the table below lists what was held before that approval.
 
@@ -203,6 +227,20 @@ Seventeen E14 jobs at 54.4959997 (about 2.5 GPU-h), reports at 54.49599985–7, 
   text in the prompt.
 - **LG-CF** (addendum 11): chains of up to 8 what-if edits, executor relay against in-context answering.
 - **RD-14** (addendum 11): facts inferred by neighbour voting (precision 0.55), recalled marked or unmarked.
+
+**Results of the 21 October blocks.** Every job above ran without failure. The results are written up in
+`manuscript/findings/2026-10-21-overnight.md` and in files 03 (03.4), 04 (04.2), 05 (05.2), 14 (14.8–14.11) and 15
+(15.8–15.10). In one line each: routing is solved on T4 and not on T5; the strict reader still loses to the type
+prior; trees cannot be read from prose at ≤ 1.7B; the executor keeps what-if chains consistent (99.7% against 3–5%);
+Wikipedia states no more facts than the definition, and a store read from it hurts; inferred facts need a precision
+gate; E5.4 zero-shot insertion is the clear E5 positive; C5teach changes nothing after terms; E7's G3 failed.
+- **Stopped:** trees from prose at ≤ 1.7B; retrieval over more text on T4; recall of inferred facts; E7 D7.2 and
+  D7.3; C5teachF.
+- **Continuing:** RD-4e (routing that generalises; addendum 12, registered and queued 21 October); E13 (lands 25–30
+  October). The consistency result (15.9) and E5.4 (04.2) go to the claims ledger.
+- **Caveats to carry:** LG-CF's in-context arm is at chance at k = 0, so the consistency claim is about execution,
+  not drift; tree-text, LG-CF and RD-14 are one item set each; C5teach is one seed; E5.3's held-out study did not
+  run.
 
 **Placement.** Lower numbers run first.
 - The small blocks run before the toolkit band (54.496–54.4999): E14 GPU jobs at 54.4959990–91, E7 D7.1 at

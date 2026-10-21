@@ -1,8 +1,9 @@
 # 04 — E5: explainability and zero-shot evaluations
 
-> **Update, 20 October (evening).** Approved on 20 October: E5 now runs on the scale-v1 125M checkpoints (amendment
-> 1). 41 jobs are queued and should land on 21 October. The three judge-graded studies (cap USD 25) wait for the
-> author to start them; see the digest, §5.
+> **Update, 21 October.** E5 ran on the scale-v1 125M checkpoints (amendment 1) on 20–21 October, including the
+> judge-graded studies (USD 4.32 of the USD 25 cap was left; the held-out neighbours study was refused). Results in
+> 04.2. Zero-shot insertion (E5.4) is the clear positive and goes to the claims; the other parts are closed. Full
+> record: `manuscript/findings/2026-10-21-overnight.md` §8.
 
 **Overview.** E5 was to test whether the method explains itself and works zero-shot on the models E4 trains from
 scratch. It has five parts:
@@ -12,11 +13,12 @@ scratch. It has five parts:
 - **E5.4:** do structure-only vectors for unseen terms beat simpler zero-shot vectors?
 - **E5.5:** do the vectors separate meaning from word frequency?
 
-The pre-registration, code and item sets exist (2 Oct), but **no E5 run has been made**. Every part needs the 125M
-three-seed checkpoints of the original E4 core (D4.1), which were never trained (see file 03, exploration 03.5). Some of
-E5's tools live on elsewhere. E9 uses the E5.4 zero-shot evaluator on pretrained hosts, E12's decoding-faithfulness test
-reuses the E5.1 code, and E9's frequency-bias analysis uses the E5.5 probe. Exploration 04.1 records the plan and why it
-stalled; 04.2 records where the tools were reused.
+The pre-registration, code and item sets date from 2 Oct. The planned checkpoints, the 125M three-seed grid of the
+original E4 core (D4.1), were never trained (file 03, 03.5), so E5 did not run until amendment 1 (20 Oct) retargeted
+it to the scale-v1 125M scaling checkpoints. It ran there on 20–21 Oct. Some of E5's tools also live on elsewhere. E9
+uses the E5.4 zero-shot evaluator on pretrained hosts, E12's decoding-faithfulness test reuses the E5.1 code, and E9's
+frequency-bias analysis uses the E5.5 probe. Exploration 04.1 records the original plan and why it stalled; 04.2 reports
+the amendment-1 results; 04.3 records where the tools were reused.
 
 **Terms used throughout.**
 - **C5:** the full method, a gated vector composed from the term's ontology frame (relation–filler edges) and added at
@@ -35,7 +37,7 @@ stalled; 04.2 records where the tools were reused.
 
 # 04.1 — The pre-registered E5 on the from-scratch models (E5.1–E5.5)
 
-**Status:** not run (pre-registered, items built, never queued) · **When:** pre-registration and code 2026-10-02 ·
+**Status:** not run as pre-registered (D4.1 never trained); superseded by amendment 1 (04.2) · **When:** pre-registration and code 2026-10-02 ·
 **Sources:** `experiments/e5-explainability/preregistration.md`; `experiments/e5-explainability/items/*/manifest.json`;
 `resources/plan-improvement/experiments.md` (E5); `manuscript/paper-readiness.md`; `manuscript/claims.md` (H-F.1,
 H-F.2, H-C.2, H-E.1, J.1); `manuscript/draft.md` §5.9
@@ -92,7 +94,8 @@ Built and committed:
 - **Judge calibration (J.1):** 30/30 correct, κ 0.812 (`claude -p`) and 0.926 (subagents). This meets E5.3's bar.
 
 ## Results
-None. Claims H-F.1, H-F.2, H-C.2 and H-E.1 remain "pending" in the claims ledger.
+None as pre-registered; the amendment-1 results are in 04.2. Claims H-F.1, H-F.2, H-C.2 and H-E.1 were "pending" in
+the claims ledger when this file was written.
 
 Evidence from other experiments bears on them:
 - **Sense alignment (H-C):** on frozen GPT-2 anchors (E1), attention's sense accuracy was below the most-frequent-sense
@@ -109,15 +112,69 @@ Evidence from other experiments bears on them:
   and experiments.md about 40 for "E5 + quantization evals".
 
 ## Next steps
-- **Blocked:** E5 waits on D4.1, which the author left unqueued (decision 54).
-- **Proposed (our suggestion; in no plan):** an amendment that runs E5.1, E5.2, E5.4 and E5.5 on the scale-v1 125M C5
-  seeds 1–3, with C0 and C2 as references. The pre-registration's per-run cost at 125M is about 7 min for E5.1, under
-  1 min for E5.2 and about 8 min per E5.4 scenario. This would need the author's approval and a written amendment before
-  any run.
+- **Superseded:** the author approved amendment 1 on 20 October. It ran E5.1–E5.5 on the scale-v1 125M checkpoints
+  with C0 and C2 as references (04.2). The full grid (D4.1) stays unqueued (decision 54).
 
 ---
 
-# 04.2 — Where E5's tools were reused
+# 04.2 — E5 on the 125M scaling checkpoints (amendment 1)
+
+**Status:** done (E5.1, E5.2, E5.4, E5.5; E5.3 in part) · **When:** 2026-10-20 to 2026-10-21 · **Sources:**
+`experiments/e5-explainability/report/scale-v1/report.md`; `experiments/e5-explainability/preregistration-amendment-1-scale-v1.md`;
+`manuscript/findings/2026-10-21-overnight.md` §8
+
+## Research gap
+04.1's checkpoints never existed. The scaling screen's 125M models (file 03, 03.2–03.3) are the nearest substitute:
+C0 and C5 with 3 seeds; C2, HRRAdd and HRRCat with 1. The author approved an amendment on 20 October that runs the
+five E5 parts on them.
+
+## Intuition
+As in 04.1. If composition is structured, removing the most-attended edges should hurt most, attention should pick
+the right sense, a new concept's structure-only row should support judgements, and the rows should carry less
+frequency information than a free table.
+
+## Methodology
+As pre-registered in 04.1, with these changes: the checkpoints are scale-v1 125M; C5's references are C0 and C2 (no
+C1, C3–C7 or C8); the judge (Claude) runs under a USD 25 cap, and a study the cap cuts off is recorded as INCOMPLETE.
+Seed-level means with t intervals; per-seed Holm tests where the pre-registration asks for "all seeds".
+
+## Experiment
+41 jobs (about 3.3 GPU-h and 1.7 CPU-h) and three judge-graded studies. All ran. The judge's held-out neighbours
+study was refused for budget: 348 calls projected at USD 8.92, with USD 4.32 left of 25.
+
+## Results
+
+| Part | Primary result | Verdict |
+|---|---|---|
+| E5.1 faithfulness (H-F) | removing the k attention-top edges costs more than removing k random ones: +0.021 / +0.028 / +0.036 nats at k = 1 / 2 / 4 (C5, 3 seeds, tight intervals); the sufficiency contrast is negative (−0.026 to −0.041); no seed reaches Holm significance under the pre-registered per-seed test | partial |
+| E5.2 sense alignment (H-C) | attention picks the gold sense 0.444, against 0.845 for WordNet's first sense and 0.812 for SemCor's most frequent sense (held-out 0.382 against 0.783) | fails |
+| E5.3 judge (LLM-graded estimate) | neighbour pairs of rare words: C5 8/40 against C2 4/40 (p 0.17) and C0 2/40 (p 0.044); head-to-head preference C5 over C0 8–1 (p 0.020), over C2 7–2 (p 0.090); edge explanations 5/40 against 5/40 (null); κ 0.82–0.89, calibration 0.8–1.0 | weakly positive against C0, null against the free table |
+| **E5.4 zero-shot insertion (H-E)** | a structure-only vector for an unseen concept lifts property **0.518 → 0.672** and entailment **0.721 → 0.846** on the held-out set (3/3 seeds Holm-significant on both); on the synthetic set 0.213 → 0.518 and 0.408 → 0.715; the graph-projection baseline matches it (0.674 / 0.832); C0 cannot be given a vector (0.532) | **the clearest E5 positive** |
+| E5.5 frequency (H-D) | a ridge probe recovers log frequency from C5's concept rows with R² 0.189, against 0.128 from the surface baseline and 0.117 at initialisation; C2's rows 0.052 | fails: training adds frequency information to the rows |
+
+**Reading.** E5 confirms E9's picture at 125M (04.3; file 06). The composed vector carries usable content for new
+concepts (E5.4); the attention over edges is only weakly faithful (E5.1); nothing about senses or frequency is cleaner
+than the baselines (E5.2, E5.5). The E5.4 gain is the frame's content, not the composer: a graph projection of the
+same frame does as well.
+
+## Limitations
+- HRRAdd and HRRCat have one seed, so their E5.1 and E5.5 rows are indicative only.
+- The judge's held-out neighbours study was refused by the cap, so E5.3 covers rare words only. Judge results are
+  LLM-graded estimates.
+- E5.4's property and entailment choices are PMI-scored against a null surface (`e5_zeroshot.py`). File 14
+  (14.4–14.5) showed how much such choices depend on the null's construction, so the absolute accuracies are
+  harness-specific; the contrasts within a run are the result. The held-out item set uses real aliases and is not
+  contamination-free (04.1).
+- The pre-registered controls C1, C3 and C8 do not exist at 125M, so E5.1 cannot separate attention from static
+  composition.
+
+## Next steps
+- **To the claims ledger:** E5.4 (H-E), with the graph-projection caveat.
+- **Closed:** E5.1, E5.2, E5.3 and E5.5 on these checkpoints.
+
+---
+
+# 04.3 — Where E5's tools were reused
 
 **Status:** done elsewhere (the results belong to E9 and E12) · **When:** 2026-10-02 to 2026-10-12 · **Sources:**
 `reports/R9-retrofit-quantization.md` (dimension 3); `manuscript/update-2026-10-12.md` (E12-2);
@@ -159,18 +216,21 @@ These are E5.4- and E5.1-style results on pretrained hosts and synthetic terms. 
 from-scratch endpoints.
 
 ## Limitations
-- They do not test E5.4's structure-only claim on real held-out WordNet concepts in from-scratch models.
+- They do not test E5.4's structure-only claim on real held-out WordNet concepts in from-scratch models; 04.2 now
+  does.
 - They use the pretrained-host baseline C0′, not E5.4's full list of text-evidence baselines.
 - We report them only as pointers. The E9 and E12 status files are the authority for their current values.
 
 ## Next steps
 - **Done** in E9 and E12, and ongoing there.
-- **Not planned:** a from-scratch E5 (see 04.1).
+- **Done:** the from-scratch E5, as amendment 1 (04.2).
 
 ---
 
 # Sources
 
+- Amendment 1 and its report: `experiments/e5-explainability/preregistration-amendment-1-scale-v1.md`;
+  `experiments/e5-explainability/report/scale-v1/{report.md, summary.json}`; `manuscript/findings/2026-10-21-overnight.md` §8.
 - Pre-registration and items: `experiments/e5-explainability/preregistration.md`;
   `experiments/e5-explainability/items/{c3-heldout-gpt2-v1, c3-synthetic-gpt2-v1, c3-synthetic-smollm2-v1,
   c3-synthetic-qwen2.5-v1, c6-devtools-v1}/manifest.json`.
