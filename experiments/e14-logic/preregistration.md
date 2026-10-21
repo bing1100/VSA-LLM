@@ -1177,3 +1177,22 @@ Addendum 10's CPU stage ran right after its registration: the stated rate of ret
 bound). By its decision rule, more text is not the lever on T4 and no dump is fetched; the queued arms still answer
 store against RAG on the same text. Addendum 11's eight jobs were queued about one minute before its commit, with
 the text unchanged in between.
+
+### Addendum 12 (2026-10-21, before any run of it): RD-4e, routing that generalises
+
+`preregistration-addendum-12-routing.md`: a paraphrase-augmented few-shot router with a near-duplicate hold-out
+guarantee, abstention with a threshold fixed on T4 training-template queries, top-2 recall, and the size rule
+"whole frame when the frame has ≤ 6 lines" (L\* = 6 chosen from a registered offline analysis of RD-4c/RD-4d rows,
+`report/rd4e/offline-size-rule-{t4,t5}.md`). Jobs `e14-rd4e-*` at 54.49599975, report at 54.49599988.
+
+**Correction found while building it (recorded here because it touches §§7, 13 and 16).** The probe adapter
+truncates every prompt at 256 tokens (`evaluation/probes.py`, `max_length = 256`, `truncation = True`), and no
+recall run raised that limit. A prompt longer than 256 tokens loses its candidate continuation, so every candidate
+scores 0 and the raw choice falls to candidate 0. Whole-frame recall was long enough to be hit: 42.3% of T4
+`explicit-sym:oracle` prompts and 17.5% of T5's exceed 256 tokens (T4: 0% for frames of ≤ 6 lines, 98% at 13+).
+The signature is confirmed: on T4 frames of 15+ lines, RD-4c's whole-frame raw accuracy equals the share of items
+whose gold answer is candidate 0 (0.226 = 0.226). Selective recall, routed recall and the definition text stay under
+the limit, so the primary results of RD-4b, RD-4c and RD-4d stand. **The whole-frame numbers of tier P (RD-4), RD-4b,
+RD-4c (including Qwen3-1.7B's T4 0.605) and the reading "whole-frame recall hurts on T4" are partly an artefact and
+are re-measured in RD-4e with `--max-length 1280`.** Every condition now records a `truncated_share` diagnostic.
+Where this note and §§7, 13, 16 disagree on whole-frame recall, this note governs until RD-4e reports.
