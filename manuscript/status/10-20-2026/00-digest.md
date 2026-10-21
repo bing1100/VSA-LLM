@@ -278,6 +278,13 @@ gate; E5.4 zero-shot insertion is the clear E5 positive; C5teach changes nothing
    54.5020 puts D7.2's 44 GPU-h after B-B1, so it does not delay the toolkit. A lower number would run it sooner and
    push the toolkit back.
 
+**Correction, 21 October (afternoon).** While building RD-4e we found that the probe adapter truncates prompts at
+256 tokens. Whole-frame recall prompts often exceeded that (42% on T4), so the whole-frame numbers in files 12 and 14
+(e.g. T4 0.578; Qwen3-1.7B 0.605) and the reading "whole-frame recall hurts on real chemistry" are partly an artefact.
+Selective, routed and definition prompts were not affected, so every primary result stands; E13's amendment 3 rests
+on selective recall beating no recall, which is unaffected. RD-4e re-measures whole-frame recall untruncated. Details:
+`manuscript/findings/2026-10-21-overnight.md` §10b and `experiments/e14-logic/preregistration.md` §20.
+
 ## 6. Housekeeping and inconsistencies found while writing this digest
 
 We left the source documents unchanged; the items below are for whoever maintains them.

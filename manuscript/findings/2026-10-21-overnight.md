@@ -280,10 +280,26 @@ part of G3) was interrupted at USD 22.66 by a session restart and resumed from i
 +0.03 F1 over the type prior) and C5teach, the evidence is consistent: on real text, frames written by a model —
 small or large — are not more precise than the ontology's own statistics.
 
+## 10b. Correction (found 2026-10-21 while building RD-4e): whole-frame recall was truncated
+
+The probe adapter cuts every prompt at 256 tokens (`evaluation/probes.py`); no recall run raised the limit. A
+truncated prompt loses its candidate continuation, so all candidates score 0 and the raw choice falls to candidate 0.
+42.3% of T4 whole-frame (`explicit-sym:oracle`) prompts and 17.5% of T5's exceeded 256 tokens; selective, routed and
+definition prompts did not. Consequences:
+- **Unaffected:** every primary result of RD-4b, RD-4c, RD-4d, RD-13 and RD-14 above, and the definition arm.
+- **Partly an artefact:** the whole-frame numbers quoted in this programme (T4 0.578 in RD-4b; Qwen3-1.7B T4
+  0.605 in RD-4c; the tier-P RD-4 "explicit-sym" rows) and the reading "whole-frame recall hurts on real chemistry
+  through list dilution". The offline reassembly in `report/rd4e/offline-size-rule-{t4,t5}.md` shows T5 whole-frame
+  recall rising monotonically with frame size where prompts fit, so the break-even against routing is above 8 lines,
+  if it exists.
+- **Re-measured:** RD-4e runs whole-frame recall at `--max-length 1280` and records `truncated_share` for every
+  condition. The E13 amendment-3 rationale ("recall only the asked relation") rests on selective recall beating *no*
+  recall (+0.25, unaffected), not on beating whole-frame recall, so E13 is unchanged.
+
 ## 11. What follows
 
-- **Continue:** RD-4e (routing that generalises; addendum 12, being registered on 2026-10-21 — see
-  `preregistration.md` §20 for its pointer once queued); E13 (lands 25–30
+- **Continue:** RD-4e (routing that generalises; addendum 12, registered and queued 2026-10-21, about 2 GPU-h,
+  `preregistration.md` §20); E13 (lands 25–30
   October); the consistency result and E5.4 go to the claims ledger (numbers sent to workplace-9a).
 - **Stop:** trees from prose at ≤ 1.7B; retrieval over more text on T4; recall of inferred facts; E7 D7.2/D7.3;
   C5teachF.
