@@ -174,11 +174,17 @@ move every date above them by about one third of a day.
 
 ## 5. Decisions approved on 20 October
 
-The author approved all six decisions on 20 October. Everything that makes no Claude calls is queued. **The three
-steps that spend money on Claude are held for the author to start**: this session's permission check refused the
-first of them (the C5teach teacher), and the session did not work around that refusal.
+The author approved all six decisions on 20 October. Everything that makes no Claude calls was queued at once. The
+three steps that spend money on Claude were held first, because this session's permission check refused the C5teach
+teacher spend. **The author approved the Claude spend later that evening, and all three have started:**
+- the C5teach teacher build is running (cap USD 82.40);
+- the E5 judge grade jobs are queued after the E5 item builders (cap USD 25);
+- a watcher waits for E7's D7.1 jobs. It then runs the follow-ups (teacher, cap USD 15) and the G3 check; if G3
+  passes, it queues D7.2 at 54.5020; then it runs the judge (cap USD 50).
 
-| # | Decision | Pre-registration | Queued | Held for the author |
+The last column of the table below lists what was held before that approval.
+
+| # | Decision | Pre-registration | Queued | Held, then started (Claude spend) |
 |---|---|---|---|---|
 | 1 | C5teach | `e4-small-lm/preregistration-scale-v1-toolkit-status-2026-10-20.md` | nothing yet: the 3 GPU jobs (about 2.5 GPU-h) and 2 reports are scripted, and the script refuses to queue until the ontology exists | the teacher build (projection USD 73; cap USD 82.40, cumulative, including USD 2.41 already spent) |
 | 2 | E14 tier F | `e14-logic/preregistration.md` §19 | 19 jobs, about 3.7 GPU-h: RD-4d (learned routers), RD-3b (strict ReAct), X7b (equal-size store, untrained controls), LG-D2 (noisy trees). X8b (irregular trees) and LG-P3b (premise retrieval at scale) already ran on the CPU; results in `manuscript/findings/2026-10-20-e14-evening.md` §5 | — |
@@ -195,7 +201,8 @@ first of them (the C5teach teacher), and the session did not work around that re
   report. The E5 grade jobs are wrapped, so that a study cut by the judge cap is recorded as INCOMPLETE and does
   not fail the queue.
 
-**To start the held steps** (from the repository root, `PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python`):
+**The commands for those steps**, kept for the record (from the repository root,
+`PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python`):
 
 1. C5teach. Build the teacher answers, then the ontology, then queue the run:
 
