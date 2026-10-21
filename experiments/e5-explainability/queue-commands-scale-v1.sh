@@ -43,6 +43,10 @@ cpu() { local name=$1; shift; PYTHONPATH=src $PY -m vsa_embed.jobqueue add --nam
 COMPOSED="125M-C5-s1 125M-C5-s2 125M-C5-s3 125M-HRRAdd-s1 125M-HRRCat-s1"
 ALL="125M-C5-s1 125M-C5-s2 125M-C5-s3 125M-C0-s1 125M-C0-s2 125M-C0-s3 125M-C2-s1 125M-HRRAdd-s1 125M-HRRCat-s1"
 
+# JUDGE_ONLY=1 adds only the three grade jobs and a final R5 report (for the author, once the judge spend is confirmed,
+# after a SKIP_JUDGE=1 run already queued everything else). Use the same PRIO_REPORT as that run: within one priority,
+# jobs run in the order added, so the grades run after the E5.5 jobs and the first R5, and the final R5 after the grades.
+if [[ "${JUDGE_ONLY:-0}" == 1 ]]; then gpu() { :; }; fi
 # -- GPU lane ------------------------------------------------------------------------------------------------------------
 # E5.1 faithfulness (1,024 windows, k 1 2 4, 2 random draws, KL); probe-level ablation (wic, wsd, k = 2) on C5 only.
 for run in $COMPOSED; do
@@ -70,7 +74,7 @@ gpu e5s1-rating-build-neighbours-heldout $PY -m vsa_embed.experiments.e5_rating 
 
 # -- CPU lane ("-report" in every name) ----------------------------------------------------------------------------------
 # E5.5 frequency disentanglement (CPU only); the first job computes the training-stream token counts and saves them.
-for run in $ALL; do
+[[ "${JUDGE_ONLY:-0}" == 1 ]] || for run in $ALL; do
   cpu "e5s1-freq-$run-report" $PY -m vsa_embed.experiments.e5_frequency --run "$R/$run" --output "$O/frequency/$run" \
     --token-counts "$O/gpt2-train-counts.npy" --device cpu
 done
@@ -78,6 +82,7 @@ done
 # in the pre-registered budget order. Non-clinical text only (WordNet aliases, FineWeb-Edu sentences).
 # SKIP_JUDGE=1 queues everything except the three Claude-judge grade jobs (their spend waits for the author; see the
 # 2026-10-20 note in the amendment). Re-run the script without it, or add only these jobs, once the author confirms.
+[[ "${SKIP_JUDGE:-0}" == 1 && "${JUDGE_ONLY:-0}" == 1 ]] && { echo "SKIP_JUDGE and JUDGE_ONLY exclude each other" >&2; exit 1; }
 if [[ "${SKIP_JUDGE:-0}" == 1 ]]; then JUDGE_STUDIES=""; else JUDGE_STUDIES="neighbours-rare edges neighbours-heldout"; fi
 for study in $JUDGE_STUDIES; do
   # exit 4 = cut by the cap: labelled INCOMPLETE in its output, resumable from the cache. The wrapper records it and exits 0,
@@ -86,5 +91,6 @@ for study in $JUDGE_STUDIES; do
     $PY -m vsa_embed.experiments.e5_rating grade --items "$O/rating/items-$study" \
     --output "$O/rating/graded-$study" --cache "$O/rating/judge-cache" --max-usd "$JUDGE_USD" --max-new-calls 500
 done
-# R5 for this amendment (runs last on the CPU lane).
-cpu e5s1-r5-report $PY -m vsa_embed.experiments.e5_report --inputs "$O" --output experiments/e5-explainability/report/scale-v1
+# R5 for this amendment (runs last on the CPU lane). Under JUDGE_ONLY=1 it is queued again under a new name, after the grades.
+if [[ "${JUDGE_ONLY:-0}" == 1 ]]; then R5_NAME=e5s1-r5-final-report; else R5_NAME=e5s1-r5-report; fi
+cpu "$R5_NAME" $PY -m vsa_embed.experiments.e5_report --inputs "$O" --output experiments/e5-explainability/report/scale-v1

@@ -311,3 +311,15 @@ session scratchpad. They check the pipeline only: no number from them is a resul
 
 **Tests.** `tests/test_e5_experiments.py` passes (29 tests, including 2 new tests for the spend cap). The tests of the
 E7 code that reuses `SpendCap` (`tests/test_e7_g3.py`) also pass.
+
+## A.10 Queue status (2026-10-20, added after queueing; no design change)
+
+- **Queued:** `queue-commands-scale-v1.sh` with `SKIP_JUDGE=1`, `PRIO_GPU=54.4959994` and `PRIO_REPORT=54.4959998`.
+  That is 41 jobs: E5.1, E5.2, E5.4, the three E5.3 item builders, E5.5 and the R5 report.
+- **Held:** the three E5.3 grade jobs, which call the Claude judge (cap USD 25). The session that queued this
+  amendment holds every Claude spend for the author to start: its permission check refused the C5teach teacher
+  spend the same evening. Until the grades run, the R5 report prints E5.3 as not run.
+- **To release them:** run
+  `JUDGE_ONLY=1 PRIO_GPU=54.4959994 PRIO_REPORT=54.4959998 bash experiments/e5-explainability/queue-commands-scale-v1.sh`
+  from the repository root. This adds the three grade jobs (in the budget order of §A.5) and a final R5 report
+  (`e5s1-r5-final-report`), which runs after them and overwrites the first report.
