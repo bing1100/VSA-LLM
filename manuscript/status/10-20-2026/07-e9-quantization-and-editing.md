@@ -1,5 +1,8 @@
 # 07 — E9: 4-bit quantization and editing knowledge through the ontology
 
+> **Update, 20 October (evening).** B-B1, the size-matched side-module control, was approved on 20 October. 22 jobs
+> are queued after the toolkit band and should land about 4–6 November; see the digest, §5.
+
 E9 asked two further questions about the method once it is trained into a pretrained host. First (claim B): does its advantage survive, or even grow, when the host is compressed to 4 bits? Second (claim C): can we change what the model knows by editing the ontology, with no weight update? For quantization the answer is a measurement, not a headline. The advantage roughly survives 4-bit post-training quantization, but how much survives depends on the track and on the quantizer. On the synthetic glossary it is largely kept, and fully under GPTQ. On chemistry it is partly lost under GPTQ and RTN and kept under AWQ. On 2026 MeSH names it grows under RTN and AWQ. The controls place each effect either in the host weights or in the method's own channel, never in "structure". A bug in our AWQ code was found, fixed and re-run on 12 October. For editing, writing an ontology entry for a new invented word improves simple property questions a little (0.189 → 0.259 at 360M; chance 0.20), and editing one relation shifts predictions on seen words. Neither works on real text. The standard weight-editing baselines (ROME, MEMIT, AlphaEdit, in-context editing) are queued but have not run. Quantization was taken out of the abstract on 12 October; claim C remains a proof of concept.
 
 **Codes used in this file** (as in `manuscript/update-2026-10-12.md`, "How to read the numbers"):

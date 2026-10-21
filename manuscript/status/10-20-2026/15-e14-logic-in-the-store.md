@@ -1,5 +1,9 @@
 # 15 — E14, part 2: logic in the vector store
 
+> **Update, 20 October (evening).** Tier F was approved on 20 October. X8b (irregular trees) and LG-P3b (premise
+> retrieval at scale) have already run; see `manuscript/findings/2026-10-20-e14-evening.md` §5. X7b (an equal-size
+> store) and LG-D2 (noisy trees) are queued and should land on 21 October.
+
 **Overview.** This file asks whether predicate logic can be encoded directly in vector-symbolic form, and whether that
 helps a language model. Predicate logic here means relations, rules, deductions and decision trees.
 - **15.1–15.3:** what the algebra can execute, and how to store it.

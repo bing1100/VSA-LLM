@@ -1,5 +1,8 @@
 # 08 — E9 tracks: new vocabulary (T7, T7-ROOD), clinical notes (T1c), Wikidata (T8) and the other domains
 
+> **Update, 20 October (evening).** T2 (developer tools) was approved on 20 October. 83 jobs are queued after the
+> toolkit band and should land about 4–6 November; see the digest, §5.
+
 This file covers the E9 test domains beyond the synthetic glossary and chemistry: where each stands, what it showed, and what is queued. T7 was built to be the real domain whose words are new to the host. It was not: plain fine-tuning lowers the loss after its terms by only 7–10%. The method helps a little after rare and long names, and it *hurts* after held-out names, because those names occur unlinked in the training text. T7-ROOD removes every training document that names a held-out entry. It is the pre-registered clean zero-shot test on real text, and all 253 of its jobs are still pending on 20 October. Clinical notes (T1c, licensed; aggregate numbers only) repeat the chemistry pattern at 3 seeds: a gain after and inside long terms, larger on the smaller host, and none for held-out or rare terms. The clinical coding task (T1c-F) finished in the queue on 16 October, but no committed document reports its results. T1c-ROOD is queued. T8 (Wikidata entities in web text) is built and pre-registered, with all 117 jobs pending; its pre-registration expects little gain, because the host already knows these entities. T1-open and WordNet are null at seed 1. T2 is built but has no E9 runs; T3 and T6 failed the feasibility criterion.
 
 **Codes used in this file** (as in `manuscript/update-2026-10-12.md`, "How to read the numbers", and `src/vsa_embed/experiments/e9_plan.py`):

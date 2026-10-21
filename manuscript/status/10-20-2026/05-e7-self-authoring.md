@@ -1,5 +1,9 @@
 # 05 — E7: self-authored ontologies on pretrained hosts
 
+> **Update, 20 October (evening).** Rescheduled on 20 October (`preregistration-2026-10-20-reschedule.md`, with a new
+> G3 rule). D7.1 is moved to the front of the queue and should land on 21 October. The Claude follow-ups and the judge
+> wait for the author. D7.2 is queued only if G3 passes. See the digest, §5.
+
 **Overview.** E7 asks whether a small pretrained model can read text, write ontology frames for the concepts it meets,
 keep only the frames that help on held-out text, and then improve through the method. We built its reading corpora and
 hidden gold on 2 Oct (05.1). The rest has not run (05.2):

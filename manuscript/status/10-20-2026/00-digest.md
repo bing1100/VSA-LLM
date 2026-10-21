@@ -139,11 +139,11 @@ organise the evidence.
 | [01](01-mechanism-checks.md) | VSA capacity; frozen-row factorisation; E0 planted structure | done | Width 512 holds about 16 pairs. Typed HRR loses to an untyped sum on frozen rows. E0's gate G1 passed. |
 | [02](02-frozen-host-experiments.md) | E1, E2 (+F.1), E3 on frozen hosts | done, closed | The context query fits better but does not pick senses. Operators tie. F.1 refuted. The split test does not transfer to WordNet. |
 | [03](03-e4-small-models-from-scratch.md) | E4: models trained from scratch, scaling | done (3 seeds at 125M) | About −0.3% overall and −1.2% after long terms. No growth with size. No held-out benefit. |
-| [04](04-e5-explainability.md) | E5: explainability | not run | Blocked on checkpoints never trained. Its tools live on in E9 and E12. |
-| [05](05-e7-self-authoring.md) | E7: self-authoring | data ready; not run | Jobs queued since 2 October and never reached. Small hosts write poor frames. |
+| [04](04-e5-explainability.md) | E5: explainability | queued 20 October (125M checkpoints; amendment 1) | Never run on its planned checkpoints; now retargeted to the 125M scaling runs. Its tools live on in E9 and E12. |
+| [05](05-e7-self-authoring.md) | E7: self-authoring | rescheduled 20 October; D7.1 queued first | D7.1 had never reached the GPU since 2 October. Small hosts write poor frames. |
 | [06](06-e9-retrofit-pretrained-models.md) | E9: retrofit into pretrained models (core) | done; follow-ups queued | Large on invented words; 1–2% on real new words; mechanism unresolved. |
-| [07](07-e9-quantization-and-editing.md) | E9: 4-bit quantization; ontology editing | done | Quantization is a measurement. Editing is a proof of concept on synthetic data. |
-| [08](08-e9-new-vocabulary-and-clinical.md) | E9: T7/T7-ROOD, T1c, T8, other tracks | partly done; decisive tests queued | T7 failed for diagnosed reasons. T1c has the same shape as chemistry. T7-ROOD and T8 are pending. |
+| [07](07-e9-quantization-and-editing.md) | E9: 4-bit quantization; ontology editing | done | Quantization is a measurement. Editing is a proof of concept on synthetic data. The size-matched control B-B1 is queued. |
+| [08](08-e9-new-vocabulary-and-clinical.md) | E9: T7/T7-ROOD, T1c, T8, other tracks | partly done; decisive tests queued | T7 failed for diagnosed reasons. T1c has the same shape as chemistry. T7-ROOD, T8 and T2 (approved 20 October) are pending. |
 | [09](09-binding-programme.md) | Binding programme, including the readout arms | done | The store is readable and the algebra behaves as designed, but behaviour does not follow it. |
 | [10](10-e10-self-learning-ontology.md) | E10: self-learning ontology | done (negative); learn tool pending | Baselines explain most of it. Nothing transfers to WordNet. Active plus passive learning is not faster. |
 | [11](11-e11-read-to-learn.md) | E11: read to learn | partly done | Read frames help invented words a little and real text not at all. Text routes win. |
@@ -160,30 +160,67 @@ organise the evidence.
 | Block | Lands about |
 |---|---|
 | E14 follow-ups (RD-4c, RD-12b, RD-12c, the hybrid prover) | **landed** 20 October; `manuscript/findings/2026-10-20-e14-evening.md` |
+| Approved 20 October, run first: E14 tier F (learned routers, strict ReAct, equal-size store, noisy trees), E7 D7.1, E5 on the 125M checkpoints | 21 October (about 8 GPU-h) |
 | Qwen3 retrofit evaluations; the T7-ROOD block (the decisive new-vocabulary test) | 24 October |
 | E13 on T5 | 25–26 October |
 | T8 (Wikidata) | 27 October |
 | E10's learn tool | 28 October |
 | E13 on T7-ROOD | 30 October |
-| Everything queued, including T1c-ROOD, the richer-ontology study and the editing baselines | about 5 November |
+| Approved 20 October, run after the toolkit: T2 (developer tools), B-B1 (side-module control) | 4–6 November |
+| Everything queued, including T1c-ROOD, the richer-ontology study and the editing baselines | about 7 November |
 
-The whole queue is about 380 GPU-h.
+The whole queue is about 425 GPU-h. The blocks approved on 20 October add about 44 GPU-h. The 8 GPU-h that run first
+move every date above them by about one third of a day.
 
-## 5. Decisions waiting for the author
+## 5. Decisions approved on 20 October
 
-1. **C5teach** (E4 with Claude-read ontologies): needs approval of about USD 73 in teacher calls (03.4).
-2. **The tier-F proposals from E14**, not queued:
-   - a learned relation router (14.6);
-   - a precision filter for the ReAct reader (14.2);
-   - an equal-size trained store for the ensemble comparison (15.2);
-   - irregular trees (15.2);
-   - noisy-input tests for the tree executor (15.6);
-   - large-scale premise retrieval (15.7).
-3. **E5 explainability:** run it on the existing 125M scaling checkpoints (needs an amendment), or retire it (04.1).
-4. **E7 self-authoring:** its gate G3 was never held, and decision 63 folded self-authoring into the toolkit's learn
-   step. Confirm retirement or reschedule (05.2).
-5. **T2 (developer tools):** the only feasible track never tested (08.4).
-6. **The size-matched side-module control for quantization (B-B1):** deferred by the author; still open (07.1).
+The author approved all six decisions on 20 October. Everything that makes no Claude calls is queued. **The three
+steps that spend money on Claude are held for the author to start**: this session's permission check refused the
+first of them (the C5teach teacher), and the session did not work around that refusal.
+
+| # | Decision | Pre-registration | Queued | Held for the author |
+|---|---|---|---|---|
+| 1 | C5teach | `e4-small-lm/preregistration-scale-v1-toolkit-status-2026-10-20.md` | nothing yet: the 3 GPU jobs (about 2.5 GPU-h) and 2 reports are scripted, and the script refuses to queue until the ontology exists | the teacher build (projection USD 73; cap USD 82.40, cumulative, including USD 2.41 already spent) |
+| 2 | E14 tier F | `e14-logic/preregistration.md` §19 | 19 jobs, about 3.7 GPU-h: RD-4d (learned routers), RD-3b (strict ReAct), X7b (equal-size store, untrained controls), LG-D2 (noisy trees). X8b (irregular trees) and LG-P3b (premise retrieval at scale) already ran on the CPU; results in `manuscript/findings/2026-10-20-e14-evening.md` §5 | — |
+| 3 | E5 on the 125M checkpoints | `e5-explainability/preregistration-amendment-1-scale-v1.md` | 41 jobs, about 3.3 GPU-h and 1.7 CPU-h: E5.1, E5.2, E5.4, E5.5, the E5.3 item builders and the R5 report | the 3 E5.3 grade jobs (Claude judge; cap USD 25) |
+| 4 | E7 rescheduled | `e7-self-authoring/preregistration-2026-10-20-reschedule.md` (new G3 rule) | the 9 D7.1 jobs, about 1.1 GPU-h | the follow-ups (Claude teacher, cap USD 15) and the judge (cap USD 50); D7.2 (about 44 GPU-h) is queued only if G3 passes, and D7.3 after it |
+| 5 | T2 (developer tools) | `e9-retrofit/preregistration-addendum-2026-10-20-t2.md` | 83 jobs, about 23 GPU-h | — |
+| 6 | B-B1 (side-module control) | `e9-retrofit/preregistration-addendum-2026-10-20-bb1.md` | 22 jobs, about 12.9 GPU-h | — |
+
+**Placement.** Lower numbers run first.
+- The small blocks run before the toolkit band (54.496–54.4999): E14 GPU jobs at 54.4959990–91, E7 D7.1 at
+  54.4959993, E5 GPU jobs at 54.4959994, the E5 reports at 54.4959998, the E14 reports at 54.4959999.
+- T2 (54.5001–54.5004) and B-B1 (54.501–54.5015) run after the toolkit band and before the editing baselines (54.6).
+- A CPU-lane report waits for every job with a lower number. A failed report therefore holds back every later
+  report. The E5 grade jobs are wrapped, so that a study cut by the judge cap is recorded as INCOMPLETE and does
+  not fail the queue.
+
+**To start the held steps** (from the repository root, `PY=/home/bhux/anaconda3/envs/vsa-repro/bin/python`):
+
+1. C5teach. Build the teacher answers, then the ontology, then queue the run:
+
+   ```bash
+   PYTHONPATH=src $PY -m vsa_embed.experiments.c3_teacher teach --scope hybrid --max-usd 82.40
+   PYTHONPATH=src $PY -m vsa_embed.experiments.c3_teacher ontology --scope hybrid
+   PY=$PY PRIO_TRAIN=54.4959992 PRIO_REPORT=54.4959996 bash experiments/e4-small-lm/queue-commands-c5teach.sh
+   ```
+
+2. E5 judge. Add the 3 grade jobs and a final R5 report:
+
+   ```bash
+   JUDGE_ONLY=1 PRIO_GPU=54.4959994 PRIO_REPORT=54.4959998 bash experiments/e5-explainability/queue-commands-scale-v1.sh
+   ```
+
+3. E7, after the 9 D7.1 jobs are done. Run the follow-ups and the judge, then queue D7.2 if G3 passes:
+
+   ```bash
+   bash experiments/e7-self-authoring/queue-commands-d72-d73.sh followups
+   bash experiments/e7-self-authoring/queue-commands-d72-d73.sh judge
+   PRIO_D72=54.5020 bash experiments/e7-self-authoring/queue-commands-d72-d73.sh d72
+   ```
+
+   54.5020 puts D7.2's 44 GPU-h after B-B1, so it does not delay the toolkit. A lower number would run it sooner and
+   push the toolkit back.
 
 ## 6. Housekeeping and inconsistencies found while writing this digest
 

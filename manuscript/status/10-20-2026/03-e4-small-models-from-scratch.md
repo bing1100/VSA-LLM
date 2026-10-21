@@ -1,5 +1,8 @@
 # 03 — E4: small GPT-style models trained from scratch with the method
 
+> **Update, 20 October (evening).** C5teach was approved on 20 October. Its training is scripted, and the teacher
+> build (cap USD 82.40) waits for the author to start it; see the digest, §5.
+
 **Overview.** E4 is the program's pre-registered core. It asks whether a language model trained from scratch learns
 better when every linked multi-token term gets a vector composed from its ontology entry. We follow it through five
 explorations:

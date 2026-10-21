@@ -1,5 +1,9 @@
 # 04 — E5: explainability and zero-shot evaluations
 
+> **Update, 20 October (evening).** Approved on 20 October: E5 now runs on the scale-v1 125M checkpoints (amendment
+> 1). 41 jobs are queued and should land on 21 October. The three judge-graded studies (cap USD 25) wait for the
+> author to start them; see the digest, §5.
+
 **Overview.** E5 was to test whether the method explains itself and works zero-shot on the models E4 trains from
 scratch. It has five parts:
 - **E5.1:** is attention over a term's edges faithful?

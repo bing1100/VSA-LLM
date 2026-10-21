@@ -1,5 +1,8 @@
 # 14 — E14, part 1: reading facts from real text, and using them
 
+> **Update, 20 October (evening).** Tier F was approved on 20 October. RD-4d (learned routers) and RD-3b (a stricter
+> ReAct reader) are queued and should land on 21 October; see the digest, §5.
+
 **Overview.** This file follows one question through seven explorations: why does reading facts from real definitions
 fail, and what would make it work? We split a fact's path into four stages:
 1. **stated** — the text says it;
