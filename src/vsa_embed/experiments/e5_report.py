@@ -51,6 +51,10 @@ def discover(roots: Sequence[Path]) -> dict[str, list[dict[str, Any]]]:
             found[kind].append({"path": folder, "config": config, "summary": summary,
                                 "size": source.get("size", "?"), "condition": source.get("condition", "?"),
                                 "seed": source.get("seed", 0)})
+        # E5.3 studies the judge budget did not start (e5_rating's pre-registered "not run (budget)").
+        for refused in sorted(Path(root).rglob("budget-refused.json")):
+            if not (refused.parent / "summary.json").exists():
+                found["rating_refused"].append({"path": refused.parent, **json.loads(refused.read_text())})
     return found
 
 
@@ -228,15 +232,20 @@ def render(summary: dict[str, Any], figures: dict[str, str]) -> str:
                          f"{fmt_ci(r['sense_minus_semcor_mfs'])} | {fmt_ci(r['gold_share_lift'])} | {fmt(r['tie_rate'], 2)} |")
         lines.append("")
     rating = summary.get("rating") or []
-    if rating:
+    refused = summary.get("rating_refused") or []
+    if rating or refused:
         lines += ["## E5.3 Rating study (LLM-graded estimate)", ""]
+        for r in refused:
+            lines.append(f"- **not run (budget)**: `{r.get('items')}` — {r.get('new_calls')} judge calls projected at "
+                         f"${r.get('projected_usd', 0):.2f}, ${r.get('remaining_usd', 0):.2f} left of the ${r.get('cap_usd', 0):.2f} cap.")
         for r in rating:
             judge = r.get("judge") or {}
             counts = "; ".join(f"{s} {c['success']}/{c['total']}" for s, c in (r.get("counts") or {}).items())
             fisher = "; ".join(f"{f['reference']} > {o}: p = {f['p_one_tailed']:.3g}" for o, f in (r.get("fisher") or {}).items())
             prefs = "; ".join(f"vs {o}: {p.get('reference', 0)}–{p.get('other', 0)} (tie {p.get('tie', 0)}), p = {fmt(p['p_sign_one_tailed'], 4)}"
                               for o, p in (r.get("preference") or {}).items())
-            lines.append(f"- **{r['item_set']} / {r['study']}** ({r.get('concept_set') or ''} {r.get('space') or ''}; judge {judge.get('model')} via "
+            incomplete = "**INCOMPLETE (judge budget exhausted; not reportable)** " if (judge.get("budget") or {}).get("exhausted") else ""
+            lines.append(f"- {incomplete}**{r['item_set']} / {r['study']}** ({r.get('concept_set') or ''} {r.get('space') or ''}; judge {judge.get('model')} via "
                          f"{judge.get('harness')}, {judge.get('calls')} calls/item): {counts or prefs or '—'}"
                          + (f"; Fisher one-tailed {fisher}" if fisher else "")
                          + f"; κ {fmt(r.get('fleiss_kappa'), 3)}; calibration {fmt((r.get('calibration') or {}).get('accuracy'), 3)} "
@@ -385,7 +394,8 @@ def write_report(inputs: Sequence[Path], output: Path, *, resamples: int = 2000)
                "senses": aggregate_senses(found.get("senses", [])),
                "frequency": aggregate_frequency(found.get("frequency", [])),
                "zeroshot": aggregate_zeroshot(found.get("zeroshot", []), resamples=resamples),
-               "rating": aggregate_rating(found.get("rating", []))}
+               "rating": aggregate_rating(found.get("rating", [])),
+               "rating_refused": [{k: (str(v) if k == "path" else v) for k, v in r.items()} for r in found.get("rating_refused", [])]}
     output.mkdir(parents=True, exist_ok=True)
     figures = plot(summary, output)
     (output / "report.md").write_text(render(summary, figures))

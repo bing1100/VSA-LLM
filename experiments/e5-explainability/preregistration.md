@@ -134,3 +134,14 @@ $PY -m vsa_embed.experiments.e5_report --inputs $O --output reports/R5-explainab
 Host items: `e5_zeroshot items --scenario c3_synthetic --ontology ~/data/vsa-llm/c3/wordnet-smollm2-v1/ontology.pt
 --tokenizer HuggingFaceTB/SmolLM2-135M --output experiments/e5-explainability/items/c3-synthetic-smollm2-v1`
 (Qwen2.5 likewise).
+
+## Amendments
+
+- **Amendment 1 (2026-10-20, before any non-smoke E5 run; author: "E5 explainability: run it on the existing 125M
+  scaling checkpoints (needs an amendment)", "run them and queue").** The D4.1 checkpoints were never trained, so E5.1–E5.5
+  are retargeted to the scale-v1 125M runs (C5 and C0 with seeds 1–3, C2 seed 1, and HRRAdd/HRRCat seed 1 as exploratory
+  arms). E5.1's C3/C8 controls, the E5.3 M3 cards, T1-open and `c6-devtools` are dropped. The E5.4 C5 − C2 contrast uses
+  seed 1 only. E5.3 gets a USD 25 hard judge cap with a priority order. The item sets are unchanged (same tokenizer,
+  ontology and alias digest). Details, predictions and smokes are in
+  [`preregistration-amendment-1-scale-v1.md`](preregistration-amendment-1-scale-v1.md); queue commands are in
+  [`queue-commands-scale-v1.sh`](queue-commands-scale-v1.sh).

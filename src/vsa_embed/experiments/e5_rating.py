@@ -30,6 +30,18 @@ identical items. Reported: per-system counts with the one-tailed Fisher test (re
 each other), sign test for preferences, Fleiss' κ across calls, calibration accuracy, harness,
 model, calls and spend. Results are labelled "LLM-graded estimate".
 
+Spend cap (`--max-usd`, required with the `cli` runner): a HARD cumulative cap over a ledger kept in
+the verdict cache (`<cache>/spend-ledger.jsonl`, one row per judge call attempt with its USD), so
+every grade job that shares `--cache` shares the cap. Before each call a bound on its cost is
+reserved (`SpendCap.reserve_usd`: $0.10 before any call, then 2 × the largest call seen) and the call
+is made only while `spent + reserve ≤ cap`; a call that fails without a cost envelope is charged the
+mean cost seen so far. Before a study starts, its projected cost (uncached calls × the mean cost in
+the ledger, $0.04 before any) must fit the remaining budget, or the study is not started: it writes
+`budget-refused.json` and exits 0 — a pre-registered "not run (budget)" outcome, so a queue job does
+not fail and hold back later CPU-lane jobs (`--allow-partial` skips this check, never the cap). A
+study cut by the cap is written with `budget.exhausted = true`, labelled INCOMPLETE (not
+reportable) and exits 4; its verdicts stay cached, so a re-run after the cap is raised resumes it.
+
 Item directory format (`e5-rating-items/1`): `items.jsonl`, one object per item with `id`, `study`
 (`neighbour_pair` | `neighbour_preference` | `edge_explanation` | `split_card`), `calibration` (bool),
 `systems` (the systems that produced it; never shown to the judge), `fields` (exactly the prompt
@@ -45,6 +57,7 @@ written to an item file.
     python -m vsa_embed.experiments.e5_rating build edges --run RUN_C5 --output DIR
     python -m vsa_embed.experiments.e5_rating build cards --run RUN_C6 --output DIR
     python -m vsa_embed.experiments.e5_rating grade --items DIR --output OUT [--runner cli|exchange] [--max-new-calls N]
+        --cache SHARED_CACHE --max-usd USD [--allow-partial]
 """
 
 from __future__ import annotations
@@ -55,8 +68,10 @@ import math
 import random
 import time
 from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 import numpy as np
 import torch
@@ -503,6 +518,89 @@ def build_card_items(run: E5Run, out_dir: Path, *, n: int = 40, members: int = 8
     return write_items(out_dir, manifest, items)
 
 
+# -- spend cap ---------------------------------------------------------------------------------------------------------
+
+LEDGER = "spend-ledger.jsonl"
+DEFAULT_CALL_USD = 0.04          # preflight estimate before any call is in the ledger (pre-registration: mean $0.039)
+
+
+class JudgeBudgetExhausted(ValueError):
+    """Raised instead of a judge call once the cap would be exceeded. A `ValueError`, so `JudgeClient`
+    records the call as an error (nothing is spent or cached) and moves on."""
+
+
+@dataclass
+class SpendCap:
+    """Hard cumulative USD cap over `ledger` (one JSON row per call attempt), shared by every grade job
+    that uses the same verdict cache. `wrap(runner)` returns a runner that reserves a bound on each
+    call's cost and refuses the call once `spent + reserve` would exceed `max_usd`."""
+
+    ledger: Path
+    max_usd: float
+    reserve_usd: float = 0.10        # bound on one call before any is seen; then 2 × the largest call seen
+    spent_usd: float = field(default=0.0, init=False)
+    spent_before: float = field(default=0.0, init=False)
+    calls: int = field(default=0, init=False)
+    priced_calls: int = field(default=0, init=False)
+    priced_usd: float = field(default=0.0, init=False)
+    exhausted: bool = field(default=False, init=False)
+
+    def __post_init__(self) -> None:
+        self.ledger = Path(self.ledger)
+        rows = [json.loads(line) for line in self.ledger.read_text().splitlines() if line.strip()] if self.ledger.exists() else []
+        for row in rows:
+            self._count(row)
+        self.spent_before = self.spent_usd
+
+    def _count(self, row: dict[str, Any]) -> None:
+        usd = float(row.get("usd") or 0)
+        self.spent_usd += usd
+        self.calls += 1
+        if not row.get("estimated"):
+            self.priced_calls += 1
+            self.priced_usd += usd
+            self.reserve_usd = max(self.reserve_usd, 2 * usd)
+
+    def mean_call_usd(self, default: float = DEFAULT_CALL_USD) -> float:
+        return self.priced_usd / self.priced_calls if self.priced_calls else default
+
+    @property
+    def remaining_usd(self) -> float:
+        return self.max_usd - self.spent_usd
+
+    def _log(self, row: dict[str, Any]) -> None:
+        row = {"at": datetime.now(timezone.utc).isoformat(), **row}
+        self.ledger.parent.mkdir(parents=True, exist_ok=True)
+        with self.ledger.open("a") as handle:
+            handle.write(json.dumps(row) + "\n")
+        self._count(row)
+
+    def wrap(self, runner: Callable[[str, dict[str, Any], str], dict[str, Any]]) -> Callable[[str, dict[str, Any], str], dict[str, Any]]:
+        def capped(prompt: str, schema: dict[str, Any], model: str) -> dict[str, Any]:
+            if self.spent_usd + self.reserve_usd > self.max_usd:
+                self.exhausted = True
+                raise JudgeBudgetExhausted(f"judge budget exhausted: spent {self.spent_usd:.4f} + next call bound "
+                                           f"{self.reserve_usd:.4f} > cap {self.max_usd:.2f}")
+            started = time.monotonic()
+            try:
+                envelope = runner(prompt, schema, model)
+            except Exception as error:   # no cost envelope (CLI exit, timeout): charge the mean call cost seen so far
+                self._log({"model": model, "usd": round(self.mean_call_usd(), 6), "estimated": True, "ok": False,
+                           "seconds": round(time.monotonic() - started, 2), "error": str(error)[:200]})
+                raise
+            self._log({"model": model, "usd": float(envelope.get("total_cost_usd") or 0), "estimated": False,
+                       "ok": envelope.get("structured_output") is not None and not envelope.get("is_error"),
+                       "seconds": round(time.monotonic() - started, 2)})
+            return envelope
+
+        return capped
+
+    def record(self) -> dict[str, Any]:
+        return {"max_usd": self.max_usd, "ledger": str(self.ledger), "spent_before_usd": round(self.spent_before, 4),
+                "spent_total_usd": round(self.spent_usd, 4), "spent_this_run_usd": round(self.spent_usd - self.spent_before, 4),
+                "ledger_calls": self.calls, "mean_call_usd": round(self.mean_call_usd(), 5), "exhausted": self.exhausted}
+
+
 # -- grading ---------------------------------------------------------------------------------------------------------
 
 def item_prompts(item: dict[str, Any]) -> list[str]:
@@ -631,10 +729,16 @@ def analyze(manifest: dict[str, Any], graded: Sequence[dict[str, Any]]) -> dict[
 
 def render(analysis: dict[str, Any], header: dict[str, Any]) -> str:
     manifest = header["manifest"]
+    budget = header["judge"].get("budget") or {}
     lines = [f"# E5.3 rating study — {manifest.get('study')} ({analysis['label']})", "",
              f"Items `{header['items']}`; judge `{header['judge']['model']}` via {header['judge']['harness']}, "
              f"{header['judge']['calls']} calls per item over {header['judge']['paraphrases']} paraphrases; "
-             f"new calls this run: {header['judge']['new_calls']}, spend ${header['judge']['spent_usd']:.2f}.", ""]
+             f"new calls this run: {header['judge']['new_calls']}, spend ${header['judge']['spent_usd']:.2f}"
+             + (f" (cap ${budget['max_usd']:.2f} over `{budget['ledger']}`: ${budget['spent_total_usd']:.2f} spent in all)"
+                if budget else "") + ".", ""]
+    if budget.get("exhausted"):
+        lines += ["> **INCOMPLETE: the judge budget was exhausted before every call was made; this study is not reportable "
+                  "until it is re-run with a raised cap (cached verdicts are reused).**", ""]
     if manifest.get("selection"):
         lines += [f"Selection (pre-registered): {manifest['selection']}.", f"Endpoint: {manifest.get('endpoint')}.", ""]
     for study, entry in analysis["studies"].items():
@@ -673,22 +777,37 @@ def fake_runner(prompt: str, schema: dict[str, Any], model: str) -> dict[str, An
 
 
 def run_grade(items_dir: Path, output: Path, *, runner: str = "cli", calls: int = 3, model: str = "claude-opus-5-5", seed: int = 0,
-              max_new_calls: int | None = None, cache_dir: Path | None = None, dry_run: bool = False) -> dict[str, Any]:
+              max_new_calls: int | None = None, cache_dir: Path | None = None, dry_run: bool = False,
+              max_usd: float | None = None, allow_partial: bool = False) -> dict[str, Any]:
+    """Grade an item directory. `max_usd` is the hard cumulative cap over `<cache>/spend-ledger.jsonl`
+    (see the module docstring); a study whose projected cost does not fit the remaining budget is not
+    started (`{"budget_refused": …}`) unless `allow_partial`."""
     from ..provenance import write_run_metadata
     manifest, items = load_rating_items(items_dir)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     harness = {"cli": "claude -p headless (judging.claude_cli_runner)", "exchange": "Claude Code session (file exchange)",
                "fake": "fake runner (tests)"}[runner]
-    client = JudgeClient(cache_dir or output / "cache", model=model, calls=calls,
-                         runner={"cli": claude_cli_runner, "fake": fake_runner}.get(runner),
+    base_runner = {"cli": claude_cli_runner, "fake": fake_runner}.get(runner)
+    cache = Path(cache_dir or output / "cache")
+    cap = SpendCap(cache / LEDGER, float(max_usd)) if max_usd is not None and base_runner is not None else None
+    client = JudgeClient(cache, model=model, calls=calls, runner=cap.wrap(base_runner) if cap is not None else base_runner,
                          exchange_dir=output / "exchange" if runner == "exchange" else None)
     new_calls = pending_calls(client, items)
     estimate = {"items": len(items), "calls_per_item": calls, "new_calls": new_calls, "estimated_usd_at_0.02": round(0.02 * new_calls, 2)}
+    if cap is not None:
+        estimate.update(mean_call_usd=round(cap.mean_call_usd(), 5), projected_usd=round(new_calls * cap.mean_call_usd(), 2),
+                        cap_usd=cap.max_usd, spent_usd=round(cap.spent_usd, 4), remaining_usd=round(cap.remaining_usd, 4),
+                        fits=new_calls * cap.mean_call_usd() <= cap.remaining_usd)
     if dry_run:
         return {"dry_run": estimate}
     if max_new_calls is not None and new_calls > max_new_calls and runner != "fake":
         raise RuntimeError(f"{new_calls} uncached judge calls needed, more than --max-new-calls {max_new_calls}")
+    if cap is not None and not estimate["fits"] and not allow_partial:
+        refusal = {"items": str(items_dir), "at": datetime.now(timezone.utc).isoformat(), **estimate,
+                   "reason": "projected cost exceeds the remaining judge budget; study not started"}
+        write_json(output / "budget-refused.json", refusal)
+        return {"budget_refused": refusal}
     started = time.monotonic()
     graded = grade_items(client, items, seed=seed)
     if runner == "exchange":
@@ -696,9 +815,12 @@ def run_grade(items_dir: Path, output: Path, *, runner: str = "cli", calls: int 
         if outstanding:
             return {"pending": len(outstanding), "requests": str(output / "exchange" / "requests")}
     analysis = analyze(manifest, graded)
+    if cap is not None:
+        analysis["incomplete"] = cap.exhausted
     header = {"items": str(items_dir), "manifest": manifest,
               "judge": {"model": model, "harness": harness, "calls": calls, "paraphrases": 2, "new_calls": new_calls,
-                        "spent_usd": client.spent_usd, "cache": str(client.cache_dir)}}
+                        "spent_usd": client.spent_usd, "cache": str(client.cache_dir),
+                        **({"budget": cap.record()} if cap is not None else {})}}
     with (output / "verdicts.jsonl").open("w") as handle:
         for item in graded:
             handle.write(json.dumps(json_ready({k: item.get(k) for k in ("id", "study", "calibration", "systems", "gold", "values",
@@ -706,7 +828,8 @@ def run_grade(items_dir: Path, output: Path, *, runner: str = "cli", calls: int 
     write_json(output / "summary.json", {**header, "analysis": analysis, "seconds": time.monotonic() - started})
     (output / "report.md").write_text(render(analysis, header))
     write_run_metadata(output, {"experiment": "e5.3-rating", "items": str(items_dir), "runner": runner, "calls": calls,
-                                "model": model, "seed": seed}, device="cpu", judge=header["judge"])
+                                "model": model, "seed": seed, **({"max_usd": cap.max_usd} if cap is not None else {})},
+                       device="cpu", judge=header["judge"])
     return {**header, "analysis": analysis}
 
 
@@ -732,7 +855,13 @@ def main(argv: list[str] | None = None) -> int:
     grade.add_argument("--seed", type=int, default=0); grade.add_argument("--max-new-calls", type=int, default=None)
     grade.add_argument("--cache", type=Path, default=None, help="shared verdict cache (default <output>/cache)")
     grade.add_argument("--dry-run", action="store_true", help="count uncached calls and the estimated cost only")
+    grade.add_argument("--max-usd", type=float, default=None,
+                       help="hard cumulative USD cap over <cache>/spend-ledger.jsonl (required with --runner cli)")
+    grade.add_argument("--allow-partial", action="store_true",
+                       help="start a study even if its projected cost exceeds the remaining budget (the cap still holds)")
     args = parser.parse_args(argv)
+    if args.command == "grade" and args.runner == "cli" and args.max_usd is None and not args.dry_run:
+        parser.error("--max-usd is required with --runner cli (the judge's hard spend cap)")
     if args.command == "build":
         if args.study == "neighbours":
             pairs = [r.split("=", 1) for r in args.runs]
@@ -755,11 +884,19 @@ def main(argv: list[str] | None = None) -> int:
     for directory in directories:
         output = args.output / directory.name if args.t1 else args.output
         result = run_grade(directory, output, runner=args.runner, calls=args.calls, model=args.model, seed=args.seed,
-                           max_new_calls=args.max_new_calls, cache_dir=args.cache, dry_run=args.dry_run)
+                           max_new_calls=args.max_new_calls, cache_dir=args.cache, dry_run=args.dry_run,
+                           max_usd=args.max_usd, allow_partial=args.allow_partial)
         if "pending" in result:
             print(f"{result['pending']} requests outstanding in {result['requests']}; answer them, then re-run")
             status = 3
+        elif "budget_refused" in result:       # pre-registered "not run (budget)": not an error (exit 0)
+            print("NOT RUN (budget): " + json.dumps(result["budget_refused"], indent=2))
         else:
+            budget = result.get("judge", {}).get("budget")
+            if budget:
+                print(json.dumps({"budget": budget}, indent=2))
+                if budget["exhausted"]:
+                    status = 4
             print(json.dumps(result.get("dry_run") or {s: {k: v for k, v in e.items() if k in ("counts", "fisher", "fleiss_kappa")}
                                                        for s, e in result["analysis"]["studies"].items()}, indent=2, default=str))
     return status

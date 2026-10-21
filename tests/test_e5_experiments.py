@@ -499,6 +499,64 @@ def test_neighbour_items_and_fake_grading(opened, tmp_path) -> None:
     assert (tmp_path / "graded" / "verdicts.jsonl").exists() and "LLM-graded" in (tmp_path / "graded" / "report.md").read_text()
 
 
+def _costly_runner(cost: float):
+    base = rating.fake_runner                  # bound now: the tests monkeypatch `rating.fake_runner` with this runner
+
+    def runner(prompt, schema, model):
+        return {**base(prompt, schema, model), "total_cost_usd": cost}
+    return runner
+
+
+def test_spend_cap_is_hard_cumulative_and_shared_through_the_ledger(opened, tmp_path, monkeypatch) -> None:
+    runs = {"channel": opened["C5"], "C0": opened["C0"]}
+    rating.build_neighbour_items(runs, tmp_path / "items", n_concepts=2, top=2, calibration=2, seed=0)
+    _, rows = rating.load_rating_items(tmp_path / "items")
+    needed = 3 * len(rows)
+    monkeypatch.setattr(rating, "fake_runner", _costly_runner(0.05))
+    cache = tmp_path / "shared-cache"
+    # Preflight: the projected cost (needed × $0.04 before any call is priced) exceeds a $0.32 cap → not started, nothing spent.
+    refused = rating.run_grade(tmp_path / "items", tmp_path / "g0", runner="fake", calls=3, cache_dir=cache, max_usd=0.32)
+    assert "budget_refused" in refused and not (cache / rating.LEDGER).exists()
+    assert (tmp_path / "g0" / "budget-refused.json").exists()
+    # --allow-partial: the hard cap stops the calls; the study is flagged incomplete.
+    partial = rating.run_grade(tmp_path / "items", tmp_path / "g1", runner="fake", calls=3, cache_dir=cache, max_usd=0.32,
+                               allow_partial=True)
+    budget = partial["judge"]["budget"]
+    assert budget["exhausted"] and partial["analysis"]["incomplete"]
+    # each call reserves $0.10 (= max($0.10, 2 × $0.05)): calls run while spent + 0.10 ≤ 0.32, i.e. 5 calls, $0.25
+    assert budget["ledger_calls"] == 5 and budget["spent_total_usd"] == pytest.approx(0.25)
+    assert "INCOMPLETE" in (tmp_path / "g1" / "report.md").read_text()
+    # A second job sharing the cache sees the first job's spend: the cap is cumulative.
+    again = rating.SpendCap(cache / rating.LEDGER, 0.32)
+    assert again.spent_usd == pytest.approx(0.25) and again.mean_call_usd() == pytest.approx(0.05)
+    second = rating.run_grade(tmp_path / "items", tmp_path / "g2", runner="fake", calls=3, cache_dir=cache, max_usd=0.32,
+                              allow_partial=True)
+    assert second["judge"]["budget"]["spent_this_run_usd"] == pytest.approx(0.0) and second["judge"]["budget"]["exhausted"]
+    # Raising the cap resumes from the cached verdicts and completes the study.
+    done = rating.run_grade(tmp_path / "items", tmp_path / "g3", runner="fake", calls=3, cache_dir=cache, max_usd=10.0)
+    assert not done["judge"]["budget"]["exhausted"] and not done["analysis"]["incomplete"]
+    assert done["judge"]["budget"]["ledger_calls"] == needed and done["judge"]["budget"]["spent_total_usd"] == pytest.approx(0.05 * needed)
+    # The R5 report lists the refused study as "not run (budget)" and flags the incomplete ones.
+    report.write_report([tmp_path], tmp_path / "R5")
+    text = (tmp_path / "R5" / "report.md").read_text()
+    assert "not run (budget)" in text and "INCOMPLETE" in text
+
+
+def test_spend_cap_charges_failed_calls_and_is_required_for_the_cli(tmp_path) -> None:
+    cap = rating.SpendCap(tmp_path / rating.LEDGER, 1.0)
+    cap.wrap(_costly_runner(0.03))("p", {"type": "object", "properties": {"rating": {}}}, "m")
+
+    def broken(prompt, schema, model):
+        raise RuntimeError("claude exited 1")
+    with pytest.raises(RuntimeError):
+        cap.wrap(broken)("p", {}, "m")
+    rows = [json.loads(line) for line in (tmp_path / rating.LEDGER).read_text().splitlines()]
+    assert [r["estimated"] for r in rows] == [False, True] and rows[1]["usd"] == pytest.approx(0.03)
+    assert cap.spent_usd == pytest.approx(0.06) and cap.reserve_usd == pytest.approx(0.10)
+    with pytest.raises(SystemExit):
+        rating.main(["grade", "--items", str(tmp_path), "--output", str(tmp_path / "out"), "--runner", "cli"])
+
+
 def test_preference_counterbalancing_and_consensus() -> None:
     item = {"study": "neighbour_preference", "fields": {"concept": "x", "list_a": "one", "list_b": "two"}}
     first, second = rating.item_prompts(item)
