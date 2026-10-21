@@ -11,9 +11,12 @@ Stages (priority 60; jobs of a stage are queued in dependency order, the queue r
 - `d72` — D7.2: synthetic-text generation (EntiGraph-style, SPA/QA, unstructured notes), round-0 channel
   × 3 seeds, verification (self, teacher, notes) × 3 seeds, then 10 conditions × 3 seeds (gold, self,
   selfnv, teacher, random, cm, entigraph, notes, spa, verbal). Refuses to queue while the self or teacher proposals are
-  missing (`--no-teacher` drops the teacher condition).
+  missing (`--no-teacher` drops the teacher condition). `--conditions` keeps a subset of the round-1 conditions (the
+  G3 teacher-only mode, `e7_g3`); a synthetic-text step is planned only when its condition is kept.
 - `d73` — D7.3: the 50M cross-authoring runs (none, curated, authored × 3 seeds); `cross-prepare`
   (CPU, builds the GPT-2 corpora) must have run.
+
+`--priority` takes the queue's fractional bands (e.g. 54.4965) as well as integers.
 
 Estimates use the C4 throughputs (experiments.md §Compute) — frozen-host training tokens/s; a forward
 pass is taken as 2× faster than frozen training (4N vs 2N FLOPs per token); batched sampling rates are
@@ -26,10 +29,11 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from vsa_embed.experiments.e7_authoring import HOSTS, _json, load_track
 from vsa_embed.experiments.e7_round import CONDITIONS, CROSS_CONDITIONS, OPTIONAL_CONDITIONS, round_settings
+from vsa_embed.jobqueue import _priority
 
 PRIORITY = 60
 TRAIN = {"SmolLM2-135M": 36_000, "SmolLM2-360M": 18_500, "Qwen2.5-0.5B": 16_000, "50M": 70_000}   # tokens/s (C4)
@@ -87,8 +91,9 @@ def estimates(run: Path, *, teacher: bool = True) -> dict[str, dict[str, float]]
 
 
 def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True,
-               extra: tuple[str, ...] = ()) -> tuple[list[dict[str, Any]], list[str]]:
-    """(jobs, follow-up commands) of one stage; a job is {name, command, gpu_hours}."""
+               extra: tuple[str, ...] = (), conditions: Sequence[str] | None = None) -> tuple[list[dict[str, Any]], list[str]]:
+    """(jobs, follow-up commands) of one stage; a job is {name, command, gpu_hours}. `conditions` (D7.2 only)
+    keeps that subset of the round-1 conditions; the synthetic-text steps of dropped text controls are skipped."""
     track = load_track(run)
     est = estimates(run, teacher=teacher)
     py = [sys.executable, "-m"]
@@ -113,16 +118,22 @@ def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True,
         then = [f"{base} link --run {run}   # CPU; run after the {consumer} discovery job, before the author jobs",
                 f"{base} author --run {run} --author hearst   # CPU",
                 f"{base} author --run {run} --author random   # CPU, after the {consumer} author job",
-                f"{base} author --run {run} --author teacher  # claude -p (≈ candidates / 8 calls)",
+                f"{base} author --run {run} --author teacher --max-usd <cap>  # claude -p (≈ candidates / 8 calls)",
                 f"{base} quality --run {run}", f"{base} judge-items --run {run}",
-                f"{base} judge --run {run} --runner cli   # claude -p, ≥ 3 calls per item"]
+                f"{base} judge --run {run} --runner cli --max-usd <cap>   # claude -p, ≥ 3 calls per item"]
     elif stage == "d72":
         missing = [p for p in (f"proposals/{consumer}.json",) + (("proposals/teacher.json",) if teacher else ())
                    if not (Path(run) / p).exists()]
         if missing:
             raise FileNotFoundError(f"D7.2 needs {missing} first (D7.1); pass --no-teacher to drop the teacher condition")
-        conditions = [c for c in CONDITIONS if teacher or c != "teacher"] + [c for c in extra if c in OPTIONAL_CONDITIONS]
-        for step in ("entigraph", "spa", "notes"):
+        wanted = [c for c in CONDITIONS if teacher or c != "teacher"] + [c for c in extra if c in OPTIONAL_CONDITIONS]
+        if conditions is not None:
+            unknown = sorted(set(conditions) - set(CONDITIONS) - set(OPTIONAL_CONDITIONS))
+            if unknown:
+                raise ValueError(f"unknown D7.2 conditions {unknown}")
+            wanted = [c for c in wanted if c in conditions]
+        conditions = wanted
+        for step in [s for s in ("entigraph", "spa", "notes") if s in conditions]:
             jobs.append({"name": f"e7-{tag}-{step}", "gpu_hours": est[step]["generate"],
                          "command": rounds + [step, "--run", str(run)]})
         for seed in seeds:
@@ -132,8 +143,9 @@ def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True,
             for author in [consumer] + (["teacher"] if teacher else []):
                 jobs.append({"name": f"e7-{tag}-verify-{author}-s{seed}", "gpu_hours": est["verify"]["per_seed_author"],
                              "command": rounds + ["verify", "--run", str(run), "--seed", str(seed), "--author", author]})
-            jobs.append({"name": f"e7-{tag}-verify-notes-s{seed}", "gpu_hours": est["notes"]["verify_per_seed"],
-                         "command": rounds + ["verify-notes", "--run", str(run), "--seed", str(seed)]})
+            if "notes" in conditions:
+                jobs.append({"name": f"e7-{tag}-verify-notes-s{seed}", "gpu_hours": est["notes"]["verify_per_seed"],
+                             "command": rounds + ["verify-notes", "--run", str(run), "--seed", str(seed)]})
         for seed in seeds:
             for condition in conditions:
                 jobs.append({"name": f"e7-{tag}-round1-{condition}-s{seed}", "gpu_hours": est["train"].get(condition, est["train"]["self"]),
@@ -152,7 +164,7 @@ def stage_jobs(run: Path, stage: str, *, seeds: list[int], teacher: bool = True,
     return jobs, then
 
 
-def queue(jobs: list[dict[str, Any]], *, priority: int = PRIORITY, queue_dir: Path | None = None) -> list[str]:
+def queue(jobs: list[dict[str, Any]], *, priority: int | float = PRIORITY, queue_dir: Path | None = None) -> list[str]:
     from vsa_embed.jobqueue import DEFAULT_DIR, add
     queued = []
     for job in jobs:
@@ -172,12 +184,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seeds", nargs="+", type=int, default=[1, 2, 3])
     parser.add_argument("--no-teacher", action="store_true")
     parser.add_argument("--extra-conditions", nargs="*", default=[], help=f"optional D7.2 conditions: {OPTIONAL_CONDITIONS}")
-    parser.add_argument("--queue", action="store_true"); parser.add_argument("--priority", type=int, default=PRIORITY)
+    parser.add_argument("--conditions", nargs="+", default=None, help=f"D7.2: keep only these round-1 conditions of {CONDITIONS}")
+    parser.add_argument("--queue", action="store_true")
+    parser.add_argument("--priority", type=_priority, default=PRIORITY, help="queue priority (integer or fractional band)")
     args = parser.parse_args(argv)
     if args.no_teacher and args.stage == "d72":
         from vsa_embed.experiments.e7_round import update_round_settings
         update_round_settings(args.run, {"teacher_condition": False})
-    jobs, then = stage_jobs(args.run, args.stage, seeds=args.seeds, teacher=not args.no_teacher, extra=tuple(args.extra_conditions))
+    jobs, then = stage_jobs(args.run, args.stage, seeds=args.seeds, teacher=not args.no_teacher, extra=tuple(args.extra_conditions),
+                            conditions=args.conditions)
     total = sum(j["gpu_hours"] for j in jobs)
     plan = {"stage": args.stage, "jobs": jobs, "gpu_hours": total, "then": then, "priority": args.priority,
             "assumptions": {"train_tokens_per_s": TRAIN, "generation_tokens_per_s": GENERATION}}

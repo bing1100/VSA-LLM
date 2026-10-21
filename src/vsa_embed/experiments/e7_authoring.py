@@ -24,6 +24,12 @@ D7.0 / D7.1 commands (this module):
 - `judge-items` / `judge` — blinded items for the LLM-judged plausibility of edges without gold
   (experiments §0.12: ≥ 3 calls over 2 paraphrases, Fleiss κ, calibration items).
 
+Claude calls (`author --author teacher`, `judge --runner cli`) need `--max-usd`: a hard cumulative cap over
+`spend-ledger.jsonl` in the call cache (`e5_rating.SpendCap`; cached calls are free, so a re-run with a raised cap
+resumes). A teacher run cut by the cap writes no proposals file. They read only open-licence reading text
+(`OPEN_LICENCE_TRACKS`: FineWeb-Edu, the project-generated C6 library); credentialed text (MIMIC, SNOMED CT, UMLS)
+is never sent (decision 58).
+
 The round (D7.2), cross-authoring (D7.3), plan and report commands are dispatched to `e7_round`,
 `e7_plan` and `e7_report`. Every step writes JSON next to the run folder's `track.json`; large
 artifacts go to the data root recorded there.
@@ -59,6 +65,8 @@ DATA_ROOT = Path("~/data/vsa-llm/e7")
 HOSTS = {"SmolLM2-135M": "HuggingFaceTB/SmolLM2-135M", "SmolLM2-360M": "HuggingFaceTB/SmolLM2-360M",
          "Qwen2.5-0.5B": "Qwen/Qwen2.5-0.5B"}
 CONSUMER = "SmolLM2-360M"
+# Tracks whose reading text may be sent to Claude (teacher, judge): open licences only (decision 58).
+OPEN_LICENCE_TRACKS = {"general": "FineWeb-Edu (ODC-By 1.0)", "devtools": "C6 synthetic library (project-generated)"}
 
 # Closed relation vocabularies (formulation §5.5): authoring label, ontology relation, description.
 WORDNET_RELATIONS = [
@@ -280,6 +288,23 @@ def relation_labels(track: dict[str, Any]) -> list[str]:
 
 def relation_descriptions(track: dict[str, Any]) -> dict[str, str]:
     return {label: description for label, _, description in track["relations"]}
+
+
+def require_open_licence(track: dict[str, Any]) -> str:
+    """The licence of a track's reading text if Claude may read it; otherwise raise (credentialed or unknown text)."""
+    licence = OPEN_LICENCE_TRACKS.get(track["kind"])
+    if licence is None:
+        raise PermissionError(f"track {track['kind']!r}: Claude (teacher / judge) reads open-licence text only "
+                              f"({sorted(OPEN_LICENCE_TRACKS)}); credentialed text never leaves the machine")
+    return licence
+
+
+def spend_cap(cache_dir: Path, max_usd: float | None) -> Any:
+    """A hard USD cap over `<cache_dir>/spend-ledger.jsonl` (shared by every run on that cache)."""
+    if max_usd is None:
+        raise ValueError("Claude calls need --max-usd (a hard cumulative cap)")
+    from vsa_embed.experiments.e5_rating import LEDGER, SpendCap
+    return SpendCap(Path(cache_dir) / LEDGER, float(max_usd))
 
 
 # ---------------------------------------------------------------------------------------------
@@ -744,8 +769,9 @@ def _proposal_record(votes: Counter, samples: int, contexts: Sequence[int]) -> d
 
 
 def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, Any] | None = None, model: Any = None,
-           tokenizer: Any = None, runner: Callable | None = None) -> dict[str, Any]:
-    """Proposals of one author for the authoring set (or, for `direct-*`, for the concepts it names)."""
+           tokenizer: Any = None, runner: Callable | None = None, max_usd: float | None = None) -> dict[str, Any]:
+    """Proposals of one author for the authoring set (or, for `direct-*`, for the concepts it names). The Claude
+    teacher (no `runner` given) needs `max_usd`; a run stopped by the cap raises and writes no proposals file."""
     track = load_track(run)
     out = run / "proposals" / f"{name}.json"
     if out.exists():
@@ -791,10 +817,14 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
             examples = [{"prompt": prompts[i], "completion": completions[i][0]} for i in range(min(3, len(prompts)))]
             result.update(kind="host", model=HOSTS.get(host, host), candidates=candidates, examples=examples)
         elif name == "teacher":
-            from vsa_embed.authoring_baselines import TeacherAuthor
+            from vsa_embed.authoring_baselines import TeacherAuthor, _default_runner
             teacher_settings = _merge(track["settings"]["teacher"], overrides or {})
-            teacher = TeacherAuthor(run / "proposals" / "teacher_cache", relations, relation_descriptions(track),
-                                    model=teacher_settings["model"], runner=runner,
+            licence = require_open_licence(track)
+            cache = run / "proposals" / "teacher_cache"
+            cap = spend_cap(cache, max_usd) if runner is None or max_usd is not None else None
+            teacher = TeacherAuthor(cache, relations, relation_descriptions(track),
+                                    model=teacher_settings["model"],
+                                    runner=cap.wrap(runner or _default_runner) if cap is not None else runner,
                                     **({"filler_hint": "a module name, type name, kind, category or symbol name, as written in the "
                                                        "documentation (lowercase)."} if track["kind"] == "devtools" else {}))
             items = [{"id": f"c{k}", "surface": surfaces[k], "contexts": [c for _, c in contexts[k]]}
@@ -802,6 +832,9 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
             limit = teacher_settings.get("limit")
             items = items[:int(limit)] if limit else items
             answers = teacher.author(items, batch=int(teacher_settings["batch"]))
+            if cap is not None and cap.exhausted:
+                raise RuntimeError(f"teacher stopped by the --max-usd cap ({cap.record()}); answered batches are cached, "
+                                   "re-run with a raised cap to finish (no proposals file written)")
             candidates = {}
             canonical = canonical_filler(resolver_for(track, visible(track)))
             for k in sorted(surfaces):
@@ -815,7 +848,8 @@ def author(run: Path, name: str, *, device: torch.device, overrides: dict[str, A
                 candidates[surfaces[k]] = record
             models_used = sorted({m for a in answers.values() for m in (a.get("models_used") or [])})
             result.update(kind="teacher", model=teacher_settings["model"], models_used=models_used, candidates=candidates,
-                          calls=teacher.calls, cached_calls=teacher.cached, spent_usd=teacher.spent_usd)
+                          calls=teacher.calls, cached_calls=teacher.cached, spent_usd=teacher.spent_usd, licence=licence,
+                          budget=cap.record() if cap is not None else None)
         elif name == "hearst":
             from vsa_embed.authoring_baselines import hearst_extract
             resolve = resolver_for(track, visible(track))
@@ -1165,13 +1199,19 @@ def _calibration_items(track: dict[str, Any], view: dict[str, Any], texts: Seque
 
 
 def judge(run: Path, *, runner: str = "cli", calls: int = 3, model: str = "claude-opus-5-5", seed: int = 0,
-          fake: Callable | None = None) -> dict[str, Any]:
-    """Grade the items (≥ 3 calls over 2 paraphrases) and summarise plausibility per author, κ and calibration."""
+          fake: Callable | None = None, max_usd: float | None = None) -> dict[str, Any]:
+    """Grade the items (≥ 3 calls over 2 paraphrases) and summarise plausibility per author, κ and calibration.
+    The `cli` runner (no `fake`) needs `max_usd`; calls refused by the cap stay ungraded (`budget.exhausted`) and a
+    re-run with a raised cap grades them (cached verdicts are reused)."""
     from vsa_embed.judge_protocol import run_study
-    from vsa_embed.judging import JudgeClient, fleiss_kappa
+    from vsa_embed.judging import JudgeClient, claude_cli_runner, fleiss_kappa
+    licence = require_open_licence(load_track(run))
     items = [json.loads(line) for line in (run / "judge" / "items.jsonl").read_text().splitlines() if line.strip()]
     key = {k["id"]: k for k in map(json.loads, (run / "judge" / "key.jsonl").read_text().splitlines()) if k}
-    client = JudgeClient(run / "judge" / "cache", model=model, calls=calls, runner=fake,
+    cap = spend_cap(run / "judge" / "cache", max_usd) if runner == "cli" and (fake is None or max_usd is not None) else None
+    base_runner = fake or (lambda p, s, m: claude_cli_runner(p, s, m))
+    client = JudgeClient(run / "judge" / "cache", model=model, calls=calls,
+                         runner=cap.wrap(base_runner) if cap is not None else fake,
                          exchange_dir=run / "judge" / "exchange" if runner == "exchange" else None)
     result = run_study(client, "authored_edge_in_context", items, seed=seed)
     by_system: dict[str, list[str]] = defaultdict(list)
@@ -1190,7 +1230,8 @@ def judge(run: Path, *, runner: str = "cli", calls: int = 3, model: str = "claud
                "plausibility": {s: {"true": _rate(v.count("true"), len(v)),
                                     "true_or_partly": _rate(v.count("true") + v.count("partly"), len(v))}
                                 for s, v in sorted(by_system.items())},
-               "outstanding": len(list((run / "judge" / "exchange" / "requests").glob("*.json"))) if runner == "exchange" else 0}
+               "outstanding": len(list((run / "judge" / "exchange" / "requests").glob("*.json"))) if runner == "exchange" else 0,
+               "licence": licence, "budget": cap.record() if cap is not None else None}
     _json(run / "judge" / "results.json", {"summary": summary, "items": result["items"]})
     return summary
 
@@ -1210,6 +1251,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runner", default="cli", choices=["cli", "exchange"])
     parser.add_argument("--calls", type=int, default=3); parser.add_argument("--per-author", type=int, default=40)
     parser.add_argument("--resume", action="store_true", help="accepted for the job queue; every step is idempotent")
+    parser.add_argument("--max-usd", type=float, default=None,
+                        help="hard cumulative USD cap for Claude calls (required by `author --author teacher` and `judge --runner cli`)")
     args, rest = parser.parse_known_args(argv)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     overrides = json.loads(args.overrides)
@@ -1229,14 +1272,14 @@ def main(argv: list[str] | None = None) -> int:
         result = link(args.run, overrides=overrides)
         print(f"{len(result['candidates'])} candidates in the authoring set")
     elif args.command == "author":
-        result = author(args.run, args.author, device=device, overrides=overrides)
+        result = author(args.run, args.author, device=device, overrides=overrides, max_usd=args.max_usd)
         print(f"{args.author}: {len(result['candidates'])} concepts")
     elif args.command == "quality":
         print(json.dumps(quality(args.run), indent=1, default=_default)[:6000])
     elif args.command == "judge-items":
         print(judge_items(args.run, per_author=args.per_author))
     elif args.command == "judge":
-        print(json.dumps(judge(args.run, runner=args.runner, calls=args.calls), indent=1, default=_default))
+        print(json.dumps(judge(args.run, runner=args.runner, calls=args.calls, max_usd=args.max_usd), indent=1, default=_default))
     else:
         from vsa_embed.experiments import e7_round
         return e7_round.main([args.command, "--run", str(args.run), "--device", args.device,
