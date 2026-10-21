@@ -130,9 +130,11 @@ def default_conditions(compose: bool, vsa: bool, noise: Sequence[float]) -> list
 
 
 def condition_inputs(name: str, concepts: Sequence[str], frames: dict[str, dict[str, list | None]], surface: dict[str, str],
-                     text: RecallText, definitions: dict[str, str], pools: dict[int, np.ndarray], *, seed: int
+                     text: RecallText, definitions: dict[str, str], pools: dict[int, np.ndarray], *, seed: int,
+                     retrieved: dict[str, str] | None = None
                      ) -> tuple[dict[str, list | None], dict[str, str] | None, dict[str, Any]]:
-    """(frames for the term rows, prompt contexts, diagnostics) of one condition."""
+    """(frames for the term rows, prompt contexts, diagnostics) of one condition. `retrieved` (RD-13): concept → the
+    retrieved text, the context of the `retrieved` condition."""
     kind, _, arg = name.partition(":")
     none = {c: None for c in concepts}
     info: dict[str, Any] = {}
@@ -140,6 +142,10 @@ def condition_inputs(name: str, concepts: Sequence[str], frames: dict[str, dict[
         return none, None, info
     if kind == "definition":
         return none, {c: definitions[c] for c in concepts if c in definitions}, info
+    if kind == "retrieved":
+        if retrieved is None:
+            raise KeyError(f"condition {name!r}: no retrieved text (--retrieved DIR)")
+        return none, {c: retrieved[c] for c in concepts if c in retrieved}, info
     if kind in {"noisy-explicit", "noisy-implicit"}:
         p = float(arg)
         gold = frames["oracle"]
@@ -216,6 +222,21 @@ SECONDARY_HOST = (("explicit-route:lm:typeprior", "none"), ("explicit-route:lm:t
                   ("explicit-rel:typeprior", "none"), ("explicit-rel-wrong:oracle", "none"), ("definition", "none"))
 
 
+# RD-13 (addendum 10): retrieve-then-read. `retrieved`: the Wikipedia text (`e14_retrieve build`) in the prompt (RAG);
+# `wiki-<reader>`: E11's CPU readers on that text (`--retrieved DIR`); the chebi-text conditions are the reference.
+RETRIEVED_PREFIX = "wiki-"
+RETRIEVED_READERS = ("stated", "typeprior")
+RD13_CONDITIONS = ("none", "definition", "retrieved", "explicit-rel:oracle", "explicit-rel:typeprior", "explicit-route:lm:typeprior",
+                   "explicit-rel:wiki-stated", "explicit-rel:wiki-typeprior", "explicit-route:lm:wiki-typeprior",
+                   "explicit-route:lm:wiki-stated")
+PRIMARY_R = (("explicit-route:lm:wiki-typeprior", "none"), ("explicit-route:lm:wiki-typeprior", "retrieved"), ("retrieved", "definition"))
+SECONDARY_R = (("explicit-rel:wiki-typeprior", "none"), ("explicit-rel:wiki-typeprior", "retrieved"),
+               ("explicit-rel:wiki-typeprior", "explicit-rel:typeprior"), ("explicit-route:lm:wiki-typeprior", "explicit-route:lm:typeprior"),
+               ("explicit-route:lm:wiki-typeprior", "definition"), ("explicit-rel:wiki-stated", "none"), ("explicit-rel:wiki-stated", "retrieved"),
+               ("explicit-route:lm:wiki-stated", "none"), ("retrieved", "none"), ("definition", "none"), ("explicit-rel:oracle", "retrieved"))
+STATED_R = (("explicit-rel:wiki-typeprior", "none"), ("retrieved", "none"), ("explicit-rel:wiki-typeprior", "retrieved"))
+
+
 def _norm_answer(text: str | None) -> str:
     t = (text or "").strip().lower().rstrip(".").strip()
     for article in ("a ", "an ", "the "):
@@ -240,7 +261,8 @@ def gold_flags(items: Sequence[dict[str, Any]], frames: dict[str, dict[str, list
 
 
 def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, list | None]], text: RecallText,
-                          definitions: dict[str, str], pools: dict[int, np.ndarray], ctx: e11.TrackContext, *, seed: int
+                          definitions: dict[str, str], pools: dict[int, np.ndarray], ctx: e11.TrackContext, *, seed: int,
+                          retrieved: dict[str, str] | None = None
                           ) -> tuple[dict[str, list | None], dict[str, str] | None, dict[str, Any]]:
     """(frames for the term rows, per-item prompt contexts, diagnostics). `explicit-rel:<reader>`: the reader's edges of the
     item's own relation as recall lines (an item without a relation gets the whole frame); `explicit-rel-wrong:oracle`: the
@@ -273,7 +295,8 @@ def item_condition_inputs(name: str, scorer: Any, frames: dict[str, dict[str, li
                                                   "route_accuracy": float(np.mean(hits)) if hits else None,
                                                   "routable_items": len(hits)}
     if kind not in {"explicit-rel", "explicit-rel-wrong"}:
-        row_frames, contexts, info = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed)
+        row_frames, contexts, info = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed,
+                                                      retrieved=retrieved)
         if not contexts:
             return row_frames, None, info
         return row_frames, {i["id"]: contexts[c] for c in concepts if c in contexts for i in scorer.items_by_concept[c]}, info
@@ -514,9 +537,11 @@ def context_budget(run: Any, cap: int | None) -> int | None:
 
 def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str, list | None]], *, style: str,
                     conditions: Sequence[str], store: sq.RecallStore | None, seed: int = 0, resamples: int = 2000,
-                    max_context_tokens: int | None = 1024, null: str = "context", log=print) -> dict[str, Any]:
+                    max_context_tokens: int | None = 1024, null: str = "context", retrieved: dict[str, str] | None = None,
+                    log=print) -> dict[str, Any]:
     """`null`: `context` (tier P: the null prompt is read after the same context as the item) or `plain` (RD-4b: the null
-    prompt without any context, computed once). Per-item conditions (`explicit-rel*`) and `plain` use `score_rows`."""
+    prompt without any context, computed once). Per-item conditions (`explicit-rel*`) and `plain` use `score_rows`.
+    `retrieved` (RD-13): concept → retrieved text for the `retrieved` condition."""
     ctx = e11.run_context(run)
     budget = context_budget(run, max_context_tokens)
     scorer = e11.ItemScorer(run, read_set, ctx)
@@ -535,12 +560,14 @@ def evaluate_recall(run: Any, read_set: e11.ReadSet, frames: dict[str, dict[str,
         t0 = time.monotonic()
         log(f"  {name}")
         if null == "plain" or name.startswith(("explicit-rel", "explicit-route")):
-            row_frames, contexts, diag = item_condition_inputs(name, scorer, frames, text, definitions, pools, ctx, seed=seed)
+            row_frames, contexts, diag = item_condition_inputs(name, scorer, frames, text, definitions, pools, ctx, seed=seed,
+                                                               retrieved=retrieved)
             if contexts:
                 contexts = {i: fit_context(t, run.tokenizer, budget) for i, t in contexts.items()}
             item_rows[name] = score_rows(scorer, row_frames, contexts, null_scores=null_scores)
         else:
-            row_frames, contexts, diag = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed)
+            row_frames, contexts, diag = condition_inputs(name, concepts, frames, scorer.surface, text, definitions, pools, seed=seed,
+                                                          retrieved=retrieved)
             if contexts:
                 contexts = {c: fit_context(t, run.tokenizer, budget) for c, t in contexts.items()}
             item_rows[name] = scorer.score(row_frames, contexts)
@@ -608,7 +635,8 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
               "frames": str(args.frames) if args.frames else None, "conditions": args.conditions, "noise": list(noise),
               "seed": args.seed, "resamples": args.resamples, "max_context_tokens": args.max_context_tokens, "alias_table": str(args.alias_table) if args.alias_table else None,
               "smoke": bool(args.smoke), "null": args.null, "family": args.family,
-              "teacher_frames": str(args.teacher_frames) if getattr(args, "teacher_frames", None) else None}
+              "teacher_frames": str(args.teacher_frames) if getattr(args, "teacher_frames", None) else None,
+              "retrieved": str(args.retrieved) if getattr(args, "retrieved", None) else None}
     output = Path(args.output)
     if args.overwrite:
         clear_output(output)
@@ -633,6 +661,12 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         for row in e11._read_jsonl(Path(args.teacher_frames)):
             if row.get("style") == style and row.get("frame") is not None:
                 frames["teacher"][row["concept"]] = ctx.ids(row["frame"])
+    retrieved = None
+    if getattr(args, "retrieved", None):                        # RD-13: the retrieved text and E11's CPU readers on it
+        retrieved = {r["concept"]: r["text"] for r in e11._read_jsonl(Path(args.retrieved) / "retrieved.jsonl")}
+        from .e14_retrieve import STYLE as RETRIEVED_STYLE
+        for reader, by in load_reader_frames(Path(args.retrieved) / "frames.jsonl", RETRIEVED_STYLE, RETRIEVED_READERS, ctx).items():
+            frames[f"{RETRIEVED_PREFIX}{reader}"] = by
     if args.conditions:
         conditions = [c.strip() for c in args.conditions.split(",") if c.strip()]
     elif args.family == "rd4b":
@@ -643,6 +677,10 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         conditions = list(RD12C_CONDITIONS)
     elif args.family == "rd4d":
         conditions = list(RD4D_CONDITIONS)
+    elif args.family == "rd13":
+        if retrieved is None:
+            raise SystemExit("--family rd13 needs --retrieved DIR (e14_retrieve build)")
+        conditions = list(RD13_CONDITIONS)
     else:
         conditions = default_conditions(compose, store is not None, noise)
     if not compose:
@@ -650,7 +688,7 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         if bad:
             raise SystemExit(f"run has no compose channel: conditions {bad} need one")
     result = evaluate_recall(run, read_set, frames, style=style, conditions=conditions, store=store, seed=args.seed,
-                             resamples=args.resamples, max_context_tokens=args.max_context_tokens, null=args.null)
+                             resamples=args.resamples, max_context_tokens=args.max_context_tokens, null=args.null, retrieved=retrieved)
     document = {"source": run.describe(), "frames_from": str(path), "smoke": bool(args.smoke), "family": args.family,
                 **result["document"]}
     with (output / "predictions.jsonl").open("w") as handle:
@@ -697,10 +735,10 @@ def pooled_contrast(folders: Sequence[Path], a: str, b: str, test: str, *, field
 
 
 def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed: int, primary: Sequence = PRIMARY_B,
-               secondary: Sequence = SECONDARY_B, stated_pairs: Sequence = STATED_B) -> dict[str, Any]:
-    """RD-4b (pre-registration §13): primary (Holm over contrasts × tests), secondary, the stated-only subset, and the same
-    contrasts on raw (uncalibrated) choices."""
-    stated = lambda row: bool((row.get("gold_in") or {}).get("stated"))  # noqa: E731
+               secondary: Sequence = SECONDARY_B, stated_pairs: Sequence = STATED_B, stated_reader: str = "stated") -> dict[str, Any]:
+    """RD-4b (pre-registration §13): primary (Holm over contrasts × tests), secondary, the stated-only subset (items whose
+    gold answer is in `stated_reader`'s frame; RD-13: `wiki-stated`), and the same contrasts on raw (uncalibrated) choices."""
+    stated = lambda row: bool((row.get("gold_in") or {}).get(stated_reader))  # noqa: E731
     out: dict[str, Any] = {}
     blocks = (("primary", primary, "correct", lambda row: True), ("secondary", secondary, "correct", lambda row: True),
               ("stated_only", stated_pairs, "correct", stated), ("raw_primary", primary, "raw_correct", lambda row: True))
@@ -733,7 +771,7 @@ def rd4b_group(folders: Sequence[Path], conds: set[str], *, resamples: int, seed
 
 
 def run_recall_report(args: argparse.Namespace) -> dict[str, Any]:
-    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c", "rd12c", "rd4d"}:
+    if getattr(args, "family", "tier-p") in {"rd4b", "rd4c", "rd12c", "rd4d", "rd13"}:
         return run_rd4b_report(args)
     present = [Path(p) for p in args.runs if (Path(p) / "summary.json").exists()]
     missing = [str(p) for p in args.runs if not (Path(p) / "summary.json").exists()]
@@ -796,7 +834,9 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
     title = {"rd4b": "# E14 RD-4b — recall of the item's relation, context-free null (pre-registration §13)",
              "rd4c": "# E14 RD-4c — routing without the item's label, Claude's frames, larger hosts (pre-registration §16)",
              "rd12c": "# E14 RD-12c — the RD-12 cycle's read frames under selective recall (pre-registration §17)",
-             "rd4d": "# E14 RD-4d — learned relation routers, the routed wording held out (pre-registration §19)"}[family]
+             "rd4d": "# E14 RD-4d — learned relation routers, the routed wording held out (pre-registration §19)",
+             "rd13": "# E14 RD-13 — retrieve-then-read: Wikipedia text read into the store against the same text in the prompt "
+                     "(pre-registration addendum 10)"}[family]
     lines = [title, "",
              "PMI choices use the null prompt **without** the context; `raw` columns are uncalibrated choices; `(stated)`: "
              "items whose gold answer is in the `stated` reader's frame.", ""]
@@ -809,6 +849,8 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
             pairs = {"primary": PRIMARY_D, "secondary": SECONDARY_D, "stated_pairs": ()}
         if family == "rd4d":
             pairs = {"primary": PRIMARY_F, "secondary": SECONDARY_F, "stated_pairs": ()}
+        if family == "rd13":
+            pairs = {"primary": PRIMARY_R, "secondary": SECONDARY_R, "stated_pairs": STATED_R, "stated_reader": f"{RETRIEVED_PREFIX}stated"}
         if family == "rd4c":
             host_group = model.startswith("Qwen") or "-C0p" in model
             pairs = {"primary": PRIMARY_HOST if host_group else PRIMARY_C, "secondary": SECONDARY_HOST if host_group else SECONDARY_C,
@@ -849,6 +891,17 @@ def run_rd4b_report(args: argparse.Namespace) -> dict[str, Any]:
                            ("Primary contrasts on raw choices", "raw_primary")):
             lines += ["", f"### {title}", "", "| a − b | test | difference [95% CI] | n |", "|---|---|---|---:|"]
             lines += [f"| {r['a']} − {r['b']} | {r['test']} | {fmt_ci(r)} | {r['n']} |" for r in g[key]]
+        lines.append("")
+    if family == "rd13" and getattr(args, "retrieved", None) and (Path(args.retrieved) / "coverage.json").exists():
+        coverage = json.loads((Path(args.retrieved) / "coverage.json").read_text())   # the build's stated rates (CPU)
+        out["coverage"] = coverage
+        lines += ["## Stated rate of the texts (share of gold edges whose partner the finder found; `e14_retrieve build`)", "",
+                  f"{coverage['covered']} of {coverage['concepts']} concepts have a page ({coverage['plausible']} plausible); "
+                  f"retrieved text cut to {coverage['words']} words.", "",
+                  "| style | concepts | with a stated edge | gold edges | stated |", "|---|---:|---:|---:|---:|"]
+        for style, s in coverage["stated"].items():
+            rate = "—" if s["stated"] is None else f"{s['stated']:.3f}"
+            lines.append(f"| {style} | {s['concepts']} | {s['concepts_with_stated_edge']} | {s['gold_edges']} | {rate} |")
         lines.append("")
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
@@ -1185,14 +1238,17 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--overwrite", action="store_true")
     r.add_argument("--null", choices=("context", "plain"), default="context",
                    help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
-    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d"), default="tier-p", help="default condition list")
+    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13"), default="tier-p", help="default condition list")
+    r.add_argument("--retrieved", type=Path, default=None,
+                   help="RD-13: an `e14_retrieve build` directory (retrieved.jsonl, frames.jsonl): the `retrieved` and `wiki-*` conditions")
     r.add_argument("--extra-readers", default=None, help="more reader names to load from --frames (rd12c: the RD-12 arms)")
     r.add_argument("--teacher-frames", type=Path, default=None,
                    help="RD-4c: Claude's frames (RD-3's teacher-frames.jsonl), read as the reader `teacher`")
     rr = sub.add_parser("recall-report", help="pool RD-4 run folders over seeds")
     rr.add_argument("--runs", nargs="+", required=True)
     rr.add_argument("--output", type=Path, required=True)
-    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d"), default="tier-p", help="which pre-registered contrasts")
+    rr.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13"), default="tier-p", help="which pre-registered contrasts")
+    rr.add_argument("--retrieved", type=Path, default=None, help="RD-13: the build directory, for its stated-rate table (coverage.json)")
     rr.add_argument("--resamples", type=int, default=4000)
     rr.add_argument("--seed", type=int, default=0)
     rl = sub.add_parser("relations", help="RD-3: relation choice on stated edges (mc-rel, react, and E11's readers)")
