@@ -193,6 +193,17 @@ The last column of the table below lists what was held before that approval.
 | 5 | T2 (developer tools) | `e9-retrofit/preregistration-addendum-2026-10-20-t2.md` | 83 jobs, about 23 GPU-h | — |
 | 6 | B-B1 (side-module control) | `e9-retrofit/preregistration-addendum-2026-10-20-bb1.md` | 22 jobs, about 12.9 GPU-h | — |
 
+**Added later on 20 October (author: tree test, retrieval tool, cheaper tests; pre-registration §20, addenda 9–11).**
+Seventeen E14 jobs at 54.4959997 (about 2.5 GPU-h), reports at 54.49599985–7, landing 21 October:
+- **tree-text** (addendum 9): can a host read a decision tree from prose into the executor's form? Decision rule:
+  worth more only if the best host reaches 0.80 leaf accuracy on the paraphrased style.
+- **RD-13, retrieve-then-read** (addendum 10): Wikipedia pages for 332 of 341 T4 concepts (MediaWiki API, cached by
+  revision; CC BY-SA). **Already known from the CPU stage:** the page states 0.120 of the gold edges, the definition
+  0.116; more text is not the lever on T4, and no dump is fetched. The queued arms compare the store with the same
+  text in the prompt.
+- **LG-CF** (addendum 11): chains of up to 8 what-if edits, executor relay against in-context answering.
+- **RD-14** (addendum 11): facts inferred by neighbour voting (precision 0.55), recalled marked or unmarked.
+
 **Placement.** Lower numbers run first.
 - The small blocks run before the toolkit band (54.496–54.4999): E14 GPU jobs at 54.4959990–91, E7 D7.1 at
   54.4959993, E5 GPU jobs at 54.4959994, the E5 reports at 54.4959998, the E14 reports at 54.4959999.
