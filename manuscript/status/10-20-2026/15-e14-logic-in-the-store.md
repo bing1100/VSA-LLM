@@ -474,6 +474,12 @@ Three frozen hosts: SmolLM2-360M, Qwen3-0.6B and Qwen3-1.7B; 300 chains each.
 The consistency result goes to the claims ledger with its caveat. A drift test needs a host of about 4B or larger
 and is not queued.
 
+**Deferred idea (author, 21 October):** use the executor's exact labels to train the host to read the tree from the
+store's vectors ("executor distillation"), with a scaffolded arm (train with the executor's path, test without) and a
+tokens-to-criterion arm, after the clinician's way of using decision trees. Recorded with a design sketch, the
+evidence for and against, and the conditions for picking it up in
+`manuscript/proposals/2026-10-21-executor-distillation.md`. Not registered, not queued.
+
 ---
 
 # 15.10 — Trees on noisy records (LG-D2), and one store as wide as the ensemble (X7b)
