@@ -208,6 +208,20 @@ class ChannelLM(nn.Module):
             from ..readout import decoder_layers
             self._readout_hook = decoder_layers(self.model)[readout.layer].register_forward_pre_hook(
                 self._apply_readout, with_kwargs=True)
+        # Opt-in (E15, HRR as a training target): the channel's target reads the input of one decoder layer at the
+        # linked terms' positions for its losses; the hook changes nothing in the forward.
+        target = getattr(channel, "target", None) if channel is not None else None
+        self._target_hook = None
+        if target is not None:
+            from ..readout import decoder_layers
+            self._target_hook = decoder_layers(self.model)[target.layer].register_forward_pre_hook(
+                self._capture_target, with_kwargs=True)
+
+    def _capture_target(self, module: nn.Module, args: tuple, kwargs: dict) -> None:
+        target = getattr(self.channel, "target", None) if self.channel is not None else None
+        if target is not None:
+            target.capture(args[0] if args else kwargs["hidden_states"])
+        return None
 
     def _apply_readout(self, module: nn.Module, args: tuple, kwargs: dict) -> tuple[tuple, dict] | None:
         readout = getattr(self.channel, "readout", None) if self.channel is not None else None
@@ -231,6 +245,9 @@ class ChannelLM(nn.Module):
         readout = getattr(self.channel, "readout", None) if self.channel is not None else None
         if readout is not None:               # the spans of this forward, for the readout hook
             readout.current = None if spans is None else {k: v.to(input_ids.device) for k, v in spans.items()}
+        target = getattr(self.channel, "target", None) if self.channel is not None else None
+        if target is not None:                # the spans of this forward, for the target's capture hook (E15)
+            target.current = None if spans is None else {k: v.to(input_ids.device) for k, v in spans.items()}
         if self.channel is None or spans is None:
             return embeddings
         context = None

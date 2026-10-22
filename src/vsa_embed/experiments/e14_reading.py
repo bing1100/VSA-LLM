@@ -188,6 +188,10 @@ SECONDARY_B = (("explicit-sym:oracle", "none"), ("explicit-rel:stated", "none"),
                ("explicit-rel:oracle", "explicit-rel-wrong:oracle"), ("definition", "explicit-rel:oracle"), ("definition", "none"))
 STATED_B = (("explicit-rel:stated", "none"), ("definition", "none"), ("explicit-rel:stated", "definition"))
 
+# E15 (`experiments/e15-hrr-target/preregistration.md`): the implicit route (`implicit:oracle`, added for compose channels)
+# against no information and the explicit route, context-free null (`--null plain`); pooled by `e15_eval report`.
+E15_CONDITIONS = ("none", "explicit-rel:oracle")
+
 # RD-4c (pre-registration §16): routing without the item's label, Claude's frames, larger hosts.
 RD4C_CONDITIONS = ("none", "explicit-sym:oracle", "explicit-rel:oracle", "explicit-rel:typeprior", "explicit-rel-wrong:oracle",
                    *(f"explicit-route:{r}:{reader}" for reader in ("oracle", "typeprior") for r in ("lex", "lm", "top2")),
@@ -702,6 +706,8 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
         conditions = list(RD4D_CONDITIONS)
     elif args.family == "rd4e":
         conditions = list(RD4E_CONDITIONS)
+    elif args.family == "e15":          # E15 (HRR as a training target): the implicit route against its two references
+        conditions = list(E15_CONDITIONS) + (list(RD4B_COMPOSE) if compose else [])
     elif args.family == "rd13":
         if retrieved is None:
             raise SystemExit("--family rd13 needs --retrieved DIR (e14_retrieve build)")
@@ -1822,7 +1828,7 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--overwrite", action="store_true")
     r.add_argument("--null", choices=("context", "plain"), default="context",
                    help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
-    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13", "rd4e"), default="tier-p", help="default condition list")
+    r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13", "rd4e", "e15"), default="tier-p", help="default condition list")
     r.add_argument("--max-length", type=int, default=256,
                    help="the adapter's token limit per prompt (prompts beyond it lose their continuation; RD-4e uses 1280)")
     r.add_argument("--route-scoring", choices=("prefix", "brute"), default="prefix",

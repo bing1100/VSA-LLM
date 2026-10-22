@@ -128,6 +128,15 @@ Opt-in keys of the learning cycle (E13, decision 63; absent keys change nothing)
 - `eval.points` (a list of token counts): the evaluation points instead of the log-spaced schedule (the end is
   always evaluated), for curves read off at fixed tokens (tokens to criterion).
 
+Opt-in key of E15, HRR as a training target (`experiments/e15-hrr-target/preregistration.md`; absent changes nothing):
+
+- `channel.target` (`hrr_target.HRRTarget`): `{layer: "third" | int, tau: 0.1, write_weight, read_weight,
+  detach_target: true, dimension: 256}` — on the hidden state at each linked term's last subtoken at the input of
+  decoder layer ℓ, a linear map `W` must reproduce the term's static frame bundle (`L_write = 1 − cos`) and, unbound by
+  role, recover each filler by cleanup over the atom table (`L_read`, cross-entropy at temperature τ). The objective
+  becomes `L_LM + λ_w L_write + λ_r L_read`; train rows then carry `lm_loss`, `write_loss` and `read_loss` (`loss` is
+  the total). A compose channel shares its composer; a free channel (C2+R) decodes through a frozen random HRR code.
+
 Opt-in pieces of the from-scratch scaling screen (decision 65, `e4_plan --stage scale-v1`; absent keys change nothing):
 
 - `model.size: 20M` (6 layers, width 384, 6 heads: 30,339,456 parameters with the tied 50,257-row embedding, 10,647,552
@@ -319,6 +328,11 @@ def build_channel(config: dict[str, Any], ontology: dict[str, Any] | None, width
             # from its own generator, so every other initialization of the run equals the run without it.
             from ..readout import readout_from_config
             channel.readout = readout_from_config(settings["readout"], composer, width, host, seed=int(config["seed"]))
+    if settings.get("target"):
+        # Opt-in (E15, HRR as a training target): the write and read losses on the hidden state at the linked term's
+        # last subtoken at layer ℓ; a submodule of the channel (saved with it), initialized from its own generator.
+        from ..hrr_target import target_from_config
+        channel.target = target_from_config(settings["target"], channel, ontology, width, host, seed=int(config["seed"]))
     if settings.get("scale_to_host"):                  # opt-in (open decision 1); no random draw, so the RNG stream is unchanged
         if host is None:
             raise ValueError("channel.scale_to_host needs the host model (build_channel(..., host=model))")
@@ -760,8 +774,10 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         run_eval(0)
     model.train()
     started, logged_step, train_seconds = time.monotonic(), step, 0.0
+    target = getattr(channel, "target", None) if channel is not None else None    # E15 (opt-in), else None
     while step < total_steps:
         step_started = time.monotonic()
+        target_sums = {"lm": 0.0, "write": 0.0, "read": 0.0}
         lr = _lr(step, total_steps, warmup_steps, train_cfg["lr"], train_cfg["min_lr_ratio"])
         for group in optimizer.param_groups:
             group["lr"] = lr * group.get("lr_scale", 1.0)
@@ -782,6 +798,12 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                     loss = loss + train_cfg["semantic_weight"] * channel.semantic_loss(out["hidden"], spans_d, input_ids=ids)
                 if channel is not None and channel.composer is not None:
                     loss = loss + train_cfg["delta_weight"] * channel.composer.delta_penalty()
+                if target is not None:      # E15 (opt-in): L_LM + λ_w L_write + λ_r L_read
+                    parts = target.losses()
+                    loss = loss + target.write_weight * parts["write"] + target.read_weight * parts["read"]
+                    for key in ("write", "read"):
+                        target_sums[key] += float(parts[key].detach()) / accum
+                    target_sums["lm"] += float(out["loss"].detach()) / accum
             if loss.requires_grad:      # a frozen host with no linked span in this micro-batch has nothing to train
                 (loss / accum).backward()
             total_loss += float(loss.detach()) / accum
@@ -801,7 +823,9 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
             # `train_tokens_per_s`: optimizer steps only. Both count the steps actually taken since the last
             # log (the final row used to assume a full `log_every` interval).
             log({"type": "train", "step": step, "tokens": tokens, "loss": total_loss, "lr": lr,
-                 "tokens_per_s": done / max(elapsed, 1e-9), "train_tokens_per_s": done / max(train_seconds, 1e-9)})
+                 "tokens_per_s": done / max(elapsed, 1e-9), "train_tokens_per_s": done / max(train_seconds, 1e-9),
+                 **({"lm_loss": target_sums["lm"], "write_loss": target_sums["write"], "read_loss": target_sums["read"]}
+                    if target is not None else {})})
             started, logged_step, train_seconds = time.monotonic(), step, 0.0
         due = [t for t in schedule if t <= tokens and t not in evaluated]
         if due:
