@@ -490,8 +490,14 @@ SmolLM2-360M C5, 3 seeds, on T4 (1,221 property items pooled) and T5 (4,587).
 - The few-shot router adds demonstrations to every question.
 
 ## Next steps
-RD-4e (addendum 12, registered and queued 21 October): paraphrase-augmented demonstrations, abstention, top-2
-recall, and the size rule "whole frame when the frame is short".
+**Done (RD-4e, 22 October; `manuscript/findings/2026-10-22-rd4e.md`).** Re-measured without the 256-token
+truncation, whole-frame recall is as good as recalling only the asked relation: gold frames 0.867 against 0.872 on
+T4 and 0.807 against 0.845 on T5; type-prior frames 0.719 against 0.717 and 0.801 against 0.811. The realistic
+pipeline therefore needs no router. Paraphrase demonstrations did not make the few-shot router generalise on T5
+(accuracy 0.36 → 0.40; prediction of ≥ +0.15 failed); abstention hurt on both tracks; the size rule (whole frame
+when ≤ 6 lines) gave the predicted +0.10 on T5. By the pre-registered rule, routing is "solved" on T4 and "not
+solved" on T5 — and, with whole-frame recall intact, no longer needed on either. The open problem is reader
+precision (type-prior frames 0.72 against 0.87 with gold on T4). Learned relation routing is closed.
 
 ---
 

@@ -144,7 +144,7 @@ organise the evidence.
 | A small, steady gain from scratch that does not grow with size (03) | that binding matters for loss (06.3, 03.1) | zero-shot vectors for genuinely new names (T7-ROOD, 08.1) |
 | Retrofit gains that follow novelty, larger for small hosts (06.2, 06.11) | "sharing building blocks" as the mechanism on real text (06.5) | richer ontologies (06.12) |
 | Adds on top of a definition in the prompt, at zero prompt cost (06.8) | soft reasoning better than symbols (15.3) | the learning cycle (E13, 13) |
-| The store is readable; decoded explicitly it supplies roles (09.1, 12.1, 12.3) | that models use stored roles unaided (09.2, 09.4) | routing that generalises across wordings (RD-4e; 14.8) |
+| The store is readable; decoded explicitly it supplies roles (09.1, 12.1, 12.3); whole-frame recall needs no router (RD-4e, 14.8) | that models use stored roles unaided (09.2, 09.4) | — |
 | Selective explicit recall works on real and new terms (14.5) | self-learning that "learns faster" (10.3, 14.7) | the cycle under selective recall (14.7: RD-12b, RD-12c) |
 | An exact executor with a model-readable interface; sound LLM-guided proving (15) | quantization as a headline claim (07.1) | Wikidata entities (T8, 08.3) |
 | The executor keeps counterfactual chains consistent, 99.7% against 3–5% in context (15.9); stated as execution, not drift, because in-context answering is at chance at k = 0 | self-authored or Claude-written frames as a source of structure on real text: E7's G3 failed (05.2), C5teach adds nothing after terms (03.4); both closed negatives | |
@@ -167,7 +167,7 @@ organise the evidence.
 | [11](11-e11-read-to-learn.md) | E11: read to learn | partly done | Read frames help invented words a little and real text not at all. Text routes win. |
 | [12](12-e12-explicit-recall.md) | E12: explicit recall | done | Decoding the store into the prompt resolves roles, on synthetic and real text. |
 | [13](13-e13-learning-cycle.md) | E13: the learning cycle | queued; amendment 3 approved | No results yet. T5 about 25–26 October, T7-ROOD about 30 October. |
-| [14](14-e14-reading-real-text.md) | E14: reading facts from real text | done; RD-4e queued | Text states about 12% of facts. Selective recall works (+0.25 / +0.66) and holds on Qwen3. Routing is solved on T4 (−0.018) and open on T5. More text and inferred facts do not help. The cycle adds little. |
+| [14](14-e14-reading-real-text.md) | E14: reading facts from real text | done | Text states about 12% of facts. Selective recall works (+0.25 / +0.66) and holds on Qwen3. Routing is solved on T4 (−0.018) and open on T5. More text and inferred facts do not help. The cycle adds little. |
 | [15](15-e14-logic-in-the-store.md) | E14: logic in the store | done | An exact executor with a readable interface, consistent under what-if chains (99.7% against 3–5%). Not better than symbols. Trees cannot be read from prose at ≤ 1.7B. A model plus a heuristic proves best. |
 | [16](16-infrastructure-and-validation.md) | Reproduction, benchmarks, judge, toolkit, queue | done / partly queued | Results reproduce. The harnesses are validated. The toolkit write and learn evaluations are queued. |
 
@@ -180,7 +180,7 @@ organise the evidence.
 | E14 follow-ups (RD-4c, RD-12b, RD-12c, the hybrid prover) | **landed** 20 October; `manuscript/findings/2026-10-20-e14-evening.md` |
 | Approved 20 October, run first: E14 tier F (learned routers, strict ReAct, equal-size store, noisy trees), E7 D7.1, E5 on the 125M checkpoints, C5teach | **landed** 21 October; `manuscript/findings/2026-10-21-overnight.md` |
 | Added 20 October (evening): tree-text, RD-13 retrieval, LG-CF, RD-14 | **landed** 21 October; same findings file |
-| RD-4e (addendum 12): routers that generalise across wordings | queued 21 October |
+| RD-4e (addendum 12): routers that generalise across wordings | **landed** 22 October; `manuscript/findings/2026-10-22-rd4e.md` |
 | Qwen3 retrofit evaluations; the T7-ROOD block (the decisive new-vocabulary test) | 24 October |
 | E13 on T5 | 25–26 October |
 | T8 (Wikidata) | 27 October |
@@ -236,7 +236,7 @@ Wikipedia states no more facts than the definition, and a store read from it hur
 gate; E5.4 zero-shot insertion is the clear E5 positive; C5teach changes nothing after terms; E7's G3 failed.
 - **Stopped:** trees from prose at ≤ 1.7B; retrieval over more text on T4; recall of inferred facts; E7 D7.2 and
   D7.3; C5teachF.
-- **Continuing:** RD-4e (routing that generalises; addendum 12, registered and queued 21 October); E13 (lands 25–30
+- **Continuing:** E15 HT, "HRR as a training target" (approved 22 October, high priority; `experiments/e15-hrr-target/`); E13 (lands 25–30
   October). The consistency result (15.9) and E5.4 (04.2) go to the claims ledger.
 - **Caveats to carry:** LG-CF's in-context arm is at chance at k = 0, so the consistency claim is about execution,
   not drift; tree-text, LG-CF and RD-14 are one item set each; C5teach is one seed; E5.3's held-out study did not
@@ -282,7 +282,8 @@ gate; E5.4 zero-shot insertion is the clear E5 positive; C5teach changes nothing
 256 tokens. Whole-frame recall prompts often exceeded that (42% on T4), so the whole-frame numbers in files 12 and 14
 (e.g. T4 0.578; Qwen3-1.7B 0.605) and the reading "whole-frame recall hurts on real chemistry" are partly an artefact.
 Selective, routed and definition prompts were not affected, so every primary result stands; E13's amendment 3 rests
-on selective recall beating no recall, which is unaffected. RD-4e re-measures whole-frame recall untruncated. Details:
+on selective recall beating no recall, which is unaffected. RD-4e re-measured whole-frame recall untruncated on 22 October: it matches selective recall (gold frames 0.867 vs 0.872 on
+T4), so the realistic pipeline needs no router. Details:
 `manuscript/findings/2026-10-21-overnight.md` §10b and `experiments/e14-logic/preregistration.md` §20.
 
 ## 6. Housekeeping and inconsistencies found while writing this digest
