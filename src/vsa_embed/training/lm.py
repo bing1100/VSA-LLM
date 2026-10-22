@@ -32,6 +32,13 @@ defaults so that from-scratch configs resolve exactly as before:
   when it should differ from `train.lr` (which then applies to the channel only).
 - `train.save_trainable_only` (false): checkpoints and `final.pt` hold trainable parameters plus the
   channel's state, not the frozen host weights (reloaded from the hub id); see `load_final`.
+- `train.save_at_tokens` (null; E15 stage 1b): a list of token counts; at the first optimizer step whose
+  token count reaches each one the run writes `checkpoint-<tokens>.pt` (named by the requested count; the
+  file records the actual `step` and `tokens`) in the format of `final.pt`, so every evaluation CLI
+  loads it through `--checkpoint checkpoint-<tokens>.pt`. A count the run never reaches before its end
+  (e.g. the nominal total when `total_tokens` is not a multiple of the step size) is written at the end
+  as a hard link to `final.pt` (a copy where links are impossible). Resume-safe: a named checkpoint that
+  already exists is never rewritten. Absent, nothing changes.
 
 For pretrained hosts the corpora are checked against the host: token ids must fit its embedding
 table, and a corpus that records its tokenizer fingerprint (host corpora do) must match the host's.
@@ -735,6 +742,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     # Opt-in link dropout (`channel.link_dropout`, 2026-10-11 addendum): each linked span of a training batch is dropped
     # (not injected) with this probability; evaluation always links every span.
     link_dropout = float(config.get("channel", {}).get("link_dropout", 0.0) or 0.0)
+    named_checkpoints = sorted({int(t) for t in (train_cfg.get("save_at_tokens") or [])})   # opt-in (E15 stage 1b)
     step, evaluated = 0, set()
     if resume and checkpoint_path.exists():
         state = torch.load(checkpoint_path, weights_only=False, map_location="cpu")
@@ -817,6 +825,11 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
         step += 1
         tokens = step * tokens_per_step
         train_seconds += time.monotonic() - step_started
+        for nominal in named_checkpoints:          # opt-in (`train.save_at_tokens`): the first step reaching each count
+            if tokens - tokens_per_step < nominal <= tokens:
+                if _save_named_checkpoint(output_dir, nominal, model, config, channel, step, tokens, trainable_only=trainable_only):
+                    log({"type": "checkpoint", "step": step, "tokens": tokens, "nominal_tokens": nominal,
+                         "file": f"checkpoint-{nominal}.pt"})
         if step % train_cfg["log_every"] == 0 or step == total_steps:
             elapsed, done = time.monotonic() - started, (step - logged_step) * tokens_per_step
             # `tokens_per_s`: wall clock since the last log (evaluations and checkpoints included);
@@ -844,6 +857,11 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     torch.save({"model": model_state(model, trainable_only), "config": config,
                 "composer_schedule": _schedule_state(channel), **({"trainable_only": True} if trainable_only else {})},
                output_dir / "final.pt")
+    for nominal in named_checkpoints:              # a count beyond the last step: the final state, without a second copy
+        if not (output_dir / f"checkpoint-{nominal}.pt").exists():
+            _link_or_copy(output_dir / "final.pt", output_dir / f"checkpoint-{nominal}.pt")
+            log({"type": "checkpoint", "step": step, "tokens": step * tokens_per_step, "nominal_tokens": nominal,
+                 "file": f"checkpoint-{nominal}.pt", "final": True})
     if tracker is not None:
         (output_dir / "cards.json").write_text(json.dumps(tracker.cards, indent=2, default=str) + "\n")
     if not (output_dir / "manifest.json").exists():
@@ -1122,6 +1140,31 @@ def _save_checkpoint(path: Path, model: ChannelLM, optimizer: torch.optim.Optimi
     temporary = path.with_suffix(".tmp")
     torch.save(state, temporary)
     temporary.replace(path)
+
+
+def _save_named_checkpoint(output_dir: Path, nominal: int, model: ChannelLM, config: dict[str, Any], channel: SpanChannel | None,
+                           step: int, tokens: int, *, trainable_only: bool = False) -> bool:
+    """`checkpoint-<nominal>.pt` in `final.pt`'s format (`model`, `config`, `composer_schedule`) plus the actual `step`
+    and `tokens`; written atomically, never rewritten (False when it already exists, e.g. after a resume)."""
+    path = output_dir / f"checkpoint-{nominal}.pt"
+    if path.exists():
+        return False
+    state = {"model": model_state(model, trainable_only), "config": config, "composer_schedule": _schedule_state(channel),
+             "step": step, "tokens": tokens, "nominal_tokens": nominal, **({"trainable_only": True} if trainable_only else {})}
+    temporary = path.with_suffix(".tmp")
+    torch.save(state, temporary)
+    temporary.replace(path)
+    return True
+
+
+def _link_or_copy(source: Path, target: Path) -> None:
+    """A hard link (no second copy of a 1.4 GB state), else a copy."""
+    import os
+    import shutil
+    try:
+        os.link(source, target)
+    except OSError:
+        shutil.copyfile(source, target)
 
 
 def _restore_growth(channel: SpanChannel, tracker: DevelopmentalDictionary, state: dict[str, Any],

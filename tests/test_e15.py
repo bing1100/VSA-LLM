@@ -139,7 +139,7 @@ def test_the_committed_t5_splits_match_their_hash_and_sizes() -> None:
 def test_the_twelve_configs_differ_from_their_e9_base_only_by_the_target_block() -> None:
     folder = REPO / "experiments" / "e15-hrr-target" / "configs" / "t5"
     base_folder = REPO / "experiments" / "e9-retrofit" / "configs" / "t5"
-    names = sorted(p.name for p in folder.glob("*.yaml"))
+    names = sorted(p.name for p in folder.glob("*.yaml") if "-long-" not in p.name)   # stage 1 only; 1b: test_e15_stage1b.py
     assert len(names) == 12
     for name in names:
         config = yaml.safe_load((folder / name).read_text())

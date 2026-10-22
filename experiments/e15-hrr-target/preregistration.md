@@ -272,4 +272,146 @@ evaluations that read them.
 
 ## 15. Changes after the first commit
 
-(none)
+- **2026-10-22 (evening), stage 1b registered** (§16 below), at the author's approval *"Register and queue 1b"*, after
+  5 of the 12 stage-1 training runs had finished and before any stage-1 evaluation job had run. Reason: a
+  SMOKE-level preliminary read (CPU, 80 terms per split, seed 1, scratchpad `e15-prelim/`; not a result) showed the
+  read loss still falling at the end of the 50M tokens (7.7 → 3.6–3.8) while the write loss had converged (0.83 →
+  0.02), compositional read accuracy 0.47 (C5+WR) / 0.38 (C5+R), unseen-filler 0.53, loss after held-out ≈ −2% vs
+  C5. The author's reading: the 0.8 read bar of §10 was set from first principles and the objective is undertrained.
+  **Nothing in §1–§14 changes:** stage 1 runs and is read exactly as registered; stage 1b adds length. Code added for
+  it is opt-in (`train.save_at_tokens`, `e15_eval report --stage 1b`); the stage-1 configs, runs, jobs and rule are
+  untouched (the stage-1 config test now selects the 12 stage-1 files by name, since the five 1b configs sit in the
+  same folder).
+
+## 16. Stage 1b (registered 2026-10-22, before any run of it)
+
+**Question.** Is the read objective of §3 *undertrained* at 50M tokens — does compositional read accuracy keep rising
+with length, and does the implicit route open once it does — or is it *flat*, so that the stage-1 reading stands?
+
+### 16.1 Arms (T5, SmolLM2-360M, E9's T5 recipe; everything not named here identical to stage 1)
+
+| Arm | Base (stage-1 config) | `train.total_tokens` | λ_w | λ_r | Seeds | Config |
+|---|---|---:|---:|---:|---|---|
+| **(a) C5WR-long** | `SmolLM2-360M-full-C5WR-s{k}` | 200M (4× stage 1) | 0.20 | 0.035 | 1–3 | `configs/t5/SmolLM2-360M-full-C5WR-long-s{1,2,3}.yaml` |
+| **(b) C2R-long** | `…-C2R-s1` | 200M | 0 | 0.035 | 1 | `…-C2R-long-s1.yaml` — the memorisation control at matched length |
+| **(c) C5WR-long-lr0.10** | `…-C5WR-s1` | 200M | 0.20 | **0.10** | 1 | `…-C5WR-long-lr0.10-s1.yaml` — exploratory: weight against length |
+
+Each config equals its stage-1 base plus `train.total_tokens: 200000000`, `train.save_at_tokens: [50M, 100M, 150M,
+200M]` and, for (c) only, `read_weight: 0.10` (the labels `experiment`, `e15_arm`, `e15_stage`, `e15_base_config`
+aside); the test `test_the_five_long_configs_differ_from_their_stage1_base_only_in_length_checkpoints_and_lambda_r`
+enforces this. Same τ = 0.1, layer 11, detached target, data (`data.seed` 1234), run seeds, micro-batch 4 × 16 ×
+1,024, lr 1e-3 / host lr 3e-5, 1,024 evaluation windows, and the same splits file `splits/t5-v1/splits.json`
+(sha256 `c9cd4af1…209c7f`).
+
+**Schedule at 200M.** The trainer's step is 65,536 tokens: 200M → 3,051 steps (199,950,336 tokens; stage 1: 762 steps,
+49,938,432 tokens). `train.warmup_tokens` stays at E9's 2,500,000 (38 steps); the cosine to `min_lr_ratio` 0.1 then
+stretches over the remaining 3,013 steps instead of 724. So at the 50M checkpoint the long run's learning rate is still
+0.88 × peak (stage 1 ended there at the floor, 0.1 × peak): the 50M checkpoint of (a) and the stage-1 C5WR runs have
+the same tokens but a different schedule (secondary S7). The run's own loss evaluations fall at the log-spaced points
+2.5, 5, 10, 20, 40, 80, 160M and the end; the loss endpoints below use the end (200M).
+
+### 16.2 Checkpoints and evaluation
+
+- **Named checkpoints** (`train.save_at_tokens`, opt-in, added for this stage): at the first optimizer step whose
+  token count reaches 50M, 100M, 150M the run writes `checkpoint-<tokens>.pt` in `final.pt`'s format (steps 763, 1,526,
+  2,289 — 50,003,968 / 100,007,936 / 150,011,904 tokens; the file records the actual step and tokens); the 200M entry
+  is never reached before the last step (199,950,336 < 200,000,000) and is written at the end as a hard link to
+  `final.pt`, so `checkpoint-200000000.pt` **is** the final state. Nothing changes for a config without the key
+  (regression test).
+- **Read accuracy** — `e15_eval read --checkpoint checkpoint-<tokens>.pt` on the full splits, exactly §7's procedure,
+  at **every checkpoint for the three C5WR-long seeds** and at 200M for (b) and (c). Output
+  `read/t5/SmolLM2-360M-full-<arm>-s<k>/ckpt-<tokens>/read.json`.
+- **Implicit-route QA** — `e14_reading recall --family e15 --null plain --checkpoint checkpoint-<tokens>.pt`, §7's
+  protocol (same items, same oracle frames, conditions `none`, `implicit:oracle`, `explicit-rel:oracle`), at every
+  checkpoint for the three C5WR-long seeds and at 200M for (b) (whose implicit route is its `none`, as in §7). Output
+  `qa/t5/SmolLM2-360M-full-<arm>-s<k>/ckpt-<tokens>/`. **The curve is the result.**
+- **Loss endpoints** from `eval_windows.npz` at the end of each run, paired by window as in §7.
+- Baselines: stage 1's C5 QA (`qa/t5/SmolLM2-360M-full-C5-s{k}`, the stage-1 evaluation jobs) and the stage-1 C5WR
+  read outputs; nothing is re-run.
+
+Statistics as §7 (items paired within seed, pooled over the three seeds, percentile bootstrap, 4,000 resamples, 95%
+intervals, two-sided bootstrap p; Holm within the primary family). Report: `e15_eval report --stage 1b`
+(`report/t5-stage1b/report.md`).
+
+### 16.3 Endpoints
+
+**Primary (Holm over the three):**
+
+1. **P1** — implicit property on the compositional split, **C5WR-long − C5**, at the **best checkpoint**, where "best"
+   is **chosen by compositional read accuracy** (the checkpoint with the highest per-concept mean pooled over the three
+   seeds) — **never by QA**, so the choice cannot select on the outcome. The QA contrast at every checkpoint is also
+   reported, as the curve.
+2. **P2** — compositional read accuracy of **C5WR-long at 200M** (per-concept mean over the three seeds, against chance
+   1/3,493, with its interval), read against the thresholds of §16.4.
+3. **P3** — the **slope** of compositional read accuracy over the four checkpoints: per concept and seed the
+   least-squares slope of accuracy against tokens (in accuracy per 50M tokens; paired across checkpoints), bootstrap
+   over concepts; **and** the **150M → 200M increment**, paired per concept, reported with its interval and read as
+   "still rising" when the interval excludes 0 (**the increment, not the slope, drives the decision rule**).
+
+**Secondary (unadjusted):** S1 unseen-filler and strict-compositional read accuracy at every checkpoint; S2 C2R-long at
+200M against C5WR-long at 200M (read accuracy paired per concept with seed 1; implicit property, C2R-long's `none`
+against C5WR-long's `implicit:oracle`); S3 lr0.10 against seed 1 of (a) on compositional read accuracy at 200M (paired
+per concept) and on LM loss (`unlinked`, `all`: the cost); S4 loss after held-out terms, after seen terms (`after`) and
+general text (`unlinked`, `all`), C5WR-long against C5 and against the stage-1 C5WR runs (relative, paired windows);
+S5 the QA means (`none`, `implicit:oracle`, `explicit-rel:oracle`) at every checkpoint; S6 paraphrase and entailment
+versions of P1's curve; S7 the 50M checkpoint of (a) against the stage-1 C5WR runs on compositional read accuracy
+(same tokens, different schedule — a consistency check, paired per concept and seed).
+
+### 16.4 Decision rule (stage 1b)
+
+- **QA gate:** P1's contrast (implicit property, compositional, C5WR-long − C5) **≥ +0.15 at any checkpoint** → stage 2
+  (T4, §11, already registered) is queued.
+- **Read ≥ 0.80 at 200M** → the algebra is learnable to the original standard (§10's bar).
+- **0.60 ≤ read < 0.80 at 200M and the 150M → 200M increment > 0 with an interval excluding 0** → *still rising*:
+  register a **stage 1c at 500M tokens** before any verdict on the implicit route.
+- **Read < 0.60 and flat** (the increment's interval includes 0) → the implicit route is closed; the manuscript's
+  statement stands with this stronger test behind it.
+- Any other combination (e.g. below 0.60 but still rising; 0.60–0.80 and flat) has no pre-registered reading and is
+  reported as such with the numbers.
+
+The QA gate and the read gates are read independently (both can hold). The report prints the reading.
+
+### 16.5 Predictions (the author's, written before any run)
+
+- Compositional read accuracy **0.6–0.7 at 200M and still rising** (increment > 0).
+- The unseen-filler split **keeps pace** with the compositional split (the mechanism is vector preservation to layer 11
+  plus linear unbinding, not memorised edges).
+- The QA gain (implicit property, C5WR-long − C5) **crosses +0.15 by 100M** tokens.
+- **C2R-long ≤ 0.30** on compositional held-out read accuracy at 200M.
+- **lr0.10 reads higher** than seed 1 of (a) by **≥ 0.05** at 200M but **costs ≥ 0.1%** general-text loss (`unlinked`).
+- Loss after held-out terms stays at about **−2%** against C5.
+
+### 16.6 Compute, queue and disk
+
+- Author's estimate: 1.25 GPU-h per 50M tokens at 360M → (a) 3 × 5 h + (b) 5 h + (c) 5 h = 25 GPU-h training;
+  evaluations 12 read (≈ 0.1 h) + 12 QA (≈ 0.15 h) for (a) + 2 read + 1 QA ≈ 3.5 h; **≈ 29 GPU-h**.
+- Measured on the stage-1 runs that have finished (`.jobs/e15-t5-SmolLM2-360M-full-C5WR-s{1,2}.json`,
+  `…-C5R-s1.json`): 68 min each for 50M tokens including seven loss evaluations → **1.13 GPU-h per 50M**. A 200M run
+  then takes ≈ 4.5 h (four blocks plus eight evaluations and three 1.45 GB checkpoint writes) → 5 runs ≈ **22.5 GPU-h**;
+  27 evaluation jobs (14 read × ≈ 0.1 h + 13 QA × ≈ 0.15 h) ≈ 3.4 GPU-h; **≈ 26 GPU-h in all**, the author's 29 the
+  upper bound.
+- **Queue** (`queue-commands-t5-stage1b.sh`): the five training jobs `e15-t5-SmolLM2-360M-full-<arm>-s<k>` at
+  **54.49696** (after stage 1's report at 54.49695, before T7-ROOD at 54.497; `--min-free-gb 20` and the default
+  `--resume` retry as stage 1's training jobs), the 27 evaluation jobs `…-ckpt<tokens>-{read,qa}` at **54.49697**
+  (`--no-resume`), the CPU-lane report `e15-t5-stage1b-report` at **54.49698**. **Ordering guarantee:** the queue
+  orders jobs by `(priority, created)`, a runner takes the first pending job of its lane only when no job of that lane
+  is live, and a job blocked on disk stays first in line; so every 54.49696 training job has finished (or failed)
+  before any 54.49697 evaluation starts, and the CPU lane starts the report only once every job of lower priority is
+  done. The resume convention makes a restarted training job continue from `checkpoint.pt`; a named checkpoint already
+  on disk is never rewritten.
+- **Disk:** each named checkpoint is 1.45 GB (the 200M one is a hard link to `final.pt`): 5 runs × 3 ≈ 22 GB plus 5 ×
+  1.45 GB of `final.pt` ≈ 29 GB in all; the time-based `checkpoint.pt` (≈ 4.4 GB, deleted at the end) is transient.
+  At registration the disk had 62 GB free and stage 1 still had six `final.pt` (≈ 9 GB) to write; the training jobs'
+  `--min-free-gb 20` guard blocks a job (it stays first in line) when free space falls below 20 GB — the author may
+  need to free space before the last 1b runs.
+
+### 16.7 Files
+
+Configs (five, §16.1); `queue-commands-t5-stage1b.sh`; code: `src/vsa_embed/training/lm.py` (`train.save_at_tokens`,
+`_save_named_checkpoint`, `_link_or_copy`), `src/vsa_embed/experiments/e15_eval.py` (`report --stage 1b`:
+`run_report_1b`, `per_item_slopes`, `read_curve`, `render_report_1b`); `--checkpoint` already existed on `e15_eval
+read` and `e14_reading recall` and is used unchanged. Tests `tests/test_e15_stage1b.py` (three tests: the configs,
+the named checkpoints end to end on the toy world with the regression that an absent key changes nothing, the stage-1b
+report on synthetic folders with the three decision readings); log `…/scratchpad/e15-1b/pytest-e15-1b.log`. CPU
+smoke (SMOKE-labelled, `…/scratchpad/e15-1b/`): the 135M smoke config with `save_at_tokens` writes the named files and
+`e15_eval read` / `e14_reading recall --family e15` load one through `--checkpoint`.
