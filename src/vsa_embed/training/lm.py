@@ -144,6 +144,16 @@ Opt-in key of E15, HRR as a training target (`experiments/e15-hrr-target/preregi
   becomes `L_LM + λ_w L_write + λ_r L_read`; train rows then carry `lm_loss`, `write_loss` and `read_loss` (`loss` is
   the total). A compose channel shares its composer; a free channel (C2+R) decodes through a frozen random HRR code.
 
+Opt-in keys of E15 stage 1c, aligned objectives (`aligned_targets`; absent keys change nothing):
+
+- `channel.distill` (`{weight, k: 8, max_entries: 8, max_prefix_tokens: 384}`): route distillation — a teacher pass of
+  the same model (current parameters, no gradient) sees each linked term's gold frame as E14 recall lines prepended to
+  the window; the loss adds `weight · KL(teacher ‖ student)` over the `k` positions after each prefixed term. Train rows
+  then carry `lm_loss` and `kl_loss`.
+- `channel.verbalize` (`{weight, max_facts: 6, max_prompts: 64}`): fact verbalisation — cloze prompts
+  `"<term>: <field label>:" → <filler name>` with the vector injected at the term, scored in a second forward of the
+  micro-batch; the loss adds `weight · L_cloze`. Train rows then carry `lm_loss` and `cloze_loss`.
+
 Opt-in pieces of the from-scratch scaling screen (decision 65, `e4_plan --stage scale-v1`; absent keys change nothing):
 
 - `model.size: 20M` (6 layers, width 384, 6 heads: 30,339,456 parameters with the tied 50,257-row embedding, 10,647,552
@@ -276,7 +286,10 @@ def build_model(config: dict[str, Any]):
             _enable_checkpointing(model, config)
         return model
     size = config["model"]["size"]
-    gpt2 = GPT2Config(vocab_size=config["model"]["vocab_size"], n_positions=config["model"]["seq_len"], **MODEL_SIZES[size])
+    # `model.max_positions` (opt-in; E15 stage 1c tests): a position table longer than the window, so a from-scratch host
+    # can read a prefix before the window (pretrained hosts have their own limit). Absent: the window length, as before.
+    gpt2 = GPT2Config(vocab_size=config["model"]["vocab_size"], n_positions=int(config["model"].get("max_positions") or config["model"]["seq_len"]),
+                      **MODEL_SIZES[size])
     gpt2._attn_implementation = "sdpa"
     model = GPT2LMHeadModel(gpt2)
     if config["model"]["gradient_checkpointing"]:
@@ -725,6 +738,12 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     fillers = filler_index(config, ontology)
     if eval_only:
         return _evaluate_only(model, config, output_dir, eval_corpus, frequency, heldout, device, git_at_start, fillers=fillers)
+    aligned = None                                   # E15 stage 1c (opt-in): route distillation / fact verbalisation
+    if channel is not None and (config["channel"].get("distill") or config["channel"].get("verbalize")):
+        from ..aligned_targets import aligned_from_config
+        aligned = aligned_from_config(config, channel, ontology, tokenizer_name=corpus.manifest.get("tokenizer") or config["model"]["pretrained"],
+                                      host=base)
+        print(json.dumps({"aligned_objectives": aligned.describe()}), flush=True)
     optimizer = build_optimizer(model, train_cfg, device)
     tracker = None
     if channel is not None and channel.composer is not None and config["channel"]["developmental"]:
@@ -785,7 +804,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
     target = getattr(channel, "target", None) if channel is not None else None    # E15 (opt-in), else None
     while step < total_steps:
         step_started = time.monotonic()
-        target_sums = {"lm": 0.0, "write": 0.0, "read": 0.0}
+        target_sums = {"lm": 0.0, "write": 0.0, "read": 0.0, "kl": 0.0, "cloze": 0.0}
         lr = _lr(step, total_steps, warmup_steps, train_cfg["lr"], train_cfg["min_lr_ratio"])
         for group in optimizer.param_groups:
             group["lr"] = lr * group.get("lr_scale", 1.0)
@@ -800,6 +819,9 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
             ids = ids.to(device)
             spans_d = {k: v.to(device) for k, v in spans.items()} if channel is not None else None
             with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
+                # E15 stage 1c (opt-in): the teacher pass (recall lines prepended, no gradient) runs before the student pass
+                # on the untouched `ids`, so the student never sees the teacher's context.
+                teacher = aligned.teacher(model, ids, spans_d) if aligned is not None and aligned.distill else None
                 out = model(ids, spans=spans_d, labels=ids)
                 loss = out["loss"]
                 if channel is not None and train_cfg["semantic_weight"]:
@@ -812,6 +834,13 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                     for key in ("write", "read"):
                         target_sums[key] += float(parts[key].detach()) / accum
                     target_sums["lm"] += float(out["loss"].detach()) / accum
+                if aligned is not None:     # E15 stage 1c (opt-in): L_LM + λ_rd KL(teacher ‖ student) + λ_fv L_cloze
+                    extra = aligned.losses(model, ids, spans_d, out["hidden"], teacher, step=step, micro_step=micro_step)
+                    loss = loss + aligned.distill_weight * extra["kl"] + aligned.verbalize_weight * extra["cloze"]
+                    for key in ("kl", "cloze"):
+                        target_sums[key] += float(extra[key].detach()) / accum
+                    if target is None:
+                        target_sums["lm"] += float(out["loss"].detach()) / accum
             if loss.requires_grad:      # a frozen host with no linked span in this micro-batch has nothing to train
                 (loss / accum).backward()
             total_loss += float(loss.detach()) / accum
@@ -838,7 +867,10 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
             log({"type": "train", "step": step, "tokens": tokens, "loss": total_loss, "lr": lr,
                  "tokens_per_s": done / max(elapsed, 1e-9), "train_tokens_per_s": done / max(train_seconds, 1e-9),
                  **({"lm_loss": target_sums["lm"], "write_loss": target_sums["write"], "read_loss": target_sums["read"]}
-                    if target is not None else {})})
+                    if target is not None else {}),
+                 **({"lm_loss": target_sums["lm"]} if aligned is not None else {}),
+                 **({"kl_loss": target_sums["kl"]} if aligned is not None and aligned.distill else {}),
+                 **({"cloze_loss": target_sums["cloze"]} if aligned is not None and aligned.verbalize else {})})
             started, logged_step, train_seconds = time.monotonic(), step, 0.0
         due = [t for t in schedule if t <= tokens and t not in evaluated]
         if due:

@@ -27,7 +27,8 @@ CHECKPOINTS = [50_000_000, 100_000_000, 150_000_000, 200_000_000]
 
 def test_the_five_long_configs_differ_from_their_stage1_base_only_in_length_checkpoints_and_lambda_r() -> None:
     folder = E15 / "configs" / "t5"
-    names = sorted(p.name for p in folder.glob("*-long-*.yaml"))
+    # The C5-long control (stage 1b change log, 2026-10-23) sits in the same folder; tests/test_e15_stage1c.py checks it.
+    names = sorted(p.name for p in folder.glob("*-long-*.yaml") if "C5-long" not in p.name)
     assert names == [f"SmolLM2-360M-full-{a}.yaml" for a in ("C2R-long-s1", "C5WR-long-lr0.10-s1", "C5WR-long-s1", "C5WR-long-s2", "C5WR-long-s3")]
     for name in names:
         config = yaml.safe_load((folder / name).read_text())

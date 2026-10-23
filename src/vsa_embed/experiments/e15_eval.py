@@ -6,6 +6,7 @@
         [--alias-table T.json] [--template "Note: {x}"] [--limit N] [--smoke]
     python -m vsa_embed.experiments.e15_eval report --runs-root R --qa-root Q --read-root D --splits S --output OUT
     python -m vsa_embed.experiments.e15_eval report --stage 1b ... [--checkpoints 50000000,100000000,150000000,200000000]
+    python -m vsa_embed.experiments.e15_eval report --stage 1c ...
 
 `split` writes the fixed held-out splits (sha256 in `manifest.json`): **seen** (training entries linked ≥ 10 times, a
 seeded sample), **compositional** (the T5 "new words" whose every role and filler atom occurs in a training entry's frame
@@ -27,7 +28,13 @@ decision rule. `report --stage 1b` (pre-registration, "Stage 1b") reads the chec
 (`{read,qa}/t5/<run>/ckpt-<tokens>/`): the read-accuracy and QA curve over the checkpoints, the three stage-1b
 primaries (implicit property at the checkpoint with the highest compositional read accuracy, C5WR-long − C5; read
 accuracy at the last checkpoint; the slope over the checkpoints with the last increment), the secondaries and the
-stage-1b decision reading.
+stage-1b decision reading; since 2026-10-23 the loss endpoints are also read against the matched-length control
+`C5-long` (E9's C5 recipe at 200M tokens, seed 1) when its run exists. `report --stage 1c` (pre-registration, "Stage
+1c") pools the aligned-objective arms C5RD / C5FV (3 seeds) and their free-table controls C2RD / C2FV (seed 1) against
+E9's C5 / C2 and stage 1's C5WR: the three primaries (implicit property on the compositional split, C5RD − C5,
+C5FV − C5, C5RD − C2RD), the secondaries, the probe read accuracy (no trained `W` in these arms), the loss endpoints,
+the end-of-training teacher–student KL relative to its start (from the runs' train rows) and the stage-1c decision
+reading.
 """
 
 from __future__ import annotations
@@ -50,6 +57,8 @@ from .e5_common import finish_output, json_ready, open_run, start_output, write_
 ARMS = ("C5WR", "C5R", "C2R", "C5shWR")
 STAGE1B_CHECKPOINTS = (50_000_000, 100_000_000, 150_000_000, 200_000_000)
 STAGE1B_ARMS = ("C5WR-long", "C2R-long", "C5WR-long-lr0.10")
+STAGE1C_ARMS = ("C5RD", "C5FV", "C2RD", "C2FV")
+STAGE1C_SEEDS = {"C5RD": (1, 2, 3), "C5FV": (1, 2, 3), "C2RD": (1,), "C2FV": (1,)}
 BASELINES = ("C5", "C2", "C5sh")
 SEEDS = (1, 2, 3)
 TESTS = ("property", "paraphrase", "entailment")
@@ -698,15 +707,38 @@ def run_report_1b(args: argparse.Namespace) -> dict[str, Any]:
     if a and b and len(a) == len(b):
         secondary.append({"name": f"read accuracy, compositional at {last:,} tokens: lr0.10 − C5WR-long seed 1 (paired per concept)",
                           **paired_difference(np.asarray(a), np.asarray(b), resamples=res, seed=seed), "a_mean": float(np.mean(a)), "b_mean": float(np.mean(b))})
+    # The matched-length control C5-long (added 2026-10-23, §15 of the pre-registration, before any 1b evaluation ran): E9's C5
+    # recipe at 200M tokens, seed 1; its QA and read at 200M are evaluated like (b)'s. Every loss contrast against it pairs the
+    # arm's windows with the one C5-long run's (the three C5WR-long seeds each against the same control).
+    c5long_run = runs_root / name("C5-long", 1)
+    c5long_qa, c5long_read = qa_root / name("C5-long", 1) / f"ckpt-{last}", read_root / name("C5-long", 1) / f"ckpt-{last}"
+    has_c5long = (c5long_run / "eval_windows.npz").exists()
+    contrasts = [("C5WR-long − C5", long_runs, c5_runs), ("C5WR-long − C5WR (stage 1)", long_runs, s1_runs),
+                 ("C2R-long − C5", [c2r_run], [c5_runs[0]]), ("lr0.10 − C5WR-long s1", [lr_run], [long_runs[0]]), ("lr0.10 − C5", [lr_run], [c5_runs[0]])]
+    if has_c5long:
+        contrasts += [("C5WR-long − C5-long (matched length; 3 seeds against the one control run)", long_runs, [c5long_run] * len(long_runs)),
+                      ("C2R-long − C5-long", [c2r_run], [c5long_run]), ("lr0.10 − C5-long", [lr_run], [c5long_run]),
+                      ("C5-long − C5 (length alone, seed 1)", [c5long_run], [c5_runs[0]])]
     losses: dict[str, dict[str, Any]] = {}
-    for label, arm_runs, base_runs in (("C5WR-long − C5", long_runs, c5_runs), ("C5WR-long − C5WR (stage 1)", long_runs, s1_runs),
-                                       ("C2R-long − C5", [c2r_run], [c5_runs[0]]), ("lr0.10 − C5WR-long s1", [lr_run], [long_runs[0]]),
-                                       ("lr0.10 − C5", [lr_run], [c5_runs[0]])):
+    for label, arm_runs, base_runs in contrasts:
         losses[label] = {}
         for stratum in ("after_heldout", "after", "unlinked", "all"):
             r = loss_contrast(arm_runs, base_runs, stratum, resamples=res, seed=seed)
             if r is not None:
                 losses[label][stratum] = r
+    c5long: dict[str, Any] | None = None
+    if has_c5long or (c5long_qa / "predictions.jsonl").exists() or (c5long_read / "read.json").exists():
+        c5long = {"run": str(c5long_run), "losses_present": has_c5long,
+                  "means": {test: {cond: mean_value([c5long_qa], cond, test, comp) for cond in ("none", "implicit:oracle", "explicit-rel:oracle")} for test in TESTS},
+                  "read_probe": {split: bootstrap_mean(read_values([c5long_read], split, "probe"), resamples=res, seed=seed, null=chance or 0.0) for split in SPLITS}}
+        implicit_c5long = implicit_condition(c5long_qa) if (c5long_qa / "summary.json").exists() else None
+        r = qa_contrast([qa_root / name("C5WR-long", 1) / f"ckpt-{last}"], [c5long_qa], "implicit:oracle", implicit_c5long, "property", comp)
+        if r is not None:
+            secondary.append({"name": f"implicit property, compositional at {last:,} tokens: C5WR-long − C5-long (seed 1, matched length)", **r})
+        a, b = read_values([read_root / name("C5WR-long", 1) / f"ckpt-{last}"], "compositional"), read_values([c5long_read], "compositional", "probe")
+        if a and b and len(a) == len(b):
+            secondary.append({"name": f"read accuracy, compositional at {last:,} tokens: C5WR-long (trained W) − C5-long (probe), seed 1, paired per concept",
+                              **paired_difference(np.asarray(a), np.asarray(b), resamples=res, seed=seed), "a_mean": float(np.mean(a)), "b_mean": float(np.mean(b))})
     consistency = None
     a, b = comp_curve.get(checkpoints[0], []), read_values(s1_read, "compositional")
     if a and b and len(a) == len(b):
@@ -732,7 +764,7 @@ def run_report_1b(args: argparse.Namespace) -> dict[str, Any]:
            "implicit_condition": {"C5": implicit_c5, "C2R-long": implicit_c2r}, "splits_sha256": sha256_file(Path(args.splits)),
            "split_sizes": {k: len(v) for k, v in splits["splits"].items()}, "chance": chance, "curve": curve, "primary": primary,
            "increment": increment, "secondary": secondary, "losses": losses, "consistency_50M_vs_stage1": consistency,
-           "decision": "; ".join(readings)}
+           "c5_long_control": c5long, "decision": "; ".join(readings)}
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
     write_json(output / "report.json", out)
@@ -774,14 +806,201 @@ def render_report_1b(out: dict[str, Any]) -> str:
         lines += [f"Consistency check: the {c['checkpoint']:,}-token checkpoint of C5WR-long ({c['a_mean']:.4f}) against the stage-1 C5WR "
                   f"runs ({c['b_mean']:.4f}; same tokens, different lr schedule): {fmt(c)}.", ""]
     lines += ["## Loss endpoints (final evaluation, relative change, paired windows summed over seeds)", "",
+              "Against C5 (50M tokens) and, where its run exists, against the matched-length control C5-long (E9's C5 recipe at 200M "
+              "tokens, seed 1; added 2026-10-23 before any 1b evaluation ran, because a 200M arm against a 50M baseline confounds the "
+              "objective with the tokens).", "",
               "| contrast | stratum | relative change [95% CI] |", "|---|---|---|"]
     for label, by in out["losses"].items():
         for stratum, r in by.items():
             lines.append(f"| {label} | {stratum} | {fmt(r, 'relative')} |")
+    if out.get("c5_long_control"):
+        c = out["c5_long_control"]
+        m = c["means"].get("property", {})
+        lines += ["", f"C5-long at 200M (seed 1): implicit property {f(m.get('implicit:oracle'))}, none {f(m.get('none'))}, explicit "
+                  f"{f(m.get('explicit-rel:oracle'))}; compositional probe read accuracy "
+                  f"{f((c['read_probe'].get('compositional') or {}).get('mean_value'))}" + ("" if c["losses_present"] else "; loss endpoints not yet available") + "."]
     lines += ["", "## Secondary (unadjusted)", "", "| contrast | estimate [95% CI] | n |", "|---|---|---:|"]
     for r in out["secondary"]:
         est = fmt(r) if "mean_value" not in r else f"{r['mean_value']:.4f}; to chance {fmt(r)}"
         lines.append(f"| {r['name']} | {est} | {r['n']} |")
+    return "\n".join(lines) + "\n"
+
+
+# -- report, stage 1c (aligned objectives) -----------------------------------------------------------------------------
+
+def kl_ratio(run: Path, key: str = "kl_loss", share: float = 0.05) -> dict[str, Any] | None:
+    """End-of-training value of a train-row column relative to its start: the mean over the last `share` of the train rows
+    over the mean over the first `share` (rows with the column present; None without them)."""
+    path = run / "metrics.jsonl"
+    if not path.exists():
+        return None
+    values = [row[key] for line in path.open() if (row := json.loads(line)).get("type") == "train" and key in row]
+    if len(values) < 2:
+        return None
+    n = max(1, int(round(share * len(values))))
+    start, end = float(np.mean(values[:n])), float(np.mean(values[-n:]))
+    return {"start": start, "end": end, "ratio": end / start if start else None, "rows": len(values), "rows_averaged": n}
+
+
+def run_report_1c(args: argparse.Namespace) -> dict[str, Any]:
+    from .e5_zeroshot import paired_difference
+    splits = load_splits(Path(args.splits))
+    keep = {name: {r["concept"] for r in rows if r["kind"] == "new"} for name, rows in splits["splits"].items()}
+    comp, strict, unseen = keep["compositional"], keep["compositional_strict"], keep["unseen_filler"]
+    runs_root, base_root, qa_root, read_root = Path(args.runs_root), Path(args.baseline_root), Path(args.qa_root), Path(args.read_root)
+    host, res, seed = args.host, args.resamples, args.seed
+    name = lambda arm, k: f"{host}-full-{arm}-s{k}"  # noqa: E731
+    seeds = {**STAGE1C_SEEDS, "C5": SEEDS, "C2": (1,), "C5WR": SEEDS}
+    qa = {arm: [qa_root / name(arm, k) for k in ks] for arm, ks in seeds.items()}
+    rd = {arm: [read_root / name(arm, k) for k in ks] for arm, ks in seeds.items()}
+    runs = {arm: [(base_root if arm in BASELINES else runs_root) / name(arm, k) for k in ks] for arm, ks in seeds.items()}
+    missing = sorted([str(f) for arm in (*STAGE1C_ARMS, "C5", "C2") for f in qa[arm] if not (f / "predictions.jsonl").exists()]
+                     + [str(f) for arm in (*STAGE1C_ARMS, "C5") for f in rd[arm] if not (f / "read.json").exists()])
+    implicit = {arm: next((implicit_condition(f) for f in fs if (f / "summary.json").exists()), None) for arm, fs in qa.items()}
+
+    def qa_contrast(a: str, b: str, test: str, items: set[str], *, a_cond: str | None = None, b_cond: str | None = None) -> dict[str, Any] | None:
+        ca, cb = a_cond or implicit[a], b_cond or implicit[b]
+        if ca is None or cb is None:
+            return None
+        fa, fb = qa[a], qa[b]
+        if len(fa) != len(fb):                      # a 3-seed arm against a 1-seed control: seed 1 against seed 1
+            fa, fb = fa[:1], fb[:1]
+        r = pooled_contrast(fa, fb, ca, cb, test, items, resamples=res, seed=seed)
+        return None if r is None else {"a": a, "b": b, "a_condition": ca, "b_condition": cb, "test": test, **r}
+
+    primary: list[dict[str, Any]] = []
+    for label, row in (("P1 implicit property, compositional: C5RD − C5", qa_contrast("C5RD", "C5", "property", comp)),
+                       ("P2 implicit property, compositional: C5FV − C5", qa_contrast("C5FV", "C5", "property", comp)),
+                       ("P3 implicit property, compositional: C5RD − C2RD (structure against memorisation; seed 1)", qa_contrast("C5RD", "C2RD", "property", comp))):
+        if row is not None:
+            primary.append({"name": label, **row})
+    for row, p in zip(primary, holm_adjust([r["p_value"] for r in primary]) if primary else []):
+        row["p_holm"] = p
+    secondary: list[dict[str, Any]] = []
+    for label, row in (
+        ("C5RD − C5, implicit paraphrase, compositional", qa_contrast("C5RD", "C5", "paraphrase", comp)),
+        ("C5RD − C5, implicit entailment, compositional", qa_contrast("C5RD", "C5", "entailment", comp)),
+        ("C5FV − C5, implicit paraphrase, compositional", qa_contrast("C5FV", "C5", "paraphrase", comp)),
+        ("C5FV − C5, implicit entailment, compositional", qa_contrast("C5FV", "C5", "entailment", comp)),
+        ("C5RD − C5WR (stage 1), implicit property, compositional", qa_contrast("C5RD", "C5WR", "property", comp)),
+        ("C5FV − C5WR (stage 1), implicit property, compositional", qa_contrast("C5FV", "C5WR", "property", comp)),
+        ("C5RD − C5FV, implicit property, compositional", qa_contrast("C5RD", "C5FV", "property", comp)),
+        ("C5FV − C2FV, implicit property, compositional (seed 1)", qa_contrast("C5FV", "C2FV", "property", comp)),
+        ("C5RD − C5, explicit-rel:oracle property, compositional (explicit recall unchanged?)",
+         qa_contrast("C5RD", "C5", "property", comp, a_cond="explicit-rel:oracle", b_cond="explicit-rel:oracle")),
+        ("C5FV − C5, explicit-rel:oracle property, compositional (explicit recall unchanged?)",
+         qa_contrast("C5FV", "C5", "property", comp, a_cond="explicit-rel:oracle", b_cond="explicit-rel:oracle")),
+        ("C5RD − C5, none property, compositional", qa_contrast("C5RD", "C5", "property", comp, a_cond="none", b_cond="none")),
+        ("C5FV − C5, none property, compositional", qa_contrast("C5FV", "C5", "property", comp, a_cond="none", b_cond="none")),
+        ("C2RD − C2, none property, compositional (seed 1)", qa_contrast("C2RD", "C2", "property", comp, a_cond="none", b_cond="none")),
+        ("C2FV − C2, none property, compositional (seed 1)", qa_contrast("C2FV", "C2", "property", comp, a_cond="none", b_cond="none")),
+        ("C5RD − C5, implicit property, strict compositional", qa_contrast("C5RD", "C5", "property", strict)),
+        ("C5FV − C5, implicit property, strict compositional", qa_contrast("C5FV", "C5", "property", strict)),
+        ("C5RD − C5, implicit property, unseen-filler new words", qa_contrast("C5RD", "C5", "property", unseen)),
+        ("C5FV − C5, implicit property, unseen-filler new words", qa_contrast("C5FV", "C5", "property", unseen)),
+    ):
+        if row is not None:
+            secondary.append({"name": label, **row})
+    chance = None
+    for f in rd["C5RD"] + rd["C5"]:
+        if (f / "read.json").exists():
+            chance = json.loads((f / "read.json").read_text())["chance"]; break
+    reads: dict[str, dict[str, Any]] = {}
+    for arm in (*STAGE1C_ARMS, "C5", "C2"):           # no trained W in these arms: the post-hoc probe is the only read accuracy
+        reads[arm] = {}
+        for split in SPLITS:
+            values = read_values(rd[arm], split, "probe")
+            if values:
+                reads[arm][f"{split}/probe"] = bootstrap_mean(values, resamples=res, seed=seed, null=chance or 0.0)
+    a, b = read_values(rd["C5RD"], "compositional", "probe"), read_values(rd["C5"], "compositional", "probe")
+    if a and b and len(a) == len(b):
+        secondary.append({"name": "probe read accuracy, compositional: C5RD − C5 (paired per concept and seed)",
+                          **paired_difference(np.asarray(a), np.asarray(b), resamples=res, seed=seed), "a_mean": float(np.mean(a)), "b_mean": float(np.mean(b))})
+    a = read_values(rd["C5FV"], "compositional", "probe")
+    if a and b and len(a) == len(b):
+        secondary.append({"name": "probe read accuracy, compositional: C5FV − C5 (paired per concept and seed)",
+                          **paired_difference(np.asarray(a), np.asarray(b), resamples=res, seed=seed), "a_mean": float(np.mean(a)), "b_mean": float(np.mean(b))})
+    losses: dict[str, dict[str, Any]] = {}
+    for arm in STAGE1C_ARMS:
+        losses[arm] = {}
+        base = runs["C5"][:len(runs[arm])]
+        for stratum in ("after_heldout", "after", "unlinked", "all"):
+            r = loss_contrast(runs[arm], base, stratum, resamples=res, seed=seed)
+            if r is not None:
+                losses[arm][stratum] = r
+    ratios = {arm: {k: v for k, v in ((f"s{k}", kl_ratio(run, key)) for k, run in zip(seeds[arm], runs[arm])) if v is not None}
+              for arm, key in (("C5RD", "kl_loss"), ("C2RD", "kl_loss"), ("C5FV", "cloze_loss"), ("C2FV", "cloze_loss"))}
+    ratio_summary = {arm: {"start": float(np.mean([v["start"] for v in by.values()])), "end": float(np.mean([v["end"] for v in by.values()])),
+                           "ratio": float(np.mean([v["end"] for v in by.values()]) / np.mean([v["start"] for v in by.values()])), "seeds": len(by)}
+                     for arm, by in ratios.items() if by and np.mean([v["start"] for v in by.values()]) > 0}
+    means = {arm: {test: {cond: mean_value(qa[arm], cond, test, comp) for cond in ("none", "implicit:oracle", "explicit-rel:oracle")}
+                   for test in TESTS} for arm in (*STAGE1C_ARMS, "C5", "C2", "C5WR")}
+    implicit_level = {arm: mean_value(qa[arm], implicit[arm], "property", comp) if implicit[arm] else None for arm in (*STAGE1C_ARMS, "C5", "C2", "C5WR")}
+    # Decision rule (pre-registration, stage 1c): the level of C5RD's implicit property on the compositional split and P3.
+    level, p3 = implicit_level.get("C5RD"), next((r for r in primary if r["name"].startswith("P3")), None)
+    if level is None or p3 is None:
+        decision = "incomplete"
+    elif level >= 0.50 and p3["mean"] >= 0.15:
+        decision = (f"C5RD implicit property {level:.3f} ≥ 0.50 with C5RD − C2RD {p3['mean']:+.3f} ≥ +0.15: the model learns to use composed "
+                    "facts when the objective asks for it; stage 2 (T4) is to be queued with the RD objective")
+    elif level >= 0.50:
+        decision = f"C5RD implicit property {level:.3f} ≥ 0.50 but C5RD − C2RD {p3['mean']:+.3f} < +0.15: no pre-registered reading (memorisation not excluded); report the numbers"
+    elif level >= 0.35:
+        teacher = means["C5RD"]["property"].get("explicit-rel:oracle")
+        decision = (f"partial: C5RD implicit property {level:.3f} in [0.35, 0.50); gap to the teacher (explicit recall "
+                    f"{teacher:.3f}) {teacher - level:.3f}" if teacher is not None else f"partial: C5RD implicit property {level:.3f} in [0.35, 0.50)")
+    else:
+        decision = (f"C5RD implicit property {level:.3f} < 0.35: aligned objectives do not close the gap at this scale; the implicit route is closed "
+                    "and the manuscript keeps the loss-domain result as the structural-use finding")
+    out = {"stage": "1c", "host": host, "missing": missing, "implicit_condition": implicit, "splits_sha256": sha256_file(Path(args.splits)),
+           "split_sizes": {k: len(v) for k, v in splits["splits"].items()}, "chance": chance, "primary": primary, "secondary": secondary,
+           "read": reads, "losses_vs_C5": losses, "means_compositional": means, "implicit_property_compositional": implicit_level,
+           "kl_ratio": {**ratio_summary, "per_seed": ratios}, "decision": decision}
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "report.json", out)
+    (output / "report.md").write_text(render_report_1c(out))
+    print(json.dumps({"decision": decision, "primary": [(r["name"], r["mean"]) for r in primary]}, indent=2))
+    return out
+
+
+def render_report_1c(out: dict[str, Any]) -> str:
+    f = lambda v, d=4: "—" if v is None else f"{v:.{d}f}"  # noqa: E731
+    lines = ["# E15 stage 1c — aligned objectives (route distillation, fact verbalisation): T5 report (pre-registration "
+             "`experiments/e15-hrr-target/preregistration.md`, \"Stage 1c\")", "",
+             f"Host {out['host']}; splits sha256 `{out['splits_sha256']}`; split sizes {out['split_sizes']}.", "",
+             "Arms: C5RD (C5 + route distillation from a teacher that reads the gold frame as explicit recall lines), C5FV (C5 + fact "
+             "verbalisation, a token-space cloze on the frame's fillers), 3 seeds each; controls C2RD / C2FV (free table + the same "
+             "objective, seed 1: can memorise seen terms, cannot generalise to compositional held-out words); baselines E9's C5 / C2 and "
+             "stage 1's C5WR. Implicit route = `implicit:oracle` for compose channels, `none` for free tables.", ""]
+    if out["missing"]:
+        lines += ["**Missing evaluation folders:** " + ", ".join(out["missing"]), ""]
+    lines += ["## Primary (Holm over the three)", "", "| contrast | difference [95% CI] | n |", "|---|---|---:|"]
+    lines += [f"| {r['name']} | {fmt(r)} | {r['n']} |" for r in out["primary"]]
+    lines += ["", "Implicit property on the compositional split (level, 3 seeds pooled where available): "
+              + ", ".join(f"{arm} {f(v)}" for arm, v in out["implicit_property_compositional"].items()) + ".", "",
+              f"**Decision rule reading:** {out['decision']}", ""]
+    lines += ["## Means on the compositional items", "", "| arm | test | none | implicit:oracle | explicit-rel:oracle |", "|---|---|---:|---:|---:|"]
+    for arm, by_test in out["means_compositional"].items():
+        for test, by_cond in by_test.items():
+            lines.append(f"| {arm} | {test} | {f(by_cond['none'])} | {f(by_cond['implicit:oracle'])} | {f(by_cond['explicit-rel:oracle'])} |")
+    lines += ["", "## Teacher–student convergence (train rows: mean of the last 5% of rows over the mean of the first 5%)", "",
+              "| arm | column | start | end | end / start | seeds |", "|---|---|---:|---:|---:|---:|"]
+    for arm, r in out["kl_ratio"].items():
+        if arm != "per_seed":
+            lines.append(f"| {arm} | {'kl_loss' if 'RD' in arm else 'cloze_loss'} | {f(r['start'])} | {f(r['end'])} | {f(r['ratio'], 3)} | {r['seeds']} |")
+    lines += ["", "## Read accuracy (post-hoc ridge probe fitted on seen terms; these arms train no `W`, so trained-map read accuracy does not apply)", "",
+              "| arm | split / map | accuracy | difference to chance [95% CI] | n |", "|---|---|---:|---|---:|"]
+    for arm, by in out["read"].items():
+        for key, r in by.items():
+            lines.append(f"| {arm} | {key} | {r['mean_value']:.4f} | {fmt(r)} | {r['n']} |")
+    lines += ["", "## Loss endpoints against C5 (final evaluation, relative change, paired windows summed over seeds)", "",
+              "| arm | stratum | relative change [95% CI] |", "|---|---|---|"]
+    for arm, by in out["losses_vs_C5"].items():
+        for stratum, r in by.items():
+            lines.append(f"| {arm} | {stratum} | {fmt(r, 'relative')} |")
+    lines += ["", "## Secondary (unadjusted)", "", "| contrast | difference [95% CI] | n |", "|---|---|---:|"]
+    lines += [f"| {r['name']} | {fmt(r)} | {r['n']} |" for r in out["secondary"]]
     return "\n".join(lines) + "\n"
 
 
@@ -804,11 +1023,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--qa-root", type=Path, required=True); p.add_argument("--read-root", type=Path, required=True)
     p.add_argument("--splits", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p.add_argument("--host", default="SmolLM2-360M"); p.add_argument("--resamples", type=int, default=4000); p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--stage", choices=("1", "1b"), default="1", help="1b: the checkpoint curve of the long runs")
+    p.add_argument("--stage", choices=("1", "1b", "1c"), default="1", help="1b: the checkpoint curve of the long runs; 1c: the aligned objectives")
     p.add_argument("--checkpoints", default=",".join(str(t) for t in STAGE1B_CHECKPOINTS), help="stage 1b: token counts of the named checkpoints")
     args = parser.parse_args(argv)
     if args.command == "report" and args.stage == "1b":
         run_report_1b(args)
+        return
+    if args.command == "report" and args.stage == "1c":
+        run_report_1c(args)
         return
     {"split": run_split, "read": run_read, "report": run_report}[args.command](args)
 
