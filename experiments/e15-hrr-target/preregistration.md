@@ -282,6 +282,26 @@ evaluations that read them.
   it is opt-in (`train.save_at_tokens`, `e15_eval report --stage 1b`); the stage-1 configs, runs, jobs and rule are
   untouched (the stage-1 config test now selects the 12 stage-1 files by name, since the five 1b configs sit in the
   same folder).
+- **2026-10-23, stage 1b: the matched-length loss control `C5-long` added** (§16.1 arm (d); queued by
+  `queue-commands-t5-stage1c.sh`), at the author's request ("Queue these two"), **before any stage-1b evaluation job had
+  run** (four of the five 1b training runs had finished, the fifth, lr0.10, was running). Reason: §16.3's loss endpoints
+  compare 200M-token arms with E9's 50M-token C5, so a loss change confounds the objective with the tokens. `C5-long` is
+  E9's T5 C5 seed-1 config with `train.total_tokens: 200000000` and `train.save_at_tokens [50M, 100M, 150M, 200M]` and
+  nothing else (`configs/t5/SmolLM2-360M-full-C5-long-s1.yaml`; test
+  `test_the_c5_long_control_config_differs_from_e9_c5_only_by_length_and_checkpoints`). It gets §16.2's read accuracy
+  (probe only: it trains no `W`) and implicit-route QA at 200M. `report --stage 1b` now shows every loss endpoint against
+  `C5-long` as well as against C5 (the three C5WR-long seeds each paired with the one control run; `C5-long − C5` is
+  shown too, as the effect of length alone), plus two secondaries at 200M (seed 1): C5WR-long − C5-long on implicit
+  property and C5WR-long's trained-`W` read accuracy against C5-long's probe. **Nothing else in §16 changes**: the
+  endpoints, the decision rule and the predictions are read as registered; the control only sharpens S4. The stage-1b
+  config test now skips the `C5-long` file (it is not one of the five 1b arms).
+- **2026-10-23, stage 1c registered** (§17 below), at the author's approval of the same request, **before any run of
+  it**, and before any stage-1 or stage-1b QA evaluation of the long runs had been read. Reason: the stage-1 report
+  (`report/t5/report.md`): C5+WR reads 0.48 of a held-out word's facts from the vector while implicit QA on the same
+  words rose only +0.030 (0.264 → 0.294) against an explicit-recall ceiling of 0.82, and a decodable-but-shuffled store
+  (C5sh+WR, 0.45 read) gives no gain — the read loss (atom space, external head) is not aligned with the test (a
+  token-space judgement by the LM head). Code added for it is opt-in (`channel.distill`, `channel.verbalize`,
+  `model.max_positions`, `report --stage 1c`); stage-1 and 1b configs, runs, jobs and rules are untouched.
 
 ## 16. Stage 1b (registered 2026-10-22, before any run of it)
 
@@ -404,6 +424,9 @@ The QA gate and the read gates are read independently (both can hold). The repor
   At registration the disk had 62 GB free and stage 1 still had six `final.pt` (≈ 9 GB) to write; the training jobs'
   `--min-free-gb 20` guard blocks a job (it stays first in line) when free space falls below 20 GB — the author may
   need to free space before the last 1b runs.
+- **Addendum 2026-10-23 (§15):** arm **(d) `C5-long`** — E9's C5 seed 1 at 200M tokens, the matched-length loss control
+  (`…-C5-long-s1.yaml`), queued at 54.49696 with its 200M read and QA at 54.49697 by `queue-commands-t5-stage1c.sh`,
+  so the 1b report (54.49698) can use it; ≈ 4.5 GPU-h training + 3 × 1.45 GB checkpoints.
 
 ### 16.7 Files
 
@@ -415,3 +438,185 @@ the named checkpoints end to end on the toy world with the regression that an ab
 report on synthetic folders with the three decision readings); log `…/scratchpad/e15-1b/pytest-e15-1b.log`. CPU
 smoke (SMOKE-labelled, `…/scratchpad/e15-1b/`): the 135M smoke config with `save_at_tokens` writes the named files and
 `e15_eval read` / `e14_reading recall --family e15` load one through `--checkpoint`.
+
+## 17. Stage 1c — aligned objectives (registered 2026-10-23, before any run of it)
+
+**Question.** Stage 1 separated *decoding* from *using*: a model trained to read the HRR algebra of a composed vector
+recovers the facts (0.48 compositional read accuracy at 50M tokens, prelim 0.72 at 200M) but does not act on them in a
+question (+0.030 implicit property against an explicit-recall ceiling of 0.82). The stage-1 read loss lives in atom
+space behind an external head `W`; the test is a token-space judgement by the LM head. Does an objective **aligned with
+the test** — one that asks the model, in token space, to behave as if it had read the facts — open the implicit route
+on words it has never seen in text? And does it do so by *using the structure* (a free table under the same objective
+can only memorise)?
+
+### 17.1 The two objectives (`src/vsa_embed/aligned_targets.py`; opt-in config blocks read by `training.lm`)
+
+**(1) Route distillation, `channel.distill` (arms C5RD, C2RD).** For every linked term occurrence in a micro-batch, a
+*teacher* forward pass of the **same model** — current parameters, `torch.no_grad()`, **no EMA** (the teacher's
+advantage is its context, not its weights; an EMA copy would double the state in every checkpoint and add a decay
+constant to tune) — sees the term's **gold frame rendered as the E14 explicit-recall lines** exactly as `explicit-rel`
+renders them (`self_query.RecallWriter` through the T5 track lexicon, confidence shown: `recall(<term>):` then
+`- <term> is owned by the Rolk Desk. (1.00)` …), **prepended to the window** that contains the term. This is the
+simplest faithful variant of "before the segment containing the term": the window *is* the segment; attention is
+causal, so every position after the term sees the lines. One recall block per distinct entry of the window, in order
+of first occurrence, at most `max_entries` = 8 blocks and `max_prefix_tokens` = 384 tokens (a block that would exceed
+the cap is dropped; the smoke's prefixes were 253–377 tokens); the vector is injected as in C5 at the shifted span
+positions (every span of the window, prefixed or not). The *student* pass is the ordinary C5 pass on the trainer's
+`ids`, vector only. Loss: `L_LM + λ_rd · KL(teacher ‖ student)` on the next-token distributions over the **K = 8
+positions after each prefixed term** (the trainer's `after` stratum: positions e..e+7 predict tokens e+1..e+8; positions
+of overlapping occurrences counted once), temperature 1, averaged over the positions of the micro-batch (zero when no
+term is linked). Occurrences whose entry did not fit in the prefix are not distilled. **No leak:** the teacher's input
+is a separate tensor assembled in `AlignedObjectives.teacher_batch`; the student forward receives the trainer's `ids`
+unchanged, and the test decodes both (`recall(` and `(1.00)` absent from the student's text, the teacher's input equal
+to prefix + window, spans shifted by the prefix length). The teacher runs under `torch.random.fork_rng`, so the
+student's RNG stream equals a run without the block. The teacher's recall is the **ontology's gold frame** (for C2RD as
+for C5RD; a C5shRD variant would also read gold text — the teacher knows the truth, the student's vector may not).
+Cost: one extra no-gradient forward of (1024 + ≤ 384) tokens per micro-batch that holds a linked term (≈ 60% of T5's
+micro-batches).
+
+**(2) Fact verbalisation, `channel.verbalize` (arms C5FV, C2FV).** An auxiliary cloze loss in token space. For each
+linked occurrence, prompts of the form `"<term>: <field label>:" → " <filler name>"`: the term's **own tokens from the
+window** (no re-encoding), the suffix of a template drawn from `FV_TEMPLATES` (below), and the filler's name as the
+run's lexicon writes it (`RecallWriter.atom_text`: "the Rolk Desk", "plans headcount", "finance") as the **target
+tokens** — cross-entropy over the target tokens only, with the vector injected at the term's last subtoken (the
+prompt's spans: start 0, inject = end = last term token). One prompt per fact of **the frame the run injects** (the
+composer's schedule; for a free table, the ontology's frame), **capped at 6 per occurrence** (a seeded subset of a
+larger frame) and at **64 prompts per micro-batch** (a seeded subset; deterministic per run seed, step and micro-step),
+scored as separate right-padded short sequences in a second forward of the same micro-batch.
+`L = L_LM + λ_fv · L_cloze`.
+
+*Templates and their disjointness from the E14 items.* `FV_TEMPLATES` holds two field-style wordings per T5 relation
+(23 relations, 46 wordings: `{x}: owning team:`, `{x}: accountable custodian:`, `{x}: upstream dependency:`,
+`{x}: health indicator:`, `{x}: governing policy:`, …), every one with at least two content words. The check follows
+RD-4d/RD-4e's wording hold-out: no FV wording equals, or is a `near_duplicate` of (content-word sets equal, or one
+inside the other with one word of difference), **any question template of any T5 item set** (property, statement and
+entailment templates of `experiments/e9-retrofit/items/*t5*` and `experiments/e11-read-to-learn/items/t5-*` — 52
+distinct wordings including the T5 lexicon's three prompts per relation) **nor any RD-4e router wording**
+(`ROUTE_PARAPHRASES`, a stricter extra). Test `test_fv_templates_are_disjoint_from_the_e14_qa_item_templates`.
+Wordings that failed the check while drafting and were replaced: `{x}: owned by:`, `{x}: depends on:`, `{x}: output:`,
+`{x}: status:`, `{x}: run frequency:` ("{x} is run by"), `{x}: metric:`, `{x}: owner:`, `{x}: function:`. The cloze
+format ("term: label: filler") is also unlike the E14 question form ("<template with the term> <candidate>").
+
+### 17.2 Arms (T5, SmolLM2-360M, E9's T5 recipe: 50M tokens, everything as stage 1 §3)
+
+| Arm | Base (E9 config) | Block | λ | Seeds | Config |
+|---|---|---|---:|---|---|
+| **C5RD** | `SmolLM2-360M-full-C5-s{k}` | `distill` {k 8, max_entries 8, max_prefix_tokens 384} | λ_rd 1.0 | 1–3 | `configs/t5/SmolLM2-360M-full-C5RD-s{1,2,3}.yaml` |
+| **C5FV** | `…-C5-s{k}` | `verbalize` {max_facts 6, max_prompts 64} | λ_fv 0.05 | 1–3 | `…-C5FV-s{1,2,3}.yaml` |
+| **C2RD** | `…-C2-s1` (free table, 222 wide) | `distill` | 1.0 | 1 | `…-C2RD-s1.yaml` — memorisation control |
+| **C2FV** | `…-C2-s1` | `verbalize` | 0.05 | 1 | `…-C2FV-s1.yaml` — memorisation control |
+| C5, C2, C5WR | E9's T5 runs; stage 1's C5WR QA | — | — | — | reused |
+
+Each config equals its E9 base plus the one block (and the labels `experiment`, `e15_arm`, `e15_base_arm`,
+`e15_stage: 1c`, `e15_base_config`); the test `test_the_eight_stage1c_configs_differ_from_their_e9_base_only_by_the_block`
+enforces this, and that one λ_rd and one λ_fv serve every arm and seed. No `channel.target`: these arms train no `W`.
+The free-table controls can memorise a seen term's facts under either objective but have no vector for a held-out
+word beyond the fallback row, so they cannot generalise to the compositional split by construction. *Optional, not
+queued:* `C5shRD` seed 1 (shuffled frames + distillation; needs the author's go-ahead and ≈ 1.7 GPU-h).
+
+### 17.3 λ from the CPU smoke (SMOKE, not a result; scratchpad `e15-1c/`, `README-SMOKE.md`, `init-scales.log`)
+
+SmolLM2-135M, T5 data, micro-batch 2 × 512, `CUDA_VISIBLE_DEVICES=`. Two checks: (i) four optimizer steps of each of
+C5, C5RD, C5FV, C2RD, C2FV with λ = 1 (the raw terms logged; pipeline, resume-free); (ii) the terms at initialisation
+over 12 micro-batches (data seed 1234, steps 0–11; 7 of them hold a linked term — T5 is 47% domain text):
+
+| term | value at initialisation | note |
+|---|---:|---|
+| L_LM | 3.08 (mean of 12; 2.69–3.46) | 360M starts ≈ 2.8 on T5 |
+| KL(teacher ‖ student), 8 positions after each prefixed term | **0.66 mean / 0.24 median** over the 7 linked micro-batches (0.13–2.36); 0.38 averaged over all 12 (the trainer's logged convention) | heavy-tailed: large when the window continues with the fact sentences the recall lines name |
+| L_cloze (filler name after "term: label:") | **8.78** (8.53–8.94) | chance ln 49,152 = 10.8 |
+| prefix | 253–377 tokens (cap 384), 64 prompts per linked micro-batch (the cap) | |
+
+**Rule applied (stage 1's):** the added term ≈ 10–20% of L_LM at step 0, read on the linked micro-batches as §5 did:
+
+- **λ_rd = 1.0** → 0.66 nats ≈ 21% of L_LM on the linked-micro-batch mean (8% at its median; 12% averaged over all
+  micro-batches as the train rows will show it). 0.75 would give 16% / 6% / 9%; 1.0 is chosen so the median micro-batch
+  still carries a visible signal, accepting the upper edge of the band on the mean.
+- **λ_fv = 0.05** → 0.44 nats ≈ 14% of L_LM (8% over all micro-batches).
+
+Cost measured on the smoke (CPU, per step): C5RD 1.45× C5 (teacher forward 1.0–1.4 s against a 0.75 s student
+forward), C5FV 1.75× at 64 prompts per 1,024 tokens — on the real micro-batch (4 × 1,024 tokens, the same 64-prompt cap)
+≈ 1.3×. Peak RSS 5.7–7.6 GB.
+
+### 17.4 Evaluation (as stage 1, §7)
+
+Every stage-1c run gets the two evaluation jobs of §7 unchanged: **implicit-route QA** (`e14_reading recall --family
+e15 --null plain`, conditions `none` / `implicit:oracle` / `explicit-rel:oracle`; the free-table arms' implicit route
+is their `none`) and **read accuracy** (`e15_eval read`) — for these arms **only the post-hoc ridge probe applies**
+(no trained `W`; `trained_map: false` in `read.json`), reported for every split and compared with C5's probe (0.158 on
+the compositional split in stage 1). **Loss endpoints** from `eval_windows.npz` against C5 as §7. In addition the
+report reads the runs' train rows: the **teacher–student KL** (`kl_loss`; `cloze_loss` for FV) at the end of training
+relative to its start (mean of the last 5% of train rows over the mean of the first 5%). Statistics as §7; Holm within
+the primary family. Report: `e15_eval report --stage 1c` (`report/t5-stage1c/report.md`), tests on synthetic folders.
+
+### 17.5 Endpoints
+
+**Primary (Holm over the three), implicit property on the compositional split:**
+
+1. **P1** — **C5RD − C5** (3 seeds, items paired within seed).
+2. **P2** — **C5FV − C5** (3 seeds).
+3. **P3** — **C5RD − C2RD** (structure against memorisation; seed 1 against seed 1, C2RD's implicit route = its `none`).
+
+**Secondary (unadjusted):** S1 paraphrase and entailment versions of P1 and P2; S2 C5RD − C5WR (stage 1's QA) and
+C5FV − C5WR; S3 C5RD − C5FV; S4 C5FV − C2FV (seed 1); S5 explicit recall unchanged? (`explicit-rel:oracle` property,
+C5RD − C5 and C5FV − C5); S6 `none` property, each arm against its base (C5RD − C5, C5FV − C5, C2RD − C2, C2FV − C2);
+S7 P1 and P2 on `compositional_strict` and on the 15 unseen-filler new words; S8 loss after held-out terms, after seen
+terms (`after`), general text (`unlinked`, `all`), each arm against C5 (relative, paired windows); S9 probe read
+accuracy on every split, C5RD − C5 and C5FV − C5 paired per concept and seed; S10 the end-of-training KL (and cloze)
+relative to its start — did the student converge to the teacher?
+
+### 17.6 Decision rule (stage 1c)
+
+Read on the **level** of C5RD's implicit property on the compositional split (3 seeds pooled) and on P3:
+
+- **≥ 0.50** (i.e. ≥ +0.24 over C5's 0.264) **and P3 ≥ +0.15** → *the model learns to USE composed facts when the
+  objective asks for it*; stage 2 (T4, §11) is queued **with the RD objective**.
+- **0.35–0.50** → *partial*: reported with the gap to the teacher (explicit recall, 0.82).
+- **< 0.35** → *aligned objectives do not close the gap at this scale*: the implicit route is closed, and the
+  manuscript keeps the loss-domain result (C5+WR −1.9% vs C5sh+WR +8.7% after held-out terms) as the structural-use
+  finding.
+- ≥ 0.50 with P3 < +0.15 has no pre-registered reading (memorisation not excluded) and is reported with the numbers.
+
+The report prints the reading from these thresholds.
+
+### 17.7 Predictions (the author's, written before any run)
+
+- C5RD **0.50–0.60** implicit property on the compositional split (it cannot exceed the teacher's 0.82).
+- C5FV **0.40–0.50**.
+- C2RD and C2FV **≤ 0.30** (implicit = `none`).
+- Loss after held-out terms: **C5RD ≤ C5** (the teacher's distribution is better there).
+- Explicit recall (`explicit-rel:oracle`) **unchanged within 0.02**.
+- The end-of-training KL falls to **< 20% of its initial value**.
+
+### 17.8 Compute, queue and disk
+
+- Measured: a stage-1 50M-token SmolLM2-360M job took 68 min (1.13 GPU-h; `.jobs/e15-t5-SmolLM2-360M-full-C5WR-s1.json`);
+  QA 1.8 min and read 6 s per run (`…-C5-s1-{qa,read}.json`). With the smoke's ratios (RD ≈ 1.45×, FV ≈ 1.3× on the real
+  micro-batch): C5RD 3 × 1.65 h + C5FV 3 × 1.5 h + C2RD 1.65 h + C2FV 1.5 h ≈ **12.6 GPU-h training** (the author's
+  estimate ≈ 15 the upper bound), 16 evaluations ≈ 0.3 h; the C5-long control of §15 adds ≈ 4.5 h + 0.05 h. **≈ 17.5
+  GPU-h in all.**
+- **Queue** (`queue-commands-t5-stage1c.sh`): C5-long training at **54.49696** and its 200M read/QA at **54.49697**
+  (so the 1b report at 54.49698 can use them); the 8 stage-1c training jobs `e15-t5-SmolLM2-360M-full-<arm>-s<k>` at
+  **54.49699** (`--min-free-gb 20`, default resume), their 16 evaluations (`-qa`, `-read`) at **54.496992**
+  (`--no-resume`), the CPU-lane report `e15-t5-stage1c-report` at **54.496995**; all before T7-ROOD at 54.497. Ordering
+  as §16.6: jobs sorted by (priority, created), one live job per lane, the CPU lane waits for every lower-priority job.
+- **Disk:** 8 × 1.45 GB `final.pt` ≈ 11.6 GB plus C5-long's 3 named checkpoints and `final.pt` ≈ 5.8 GB; the disk had
+  63 GB free at registration with the last 1b run still to write; the 20 GB guard applies.
+
+### 17.9 Files, code and tests
+
+- Code (additive; no behaviour change without the blocks): `src/vsa_embed/aligned_targets.py` (`FV_TEMPLATES`,
+  `AlignedObjectives.teacher_batch` / `teacher` / `distill_loss` / `cloze_batch` / `cloze_loss`, `aligned_from_config`,
+  `recall_writer`), `src/vsa_embed/training/lm.py` (`channel.distill` / `channel.verbalize` in the loop — teacher pass
+  before the student pass, the `kl_loss` / `cloze_loss` columns; `model.max_positions`, a longer GPT-2 position table for
+  the toy tests), `src/vsa_embed/experiments/e15_eval.py` (`report --stage 1c`: `run_report_1c`, `kl_ratio`,
+  `render_report_1c`; the `C5-long` contrasts of `report --stage 1b`). Eight configs + the C5-long control;
+  `queue-commands-t5-stage1c.sh`.
+- Tests `tests/test_e15_stage1c.py` (13 tests, CPU, log `…/scratchpad/e15-1c/pytest-e15-1c.log`): template
+  disjointness; the teacher's input (recall lines + window), the untouched student input, the shifted spans, the
+  distilled positions, KL shape / non-negativity / zero against itself / gradient to host and channel; the cloze
+  prompts (term tokens, template suffix, filler name as the only labels, caps, determinism); tiny end-to-end training
+  with each block on compose and free channels (columns, `loss = lm + λ·term`, no parameters added, reload); the
+  regression that a config without the blocks has identical parameters, identical LM loss, no extra columns and
+  byte-identical repeated runs; block validation; the configs; the stage-1c report on synthetic folders with the three
+  decision readings.
