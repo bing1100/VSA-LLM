@@ -7,6 +7,7 @@
     python -m vsa_embed.experiments.e15_eval report --runs-root R --qa-root Q --read-root D --splits S --output OUT
     python -m vsa_embed.experiments.e15_eval report --stage 1b ... [--checkpoints 50000000,100000000,150000000,200000000]
     python -m vsa_embed.experiments.e15_eval report --stage 1c ...
+    python -m vsa_embed.experiments.e15_eval report --stage 1d ... [--seeds 1] [--checkpoints 100000000,...,500000000]
 
 `split` writes the fixed held-out splits (sha256 in `manifest.json`): **seen** (training entries linked ≥ 10 times, a
 seeded sample), **compositional** (the T5 "new words" whose every role and filler atom occurs in a training entry's frame
@@ -34,7 +35,12 @@ stage-1b decision reading; since 2026-10-23 the loss endpoints are also read aga
 E9's C5 / C2 and stage 1's C5WR: the three primaries (implicit property on the compositional split, C5RD − C5,
 C5FV − C5, C5RD − C2RD), the secondaries, the probe read accuracy (no trained `W` in these arms), the loss endpoints,
 the end-of-training teacher–student KL relative to its start (from the runs' train rows) and the stage-1c decision
-reading.
+reading. `report --stage 1d` (pre-registration, "Stage 1d": 500M tokens, seed 1 unless `--seeds` names more) reads the
+checkpoint evaluations of the matched-length pair `C5WR-xl` / `C5-xl` at 100–500M: the read and QA curves of both arms,
+the three primaries (implicit property C5WR-xl − C5-xl at 500M, the objective's share at matched length; compositional
+read accuracy at 500M against the 0.80 bar; the 400 → 500M increment), the secondaries (continuity C5WR-xl − C5, length
+alone C5-xl − C5, loss endpoints, strict / unseen-filler splits, the consistency check against stage 1b's 200M checkpoint)
+and the stage-1d decision reading with the extrapolated crossing when the curve is still rising below the bar.
 """
 
 from __future__ import annotations
@@ -57,6 +63,9 @@ from .e5_common import finish_output, json_ready, open_run, start_output, write_
 ARMS = ("C5WR", "C5R", "C2R", "C5shWR")
 STAGE1B_CHECKPOINTS = (50_000_000, 100_000_000, 150_000_000, 200_000_000)
 STAGE1B_ARMS = ("C5WR-long", "C2R-long", "C5WR-long-lr0.10")
+STAGE1D_CHECKPOINTS = (100_000_000, 200_000_000, 300_000_000, 400_000_000, 500_000_000)
+STAGE1D_ARMS = ("C5WR-xl", "C5-xl")
+STAGE1D_READ_BAR, STAGE1D_SHARE_BAR = 0.80, 0.10
 STAGE1C_ARMS = ("C5RD", "C5FV", "C2RD", "C2FV")
 STAGE1C_SEEDS = {"C5RD": (1, 2, 3), "C5FV": (1, 2, 3), "C2RD": (1,), "C2FV": (1,)}
 BASELINES = ("C5", "C2", "C5sh")
@@ -588,6 +597,13 @@ def render_report(out: dict[str, Any]) -> str:
 
 # -- report, stage 1b (the checkpoint curve) ---------------------------------------------------------------------------
 
+def parse_checkpoints(text: str | None, default: Sequence[int]) -> list[int]:
+    """`--checkpoints`: a comma-separated list of token counts; absent or empty → the stage's registered checkpoints."""
+    if text is None or not str(text).strip():
+        return list(default)
+    return sorted({int(t) for t in str(text).split(",") if t.strip()}) or list(default)
+
+
 def read_curve(folders_by_checkpoint: dict[int, Sequence[Path]], split: str, key: str = "trained") -> dict[int, list[float]]:
     """Checkpoint → per-concept read accuracies pooled over seeds (same order at every checkpoint), only checkpoints
     whose every folder has a `read.json`."""
@@ -619,7 +635,7 @@ def run_report_1b(args: argparse.Namespace) -> dict[str, Any]:
     comp, strict, unseen = keep["compositional"], keep["compositional_strict"], keep["unseen_filler"]
     runs_root, base_root, qa_root, read_root = Path(args.runs_root), Path(args.baseline_root), Path(args.qa_root), Path(args.read_root)
     host, res, seed = args.host, args.resamples, args.seed
-    checkpoints = sorted({int(t) for t in str(args.checkpoints).split(",") if t.strip()}) or list(STAGE1B_CHECKPOINTS)
+    checkpoints = parse_checkpoints(getattr(args, "checkpoints", None), STAGE1B_CHECKPOINTS)
     last = checkpoints[-1]
     name = lambda arm, k: f"{host}-full-{arm}-s{k}"  # noqa: E731
     long_read = {t: [read_root / name("C5WR-long", k) / f"ckpt-{t}" for k in SEEDS] for t in checkpoints}
@@ -1004,6 +1020,229 @@ def render_report_1c(out: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# -- report, stage 1d (500M tokens: the matched-length pair C5WR-xl / C5-xl) --------------------------------------------
+
+def parse_seeds(text: str | None) -> tuple[int, ...]:
+    """`--seeds`: stage 1d registers seed 1; seeds 2–3 are a conditional follow-up pooled by naming them."""
+    seeds = tuple(int(t) for t in str(text or "").split(",") if t.strip())
+    return seeds or (1,)
+
+
+def extrapolated_crossing(level: float, increment: float, *, step_tokens: int, last_tokens: int, bar: float = STAGE1D_READ_BAR) -> float | None:
+    """Tokens at which the linear continuation of the last increment (per `step_tokens`) reaches `bar` — a lower bound for
+    a concave curve; None when the level is at the bar already or the increment is not positive."""
+    if level >= bar or increment <= 0:
+        return None
+    return float(last_tokens + (bar - level) / increment * step_tokens)
+
+
+def run_report_1d(args: argparse.Namespace) -> dict[str, Any]:
+    from .e5_zeroshot import paired_difference
+    splits = load_splits(Path(args.splits))
+    keep = {name: {r["concept"] for r in rows if r["kind"] == "new"} for name, rows in splits["splits"].items()}
+    comp, strict, unseen = keep["compositional"], keep["compositional_strict"], keep["unseen_filler"]
+    runs_root, base_root, qa_root, read_root = Path(args.runs_root), Path(args.baseline_root), Path(args.qa_root), Path(args.read_root)
+    host, res, seed = args.host, args.resamples, args.seed
+    checkpoints = parse_checkpoints(getattr(args, "checkpoints", None), STAGE1D_CHECKPOINTS)
+    seeds = parse_seeds(getattr(args, "seeds", None))
+    last, before = checkpoints[-1], (checkpoints[-2] if len(checkpoints) >= 2 else None)
+    name = lambda arm, k: f"{host}-full-{arm}-s{k}"  # noqa: E731
+    xl_read = {t: [read_root / name("C5WR-xl", k) / f"ckpt-{t}" for k in seeds] for t in checkpoints}
+    xl_qa = {t: [qa_root / name("C5WR-xl", k) / f"ckpt-{t}" for k in seeds] for t in checkpoints}
+    c5xl_read = {t: [read_root / name("C5-xl", k) / f"ckpt-{t}" for k in seeds] for t in checkpoints}
+    c5xl_qa = {t: [qa_root / name("C5-xl", k) / f"ckpt-{t}" for k in seeds] for t in checkpoints}
+    xl_runs, c5xl_runs = [runs_root / name("C5WR-xl", k) for k in seeds], [runs_root / name("C5-xl", k) for k in seeds]
+    c5_qa, c5_runs = [qa_root / name("C5", k) for k in seeds], [base_root / name("C5", k) for k in seeds]
+    long200_read = [read_root / name("C5WR-long", k) / "ckpt-200000000" for k in seeds]       # stage 1b's 200M (consistency)
+    expected_qa = [f for fs in xl_qa.values() for f in fs] + [f for fs in c5xl_qa.values() for f in fs] + c5_qa
+    expected_read = [f for fs in xl_read.values() for f in fs] + [f for fs in c5xl_read.values() for f in fs]
+    missing = sorted([str(f) for f in expected_qa if not (f / "predictions.jsonl").exists()]
+                     + [str(f) for f in expected_read if not (f / "read.json").exists()])
+    chance = None
+    for f in expected_read:
+        if (f / "read.json").exists():
+            chance = json.loads((f / "read.json").read_text())["chance"]; break
+    implicit_c5 = next((implicit_condition(f) for f in c5_qa if (f / "summary.json").exists()), None)
+    implicit_c5xl = next((implicit_condition(f) for fs in c5xl_qa.values() for f in fs if (f / "summary.json").exists()), None)
+
+    def qa_contrast(a_folders, b_folders, a_cond, b_cond, test, items) -> dict[str, Any] | None:
+        if a_cond is None or b_cond is None:
+            return None
+        r = pooled_contrast(a_folders, b_folders, a_cond, b_cond, test, items, resamples=res, seed=seed)
+        return None if r is None else {"a_condition": a_cond, "b_condition": b_cond, "test": test, **r}
+
+    conditions = ("none", "implicit:oracle", "explicit-rel:oracle")
+    # The pair of curves: read accuracy per split (C5WR-xl's trained W, C5-xl's probe), the QA means of both arms, and at
+    # every checkpoint the objective's share (C5WR-xl − C5-xl) and the continuity contrast (C5WR-xl − C5).
+    curve: dict[int, dict[str, Any]] = {}
+    for t in checkpoints:
+        row: dict[str, Any] = {"read": {"C5WR-xl": {}, "C5-xl": {}}, "means": {}, "share": {}, "vs_C5": {}}
+        for split in SPLITS:
+            for key in ("trained", "probe"):
+                values = read_curve({t: xl_read[t]}, split, key).get(t)
+                if values:
+                    row["read"]["C5WR-xl"][f"{split}/{key}"] = bootstrap_mean(values, resamples=res, seed=seed, null=chance or 0.0)
+            values = read_curve({t: c5xl_read[t]}, split, "probe").get(t)
+            if values:
+                row["read"]["C5-xl"][f"{split}/probe"] = bootstrap_mean(values, resamples=res, seed=seed, null=chance or 0.0)
+        for test in TESTS:
+            r = qa_contrast(xl_qa[t], c5xl_qa[t], "implicit:oracle", implicit_c5xl, test, comp)
+            if r is not None:
+                row["share"][test] = r
+            r = qa_contrast(xl_qa[t], c5_qa, "implicit:oracle", implicit_c5, test, comp)
+            if r is not None:
+                row["vs_C5"][test] = r
+        row["means"] = {arm: {test: {cond: mean_value(folders[t], cond, test, comp) for cond in conditions} for test in TESTS}
+                        for arm, folders in (("C5WR-xl", xl_qa), ("C5-xl", c5xl_qa))}
+        curve[t] = row
+    comp_curve = read_curve(xl_read, "compositional")
+
+    primary: list[dict[str, Any]] = []
+    p1 = qa_contrast(xl_qa[last], c5xl_qa[last], "implicit:oracle", implicit_c5xl, "property", comp)
+    if p1 is not None:
+        primary.append({"name": f"P1 implicit property, compositional, at {last:,} tokens: C5WR-xl − C5-xl (matched length; the objective's share)",
+                        "checkpoint": last, **p1})
+    p2 = bootstrap_mean(comp_curve.get(last, []), resamples=res, seed=seed, null=chance or 0.0)
+    if p2 is not None:
+        primary.append({"name": f"P2 compositional read accuracy at {last:,} tokens, C5WR-xl (difference to chance)", "checkpoint": last, **p2})
+    p3 = None
+    if before is not None and before in comp_curve and last in comp_curve and len(comp_curve[last]) == len(comp_curve[before]):
+        p3 = {"from": before, "to": last, **paired_difference(np.asarray(comp_curve[last]), np.asarray(comp_curve[before]), resamples=res, seed=seed)}
+        p3["still_rising"] = bool(p3["ci_low"] > 0)
+        primary.append({"name": f"P3 compositional read-accuracy increment {before:,} → {last:,} tokens, C5WR-xl (paired per concept)", **p3})
+    for row, p in zip(primary, holm_adjust([r["p_value"] for r in primary]) if primary else []):
+        row["p_holm"] = p
+
+    secondary: list[dict[str, Any]] = []
+    r = qa_contrast(xl_qa[last], c5_qa, "implicit:oracle", implicit_c5, "property", comp)
+    if r is not None:
+        secondary.append({"name": f"implicit property, compositional at {last:,} tokens: C5WR-xl − C5 (50M; continuity with stage 1b)", **r})
+    r = qa_contrast(c5xl_qa[last], c5_qa, implicit_c5xl, implicit_c5, "property", comp)
+    if r is not None:
+        secondary.append({"name": f"implicit property, compositional at {last:,} tokens: C5-xl − C5 (length alone)", **r})
+    for items, label in ((strict, "strict compositional"), (unseen, "unseen-filler new words")):
+        r = qa_contrast(xl_qa[last], c5xl_qa[last], "implicit:oracle", implicit_c5xl, "property", items)
+        if r is not None:
+            secondary.append({"name": f"implicit property, {label}, at {last:,} tokens: C5WR-xl − C5-xl", **r})
+    for test in ("paraphrase", "entailment"):
+        r = qa_contrast(xl_qa[last], c5xl_qa[last], "implicit:oracle", implicit_c5xl, test, comp)
+        if r is not None:
+            secondary.append({"name": f"implicit {test}, compositional at {last:,} tokens: C5WR-xl − C5-xl", **r})
+    for split, label in (("compositional_strict", "strict"), ("unseen_filler", "unseen-filler")):
+        for t in checkpoints:
+            r = curve[t]["read"]["C5WR-xl"].get(f"{split}/trained")
+            if r is not None:
+                secondary.append({"name": f"read accuracy, {label}, C5WR-xl at {t:,} tokens (difference to chance)", **r})
+    for t in checkpoints:
+        r = curve[t]["read"]["C5-xl"].get("compositional/probe")
+        if r is not None:
+            secondary.append({"name": f"probe read accuracy, compositional, C5-xl at {t:,} tokens (difference to chance)", **r})
+    a, b = read_values(xl_read[last], "compositional"), read_values(c5xl_read[last], "compositional", "probe")
+    if a and b and len(a) == len(b):
+        secondary.append({"name": f"read accuracy, compositional at {last:,} tokens: C5WR-xl (trained W) − C5-xl (probe), paired per concept",
+                          **paired_difference(np.asarray(a), np.asarray(b), resamples=res, seed=seed), "a_mean": float(np.mean(a)), "b_mean": float(np.mean(b))})
+    consistency = None
+    if 200_000_000 in checkpoints:
+        a, b = read_values(xl_read[200_000_000], "compositional"), read_values(long200_read, "compositional")
+        if a and b and len(a) == len(b):
+            consistency = {"checkpoint": 200_000_000, **paired_difference(np.asarray(a), np.asarray(b), resamples=res, seed=seed),
+                           "a_mean": float(np.mean(a)), "b_mean": float(np.mean(b))}
+    losses: dict[str, dict[str, Any]] = {}
+    for label, arm_runs, base_runs in (("C5WR-xl − C5-xl (matched length)", xl_runs, c5xl_runs), ("C5WR-xl − C5 (50M)", xl_runs, c5_runs),
+                                       ("C5-xl − C5 (length alone)", c5xl_runs, c5_runs)):
+        losses[label] = {}
+        for stratum in ("after_heldout", "after", "unlinked", "all"):
+            r = loss_contrast(arm_runs, base_runs, stratum, resamples=res, seed=seed)
+            if r is not None:
+                losses[label][stratum] = r
+
+    # Decision rule (pre-registration, stage 1d): P2's level, P1's point estimate, P3's interval; four exhaustive cases.
+    read_last = p2["mean_value"] if p2 else None
+    share = p1["mean"] if p1 else None
+    crossing = None
+    if read_last is None or share is None or p3 is None:
+        decision = "incomplete"
+    elif read_last >= STAGE1D_READ_BAR and share >= STAGE1D_SHARE_BAR:
+        decision = (f"read accuracy ≥ {STAGE1D_READ_BAR:.2f} at {last:,} tokens and the objective's share ≥ +{STAGE1D_SHARE_BAR:.2f}: the algebra is "
+                    "learnable to the original standard and the matched-length gain is substantial; seeds 2–3 and stage 2 (T4) are to be queued")
+    elif read_last >= STAGE1D_READ_BAR:
+        decision = (f"read accuracy ≥ {STAGE1D_READ_BAR:.2f} at {last:,} tokens but the objective's share < +{STAGE1D_SHARE_BAR:.2f}: reads but the "
+                    "matched-length use gain is small; no further length stages")
+    elif p3["still_rising"]:
+        crossing = extrapolated_crossing(read_last, p3["mean"], step_tokens=last - before, last_tokens=last)
+        decision = (f"read accuracy < {STAGE1D_READ_BAR:.2f} and still rising (increment's CI excludes 0): extrapolated crossing of the bar at "
+                    f"≈ {crossing / 1e6:,.0f}M tokens (linear in the last increment, a lower bound); stop, no stage 1e — length alone is not the programme's lever")
+    else:
+        decision = (f"read accuracy < {STAGE1D_READ_BAR:.2f} and the {before:,} → {last:,} increment's CI includes 0"
+                    + (" (lies below it)" if p3["ci_high"] < 0 else "") + ": the curve has saturated below the bar; closed")
+    out = {"stage": "1d", "host": host, "seeds": list(seeds), "checkpoints": checkpoints, "missing": missing,
+           "implicit_condition": {"C5": implicit_c5, "C5-xl": implicit_c5xl}, "splits_sha256": sha256_file(Path(args.splits)),
+           "split_sizes": {k: len(v) for k, v in splits["splits"].items()}, "chance": chance, "curve": curve, "primary": primary,
+           "increment": p3, "secondary": secondary, "losses": losses, "consistency_200M_vs_stage1b": consistency,
+           "extrapolated_crossing_tokens": crossing, "decision": decision}
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "report.json", out)
+    (output / "report.md").write_text(render_report_1d(out))
+    print(json.dumps({"decision": out["decision"], "primary": [(r["name"], r.get("mean")) for r in primary]}, indent=2))
+    return out
+
+
+def render_report_1d(out: dict[str, Any]) -> str:
+    f = lambda v, d=4: "—" if v is None else f"{v:.{d}f}"  # noqa: E731
+    lines = ["# E15 stage 1d — 500M tokens, the matched-length pair C5WR-xl / C5-xl: T5 report (pre-registration "
+             "`experiments/e15-hrr-target/preregistration.md`, \"Stage 1d\")", "",
+             f"Host {out['host']}; seeds {out['seeds']}; checkpoints {[f'{t:,}' for t in out['checkpoints']]} tokens; splits sha256 "
+             f"`{out['splits_sha256']}`; split sizes {out['split_sizes']}; chance {f(out['chance'], 5)}.", "",
+             "C5WR-xl: stage 1b's C5 + WR recipe (λ_w 0.20, λ_r 0.035, layer 11) at 500M tokens; C5-xl: E9's C5 recipe at 500M, the "
+             "matched-length control (probe read accuracy only: it trains no `W`). The pair of curves is the result; the objective's share "
+             "is C5WR-xl − C5-xl at the same checkpoint.", ""]
+    if out["missing"]:
+        lines += ["**Missing evaluation folders:** " + ", ".join(out["missing"]), ""]
+    lines += ["## Read accuracy over the checkpoints (per-concept; C5WR-xl trained `W`, C5-xl probe)", "",
+              "| tokens | compositional | strict | unseen-filler | seen | heldout | C5-xl compositional (probe) | C5-xl unseen-filler (probe) |",
+              "|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for t, row in out["curve"].items():
+        rd = lambda arm, k: f((row["read"][arm].get(k) or {}).get("mean_value"))  # noqa: E731
+        lines.append(f"| {int(t):,} | {rd('C5WR-xl', 'compositional/trained')} | {rd('C5WR-xl', 'compositional_strict/trained')} | "
+                     f"{rd('C5WR-xl', 'unseen_filler/trained')} | {rd('C5WR-xl', 'seen/trained')} | {rd('C5WR-xl', 'heldout_ontology/trained')} | "
+                     f"{rd('C5-xl', 'compositional/probe')} | {rd('C5-xl', 'unseen_filler/probe')} |")
+    lines += ["", "## Implicit-route QA over the checkpoints (property, compositional split)", "",
+              "| tokens | C5WR-xl − C5-xl (the objective's share) | C5WR-xl − C5 (50M) | C5WR-xl implicit | C5-xl implicit | C5WR-xl none | C5-xl none | C5WR-xl explicit | C5-xl explicit |",
+              "|---:|---|---|---:|---:|---:|---:|---:|---:|"]
+    for t, row in out["curve"].items():
+        m = lambda arm, cond: f(((row["means"].get(arm) or {}).get("property") or {}).get(cond))  # noqa: E731
+        lines.append(f"| {int(t):,} | {fmt(row['share'].get('property'))} | {fmt(row['vs_C5'].get('property'))} | {m('C5WR-xl', 'implicit:oracle')} | "
+                     f"{m('C5-xl', 'implicit:oracle')} | {m('C5WR-xl', 'none')} | {m('C5-xl', 'none')} | {m('C5WR-xl', 'explicit-rel:oracle')} | "
+                     f"{m('C5-xl', 'explicit-rel:oracle')} |")
+    lines += ["", "## Primary (Holm over the three)", "", "| endpoint | estimate [95% CI] | n |", "|---|---|---:|"]
+    for r in out["primary"]:
+        est = fmt(r) if "mean_value" not in r else f"{r['mean_value']:.4f}; to chance {fmt(r)}"
+        lines.append(f"| {r['name']} | {est} | {r['n']} |")
+    if out.get("increment"):
+        i = out["increment"]
+        lines += ["", f"The {i['from']:,} → {i['to']:,} increment: " + ("**still rising** (CI excludes 0)." if i["still_rising"] else "not distinguishable from flat (CI includes 0).")]
+    lines += ["", f"**Decision rule reading:** {out['decision']}", ""]
+    if out.get("extrapolated_crossing_tokens"):
+        lines += [f"Extrapolated crossing of the 0.80 bar: ≈ {out['extrapolated_crossing_tokens'] / 1e6:,.0f}M tokens (the linear continuation of the "
+                  "last increment; a lower bound for a concave curve; reported, not acted on).", ""]
+    if out.get("consistency_200M_vs_stage1b"):
+        c = out["consistency_200M_vs_stage1b"]
+        lines += [f"Consistency check: C5WR-xl's {c['checkpoint']:,}-token checkpoint ({c['a_mean']:.4f}) against stage 1b's C5WR-long seed 1 at its "
+                  f"200M checkpoint ({c['b_mean']:.4f}; same tokens, different lr schedule — the xl run is at 0.69 × peak there, the long run at the "
+                  f"floor), paired per concept: {fmt(c)}.", ""]
+    lines += ["## Loss endpoints (final evaluation, relative change, paired windows)", "",
+              "| contrast | stratum | relative change [95% CI] |", "|---|---|---|"]
+    for label, by in out["losses"].items():
+        for stratum, r in by.items():
+            lines.append(f"| {label} | {stratum} | {fmt(r, 'relative')} |")
+    lines += ["", "## Secondary (unadjusted)", "", "| contrast | estimate [95% CI] | n |", "|---|---|---:|"]
+    for r in out["secondary"]:
+        est = fmt(r) if "mean_value" not in r else f"{r['mean_value']:.4f}; to chance {fmt(r)}"
+        lines.append(f"| {r['name']} | {est} | {r['n']} |")
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1023,14 +1262,19 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--qa-root", type=Path, required=True); p.add_argument("--read-root", type=Path, required=True)
     p.add_argument("--splits", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p.add_argument("--host", default="SmolLM2-360M"); p.add_argument("--resamples", type=int, default=4000); p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--stage", choices=("1", "1b", "1c"), default="1", help="1b: the checkpoint curve of the long runs; 1c: the aligned objectives")
-    p.add_argument("--checkpoints", default=",".join(str(t) for t in STAGE1B_CHECKPOINTS), help="stage 1b: token counts of the named checkpoints")
+    p.add_argument("--stage", choices=("1", "1b", "1c", "1d"), default="1",
+                   help="1b: the checkpoint curve of the long runs; 1c: the aligned objectives; 1d: the 500M matched-length pair")
+    p.add_argument("--checkpoints", default=None, help="stages 1b/1d: token counts of the named checkpoints (default: the stage's registered ones)")
+    p.add_argument("--seeds", default=None, help="stage 1d: seeds to pool (default 1; seeds 2–3 are the conditional follow-up)")
     args = parser.parse_args(argv)
     if args.command == "report" and args.stage == "1b":
         run_report_1b(args)
         return
     if args.command == "report" and args.stage == "1c":
         run_report_1c(args)
+        return
+    if args.command == "report" and args.stage == "1d":
+        run_report_1d(args)
         return
     {"split": run_split, "read": run_read, "report": run_report}[args.command](args)
 

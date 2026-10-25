@@ -302,6 +302,20 @@ evaluations that read them.
   (C5sh+WR, 0.45 read) gives no gain — the read loss (atom space, external head) is not aligned with the test (a
   token-space judgement by the LM head). Code added for it is opt-in (`channel.distill`, `channel.verbalize`,
   `model.max_positions`, `report --stage 1c`); stage-1 and 1b configs, runs, jobs and rules are untouched.
+- **2026-10-25, stage 1d registered** (§18 below), at the author's approval *"sounds good - register the queue"*, **before
+  any run of it**. Reason: the stage-1b report (`report/t5-stage1b/report.md`) read §16.4's third gate exactly —
+  compositional read accuracy 0.593 / 0.719 / 0.754 / 0.765 at 50 / 100 / 150 / 200M (3 seeds), the 150 → 200M increment
+  +0.010 [+0.006, +0.015] (CI excludes 0), i.e. *"0.6–0.8 and still rising → register a longer stage before any
+  verdict"*; the QA gate (+0.15) was not crossed (+0.067 / +0.093 / +0.105 / +0.112), and the matched-length control
+  `C5-long` put the objective's share of the gain at 200M at +0.046 (C5WR-long 0.375 against C5-long 0.329, seed 1).
+  §16.4 called the longer stage "1c"; that label went to the aligned objectives of §17 (registered 2026-10-23), so the
+  500M stage is **1d**. Stage 1c's report (`report/t5-stage1c/report.md`, landed 2026-10-25 before this registration)
+  informs the write-up only: the aligned objectives did not open the route (C5RD − C5 −0.017, C5FV − C5 +0.014; C5RD
+  0.247 < 0.35 → closed under §17.6), so length is the one lever left on the HRR-as-target route and stage 1d tests it
+  against the original 0.80 bar with the matched-length pair. **One seed of each arm now**; seeds 2–3 are registered as a
+  conditional follow-up (§18.1). Code added for it is opt-in (`e15_eval report --stage 1d`, `--seeds`; the
+  `--checkpoints` default now follows the stage); **no trainer change** (`train.save_at_tokens` and the cosine stretch exist
+  since 1b). Stage-1, 1b and 1c configs, runs, jobs, rules and reports are untouched.
 
 ## 16. Stage 1b (registered 2026-10-22, before any run of it)
 
@@ -427,6 +441,8 @@ The QA gate and the read gates are read independently (both can hold). The repor
 - **Addendum 2026-10-23 (§15):** arm **(d) `C5-long`** — E9's C5 seed 1 at 200M tokens, the matched-length loss control
   (`…-C5-long-s1.yaml`), queued at 54.49696 with its 200M read and QA at 54.49697 by `queue-commands-t5-stage1c.sh`,
   so the 1b report (54.49698) can use it; ≈ 4.5 GPU-h training + 3 × 1.45 GB checkpoints.
+- **Addendum 2026-10-25 (§15):** the 500M stage that §16.4's third gate called for (as "stage 1c") is **stage 1d, §18**
+  — the label 1c went to the aligned objectives of §17; registered after the 1b report read 0.765 at 200M and still rising.
 
 ### 16.7 Files
 
@@ -620,3 +636,138 @@ The report prints the reading from these thresholds.
   regression that a config without the blocks has identical parameters, identical LM loss, no extra columns and
   byte-identical repeated runs; block validation; the configs; the stage-1c report on synthetic folders with the three
   decision readings.
+
+## 18. Stage 1d (registered 2026-10-25, before any run of it): 500M tokens
+
+**Why.** Stage 1b's decision rule (§16.4) read: *0.60 ≤ read < 0.80 at 200M and the last increment's interval excludes 0
+→ register a longer stage at 500M before any verdict on the implicit route.* The 1b report
+(`report/t5-stage1b/report.md`) landed on exactly that reading: compositional read accuracy of C5WR-long **0.593 →
+0.719 → 0.754 → 0.765** at 50 / 100 / 150 / 200M (3 seeds pooled), the 150 → 200M increment **+0.010 [+0.006, +0.015]**
+(paired per concept, CI excludes 0), unseen-filler keeping pace (0.792). The QA gain over E9's C5 rose with it,
++0.067 → +0.093 → +0.105 → **+0.112**, below the +0.15 QA gate; the matched-length control `C5-long` (E9's C5 recipe at
+200M) sits at 0.329 implicit property against C5's 0.264, so of the +0.112 at 200M **+0.065 is length alone and +0.046
+[+0.028, +0.066] is the objective's share** (seed 1). The rule called the longer stage "1c"; that label went to the
+aligned objectives (§17), so this is stage **1d**. Stage 1c's report (`report/t5-stage1c/report.md`, landed 2026-10-25,
+before this registration) informs the write-up only: the aligned objectives did not open the route (C5RD − C5 −0.017,
+C5FV − C5 +0.014; C5RD 0.247 < 0.35, §17.6 → closed), so length is the one lever left on the HRR-as-target route.
+
+**Question.** With 500M tokens, does compositional read accuracy reach §10's original bar of **0.80**, and at matched
+length how much of the implicit-route gain is the **objective's** (C5WR-xl − C5-xl) rather than the tokens'?
+
+### 18.1 Arms (T5, SmolLM2-360M; seed 1 only in this registration)
+
+| Arm | Base (stage-1b config) | `train.total_tokens` | λ_w | λ_r | Seeds | Config |
+|---|---|---:|---:|---:|---|---|
+| **C5WR-xl** | `SmolLM2-360M-full-C5WR-long-s1` (stage 1b's recipe: C5 + WR, λ_w 0.20, λ_r 0.035, layer 11, τ 0.1) | 500M (10× stage 1, 2.5× 1b) | 0.20 | 0.035 | 1 | `configs/t5/SmolLM2-360M-full-C5WR-xl-s1.yaml` |
+| **C5-xl** | `SmolLM2-360M-full-C5-long-s1` (E9's C5 recipe; the matched-length control) | 500M | — | — | 1 | `…-C5-xl-s1.yaml` |
+
+Each config equals its stage-1b `-long` base with `train.total_tokens: 500000000` and `train.save_at_tokens: [100M, 200M,
+300M, 400M, 500M]` and nothing else (the labels `experiment`, `e15_arm`, `e15_stage: 1d`, `e15_base_config` aside); the
+test `test_the_two_xl_configs_differ_from_their_stage1b_long_base_only_by_length_and_checkpoints` enforces this. Same
+data (`data.seed` 1234), run seed 1, micro-batch 4 × 16 × 1,024, lr 1e-3 / host lr 3e-5, 1,024 evaluation windows and
+the same splits file `splits/t5-v1/splits.json` (sha256 `c9cd4af1…209c7f`).
+
+**Seeds 2–3: a conditional follow-up, registered now, not queued.** They are queued only if the author approves after
+reading stage 1c and this seed's curve. If queued they are `…-C5WR-xl-s{2,3}` / `…-C5-xl-s{2,3}` by the same rule from
+`…-long-s{2,3}` bases (the `C5-long-s{2,3}` bases would be written first by the §15 rule of 2026-10-23), with the same
+checkpoints and evaluations; the report then pools seeds (`report --stage 1d --seeds 1,2,3`, items paired within seed as
+§7) and the decision rule below is read on the pooled estimates. The endpoints and the rule do not change.
+
+**Schedule at 500M.** The trainer's step is 65,536 tokens: 500M → **7,629 steps** (499,974,144 tokens; 1b: 3,051; stage
+1: 762). `train.warmup_tokens` stays at E9's 2,500,000 (**38 steps**); the cosine to `min_lr_ratio` 0.1 stretches over
+the remaining **7,591 steps** (1b: 3,013; stage 1: 724). Named checkpoints are written at the first step reaching each
+count: steps **1,526 / 3,052 / 4,578 / 6,104** (100,007,936 / 200,015,872 / 300,023,808 / 400,031,744 tokens); the 500M
+entry is never reached before the last step (499,974,144 < 500,000,000) and is written at the end as a hard link to
+`final.pt`, so `checkpoint-500000000.pt` **is** the final state, exactly as 1b's 200M file. The learning rate at the
+checkpoints is 0.92 / 0.69 / 0.41 / 0.19 × peak and the floor (0.1) at the end. So C5WR-xl's 200M checkpoint has the
+tokens of C5WR-long's final state (one step more) but lr 0.69 × peak against 1b's floor — the consistency check S7. The
+run's own loss evaluations fall at the log-spaced points 2.5, 5, 10, 20, 40, 80, 160, 320M and the end; the loss
+endpoints use the end. **No trainer change is needed**: `train.save_at_tokens` (1b) writes the files and the cosine is
+computed from `total_tokens`; `src/vsa_embed/training/lm.py` is not touched.
+
+### 18.2 Evaluation (at every checkpoint, both runs)
+
+- **Read accuracy** — `e15_eval read --checkpoint checkpoint-<tokens>.pt` on the full splits, §7's procedure, at every
+  checkpoint of **both** runs; for C5-xl only the post-hoc ridge probe applies (it trains no `W`; `trained_map: false`).
+  Output `read/t5/SmolLM2-360M-full-<arm>-s1/ckpt-<tokens>/read.json`.
+- **Implicit-route QA** — `e14_reading recall --family e15 --null plain --checkpoint checkpoint-<tokens>.pt`, §7's protocol
+  (same items, same oracle frames, conditions `none`, `implicit:oracle`, `explicit-rel:oracle`), at every checkpoint of
+  both runs. Output `qa/t5/SmolLM2-360M-full-<arm>-s1/ckpt-<tokens>/`. **The pair of curves is the result.**
+- **Loss endpoints** from `eval_windows.npz` at the end of each run, paired by window as §7.
+- Reused, nothing re-run: stage 1's C5 QA (`qa/t5/SmolLM2-360M-full-C5-s1`) for the continuity contrast, and stage 1b's
+  `read/t5/SmolLM2-360M-full-C5WR-long-s1/ckpt-200000000` for the consistency check.
+
+Statistics as §7 with one seed: QA items paired by item (C5WR-xl against C5-xl at the same checkpoint; against C5),
+read accuracy paired per concept across checkpoints, percentile bootstrap, 4,000 resamples, 95% intervals, two-sided
+bootstrap p; Holm within the primary family. Report: `e15_eval report --stage 1d` (`report/t5-stage1d/report.md`).
+
+### 18.3 Endpoints
+
+**Primary (seed 1; Holm over the three):**
+
+1. **P1** — implicit property on the compositional split at **500M**, **C5WR-xl − C5-xl** (matched length: **the
+   objective's share**; C5-xl's implicit route is `implicit:oracle`, it is a compose channel).
+2. **P2** — compositional read accuracy of **C5WR-xl at 500M** (per-concept mean against chance 1/3,493, with its
+   interval), read against the 0.80 bar.
+3. **P3** — the **400M → 500M read-accuracy increment**, paired per concept, with its interval; "still rising" when the
+   interval excludes 0.
+
+**Secondary (unadjusted):** S1 the read curve (compositional, strict, unseen-filler, seen, held-out ontology; C5-xl's
+probe alongside) and the QA curve (`none`, `implicit:oracle`, `explicit-rel:oracle` means of both arms; C5WR-xl − C5-xl
+and C5WR-xl − C5 on implicit property) over the five checkpoints; S2 **C5WR-xl − C5** (stage 1's C5 at 50M, seed 1) at
+500M — continuity with 1b's P1; S3 **C5-xl − C5** (length alone) on implicit property at 500M; S4 loss endpoints
+**C5WR-xl − C5-xl** after held-out terms, after seen terms (`after`), general text (`unlinked`, `all`), also C5WR-xl −
+C5 and C5-xl − C5 (relative, paired windows); S5 P1 on `compositional_strict` and on the unseen-filler new words, and
+read accuracy on those splits at every checkpoint; S6 C5WR-xl (trained `W`) − C5-xl (probe) compositional read accuracy
+at 500M, paired per concept; S7 **consistency**: stage 1b's `C5WR-long` seed 1 at its 200M checkpoint against C5WR-xl's
+200M checkpoint, compositional read accuracy paired per concept (same tokens, different schedule); S8 paraphrase and
+entailment versions of P1.
+
+### 18.4 Decision rule (stage 1d)
+
+Read on P2's level ("read"), P1's point estimate and P3's interval; the four cases are exhaustive and the report prints
+the reading:
+
+- **Read ≥ 0.80 at 500M and P1 ≥ +0.10** → the algebra is learnable to the original standard and the objective's share
+  is substantial: **queue seeds 2–3 and stage 2 (T4, §11)**.
+- **Read ≥ 0.80 and P1 < +0.10** → *"reads but the matched-length use gain is small"*; no further length stages.
+- **Read < 0.80 and the 400 → 500M increment's interval includes 0** (or lies below it) → the curve has **saturated
+  below the bar; closed**.
+- **Read < 0.80 and still rising** (the increment's interval excludes 0, above) → report the **extrapolated crossing**
+  and **stop (no stage 1e)**: length alone is not the programme's lever. The crossing is the linear continuation of the
+  last increment, 500M + (0.80 − read) / (increment per 100M) × 100M — a lower bound for a concave curve; it is
+  reported, not acted on.
+
+### 18.5 Predictions (the author's, written before any run)
+
+- Compositional read accuracy **0.80–0.83 at 500M**; the 400 → 500M increment **+0.003 to +0.008**.
+- **C5WR-xl − C5-xl** implicit property **+0.04 to +0.06**: the objective's share does not grow with length.
+- **C5-xl** implicit property **0.35–0.38**: length alone keeps helping C5.
+- Loss after held-out terms, **C5WR-xl − C5-xl within ±0.5%**.
+
+### 18.6 Compute, queue and disk
+
+- Measured on stage 1b (`.jobs/e15-t5-SmolLM2-360M-full-C5WR-long-s1.json`: 200M tokens with four named checkpoints and
+  eight loss evaluations in 4.4 h): **1.13 GPU-h per 50M** → **11.3 h per 500M run** → 22.6 GPU-h training; 10 read
+  evaluations (≈ 0.1 h, measured 7 s each) + 10 QA (≈ 0.15 h, measured 1.8 min each) → **≈ 25 GPU-h in all**.
+- **Queue** (`queue-commands-t5-stage1d.sh`): the two training jobs `e15-t5-SmolLM2-360M-full-{C5WR-xl,C5-xl}-s1` at
+  **54.496996** (after stage 1c's report at 54.496995, before T7-ROOD's remaining jobs at 54.497 and E13 at 54.4985;
+  `--min-free-gb 20` and the default `--resume` retry as 1b's training jobs), the 20 evaluation jobs
+  `…-ckpt<tokens>-{read,qa}` at **54.496997** (`--no-resume`, `--min-free-gb 10`), the CPU-lane report
+  `e15-t5-stage1d-report` at **54.496998**. Ordering guarantee as §16.6: jobs sorted by (priority, created), one live job
+  per lane, a disk-blocked job stays first in line, the CPU lane starts the report only once every lower-priority job is
+  done; a restarted training job continues from `checkpoint.pt` and never rewrites a named checkpoint already on disk.
+- **Disk:** each named checkpoint is 1.45 GB and the 500M file is a hard link to `final.pt`: 2 runs × 5 files ≈
+  **14.5 GB** (the author's 17 GB the upper bound, counting the 500M file twice); the time-based `checkpoint.pt` (≈ 4.4
+  GB, deleted at the end) is transient. 188 GB free at registration; the 20 GB guard applies.
+
+### 18.7 Files, code and tests
+
+Configs (two, §18.1); `queue-commands-t5-stage1d.sh`; code `src/vsa_embed/experiments/e15_eval.py` (`report --stage
+1d`: `STAGE1D_CHECKPOINTS`, `run_report_1d`, `extrapolated_crossing`, `render_report_1d`; `--seeds` for the conditional
+follow-up; the `--checkpoints` default now follows the stage, 1b's path otherwise unchanged); `e15_eval read` and
+`e14_reading recall --checkpoint` are used unchanged; **no trainer change**. Tests `tests/test_e15_stage1d.py` (two
+tests: the two configs and the 500M schedule — step counts, the checkpoint steps, the learning rate at the checkpoints,
+the 500M file as the final state; the stage-1d report on synthetic folders with the four decision readings and the
+extrapolated crossing); log `…/scratchpad/e15-1d/pytest-e15-1d.log`. No CPU smoke of training: no training code path
+changed; the report test runs on the CPU.
