@@ -170,6 +170,7 @@ organise the evidence.
 | [14](14-e14-reading-real-text.md) | E14: reading facts from real text | done | Text states about 12% of facts. Selective recall works (+0.25 / +0.66) and holds on Qwen3. Routing is solved on T4 (−0.018) and open on T5. More text and inferred facts do not help. The cycle adds little. |
 | [15](15-e14-logic-in-the-store.md) | E14: logic in the store | done | An exact executor with a readable interface, consistent under what-if chains (99.7% against 3–5%). Not better than symbols. Trees cannot be read from prose at ≤ 1.7B. A model plus a heuristic proves best. |
 | [16](16-infrastructure-and-validation.md) | Reproduction, benchmarks, judge, toolkit, queue | done / partly queued | Results reproduce. The harnesses are validated. The toolkit write and learn evaluations are queued. |
+| [17](17-e15-hrr-as-training-target.md) | E15: the HRR vector as a training target | stages 1–1c done; 1d queued | The model can be trained to read 0.76 of a new word's facts from the vector (structure-dependent); it uses them little (0.375 vs 0.82 as text). Aligned objectives failed. |
 
 ## 4. What is running, and when it lands
 
@@ -236,7 +237,8 @@ Wikipedia states no more facts than the definition, and a store read from it hur
 gate; E5.4 zero-shot insertion is the clear E5 positive; C5teach changes nothing after terms; E7's G3 failed.
 - **Stopped:** trees from prose at ≤ 1.7B; retrieval over more text on T4; recall of inferred facts; E7 D7.2 and
   D7.3; C5teachF.
-- **Continuing:** E15 HT, "HRR as a training target" (approved 22 October, high priority; `experiments/e15-hrr-target/`); E13 (lands 25–30
+- **Continuing:** E15 stage 1d (500M tokens, one seed each of C5+WR and C5; queued 25 October; stages 1–1c in file 17 and
+  `manuscript/findings/2026-10-25-e15-stages-1-1c.md`); E13 (lands 27–30
   October). The consistency result (15.9) and E5.4 (04.2) go to the claims ledger.
 - **Caveats to carry:** LG-CF's in-context arm is at chance at k = 0, so the consistency claim is about execution,
   not drift; tree-text, LG-CF and RD-14 are one item set each; C5teach is one seed; E5.3's held-out study did not
