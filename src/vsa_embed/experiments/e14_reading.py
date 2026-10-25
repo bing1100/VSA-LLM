@@ -661,6 +661,7 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
               "teacher_frames": str(args.teacher_frames) if getattr(args, "teacher_frames", None) else None,
               "retrieved": str(args.retrieved) if getattr(args, "retrieved", None) else None,
               "max_length": args.max_length, "route_scoring": getattr(args, "route_scoring", "prefix"),
+              "gate_closed": bool(getattr(args, "gate_closed", False)),
               "calibration_items": str(args.calibration_items) if getattr(args, "calibration_items", None) else None,
               "calibration_frames": str(args.calibration_frames) if getattr(args, "calibration_frames", None) else None}
     output = Path(args.output)
@@ -670,6 +671,12 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
     git_at_start = start_output(output, config)
     run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size, alias_table=args.alias_table,
                    max_length=args.max_length)
+    injection = None
+    if getattr(args, "gate_closed", False):                   # E15 stage 1e: the injection ablation on the trained model
+        from ..hrr_target import injection_record, set_injection
+        if not set_injection(run.adapter.model, False):
+            raise SystemExit(f"{args.run}: --gate-closed needs a run with channel.target.inject")
+        injection = injection_record(run.adapter.model)
     ctx = e11.run_context(run)
     compose = run.channel is not None and run.channel.mode == "compose"
     store = None
@@ -732,7 +739,7 @@ def run_recall(args: argparse.Namespace) -> dict[str, Any]:
                              resamples=args.resamples, max_context_tokens=args.max_context_tokens, null=args.null, retrieved=retrieved,
                              routing=routing, derived=derived)
     document = {"source": run.describe(), "frames_from": str(path), "smoke": bool(args.smoke), "family": args.family,
-                **result["document"]}
+                **({"gate_closed": True, "injection": injection} if injection is not None else {}), **result["document"]}
     with (output / "predictions.jsonl").open("w") as handle:
         for cond, by_concept in result["item_rows"].items():
             for concept, rows in by_concept.items():
@@ -1826,6 +1833,8 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--resamples", type=int, default=4000)
     r.add_argument("--smoke", action="store_true")
     r.add_argument("--overwrite", action="store_true")
+    r.add_argument("--gate-closed", action="store_true",
+                   help="E15 stage 1e: evaluate with the run's injection gate closed (the injection ablation; the run must have one)")
     r.add_argument("--null", choices=("context", "plain"), default="context",
                    help="PMI null prompt: after the same context (tier P) or without it (RD-4b)")
     r.add_argument("--family", choices=("tier-p", "rd4b", "rd4c", "rd12c", "rd4d", "rd13", "rd4e", "e15"), default="tier-p", help="default condition list")

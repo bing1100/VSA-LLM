@@ -216,12 +216,34 @@ class ChannelLM(nn.Module):
             from ..readout import decoder_layers
             self._target_hook = decoder_layers(self.model)[target.layer].register_forward_pre_hook(
                 self._capture_target, with_kwargs=True)
+        # Opt-in (E15 stage 1e, "read, then inject"): the fillers decoded from the captured state are added to the input
+        # of decoder layer ℓ + 1 at the linked terms' positions; the capture at layer ℓ stays pre-injection.
+        self._inject_hook = None
+        if target is not None and getattr(target, "inject", None) is not None:
+            from ..readout import decoder_layers
+            layers = decoder_layers(self.model)
+            if target.layer + 1 >= len(layers):
+                raise ValueError(f"channel.target.inject needs a decoder layer after the capture layer {target.layer} (depth {len(layers)})")
+            self._inject_hook = layers[target.layer + 1].register_forward_pre_hook(self._inject_target, with_kwargs=True)
 
     def _capture_target(self, module: nn.Module, args: tuple, kwargs: dict) -> None:
         target = getattr(self.channel, "target", None) if self.channel is not None else None
         if target is not None:
             target.capture(args[0] if args else kwargs["hidden_states"])
         return None
+
+    def _inject_target(self, module: nn.Module, args: tuple, kwargs: dict) -> tuple[tuple, dict] | None:
+        target = getattr(self.channel, "target", None) if self.channel is not None else None
+        if target is None or target.inject is None or not target.inject.enabled:
+            return None
+        hidden = args[0] if args else kwargs["hidden_states"]
+        addition = target.injection(hidden)
+        if addition is None:
+            return None
+        hidden = hidden + addition
+        if args:
+            return (hidden, *args[1:]), kwargs
+        return args, {**kwargs, "hidden_states": hidden}
 
     def _apply_readout(self, module: nn.Module, args: tuple, kwargs: dict) -> tuple[tuple, dict] | None:
         readout = getattr(self.channel, "readout", None) if self.channel is not None else None

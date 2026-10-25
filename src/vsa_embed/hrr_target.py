@@ -22,11 +22,27 @@ write its free row into — possible for seen terms by memorisation, impossible 
 
 The total objective is `L_LM + λ_w L_write + λ_r L_read` (`write_weight`, `read_weight`; `training.lm`). `W` draws its
 initialisation from its own generator, so every other initialisation of the run equals the run without the block.
+
+**Stage 1e, "read, then inject" (`channel.target.inject`, opt-in; pre-registration "Stage 1e").** In stages 1–1d the
+decoded facts went to the external head `W` and nowhere else, so the LM loss could not learn to use them. The injection
+path feeds them back: from the same captured state `h` (input of layer ℓ), for every relation `r` present in the term's
+frame (the frame the run injects; the roles are known at the term, the fillers are what is decoded — they are never
+read), `cleanup(unbind_r(W h)) = softmax(N(û) · Aᵀ / τ) · A` (the soft cleanup of the read loss, τ the same; gradient
+flows to `W`, and the content stays in atom space), **summed over the relations** (frame-size independent), projected by
+a learned linear map `P` (store dimension → host width, **zero-initialised**) and added to the hidden state at the term's
+position **at the input of decoder layer ℓ + 1** through a scalar gate `g = σ(b)` with `b` initialised to −4
+(`gate_bias`; σ(−4) = 0.018, near-closed; `gate: false` fixes g ≡ 1). Nothing on this path is detached: the LM loss
+reaches `P`, `b`, `W`, the host (through `h`) and the store (through the cleanup, as it does through the injected row in
+C5); the write and read losses keep `detach_target` and keep `W` a decoder. `FactInjection` holds `P` and `b`;
+`HRRTarget.injection` computes the addition; `ChannelLM` installs the pre-hook on layer ℓ + 1 (the capture at layer ℓ is
+therefore always pre-injection, and `e15_eval read` reads layer ℓ unchanged). `set_injection(model, False)` closes the
+gate at evaluation (`--gate-closed`: the injection ablation on the trained model).
 """
 
 from __future__ import annotations
 
 import contextlib
+import math
 from typing import Any, Iterator, Sequence
 
 import torch
@@ -51,9 +67,43 @@ def frozen(module: nn.Module) -> Iterator[None]:
             p.requires_grad_(flag)
 
 
+class FactInjection(nn.Module):
+    """Stage 1e: the projection `P` (store dimension → host width, zero-initialised) and the scalar gate `g = σ(b)` that
+    add the decoded content to the hidden state (`gated=False`: g ≡ 1, no parameter — the `nogate` arm). `enabled`
+    False switches the addition off (gate closed at evaluation)."""
+
+    def __init__(self, dimension: int, model_dimension: int, *, gate_bias: float = -4.0, gated: bool = True) -> None:
+        super().__init__()
+        if not math.isfinite(gate_bias):
+            raise ValueError("inject.gate_bias must be finite")
+        self.project = nn.Linear(int(dimension), int(model_dimension), bias=False)
+        nn.init.zeros_(self.project.weight)
+        self.gated, self.gate_bias = bool(gated), float(gate_bias)
+        if self.gated:
+            self.gate_logit = nn.Parameter(torch.tensor(float(gate_bias)))
+        self.enabled = True
+
+    def gate(self) -> Tensor:
+        """`g` as a scalar tensor (differentiable when gated)."""
+        return torch.sigmoid(self.gate_logit) if self.gated else self.project.weight.new_ones(())
+
+    def gate_value(self) -> float:
+        return float(self.gate().detach())
+
+    def forward(self, content: Tensor) -> Tensor:
+        """`g · P content` in float32 (`content`: `(occurrences, dimension)`)."""
+        projected = self.project(content.to(self.project.weight.dtype)).float()
+        return self.gate().float() * projected
+
+    def record(self) -> dict[str, Any]:
+        return {"gate": self.gate_value(), "gate_bias": self.gate_bias, "gated": self.gated, "enabled": bool(self.enabled)}
+
+
 class HRRTarget(nn.Module):
     """See the module docstring. `decoder`: the channel's composer (shared, not registered here) or, with
-    `own_decoder=True`, a composer owned by this module (registered, saved with the channel's state)."""
+    `own_decoder=True`, a composer owned by this module (registered, saved with the channel's state). `inject` (stage
+    1e, optional; set after construction by `target_from_config` so that `W` draws the same values as without it) adds
+    the decoded fillers back into the residual stream at layer ℓ + 1."""
 
     def __init__(self, decoder: FrameComposer, model_dimension: int, *, layer: int, tau: float = 0.1,
                  write_weight: float = 0.0, read_weight: float = 0.0, detach_target: bool = True,
@@ -75,6 +125,7 @@ class HRRTarget(nn.Module):
         nn.init.normal_(self.write.weight, std=model_dimension ** -0.5)
         self.current: dict[str, Tensor] | None = None       # spans of the running forward (`ChannelLM.embed`)
         self.captured: dict[str, Tensor] | None = None      # states at the linked terms' injection positions
+        self.inject: FactInjection | None = None            # stage 1e (opt-in): the "read, then inject" path
 
     @property
     def decoder(self) -> FrameComposer:
@@ -90,7 +141,8 @@ class HRRTarget(nn.Module):
             return
         rows, cols = spans["batch"].to(hidden.device), spans["inject"].to(hidden.device)
         keep = cols < hidden.shape[1]
-        self.captured = {"states": hidden[rows[keep], cols[keep]], "entries": spans["entry"].to(hidden.device)[keep]}
+        self.captured = {"states": hidden[rows[keep], cols[keep]], "entries": spans["entry"].to(hidden.device)[keep],
+                         "rows": rows[keep], "cols": cols[keep]}
 
     # -- pieces -------------------------------------------------------------------------------------------------------
 
@@ -114,6 +166,43 @@ class HRRTarget(nn.Module):
         unbound = self.decoder.unbind(relations, codes[segments]).float()
         atoms = normalize(self.decoder.atomic_vectors().float())
         return normalize(unbound) @ atoms.T / self.tau
+
+    # -- stage 1e: read, then inject -----------------------------------------------------------------------------------
+
+    def decoded_content(self, states: Tensor, entries: Tensor) -> Tensor:
+        """`(occurrences, dimension)`: for every relation of each entry's frame (the decoder's schedule; one unbinding
+        per distinct relation), the soft cleanup `softmax(N(unbind_r(W h)) · Aᵀ / τ) · A`, summed over the relations.
+        The frame's fillers are not read. Entries outside the schedule (zero-shot insertions of a free channel) get a
+        zero row. Differentiable end to end (W, the store, and `h`)."""
+        codes = self.codes(states)
+        schedule = self.decoder.schedule
+        inside = entries < schedule.concept_count
+        content = codes.new_zeros(entries.numel(), codes.shape[1])
+        if not bool(inside.any()):
+            return content
+        index = inside.nonzero(as_tuple=True)[0]
+        relations, _, segments = self.frame_edges(entries[index])
+        if relations.numel() == 0:
+            return content
+        count = int(self.decoder.relation_count)
+        pairs = torch.unique(segments * count + relations)                 # one unbinding per (occurrence, relation)
+        segments, relations = pairs // count, pairs % count
+        logits = self.read_logits(codes[index], relations, segments)
+        atoms = normalize(self.decoder.atomic_vectors().float())
+        cleaned = torch.softmax(logits, -1) @ atoms
+        return content.index_add(0, index[segments], cleaned)
+
+    def injection(self, hidden: Tensor) -> Tensor | None:
+        """The addition to the input of layer ℓ + 1 `(batch, time, width)` from the capture of this forward: zeros
+        except `g · P content` at the linked terms' positions; None without injection, with the gate closed, or without
+        a linked span."""
+        inject, captured = self.inject, self.captured
+        if inject is None or not inject.enabled or captured is None or captured["entries"].numel() == 0 or "rows" not in captured:
+            return None
+        content = self.decoded_content(captured["states"], captured["entries"])
+        addition = torch.zeros_like(hidden)
+        addition.index_put_((captured["rows"], captured["cols"]), inject(content).to(hidden.dtype), accumulate=True)
+        return addition
 
     @staticmethod
     def edges_of(frames: Sequence[Sequence[tuple[int, int]]], device: torch.device | str) -> tuple[Tensor, Tensor, Tensor]:
@@ -169,6 +258,45 @@ class HRRTarget(nn.Module):
         return out
 
 
+def injection_of(model: nn.Module) -> FactInjection | None:
+    """The stage-1e injection of a `ChannelLM` (None when the run has none)."""
+    target = getattr(getattr(model, "channel", None), "target", None)
+    return getattr(target, "inject", None) if target is not None else None
+
+
+def set_injection(model: nn.Module, enabled: bool) -> bool:
+    """Switch the injection on or off (`enabled=False`: the gate closed at evaluation); False when the run has none."""
+    inject = injection_of(model)
+    if inject is None:
+        return False
+    inject.enabled = bool(enabled)
+    return True
+
+
+@contextlib.contextmanager
+def injection_closed(model: nn.Module) -> Iterator[bool]:
+    """Within the block the injection adds nothing; yields False when the run has none."""
+    inject = injection_of(model)
+    if inject is None:
+        yield False
+        return
+    previous = inject.enabled
+    inject.enabled = False
+    try:
+        yield True
+    finally:
+        inject.enabled = previous
+
+
+def injection_record(model: nn.Module) -> dict[str, Any] | None:
+    """`{"gate", "gate_bias", "gated", "enabled", "layer"}` of the run's injection (layer: the decoder layer whose input
+    receives it), None without one."""
+    inject = injection_of(model)
+    if inject is None:
+        return None
+    return {**inject.record(), "layer": int(model.channel.target.layer) + 1}
+
+
 def ontology_decoder(ontology: dict[str, Any], dimension: int, *, seed: int) -> FrameComposer:
     """A frozen random HRR decoder over the ontology's frames (the free channel's fixed code; seeded on its own)."""
     schedule = FrameSchedule(ontology["offsets"], ontology["relations"], ontology["fillers"])
@@ -183,8 +311,10 @@ def ontology_decoder(ontology: dict[str, Any], dimension: int, *, seed: int) -> 
 def target_from_config(settings: dict[str, Any], channel: Any, ontology: dict[str, Any], width: int,
                        host: nn.Module | None, *, seed: int) -> HRRTarget:
     """Build the target of `channel.target` (opt-in): `{layer: "third" | int, tau: 0.1, write_weight, read_weight,
-    detach_target: true, dimension: 256 (free channels: the decoder's width)}`. A compose channel shares its composer;
-    a free channel gets `ontology_decoder`. `W` draws from its own generator (see the module docstring)."""
+    detach_target: true, dimension: 256 (free channels: the decoder's width), inject: null}`. A compose channel shares
+    its composer; a free channel gets `ontology_decoder`. `W` draws from its own generator (see the module docstring).
+    `inject` (stage 1e; `{gate_bias: -4.0, gate: true}` or `true`) adds the "read, then inject" path, built after `W` in
+    the same generator so that `W` equals the run without it."""
     from .readout import readout_layer
     spec = dict(settings)
     layer = readout_layer(spec.get("layer", "third"), host)
@@ -194,8 +324,16 @@ def target_from_config(settings: dict[str, Any], channel: Any, ontology: dict[st
         decoder, own = ontology_decoder(ontology, int(spec.get("dimension", 256)), seed=seed), True
     else:
         raise ValueError(f"channel.target supports the compose and free channels, not {channel.mode!r}")
+    inject = spec.get("inject")
+    if inject is not None and not isinstance(inject, (dict, bool)):
+        raise ValueError("channel.target.inject must be a mapping ({gate_bias, gate}), true, or absent")
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(int(seed) * 7919 + 23)
-        return HRRTarget(decoder, width, layer=layer, tau=float(spec.get("tau", 0.1)),
-                         write_weight=float(spec.get("write_weight", 0.0)), read_weight=float(spec.get("read_weight", 0.0)),
-                         detach_target=bool(spec.get("detach_target", True)), own_decoder=own)
+        target = HRRTarget(decoder, width, layer=layer, tau=float(spec.get("tau", 0.1)),
+                           write_weight=float(spec.get("write_weight", 0.0)), read_weight=float(spec.get("read_weight", 0.0)),
+                           detach_target=bool(spec.get("detach_target", True)), own_decoder=own)
+        if inject:
+            options = inject if isinstance(inject, dict) else {}
+            target.inject = FactInjection(decoder.atomics.shape[1], width, gate_bias=float(options.get("gate_bias", -4.0)),
+                                          gated=bool(options.get("gate", True)))
+        return target

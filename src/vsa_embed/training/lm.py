@@ -143,6 +143,11 @@ Opt-in key of E15, HRR as a training target (`experiments/e15-hrr-target/preregi
   role, recover each filler by cleanup over the atom table (`L_read`, cross-entropy at temperature τ). The objective
   becomes `L_LM + λ_w L_write + λ_r L_read`; train rows then carry `lm_loss`, `write_loss` and `read_loss` (`loss` is
   the total). A compose channel shares its composer; a free channel (C2+R) decodes through a frozen random HRR code.
+- `channel.target.inject` (E15 stage 1e, "read, then inject"; `{gate_bias: -4.0, gate: true}` or `true`; absent changes
+  nothing): the fillers decoded from the captured state (soft cleanup of `unbind_r(W h)` for every relation of the
+  term's frame, summed) are projected by a zero-initialised map `P` and added, through a scalar gate `σ(b)` with `b`
+  starting at `gate_bias` (`gate: false`: g ≡ 1), to the hidden state at the term's position at the input of layer ℓ + 1.
+  The LM loss then also reaches `W` through this path; train rows carry the gate value (`gate`).
 
 Opt-in keys of E15 stage 1c, aligned objectives (`aligned_targets`; absent keys change nothing):
 
@@ -868,6 +873,7 @@ def train(config: dict[str, Any], output_dir: Path, *, resume: bool = False) -> 
                  "tokens_per_s": done / max(elapsed, 1e-9), "train_tokens_per_s": done / max(train_seconds, 1e-9),
                  **({"lm_loss": target_sums["lm"], "write_loss": target_sums["write"], "read_loss": target_sums["read"]}
                     if target is not None else {}),
+                 **({"gate": target.inject.gate_value()} if target is not None and getattr(target, "inject", None) is not None else {}),
                  **({"lm_loss": target_sums["lm"]} if aligned is not None else {}),
                  **({"kl_loss": target_sums["kl"]} if aligned is not None and aligned.distill else {}),
                  **({"cloze_loss": target_sums["cloze"]} if aligned is not None and aligned.verbalize else {})})

@@ -8,6 +8,8 @@
     python -m vsa_embed.experiments.e15_eval report --stage 1b ... [--checkpoints 50000000,100000000,150000000,200000000]
     python -m vsa_embed.experiments.e15_eval report --stage 1c ...
     python -m vsa_embed.experiments.e15_eval report --stage 1d ... [--seeds 1] [--checkpoints 100000000,...,500000000]
+    python -m vsa_embed.experiments.e15_eval report --stage 1e ...
+    python -m vsa_embed.experiments.e15_eval read ... [--gate-closed]
 
 `split` writes the fixed held-out splits (sha256 in `manifest.json`): **seen** (training entries linked ≥ 10 times, a
 seeded sample), **compositional** (the T5 "new words" whose every role and filler atom occurs in a training entry's frame
@@ -41,6 +43,14 @@ the three primaries (implicit property C5WR-xl − C5-xl at 500M, the objective'
 read accuracy at 500M against the 0.80 bar; the 400 → 500M increment), the secondaries (continuity C5WR-xl − C5, length
 alone C5-xl − C5, loss endpoints, strict / unseen-filler splits, the consistency check against stage 1b's 200M checkpoint)
 and the stage-1d decision reading with the extrapolated crossing when the curve is still rising below the bar.
+`report --stage 1e` (pre-registration, "Stage 1e": read, then inject) pools the injection arms C5WRI (3 seeds), the
+exploratory C5WRI-nogate and the controls C2RI / C5shWRI (seed 1) against stage 1's C5WR / C2R / C5shWR and E9's C5: the
+three primaries (implicit property on the compositional split, C5WRI − C5WR, C5WRI − C2RI, C5WRI − C5WRI with the gate
+closed at evaluation — the QA folders `<run>/gate-closed/` written by `e14_reading recall --gate-closed`), the
+secondaries, the trained-`W` read accuracy against C5WR's, the loss endpoints against C5 and C5WR, the learned gate
+values (from `read.json` or the runs' train rows) and the stage-1e decision reading. `read --gate-closed` evaluates with
+the injection switched off (the capture layer is before the injection, so read accuracy does not change; the flag is
+recorded) and `read.json` carries the run's `injection` record when it has one.
 """
 
 from __future__ import annotations
@@ -68,6 +78,10 @@ STAGE1D_ARMS = ("C5WR-xl", "C5-xl")
 STAGE1D_READ_BAR, STAGE1D_SHARE_BAR = 0.80, 0.10
 STAGE1C_ARMS = ("C5RD", "C5FV", "C2RD", "C2FV")
 STAGE1C_SEEDS = {"C5RD": (1, 2, 3), "C5FV": (1, 2, 3), "C2RD": (1,), "C2FV": (1,)}
+STAGE1E_ARMS = ("C5WRI", "C5WRI-nogate", "C2RI", "C5shWRI")
+STAGE1E_SEEDS = {"C5WRI": (1, 2, 3), "C5WRI-nogate": (1,), "C2RI": (1,), "C5shWRI": (1,)}
+STAGE1E_GATE_CLOSED = "gate-closed"          # the QA sub-folder of the gate-closed evaluation (`e14_reading recall --gate-closed`)
+STAGE1E_LEVEL_BAR, STAGE1E_PARTIAL_BAR, STAGE1E_CONTROL_BAR = 0.50, 0.35, 0.15
 BASELINES = ("C5", "C2", "C5sh")
 SEEDS = (1, 2, 3)
 TESTS = ("property", "paraphrase", "entailment")
@@ -347,13 +361,18 @@ def run_read(args: argparse.Namespace) -> dict[str, Any]:
     from . import e11_read_to_learn as e11
     config = {"experiment": "e15-read", "run": str(args.run), "splits": str(args.splits), "new_items": str(args.new_items),
               "template": args.template, "limit": args.limit, "seed": args.seed, "resamples": args.resamples, "smoke": bool(args.smoke),
-              "alias_table": str(args.alias_table) if args.alias_table else None}
+              "alias_table": str(args.alias_table) if args.alias_table else None, "gate_closed": bool(getattr(args, "gate_closed", False))}
     output = Path(args.output)
     git_at_start = start_output(output, config)
     splits = load_splits(Path(args.splits))
     new_items = e11.load_read_set(Path(args.new_items))
     run = open_run(args.run, checkpoint=args.checkpoint, device=args.device, batch_size=args.batch_size, alias_table=args.alias_table)
+    from ..hrr_target import injection_record, set_injection
+    if getattr(args, "gate_closed", False) and not set_injection(run.adapter.model, False):     # stage 1e: the injection ablation
+        raise SystemExit(f"{args.run}: --gate-closed needs a run with channel.target.inject")
+    injection = injection_record(run.adapter.model)
     document = {"source": run.describe(), "smoke": bool(args.smoke), "splits_sha256": sha256_file(Path(args.splits)),
+                **({"injection": injection, "gate_closed": bool(getattr(args, "gate_closed", False))} if injection is not None else {}),
                 **read_accuracy(run, splits, new_items, template=args.template, limit=args.limit, resamples=args.resamples, seed=args.seed)}
     write_json(output / "read.json", document)
     (output / "report.md").write_text(render_read(document, smoke=bool(args.smoke)))
@@ -1243,6 +1262,212 @@ def render_report_1d(out: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+# -- report, stage 1e (read, then inject) ------------------------------------------------------------------------------
+
+def gate_of_run(run: Path, read_folder: Path | None = None) -> dict[str, Any] | None:
+    """The learned gate of a stage-1e run at the end of training: from `read.json`'s `injection` record when the read
+    evaluation exists, else from the last train row's `gate` column (`metrics.jsonl`); None without either."""
+    if read_folder is not None and (read_folder / "read.json").exists():
+        record = json.loads((read_folder / "read.json").read_text()).get("injection")
+        if record is not None and record.get("gate") is not None:
+            return {"gate": float(record["gate"]), "gate_bias": record.get("gate_bias"), "gated": record.get("gated"), "from": "read.json"}
+    path = run / "metrics.jsonl"
+    if path.exists():
+        last = None
+        for line in path.open():
+            row = json.loads(line)
+            if row.get("type") == "train" and "gate" in row:
+                last = row
+        if last is not None:
+            return {"gate": float(last["gate"]), "step": last.get("step"), "from": "metrics.jsonl"}
+    return None
+
+
+def run_report_1e(args: argparse.Namespace) -> dict[str, Any]:
+    from .e5_zeroshot import paired_difference
+    splits = load_splits(Path(args.splits))
+    keep = {name: {r["concept"] for r in rows if r["kind"] == "new"} for name, rows in splits["splits"].items()}
+    comp, strict, unseen = keep["compositional"], keep["compositional_strict"], keep["unseen_filler"]
+    runs_root, base_root, qa_root, read_root = Path(args.runs_root), Path(args.baseline_root), Path(args.qa_root), Path(args.read_root)
+    host, res, seed = args.host, args.resamples, args.seed
+    name = lambda arm, k: f"{host}-full-{arm}-s{k}"  # noqa: E731
+    seeds = {**STAGE1E_SEEDS, "C5": SEEDS, "C5WR": SEEDS, "C2R": (1,), "C5shWR": (1,)}
+    qa = {arm: [qa_root / name(arm, k) for k in ks] for arm, ks in seeds.items()}
+    qa["C5WRI[gate closed]"] = [f / STAGE1E_GATE_CLOSED for f in qa["C5WRI"]]
+    rd = {arm: [read_root / name(arm, k) for k in ks] for arm, ks in seeds.items()}
+    runs = {arm: [(base_root if arm in BASELINES else runs_root) / name(arm, k) for k in ks] for arm, ks in seeds.items()}
+    missing = sorted([str(f) for arm in (*STAGE1E_ARMS, "C5WRI[gate closed]", "C5", "C5WR", "C2R", "C5shWR") for f in qa[arm]
+                      if not (f / "predictions.jsonl").exists()]
+                     + [str(f) for arm in (*STAGE1E_ARMS, "C5WR") for f in rd[arm] if not (f / "read.json").exists()])
+    implicit = {arm: next((implicit_condition(f) for f in fs if (f / "summary.json").exists()), None) for arm, fs in qa.items()}
+
+    def qa_contrast(a: str, b: str, test: str, items: set[str], *, a_cond: str | None = None, b_cond: str | None = None) -> dict[str, Any] | None:
+        ca, cb = a_cond or implicit[a], b_cond or implicit[b]
+        if ca is None or cb is None:
+            return None
+        fa, fb = qa[a], qa[b]
+        if len(fa) != len(fb):                      # a 3-seed arm against a 1-seed arm: seed 1 against seed 1
+            fa, fb = fa[:1], fb[:1]
+        r = pooled_contrast(fa, fb, ca, cb, test, items, resamples=res, seed=seed)
+        return None if r is None else {"a": a, "b": b, "a_condition": ca, "b_condition": cb, "test": test, **r}
+
+    primary: list[dict[str, Any]] = []
+    for label, row in (("P1 implicit property, compositional: C5WRI − C5WR (what injection adds to decoding)", qa_contrast("C5WRI", "C5WR", "property", comp)),
+                       ("P2 implicit property, compositional: C5WRI − C2RI (structure against memorisation; seed 1)", qa_contrast("C5WRI", "C2RI", "property", comp)),
+                       ("P3 implicit property, compositional: C5WRI − C5WRI[gate closed at evaluation] (the gain flows through the injected content)",
+                        qa_contrast("C5WRI", "C5WRI[gate closed]", "property", comp))):
+        if row is not None:
+            primary.append({"name": label, **row})
+    for row, p in zip(primary, holm_adjust([r["p_value"] for r in primary]) if primary else []):
+        row["p_holm"] = p
+    secondary: list[dict[str, Any]] = []
+    for label, row in (
+        ("C5WRI − C5, implicit property, compositional", qa_contrast("C5WRI", "C5", "property", comp)),
+        ("C5shWRI − C5WRI, implicit property, compositional (content; seed 1)", qa_contrast("C5shWRI", "C5WRI", "property", comp)),
+        ("C5shWRI − C5shWR, implicit property, compositional (seed 1)", qa_contrast("C5shWRI", "C5shWR", "property", comp)),
+        ("C5WRI-nogate − C5WRI, implicit property, compositional (seed 1)", qa_contrast("C5WRI-nogate", "C5WRI", "property", comp)),
+        ("C2RI − C2R, none property, compositional (seed 1)", qa_contrast("C2RI", "C2R", "property", comp, a_cond="none", b_cond="none")),
+        ("C5WRI − C5WR, implicit paraphrase, compositional", qa_contrast("C5WRI", "C5WR", "paraphrase", comp)),
+        ("C5WRI − C5WR, implicit entailment, compositional", qa_contrast("C5WRI", "C5WR", "entailment", comp)),
+        ("C5WRI − C5WRI[gate closed], implicit paraphrase, compositional", qa_contrast("C5WRI", "C5WRI[gate closed]", "paraphrase", comp)),
+        ("C5WRI − C5WRI[gate closed], implicit entailment, compositional", qa_contrast("C5WRI", "C5WRI[gate closed]", "entailment", comp)),
+        ("C5WRI − C5WR, implicit property, strict compositional", qa_contrast("C5WRI", "C5WR", "property", strict)),
+        ("C5WRI − C5WR, implicit property, unseen-filler new words", qa_contrast("C5WRI", "C5WR", "property", unseen)),
+        ("C5WRI − C5WR, explicit-rel:oracle property, compositional (explicit recall unchanged?)",
+         qa_contrast("C5WRI", "C5WR", "property", comp, a_cond="explicit-rel:oracle", b_cond="explicit-rel:oracle")),
+        ("C5WRI − C5WR, none property, compositional", qa_contrast("C5WRI", "C5WR", "property", comp, a_cond="none", b_cond="none")),
+        ("C5WRI[gate closed] − C5WR, implicit property, compositional (the trained model without its path)",
+         qa_contrast("C5WRI[gate closed]", "C5WR", "property", comp)),
+    ):
+        if row is not None:
+            secondary.append({"name": label, **row})
+    chance = None
+    for f in rd["C5WRI"] + rd["C5WR"]:
+        if (f / "read.json").exists():
+            chance = json.loads((f / "read.json").read_text())["chance"]; break
+    reads: dict[str, dict[str, Any]] = {}
+    for arm in (*STAGE1E_ARMS, "C5WR", "C2R", "C5shWR"):
+        reads[arm] = {}
+        for split in SPLITS:
+            for key in ("trained", "probe"):
+                values = read_values(rd[arm], split, key)
+                if values:
+                    reads[arm][f"{split}/{key}"] = bootstrap_mean(values, resamples=res, seed=seed, null=chance or 0.0)
+    read_contrasts: list[dict[str, Any]] = []
+    for label, a_arm, b_arm, split in (("read accuracy (trained W), compositional: C5WRI − C5WR (paired per concept and seed)", "C5WRI", "C5WR", "compositional"),
+                                       ("read accuracy (trained W), unseen-filler: C5WRI − C5WR (paired per concept and seed)", "C5WRI", "C5WR", "unseen_filler"),
+                                       ("read accuracy (trained W), seen: C5WRI − C5WR (paired per concept and seed)", "C5WRI", "C5WR", "seen"),
+                                       ("read accuracy (trained W), compositional: C5WRI − C2RI (seed 1)", "C5WRI", "C2RI", "compositional"),
+                                       ("read accuracy (trained W), compositional: C5WRI-nogate − C5WRI (seed 1)", "C5WRI-nogate", "C5WRI", "compositional")):
+        fa, fb = rd[a_arm], rd[b_arm]
+        if len(fa) != len(fb):
+            fa, fb = fa[:1], fb[:1]
+        a, b = read_values(fa, split, "trained"), read_values(fb, split, "trained")
+        if a and b and len(a) == len(b):
+            read_contrasts.append({"name": label, "split": split, **paired_difference(np.asarray(a), np.asarray(b), resamples=res, seed=seed),
+                                   "a_mean": float(np.mean(a)), "b_mean": float(np.mean(b))})
+    secondary += read_contrasts
+    losses: dict[str, dict[str, Any]] = {}
+    for arm in STAGE1E_ARMS:
+        for base in ("C5", "C5WR"):
+            key = f"{arm} − {base}"
+            losses[key] = {}
+            for stratum in ("after_heldout", "after", "unlinked", "all"):
+                r = loss_contrast(runs[arm], runs[base][:len(runs[arm])], stratum, resamples=res, seed=seed)
+                if r is not None:
+                    losses[key][stratum] = r
+    for key, a_arm, b_arm in (("C5shWRI − C5WRI (seed 1)", "C5shWRI", "C5WRI"), ("C5WRI-nogate − C5WRI (seed 1)", "C5WRI-nogate", "C5WRI"),
+                              ("C2RI − C2R (seed 1)", "C2RI", "C2R"), ("C5shWRI − C5shWR (seed 1)", "C5shWRI", "C5shWR")):
+        losses[key] = {}
+        for stratum in ("after_heldout", "after", "unlinked", "all"):
+            r = loss_contrast(runs[a_arm][:1], runs[b_arm][:1], stratum, resamples=res, seed=seed)
+            if r is not None:
+                losses[key][stratum] = r
+    losses = {k: v for k, v in losses.items() if v}
+    gates = {arm: {f"s{k}": g for k, run, read in zip(seeds[arm], runs[arm], rd[arm]) if (g := gate_of_run(run, read)) is not None}
+             for arm in STAGE1E_ARMS}
+    conditions = ("none", "implicit:oracle", "explicit-rel:oracle")
+    arms_shown = (*STAGE1E_ARMS, "C5WRI[gate closed]", "C5WR", "C2R", "C5shWR", "C5")
+    means = {arm: {test: {cond: mean_value(qa[arm], cond, test, comp) for cond in conditions} for test in TESTS} for arm in arms_shown}
+    implicit_level = {arm: mean_value(qa[arm], implicit[arm], "property", comp) if implicit[arm] else None for arm in arms_shown}
+    # Decision rule (pre-registration, stage 1e): read on C5WRI's level, P2's point estimate and P3's interval (P3 > 0 = the
+    # interval lies above 0; P3 ≈ 0 = the interval includes 0 or lies below it) and P1's sign.
+    level = implicit_level.get("C5WRI")
+    p1, p2, p3 = (next((r for r in primary if r["name"].startswith(tag)), None) for tag in ("P1", "P2", "P3"))
+    if level is None or p1 is None or p2 is None or p3 is None:
+        decision, path_used = "incomplete", None
+    else:
+        path_used = p3["ci_low"] > 0
+        if not path_used or p1["mean"] <= 0:
+            why = (f"P3 {p3['mean']:+.3f} [{p3['ci_low']:+.3f}, {p3['ci_high']:+.3f}] does not lie above 0" if not path_used
+                   else f"C5WRI − C5WR {p1['mean']:+.3f} ≤ 0")
+            decision = (f"{why}: the internal path is not used; stop adding use objectives at this scale (the remaining variable is "
+                        "model size)")
+        elif level >= STAGE1E_LEVEL_BAR and p2["mean"] >= STAGE1E_CONTROL_BAR:
+            decision = (f"C5WRI implicit property {level:.3f} ≥ {STAGE1E_LEVEL_BAR:.2f}, C5WRI − C2RI {p2['mean']:+.3f} ≥ +{STAGE1E_CONTROL_BAR:.2f} and P3 "
+                        f"{p3['mean']:+.3f} > 0: the model uses decoded facts through an internal read path; stage 2 (T4) is to be queued with WRI")
+        elif level >= STAGE1E_LEVEL_BAR:
+            decision = (f"C5WRI implicit property {level:.3f} ≥ {STAGE1E_LEVEL_BAR:.2f} with P3 > 0 but C5WRI − C2RI {p2['mean']:+.3f} < "
+                        f"+{STAGE1E_CONTROL_BAR:.2f}: no pre-registered reading (memorisation not excluded); report the numbers")
+        elif level >= STAGE1E_PARTIAL_BAR:
+            decision = (f"partial: C5WRI implicit property {level:.3f} in [{STAGE1E_PARTIAL_BAR:.2f}, {STAGE1E_LEVEL_BAR:.2f}) with P3 {p3['mean']:+.3f} > 0 — the "
+                        "gain flows through the path but is small; report, and a 200M run of WRI only on the author's wish (registered then)")
+        else:
+            decision = (f"C5WRI implicit property {level:.3f} < {STAGE1E_PARTIAL_BAR:.2f} with P3 {p3['mean']:+.3f} > 0 and C5WRI − C5WR {p1['mean']:+.3f} > 0: "
+                        "no pre-registered reading (a real but small gain through the path); report the numbers")
+    out = {"stage": "1e", "host": host, "missing": missing, "implicit_condition": implicit, "splits_sha256": sha256_file(Path(args.splits)),
+           "split_sizes": {k: len(v) for k, v in splits["splits"].items()}, "chance": chance, "primary": primary, "secondary": secondary,
+           "read": reads, "losses": losses, "gates": gates, "means_compositional": means, "implicit_property_compositional": implicit_level,
+           "path_used": path_used, "decision": decision}
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    write_json(output / "report.json", out)
+    (output / "report.md").write_text(render_report_1e(out))
+    print(json.dumps({"decision": decision, "primary": [(r["name"], r["mean"]) for r in primary]}, indent=2))
+    return out
+
+
+def render_report_1e(out: dict[str, Any]) -> str:
+    f = lambda v, d=4: "—" if v is None else f"{v:.{d}f}"  # noqa: E731
+    lines = ["# E15 stage 1e — read, then inject: T5 report (pre-registration `experiments/e15-hrr-target/preregistration.md`, \"Stage 1e\")", "",
+             f"Host {out['host']}; splits sha256 `{out['splits_sha256']}`; split sizes {out['split_sizes']}.", "",
+             "Arms: C5WRI (C5 + write + read losses + the injection path: the fillers decoded from `W h` at layer 11, soft cleanup, summed over "
+             "the frame's relations, projected and gated into the input of layer 12), 3 seeds; C5WRI-nogate (gate fixed open, exploratory), "
+             "C2RI (free table + read loss + injection: the memorisation control) and C5shWRI (shuffled facts: decodes and injects wrong "
+             "content), seed 1; baselines stage 1's C5WR / C2R / C5shWR and E9's C5. `C5WRI[gate closed]` is the trained C5WRI evaluated "
+             "with its gate forced closed (`e14_reading recall --gate-closed`). Implicit route = `implicit:oracle` for compose channels, "
+             "`none` for free tables.", ""]
+    if out["missing"]:
+        lines += ["**Missing evaluation folders:** " + ", ".join(out["missing"]), ""]
+    lines += ["## Primary (Holm over the three)", "", "| contrast | difference [95% CI] | n |", "|---|---|---:|"]
+    lines += [f"| {r['name']} | {fmt(r)} | {r['n']} |" for r in out["primary"]]
+    lines += ["", "Implicit property on the compositional split (level; seeds pooled where available): "
+              + ", ".join(f"{arm} {f(v)}" for arm, v in out["implicit_property_compositional"].items()) + ".", "",
+              f"**Decision rule reading:** {out['decision']}", ""]
+    lines += ["## Learned gate at the end of training (σ(b); initialised at σ(−4) = 0.018; `nogate`: fixed 1)", "",
+              "| arm | seed | gate | source |", "|---|---|---:|---|"]
+    for arm, by in out["gates"].items():
+        for k, g in by.items():
+            lines.append(f"| {arm} | {k} | {g['gate']:.4f} | {g['from']} |")
+    lines += ["", "## Means on the compositional items", "", "| arm | test | none | implicit:oracle | explicit-rel:oracle |", "|---|---|---:|---:|---:|"]
+    for arm, by_test in out["means_compositional"].items():
+        for test, by_cond in by_test.items():
+            lines.append(f"| {arm} | {test} | {f(by_cond['none'])} | {f(by_cond['implicit:oracle'])} | {f(by_cond['explicit-rel:oracle'])} |")
+    lines += ["", "## Read accuracy (per-concept mean over seeds; `trained` = the run's W, `probe` = post-hoc ridge fitted on seen terms)", "",
+              "| arm | split / map | accuracy | difference to chance [95% CI] | n |", "|---|---|---:|---|---:|"]
+    for arm, by in out["read"].items():
+        for key, r in by.items():
+            lines.append(f"| {arm} | {key} | {r['mean_value']:.4f} | {fmt(r)} | {r['n']} |")
+    lines += ["", "## Loss endpoints (final evaluation, relative change, paired windows summed over seeds)", "",
+              "| contrast | stratum | relative change [95% CI] |", "|---|---|---|"]
+    for key, by in out["losses"].items():
+        for stratum, r in by.items():
+            lines.append(f"| {key} | {stratum} | {fmt(r, 'relative')} |")
+    lines += ["", "## Secondary (unadjusted)", "", "| contrast | difference [95% CI] | n |", "|---|---|---:|"]
+    lines += [f"| {r['name']} | {fmt(r)} | {r['n']} |" for r in out["secondary"]]
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1257,13 +1482,15 @@ def main(argv: list[str] | None = None) -> None:
     r.add_argument("--template", default=TEMPLATE); r.add_argument("--limit", type=int, default=None)
     r.add_argument("--resamples", type=int, default=2000); r.add_argument("--seed", type=int, default=0)
     r.add_argument("--smoke", action="store_true")
+    r.add_argument("--gate-closed", action="store_true", help="stage 1e: switch the run's injection off (recorded; the read layer is pre-injection)")
     p = sub.add_parser("report", help="pool the arms' QA, read accuracy and loss endpoints")
     p.add_argument("--runs-root", type=Path, required=True); p.add_argument("--baseline-root", type=Path, required=True)
     p.add_argument("--qa-root", type=Path, required=True); p.add_argument("--read-root", type=Path, required=True)
     p.add_argument("--splits", type=Path, required=True); p.add_argument("--output", type=Path, required=True)
     p.add_argument("--host", default="SmolLM2-360M"); p.add_argument("--resamples", type=int, default=4000); p.add_argument("--seed", type=int, default=0)
-    p.add_argument("--stage", choices=("1", "1b", "1c", "1d"), default="1",
-                   help="1b: the checkpoint curve of the long runs; 1c: the aligned objectives; 1d: the 500M matched-length pair")
+    p.add_argument("--stage", choices=("1", "1b", "1c", "1d", "1e"), default="1",
+                   help="1b: the checkpoint curve of the long runs; 1c: the aligned objectives; 1d: the 500M matched-length pair; "
+                        "1e: read, then inject")
     p.add_argument("--checkpoints", default=None, help="stages 1b/1d: token counts of the named checkpoints (default: the stage's registered ones)")
     p.add_argument("--seeds", default=None, help="stage 1d: seeds to pool (default 1; seeds 2–3 are the conditional follow-up)")
     args = parser.parse_args(argv)
@@ -1275,6 +1502,9 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "report" and args.stage == "1d":
         run_report_1d(args)
+        return
+    if args.command == "report" and args.stage == "1e":
+        run_report_1e(args)
         return
     {"split": run_split, "read": run_read, "report": run_report}[args.command](args)
 

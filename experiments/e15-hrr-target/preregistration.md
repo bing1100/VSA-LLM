@@ -316,6 +316,19 @@ evaluations that read them.
   conditional follow-up (§18.1). Code added for it is opt-in (`e15_eval report --stage 1d`, `--seeds`; the
   `--checkpoints` default now follows the stage); **no trainer change** (`train.save_at_tokens` and the cosine stretch exist
   since 1b). Stage-1, 1b and 1c configs, runs, jobs, rules and reports are untouched.
+- **2026-10-25 (later), stage 1e registered** (§19 below), at the author's approval *"Use 1 - implement and test"*, **before
+  any run of it** (stage 1d's two training runs were pending in the queue; no 1d evaluation had run). Reason: stages 1–1c
+  put the decoded facts into an external head `W` and nowhere else — nothing inside the network receives them, so the LM
+  loss cannot learn to use them (stage 1: read 0.48, implicit QA +0.030; 1b: read 0.76 at 200M, matched-length share
+  +0.046; 1c: the aligned objectives converged on their losses without opening the route — route distillation −0.017,
+  fact verbalisation +0.014 with a probe read of only 0.21, i.e. the objective was satisfied by memorising training words
+  through the vector-as-ID). Stage 1e puts the read head inside the model: the fillers decoded from `W h` at layer 11 are
+  fed back into the residual stream at layer 12 through a near-closed gate, with the stage-1 read loss keeping `W` a
+  decoder. Code added for it is opt-in (`channel.target.inject`, `e14_reading recall --gate-closed`, `e15_eval read
+  --gate-closed`, `report --stage 1e`); stage-1, 1b, 1c and 1d configs, runs, jobs, rules and reports are untouched (the
+  regression test of §19.8 checks that a stage-1 config builds byte-identical parameters and the same loss). One
+  discrepancy with the design text is recorded in §19.2: the readout arms of 09.4 started their gate at `gate_bias` 0
+  (half open, σ(0) = 0.5), not near-closed; stage 1e uses −4 as the design specified.
 
 ## 16. Stage 1b (registered 2026-10-22, before any run of it)
 
@@ -443,6 +456,9 @@ The QA gate and the read gates are read independently (both can hold). The repor
   so the 1b report (54.49698) can use it; ≈ 4.5 GPU-h training + 3 × 1.45 GB checkpoints.
 - **Addendum 2026-10-25 (§15):** the 500M stage that §16.4's third gate called for (as "stage 1c") is **stage 1d, §18**
   — the label 1c went to the aligned objectives of §17; registered after the 1b report read 0.765 at 200M and still rising.
+- **Addendum 2026-10-25, later (§15):** stage **1e, §19** ("read, then inject") is queued by `queue-commands-t5-stage1e.sh`
+  at **54.4969985 / 54.4969986 / 54.4969987** (training / evaluations / report), after stage 1d's report at 54.496998 and
+  before the T7 Qwen3 block at 54.4975; ≈ 7 GPU-h, 6 × 1.45 GB.
 
 ### 16.7 Files
 
@@ -771,3 +787,174 @@ tests: the two configs and the 500M schedule — step counts, the checkpoint ste
 the 500M file as the final state; the stage-1d report on synthetic folders with the four decision readings and the
 extrapolated crossing); log `…/scratchpad/e15-1d/pytest-e15-1d.log`. No CPU smoke of training: no training code path
 changed; the report test runs on the CPU.
+
+## 19. Stage 1e (registered 2026-10-25, before any run of it): read, then inject
+
+**Diagnosis this stage tests.** In stages 1–1d the decoded facts go to the external head `W` and nowhere else; nothing
+inside the network receives them, so the LM loss cannot learn to use them, and the aligned objectives of stage 1c let the
+model satisfy a use-shaped loss by memorising training words through the vector-as-ID (converged cloze loss, probe read
+0.21). Stage 1e **feeds the decoded facts back**: at layer ℓ = 11 the fillers are unbound from `W h` for each relation of
+the term's frame (the roles are known at the term; the **fillers** are what is decoded and they are never read), cleaned
+up, mapped back to host width by a learned projection and added to the hidden state at the term's position through a
+gate that starts near-closed, before the next decoder layer. The read loss keeps the decoder honest (it must decode, not
+memorise); the LM loss then trains the later layers to use what was decoded. Controls separate mechanism from
+memorisation (`C2RI`) and from content (`C5shWRI`); the gate-closed evaluation separates the path from the rest of the
+trained model.
+
+### 19.1 Arms (T5, SmolLM2-360M, E9's T5 recipe, 50M tokens; everything not named here identical to stage 1)
+
+| Arm | Base (stage-1 config) | Losses | `inject` | Seeds | Config |
+|---|---|---|---|---|---|
+| **C5WRI** | `SmolLM2-360M-full-C5WR-s{k}` | C5 + write + read (λ_w 0.20, λ_r 0.035, τ 0.1, layer 11, detached target) | `{gate_bias: −4.0}` | 1–3 | `configs/t5/SmolLM2-360M-full-C5WRI-s{1,2,3}.yaml` |
+| **C5WRI-nogate** | `…-C5WR-s1` | the same | `{gate: false}` — g ≡ 1, exploratory (does the gate matter?) | 1 | `…-C5WRI-nogate-s1.yaml` |
+| **C2RI** | `…-C2R-s1` | free table (222 wide) + read loss through the frozen random HRR code | `{gate_bias: −4.0}` | 1 | `…-C2RI-s1.yaml` — the memorisation control: it can decode nothing for a new word, so the injection carries nothing useful there |
+| **C5shWRI** | `…-C5shWR-s1` | shuffled frames + WR | `{gate_bias: −4.0}` | 1 | `…-C5shWRI-s1.yaml` — decodes and injects **wrong** content: does behaviour follow the injected content? |
+| C5WR, C2R, C5shWR; C5 | stage 1's runs and QA; E9's C5 | — | — | — | reused, nothing re-run |
+
+Each config equals its stage-1 base plus the `inject` sub-block of `channel.target` (and the labels `experiment`,
+`e15_arm`, `e15_stage: 1e`, `e15_base_config`); the test
+`test_the_six_stage1e_configs_differ_from_their_stage1_base_only_by_the_inject_block` enforces this. Same data
+(`data.seed` 1234), run seeds, micro-batch 4 × 16 × 1,024, lr 1e-3 / host lr 3e-5, 1,024 evaluation windows, splits file
+`splits/t5-v1/splits.json` (sha256 `c9cd4af1…209c7f`).
+
+### 19.2 The injection path (fixed; `src/vsa_embed/hrr_target.py`: `FactInjection`, `HRRTarget.decoded_content`,
+`HRRTarget.injection`; `integrations/transformers.py::ChannelLM._inject_target`)
+
+- **Where it reads.** The state `h` the stage-1 losses read: the term's last subtoken at the **input of decoder layer
+  ℓ = 11** (`readout_layer("third")`), captured by the existing pre-hook (`_capture_target`), which keeps the positions.
+- **Where it writes.** The addition is applied to the **input of decoder layer ℓ + 1 = 12** at the same positions, by a
+  second forward pre-hook. Chosen over "layer ℓ, after capture" because it keeps the capture pre-injection by
+  construction and leaves `e15_eval read` (which hooks the input of layer 11) reading the clean state; layer 11 itself
+  does not see the injected facts, layers 12–32 do.
+- **Decoded content.** For every **distinct relation** `r` present in the term's frame — the frame the run injects
+  (the composer's schedule: the shuffled frame for `C5shWRI`; the ontology's frame through the frozen code for `C2RI`) —
+  `û_r = unbind_r(W h)` with the store's operator (`FrameComposer.unbind`), then the **soft cleanup**
+  `c_r = softmax(N(û_r) · Aᵀ / τ) · A` over the whole unit-normalised atom table (τ = 0.1, the read loss's logits
+  exactly: `HRRTarget.read_logits`), so the content stays in atom space and gradient flows to `W`. The contents are
+  **summed over the relations** (frame-size independent; a relation with two fillers is unbound once). The frame's
+  fillers are not used anywhere on this path (test: changing them changes the content not at all). An entry outside the
+  decoder's schedule (a zero-shot insertion into a free channel) gets a zero row.
+- **Back to host width.** `P`: a learned linear map (store dimension 256 → host width 960, no bias), **zero-initialised**,
+  so the forward at initialisation equals the stage-1 run's exactly (regression test; the smoke's first four steps
+  reproduce the stage-1 smoke's losses to the fourth decimal).
+- **Gate.** A scalar `g = σ(b)`, `b` a trained parameter initialised to **−4** (σ(−4) = 0.018, near-closed). The design
+  said "as the readout arms' near-closed gate; check their value and reuse it": the check found that the 09.4 readout
+  arms (`U5*`) used `readout.gate_bias: 0.0`, i.e. σ(0) = **0.5, half open** (their module docstring says so; the status
+  digest's "starts closed" is loose). Stage 1e keeps **−4** as specified, since a near-closed start is what lets the
+  LM loss open the path only when the content helps; the readout arms' value is recorded here, not reused.
+  `C5WRI-nogate` fixes g ≡ 1 (no parameter).
+- **Addition.** `h_{12}[term] += g · P Σ_r c_r` (cast to the hidden state's dtype). Nothing else changes.
+- **What is detached.** Nothing on the injection path: the LM loss reaches `P`, `b`, `W` (so `W` is trained by the LM
+  loss as well as by the read loss — the author's choice: "let the LM loss flow into W too"), the host through `h`, and
+  the store (atoms and roles) through the cleanup, as it already does through the injected input row in C5. The write
+  and read losses are unchanged from stage 1 (`detach_target: true`: the store is a constant for them), and the read
+  loss runs as in stage 1 so that `W` stays a decoder. For `C2RI` the code is frozen as in stage 1.
+- **Parameters added:** `P` 256 × 960 = 245,760 and `b` (1); none for the host. Initialisation discipline as stage 1:
+  `P` is built after `W` inside `W`'s own generator, so `W` and every other parameter equal the stage-1 run's (test).
+- **Logging.** Train rows carry `gate` (σ(b)) next to `lm_loss`, `write_loss`, `read_loss`; `read.json` carries the
+  run's `injection` record (`gate`, `gate_bias`, `gated`, `enabled`, `layer` 12).
+- **Gate closed at evaluation.** `e14_reading recall --gate-closed` and `e15_eval read --gate-closed`
+  (`hrr_target.set_injection(model, False)`): the trained model runs with the addition switched off — the injection
+  ablation on the trained model, recorded in the output's config and summary. (Read accuracy cannot change under it:
+  the read layer is pre-injection; the QA can.)
+
+### 19.3 Evaluation (as stage 1, §7, plus one diagnostic)
+
+Every stage-1e run gets stage 1's two evaluation jobs unchanged: **implicit-route QA** (`e14_reading recall --family e15
+--null plain`; conditions `none`, `implicit:oracle`, `explicit-rel:oracle`; `C2RI`'s implicit route is its `none`) and
+**read accuracy** with the trained `W` (`e15_eval read`; the ridge probe alongside). **Loss endpoints** from
+`eval_windows.npz` against C5 **and against C5WR** (relative, paired windows). **Diagnostic:** the learned gate at the end
+of training per run (from `read.json`, else the last train row), and **QA with the gate forced closed at evaluation** for
+the three `C5WRI` seeds (`e14_reading recall --gate-closed`, output `qa/t5/<run>/gate-closed/`) — the injection ablation
+that shows whether the gain, if any, flows through the injected facts. Statistics as §7 (items paired within seed,
+pooled over the three seeds; a 3-seed arm against a 1-seed arm pairs seed 1 with seed 1; percentile bootstrap, 4,000
+resamples, 95% intervals, two-sided bootstrap p; Holm within the primary family). Report: `e15_eval report --stage 1e`
+(`report/t5-stage1e/report.md`).
+
+### 19.4 Endpoints
+
+**Primary (Holm over the three), implicit property on the compositional split:**
+
+1. **P1** — **C5WRI − C5WR** (3 seeds): what injection adds to decoding.
+2. **P2** — **C5WRI − C2RI** (seed 1 against seed 1; `C2RI`'s implicit route = its `none`): structure against
+   memorisation.
+3. **P3** — **C5WRI − C5WRI[gate closed at evaluation]** (3 seeds, the same items and model): the gain flows through the
+   injected content.
+
+**Secondary (unadjusted):** S1 **C5WRI − C5**; S2 **C5shWRI − C5WRI** (content; seed 1) and C5shWRI − C5shWR; S3
+**C5WRI-nogate − C5WRI** (seed 1); S4 read accuracy with the trained `W`, **C5WRI − C5WR** on the compositional,
+unseen-filler and seen splits (paired per concept and seed: does injection help or hurt decoding?), C5WRI − C2RI and
+nogate − C5WRI (seed 1); S5 loss endpoints after held-out terms, after seen terms (`after`), general text (`unlinked`,
+`all`): every 1e arm against C5 and against C5WR, plus C5shWRI − C5WRI, nogate − C5WRI, C2RI − C2R and C5shWRI − C5shWR
+(seed 1); S6 P1 on `compositional_strict` and on the unseen-filler new words; S7 paraphrase and entailment versions of P1
+and P3; S8 explicit recall unchanged? (`explicit-rel:oracle`, C5WRI − C5WR) and `none` (C5WRI − C5WR, C2RI − C2R); S9
+the gate values; S10 C5WRI[gate closed] − C5WR (what the training did to the rest of the model).
+
+### 19.5 Decision rule (stage 1e)
+
+Read on the **level** of `C5WRI`'s implicit property on the compositional split (3 seeds pooled), **P2**'s point estimate
+and **P3**'s interval. "P3 > 0" means P3's 95% interval lies above 0; "P3 ≈ 0" means it includes 0 (an interval below 0
+also closes). The report prints the reading.
+
+- **Level ≥ 0.50 and P2 ≥ +0.15 and P3 > 0** → *the model uses decoded facts through an internal read path*: **queue
+  stage 2 (T4, §11) with WRI**.
+- **0.35 ≤ level < 0.50 and P3 > 0** → *partial*: the gain flows through the path but is small — report and, if the
+  author wishes, run WRI at 200M (registered then).
+- **P3 ≈ 0 or C5WRI ≤ C5WR (P1 ≤ 0)** → *the internal path is not used*: stop adding use objectives at this scale (the
+  remaining variable is model size).
+- Any other combination (level ≥ 0.50 with P2 < +0.15: memorisation not excluded; level < 0.35 with P3 > 0 and P1 > 0: a
+  real but small gain) has no pre-registered reading and is reported with the numbers.
+
+### 19.6 Predictions (the author's, written before any run)
+
+- **C5WRI − C5WR** +0.05 to +0.10 implicit property (0.29 → 0.34–0.39).
+- **C2RI** ≤ 0.22.
+- **C5shWRI** below C5WRI by ≥ 0.10 and with worse loss after held-out words (behaviour follows the injected content).
+- The gate opens to **0.3–0.7**.
+- The gate-closed evaluation removes most of the gain.
+- Read accuracy within **±0.05** of C5WR's.
+- Loss after held-out words ≤ C5WR's.
+
+### 19.7 Compute, queue and disk
+
+- Measured on stage 1: 1.13 GPU-h per 50M-token SmolLM2-360M run; QA 1.8 min, read 7 s. The injection adds one small
+  matmul per linked occurrence (the CPU smoke's step time equals the stage-1 smoke's within noise). **6 training runs ×
+  1.13 h ≈ 6.8 GPU-h** + 6 QA + 3 gate-closed QA (≈ 0.3 h) + 6 read (≈ 0.02 h) ≈ **7.1 GPU-h** (the author's 8 the upper
+  bound).
+- **Queue** (`queue-commands-t5-stage1e.sh`): the six training jobs `e15-t5-SmolLM2-360M-full-<arm>-s<k>` at
+  **54.4969985** (after stage 1d's report at 54.496998; before the T7 Qwen3 block at 54.4975 — the T7-ROOD jobs once
+  pending at 54.497 have finished; `--min-free-gb 20` and the default `--resume` retry as stage 1's), the 15 evaluation
+  jobs `-qa`, `-read` and (C5WRI only) `-qa-gateclosed` at **54.4969986** (`--no-resume`, `--min-free-gb 10`), the CPU-lane
+  report `e15-t5-stage1e-report` at **54.4969987**. Ordering guarantee as §16.6: jobs sorted by (priority, created), one
+  live job per lane, a disk-blocked job stays first in line, the CPU lane starts the report only once every
+  lower-priority job is done. Stage 1d's 500M runs (54.496996–54.496998) run first; stage 1e follows.
+- **Disk:** 6 × 1.45 GB `final.pt` ≈ **8.7 GB**; the time-based `checkpoint.pt` is transient. 188 GB free at
+  registration; the 20 GB guard applies.
+
+### 19.8 Files, code and tests
+
+- Code (additive; no behaviour change without the `inject` key): `src/vsa_embed/hrr_target.py` (`FactInjection`,
+  `HRRTarget.inject` / `decoded_content` / `injection`, the capture keeps its positions, `injection_of`, `set_injection`,
+  `injection_closed`, `injection_record`, `target_from_config` reads `inject`), `src/vsa_embed/integrations/
+  transformers.py` (`ChannelLM._inject_target`, the pre-hook on layer ℓ + 1), `src/vsa_embed/training/lm.py` (the `gate`
+  column of train rows; config documentation), `src/vsa_embed/experiments/e14_reading.py` (`recall --gate-closed`),
+  `src/vsa_embed/experiments/e15_eval.py` (`read --gate-closed`, the `injection` record in `read.json`, `report --stage
+  1e`: `gate_of_run`, `run_report_1e`, `render_report_1e`). Six configs; `queue-commands-t5-stage1e.sh`.
+- Tests `tests/test_e15_stage1e.py` (CPU; log `…/scratchpad/e15-1e/pytest-e15-1e.log`): the injection's shapes and
+  gradients (W, P, the gate and the host receive gradient from a loss on the addition; the read loss still trains W with
+  the store detached; the gate starts at σ(−4); the addition is zero at initialisation and only at linked positions;
+  nothing is added with the gate closed; `nogate` has no gate parameter); the decoded content equals the soft cleanup
+  summed over the frame's relations, a perfect decoder injects its planted fillers, the fillers are never read, entries
+  outside the schedule get zero; the regression that a stage-1 config has no path, no hook, identical parameters (the
+  path adds exactly `P` and `b`) and the same loss; tiny end-to-end training with the path on compose (gated and nogate)
+  and free channels (the `gate` column, finite losses, `loss = lm + λ_w write + λ_r read`, `P` moved, reload with both
+  hooks) with the gate-closed forward equal to the model without its hook and different from the model with it; the
+  `read --gate-closed` CLI records the flag and the injection, leaves read accuracy unchanged, and refuses a run without
+  the path; the six configs; the stage-1e report on synthetic folders with the stage-2, partial and closed readings (and
+  the two no-pre-registered-reading cases).
+- CPU smoke (SMOKE-labelled, `…/scratchpad/e15-1e/`; `CUDA_VISIBLE_DEVICES=`): SmolLM2-135M, T5 data, `C5WRI` and
+  `C2RI` with the real λ (0.20 / 0.035) and `inject {gate_bias: −4}`, micro-batch 2 × 512, 4 steps: the three losses
+  finite (L_LM 2.86–3.46, L_write 1.00 → 0.85, L_read 8.37 → 7.79 — identical to the stage-1 smoke's rows, as `P` = 0 at
+  the start), the gate 0.0180 throughout (P moves first: |P| mean 2.6e-4 after 4 steps, b −3.9994), peak RSS 5.8 GB,
+  20 s per run; `e15_eval read --limit 8 --smoke --gate-closed` and `e14_reading recall --family e15 --limit 2 --smoke`
+  with and without `--gate-closed` on the smoke run (pipeline only; their numbers mean nothing).
