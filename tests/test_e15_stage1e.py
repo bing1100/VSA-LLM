@@ -321,3 +321,19 @@ def test_report_stage_1e_computes_the_primaries_the_gates_and_the_decision(tmp_p
     write_c5wri(0.56, 0.30)
     _write_qa(qa / f"{host}-full-C2RI-s1", concepts, {"none": 0.5, "explicit-rel:oracle": 0.8}, free, rng)
     assert "no pre-registered reading" in e15_eval.run_report_1e(ns("memo"))["decision"]
+
+
+def test_decoded_content_under_bf16_autocast_as_on_the_gpu() -> None:
+    """Regression for the 2026-10-26 queue failure: under autocast the cleanup matmul `softmax(logits) @ atoms` comes out
+    bf16 while `content` (built from the fp32 codes) is fp32; `index_add` refuses mixed dtypes unless the cleanup is cast.
+    CPU autocast reproduces the dtype mix the GPU runs hit."""
+    store = _store(atoms=40, relations=3, dimension=64, concepts=6, degree=3, seed=2)
+    target = HRRTarget(store, 64, layer=1, read_weight=1.0)
+    target.inject = FactInjection(64, 8)
+    entries = torch.arange(6)
+    states = target.bundles(entries)
+    plain = target.decoded_content(states, entries)
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        mixed = target.decoded_content(states, entries)
+    assert mixed.shape == (6, 64) and float(mixed.float().abs().sum()) > 0
+    torch.testing.assert_close(mixed.float(), plain.float(), atol=5e-2, rtol=5e-2)

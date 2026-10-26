@@ -190,7 +190,8 @@ class HRRTarget(nn.Module):
         logits = self.read_logits(codes[index], relations, segments)
         atoms = normalize(self.decoder.atomic_vectors().float())
         cleaned = torch.softmax(logits, -1) @ atoms
-        return content.index_add(0, index[segments], cleaned)
+        # `codes` (and so `content`) follow the host's autocast dtype on the GPU (bf16); the cleanup is computed in fp32.
+        return content.index_add(0, index[segments], cleaned.to(content.dtype))
 
     def injection(self, hidden: Tensor) -> Tensor | None:
         """The addition to the input of layer ℓ + 1 `(batch, time, width)` from the capture of this forward: zeros
